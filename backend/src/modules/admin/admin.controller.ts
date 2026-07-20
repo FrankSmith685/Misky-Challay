@@ -8,6 +8,7 @@ import { Order } from '@database/models';
 import { ORDER_STATUS, type OrderStatus } from '@config/constants';
 import { ordersService } from '@modules/orders/orders.service';
 import { inventoryService } from '@modules/operations/inventory.service';
+import { paymentsService } from '@modules/payments/payments.service';
 import { sequelize } from '@database/models';
 import { adminService, type OrderBoardFilters } from './admin.service';
 
@@ -32,6 +33,8 @@ export const adminController = {
 
     const order = await Order.findOne({ where: { orderNumber: req.params.orderNumber } });
     if (!order) throw ApiError.notFound('Pedido no encontrado');
+    // El permiso dice QUE puede hacer; esto, SOBRE QUE pedido.
+    assertBranchScope(req, order.branchId);
 
     const before = { status: order.status };
     const next = req.body.status as OrderStatus;
@@ -51,15 +54,36 @@ export const adminController = {
       });
     });
 
+    // Fuera de la transaccion: llamada de red al proveedor. Si falla, queda registrado
+    // y el pedido sigue cancelado (el reembolso se retoma a mano desde el panel).
+    const refund =
+      next === ORDER_STATUS.CANCELLED
+        ? await paymentsService.refundOrderPayment(
+            order,
+            req.body.comment ?? 'Cancelado por soporte',
+            req.user?.sub ?? null,
+          )
+        : null;
+
     await audit(req, {
       action: 'order.update_status',
       entity: 'orders',
       entityId: order.id,
       before,
-      after: { status: order.status, comment: req.body.comment ?? null },
+      after: {
+        status: order.status,
+        comment: req.body.comment ?? null,
+        refundId: refund?.id ?? null,
+      },
     });
 
-    return ok(res, { orderNumber: order.orderNumber, status: order.status }, 'Estado actualizado');
+    return ok(
+      res,
+      { orderNumber: order.orderNumber, status: order.status, refunded: refund !== null },
+      next === ORDER_STATUS.CANCELLED && !refund
+        ? 'Estado actualizado. Revisa si el pedido tenia un cobro con tarjeta pendiente de devolver.'
+        : 'Estado actualizado',
+    );
   }),
 
   reports: asyncHandler(async (req: Request, res: Response) => {

@@ -68,6 +68,15 @@ const envSchema = z.object({
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   MOCK_WEBHOOK_SECRET: z.string().min(8).default('dev-mock-webhook-secret'),
 
+  // Franjas de entrega programada. Un job las mantiene generadas con horizonte movil:
+  // antes solo existia un boton en el panel que creaba 7 dias y, al octavo, la entrega
+  // programada desaparecia de la web sin error ni aviso.
+  SLOT_HORIZON_DAYS: z.coerce.number().int().min(1).max(60).default(14),
+  SLOT_CAPACITY: z.coerce.number().int().min(1).default(20),
+  /** Ventanas de entrega, formato "inicio-fin" en horas locales, separadas por coma. */
+  SLOT_WINDOWS: z.string().default('12-14,19-21'),
+  SLOT_CUTOFF_HOURS: z.coerce.number().min(0).max(48).default(2),
+
   // Email. Sin MAIL_HOST los correos se imprimen en la consola (solo desarrollo).
   MAIL_HOST: z.string().optional(),
   MAIL_PORT: z.coerce.number().int().positive().default(587),

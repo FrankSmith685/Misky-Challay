@@ -4,8 +4,10 @@ import {
   InferAttributes,
   InferCreationAttributes,
   Model,
+  type NonAttribute,
 } from 'sequelize';
 import { sequelize } from '../connection';
+import { City } from './city.model';
 
 /** Tabla `branches`: cocina/local que recibe pedidos, maneja stock y horarios. */
 export class Branch extends Model<InferAttributes<Branch>, InferCreationAttributes<Branch>> {
@@ -26,6 +28,9 @@ export class Branch extends Model<InferAttributes<Branch>, InferCreationAttribut
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
   declare deletedAt: CreationOptional<Date | null>;
+
+  /** Asociacion (index.ts). Aporta la zona horaria con la que se leen los horarios. */
+  declare city?: NonAttribute<City>;
 }
 
 Branch.init(

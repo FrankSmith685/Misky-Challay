@@ -15,6 +15,7 @@ import {
 import { DRIVER_STATUS } from '@database/models/driver.model';
 import { DELIVERY_TYPE, ORDER_STATUS } from '@config/constants';
 import { ApiError } from '@shared/errors/ApiError';
+import type { BranchScopeCheck } from '@shared/utils/scope';
 import { ordersService } from '@modules/orders/orders.service';
 
 /** El estado del reparto arrastra al del pedido. */
@@ -86,9 +87,15 @@ export const deliveryService = {
   },
 
   /** Asigna un repartidor propio. El pedido debe estar listo o en preparacion. */
-  async assignDriver(deliveryId: number, driverId: number, actorId: number) {
+  async assignDriver(
+    deliveryId: number,
+    driverId: number,
+    actorId: number,
+    scope?: BranchScopeCheck,
+  ) {
     const delivery = await Delivery.findByPk(deliveryId);
     if (!delivery) throw ApiError.notFound('Reparto no encontrado');
+    scope?.(delivery.branchId);
 
     const driver = await Driver.findOne({
       where: { id: driverId, branchId: delivery.branchId, isActive: true },
@@ -117,9 +124,11 @@ export const deliveryService = {
     provider: string,
     reference: string,
     actorId: number,
+    scope?: BranchScopeCheck,
   ) {
     const delivery = await Delivery.findByPk(deliveryId);
     if (!delivery) throw ApiError.notFound('Reparto no encontrado');
+    scope?.(delivery.branchId);
 
     return sequelize.transaction(async (transaction) => {
       delivery.carrier = DELIVERY_CARRIER.EXTERNAL;
@@ -218,9 +227,16 @@ export const deliveryService = {
     return delivery;
   },
 
-  async advance(deliveryId: number, next: DeliveryStatus, actorId: number, comment?: string) {
+  async advance(
+    deliveryId: number,
+    next: DeliveryStatus,
+    actorId: number,
+    comment?: string,
+    scope?: BranchScopeCheck,
+  ) {
     const delivery = await Delivery.findByPk(deliveryId);
     if (!delivery) throw ApiError.notFound('Reparto no encontrado');
+    scope?.(delivery.branchId);
     return deliveryService.changeStatus(delivery, next, actorId, undefined, { comment });
   },
 };

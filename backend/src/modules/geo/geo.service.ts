@@ -10,6 +10,7 @@ import {
 } from '@database/models';
 import type { GeoPoint } from '@database/models/coverageZone.model';
 import { ApiError } from '@shared/errors/ApiError';
+import { defaultTimeZone, zonedParts } from '@shared/utils/datetime';
 import { routingService } from './routing.service';
 
 export interface CoverageQuery {
@@ -78,17 +79,23 @@ const toMinutes = (value: string): number => {
   return hours * 60 + mins;
 };
 
-/** RN-003: la sucursal debe estar abierta en la fecha/hora solicitada. */
-const isBranchOpenAt = (schedules: BranchSchedule[], when: Date): boolean => {
-  const isoDate = when.toISOString().slice(0, 10);
-  const weekday = when.getDay();
+/**
+ * RN-003: la sucursal debe estar abierta en la fecha/hora solicitada.
+ * Fecha, dia de la semana y hora se leen del mismo instante y en la zona horaria de
+ * la operacion; ver `@shared/utils/datetime` para el porque.
+ */
+const isBranchOpenAt = (
+  schedules: BranchSchedule[],
+  when: Date,
+  timeZone: string = defaultTimeZone(),
+): boolean => {
+  const { isoDate, weekday, minutes } = zonedParts(when, timeZone);
 
   const exception = schedules.find((schedule) => schedule.exceptionDate === isoDate);
   const rule = exception ?? schedules.find((schedule) => schedule.weekday === weekday);
 
   if (!rule || rule.isClosed) return false;
 
-  const minutes = when.getHours() * 60 + when.getMinutes();
   return minutes >= toMinutes(rule.opensAt) && minutes < toMinutes(rule.closesAt);
 };
 

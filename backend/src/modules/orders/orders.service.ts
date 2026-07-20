@@ -27,6 +27,18 @@ import { ApiError } from '@shared/errors/ApiError';
 import { getPagination, buildMeta, type PaginationQuery } from '@shared/utils/pagination';
 import { inventoryService } from '@modules/operations/inventory.service';
 
+/**
+ * Estados en los que `confirmSlot` ya movio el cupo de reservado a confirmado.
+ * Determina de que contador hay que descontar cuando el pedido se cancela.
+ */
+const CONFIRMED_SLOT_STATUSES: OrderStatus[] = [
+  ORDER_STATUS.CONFIRMED,
+  ORDER_STATUS.PREPARING,
+  ORDER_STATUS.READY,
+  ORDER_STATUS.OUT_FOR_DELIVERY,
+  ORDER_STATUS.DELIVERED,
+];
+
 const ORDER_INCLUDE = [
   {
     model: OrderItem,
@@ -127,9 +139,26 @@ export const ordersService = {
     }
 
     if (order.deliverySlotId) {
-      const slot = await DeliverySlot.findByPk(order.deliverySlotId, { transaction });
-      if (slot && slot.reservedCount > 0) {
-        slot.reservedCount -= 1;
+      const slot = await DeliverySlot.findByPk(order.deliverySlotId, {
+        transaction,
+        lock: transaction ? Transaction.LOCK.UPDATE : undefined,
+      });
+
+      if (slot) {
+        /**
+         * De que contador se descuenta depende de donde estaba el pedido.
+         *
+         * Al confirmar el pago, `confirmSlot` mueve el cupo de `reservedCount` a
+         * `confirmedCount`. Descontar siempre de `reservedCount` al cancelar hacia
+         * que un pedido ya confirmado dejase `confirmedCount` inflado para siempre
+         * y ademas restase un cupo reservado que en ese momento pertenece a OTRO
+         * cliente que esta pagando: sobreventa de la franja.
+         */
+        const wasConfirmed = CONFIRMED_SLOT_STATUSES.includes(order.status);
+
+        if (wasConfirmed && slot.confirmedCount > 0) slot.confirmedCount -= 1;
+        else if (!wasConfirmed && slot.reservedCount > 0) slot.reservedCount -= 1;
+
         await slot.save({ transaction });
       }
     }

@@ -2,6 +2,7 @@ import { col, fn, literal, Op } from 'sequelize';
 import { AuditLog, Branch, KitchenTicket, Order, OrderItem, UxEvent } from '@database/models';
 import { ORDER_STATUS, type OrderStatus } from '@config/constants';
 import { buildMeta, getPagination, type PaginationQuery } from '@shared/utils/pagination';
+import { addDaysToIsoDate, defaultTimeZone, zonedDateAt, zonedParts } from '@shared/utils/datetime';
 
 export interface OrderBoardFilters extends PaginationQuery {
   branchId?: number;
@@ -11,10 +12,26 @@ export interface OrderBoardFilters extends PaginationQuery {
   search?: string;
 }
 
+/**
+ * Rango de un informe a partir de fechas de calendario.
+ *
+ * `new Date('2026-08-03')` es medianoche UTC, que en Lima son las 19:00 del dia 2.
+ * Con eso, un informe "del 3 al 3" dejaba fuera toda la cena del 3 (19:00-22:00
+ * locales caen ya en el 4 UTC) y la contaba en el dia siguiente: el cierre de caja
+ * nunca cuadraba. Aqui el dia empieza y termina en la zona de la operacion.
+ */
 const parseRange = (from?: string, to?: string): { start: Date; end: Date } => {
-  const end = to ? new Date(to) : new Date();
-  const start = from ? new Date(from) : new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
-  return { start, end };
+  const timeZone = defaultTimeZone();
+  const today = zonedParts(new Date(), timeZone).isoDate;
+
+  const endDate = to ?? today;
+  const startDate = from ?? addDaysToIsoDate(endDate, -30);
+
+  return {
+    start: zonedDateAt(startDate, 0, 0, timeZone),
+    // Fin del dia: el instante en que empieza el siguiente, menos 1 ms.
+    end: new Date(zonedDateAt(addDaysToIsoDate(endDate, 1), 0, 0, timeZone).getTime() - 1),
+  };
 };
 
 /** Estados que cuentan como venta real (excluye canceladas y no pagadas). */

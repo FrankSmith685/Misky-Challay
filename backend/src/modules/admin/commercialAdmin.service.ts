@@ -16,6 +16,12 @@ import { DISCOUNT_TYPE, type DiscountType } from '@database/models/coupon.model'
 import { BENEFIT_TYPE, type BenefitType } from '@database/models/planBenefit.model';
 import type { GeoPoint } from '@database/models/coverageZone.model';
 import { ApiError } from '@shared/errors/ApiError';
+import {
+  addDaysToIsoDate,
+  defaultTimeZone,
+  zonedDateAt,
+  zonedParts,
+} from '@shared/utils/datetime';
 import { assertValidPolygon } from '@modules/geo/geometry';
 
 /**
@@ -565,26 +571,36 @@ export const commercialAdminService = {
     capacity: number;
     cutoffHours: number;
   }) {
-    const branch = await Branch.findByPk(input.branchId);
+    const branch = await Branch.findByPk(input.branchId, {
+      include: [{ model: City, as: 'city', attributes: ['timezone'] }],
+    });
     if (!branch) throw ApiError.notFound('Sucursal no encontrada');
+
+    const timeZone = branch.city?.timezone ?? defaultTimeZone();
 
     let created = 0;
     const now = new Date();
+    const today = zonedParts(now, timeZone).isoDate;
 
-    for (let day = 1; day <= input.days; day += 1) {
+    // Desde HOY (dia 0) y no desde manana: asi se pueden reponer las franjas del
+    // mismo dia. Las que ya pasaron se saltan mas abajo.
+    for (let day = 0; day < input.days; day += 1) {
+      const isoDate = addDaysToIsoDate(today, day);
+
       for (const window of input.windows) {
         if (window.endHour <= window.startHour) {
           throw ApiError.badRequest('La hora de fin debe ser mayor que la de inicio');
         }
 
-        const startsAt = new Date(now);
-        startsAt.setDate(now.getDate() + day);
-        startsAt.setHours(window.startHour, 0, 0, 0);
-
-        const endsAt = new Date(startsAt);
-        endsAt.setHours(window.endHour, 0, 0, 0);
+        // Las horas se interpretan en la zona de la ciudad, no en la del proceso:
+        // con `setHours` un servidor en UTC creaba las franjas 5 horas corridas.
+        const startsAt = zonedDateAt(isoDate, window.startHour, 0, timeZone);
+        const endsAt = zonedDateAt(isoDate, window.endHour, 0, timeZone);
 
         const orderCutoffAt = new Date(startsAt.getTime() - input.cutoffHours * 60 * 60 * 1000);
+
+        // Una franja cuyo cierre de pedidos ya paso no sirve a nadie.
+        if (orderCutoffAt <= now) continue;
 
         const [, wasCreated] = await DeliverySlot.findOrCreate({
           where: { branchId: input.branchId, startsAt },

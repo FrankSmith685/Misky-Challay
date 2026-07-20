@@ -34,6 +34,24 @@ export const assertBranchScope = (req: Request, branchId: number): number => {
 };
 
 /**
+ * Comprobacion diferida del alcance, para los servicios que cargan el recurso ellos
+ * mismos a partir de un id.
+ *
+ * Los endpoints que LISTAN reciben el branchId y lo validan con `resolveBranchId`.
+ * Los que MUTAN reciben el id del ticket o del reparto —enteros autoincrementales—
+ * y hasta ahora no comprobaban nada: bastaba iterar el numero de la URL para operar
+ * sobre la cocina de otra sucursal. El controlador pasa esta funcion y el servicio
+ * la invoca en cuanto conoce el branchId real del recurso.
+ */
+export type BranchScopeCheck = (branchId: number) => void;
+
+export const branchScopeCheck =
+  (req: Request): BranchScopeCheck =>
+  (branchId: number): void => {
+    assertBranchScope(req, branchId);
+  };
+
+/**
  * Sucursal sobre la que trabajar cuando la peticion no la indica.
  * Si el usuario esta limitado a una sola sucursal, se asume esa.
  */

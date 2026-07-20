@@ -4,6 +4,7 @@ import { DISCOUNT_TYPE } from '@database/models/coupon.model';
 import { REDEMPTION_STATUS } from '@database/models/couponRedemption.model';
 import { CURRENCY, DELIVERY_TYPE, type DeliveryType } from '@config/constants';
 import { ApiError } from '@shared/errors/ApiError';
+import { round2 } from '@shared/utils/money';
 import {
   customizationService,
   type QuoteResult,
@@ -59,7 +60,7 @@ export interface OrderQuote {
   meetsMinimum: boolean;
 }
 
-const round2 = (value: number): number => Math.round(value * 100) / 100;
+// round2 vive en @shared/utils/money: mismo redondeo para precios, reembolsos y saldo.
 
 /** RN-011: valida vigencia, monto minimo y limites de uso del cupon. */
 const resolveCoupon = async (

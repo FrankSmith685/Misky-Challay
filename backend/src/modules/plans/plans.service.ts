@@ -15,6 +15,7 @@ import { PAYMENT_STATUS, WALLET_TX_TYPE } from '@config/constants';
 import { env } from '@config/env';
 import { logger } from '@config/logger';
 import { ApiError } from '@shared/errors/ApiError';
+import { deriveIdempotencyKey } from '@shared/utils/idempotency';
 import { getPaymentProvider } from '@integrations/payments';
 import { notificationsService } from '@modules/notifications/notifications.service';
 import { walletService } from './wallet.service';
@@ -51,9 +52,13 @@ export const plansService = {
    * Crea la activacion en PENDING_PAYMENT y abre el pago. El saldo NO se acredita
    * aqui: eso solo ocurre cuando el webhook confirma el cobro (RN-012).
    */
-  async purchase(userId: number, planCode: string, idempotencyKey: string) {
+  async purchase(userId: number, planCode: string, clientKey: string) {
     const plan = await Plan.findOne({ where: { code: planCode, isActive: true } });
     if (!plan) throw ApiError.notFound('El plan no existe o ya no esta disponible');
+
+    // Se deriva con el dueno y el ambito: la clave del cliente no puede alcanzar
+    // el pago de otro usuario ni cruzarse con el espacio de claves de los pedidos.
+    const idempotencyKey = deriveIdempotencyKey('plan', userId, clientKey);
 
     // RN-015: la misma clave no compra dos veces el plan.
     const existingPayment = await Payment.findOne({ where: { idempotencyKey } });

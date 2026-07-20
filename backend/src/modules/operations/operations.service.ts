@@ -16,6 +16,7 @@ import {
 import { DELIVERY_TYPE, ORDER_STATUS } from '@config/constants';
 import { logger } from '@config/logger';
 import { ApiError } from '@shared/errors/ApiError';
+import type { BranchScopeCheck } from '@shared/utils/scope';
 import { ordersService } from '@modules/orders/orders.service';
 import { inventoryService } from './inventory.service';
 
@@ -163,9 +164,11 @@ export const operationsService = {
     next: TicketStatus,
     actorId: number,
     comment?: string,
+    scope?: BranchScopeCheck,
   ): Promise<KitchenTicket> {
     const ticket = await KitchenTicket.findByPk(ticketId);
     if (!ticket) throw ApiError.notFound('Ticket no encontrado');
+    scope?.(ticket.branchId);
 
     const current: TicketStatus = ticket.status;
     const allowed = TICKET_FLOW[current] ?? [];

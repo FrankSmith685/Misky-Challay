@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import { ok } from '@shared/http/ApiResponse';
 import { asyncHandler } from '@shared/utils/asyncHandler';
 import { ApiError } from '@shared/errors/ApiError';
-import { resolveBranchId } from '@shared/utils/scope';
+import { branchScopeCheck, resolveBranchId } from '@shared/utils/scope';
 import type { DeliveryStatus } from '@database/models/delivery.model';
 import { deliveryService } from './delivery.service';
 
@@ -31,12 +31,14 @@ export const deliveryController = {
           Number(req.params.deliveryId),
           Number(req.body.driverId),
           requireActor(req),
+          branchScopeCheck(req),
         )
       : await deliveryService.assignExternal(
           Number(req.params.deliveryId),
           req.body.provider,
           req.body.reference,
           requireActor(req),
+          branchScopeCheck(req),
         );
 
     return ok(res, { id: delivery.id, status: delivery.status }, 'Reparto asignado');
@@ -48,6 +50,7 @@ export const deliveryController = {
       req.body.status as DeliveryStatus,
       requireActor(req),
       req.body.comment,
+      branchScopeCheck(req),
     );
 
     return ok(res, { id: delivery.id, status: delivery.status }, 'Reparto actualizado');

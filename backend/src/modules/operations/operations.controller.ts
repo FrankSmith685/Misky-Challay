@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import { ok } from '@shared/http/ApiResponse';
 import { asyncHandler } from '@shared/utils/asyncHandler';
 import { ApiError } from '@shared/errors/ApiError';
-import { resolveBranchId } from '@shared/utils/scope';
+import { branchScopeCheck, resolveBranchId } from '@shared/utils/scope';
 import type { TicketStatus } from '@database/models/kitchenTicket.model';
 import type { MovementType } from '@database/models/inventoryMovement.model';
 import { operationsService } from './operations.service';
@@ -36,6 +36,7 @@ export const operationsController = {
       req.body.status as TicketStatus,
       requireActor(req),
       req.body.comment,
+      branchScopeCheck(req),
     );
 
     return ok(res, { id: ticket.id, status: ticket.status }, 'Ticket actualizado');

@@ -16,6 +16,7 @@ import {
   Product,
   sequelize,
 } from '@database/models';
+import { deriveIdempotencyKey } from '@shared/utils/idempotency';
 import { REDEMPTION_STATUS } from '@database/models/couponRedemption.model';
 import { DISCOUNT_SOURCE } from '@database/models/orderDiscount.model';
 import { PAYABLE_TYPE } from '@database/models/payment.model';
@@ -223,8 +224,17 @@ export const checkoutService = {
    * firmado del proveedor lo pasa a CONFIRMED (RN-014).
    */
   async place(input: CheckoutInput) {
+    // La clave que llega del cliente se deriva con su dueno y su ambito antes de
+    // tocar la base: sin esto, el indice es global y una clave adivinada devuelve
+    // el pedido de otra persona con su total y su enlace de pago.
+    const idempotencyKey = deriveIdempotencyKey(
+      'order',
+      input.userId ?? null,
+      input.idempotencyKey,
+    );
+
     // RN-015: si esta clave ya creo un pedido, se devuelve el mismo (no se duplica).
-    const existing = await Order.findOne({ where: { idempotencyKey: input.idempotencyKey } });
+    const existing = await Order.findOne({ where: { idempotencyKey } });
     if (existing) {
       const payment = await Payment.findOne({
         where: { payableType: PAYABLE_TYPE.ORDER, payableId: existing.id },
@@ -292,7 +302,7 @@ export const checkoutService = {
           grandTotal: quote.grandTotal,
           currency: quote.currency,
           notes: input.notes ?? null,
-          idempotencyKey: input.idempotencyKey,
+          idempotencyKey,
         },
         { transaction },
       );
@@ -436,7 +446,7 @@ export const checkoutService = {
         currency: quote.currency,
         status: PAYMENT_STATUS.SUCCEEDED,
         method: 'wallet',
-        idempotencyKey: input.idempotencyKey,
+        idempotencyKey,
         capturedAt: new Date(),
         authorizedAt: new Date(),
       });
@@ -464,7 +474,7 @@ export const checkoutService = {
       amount: round2(quote.grandTotal),
       currency: quote.currency,
       status: PAYMENT_STATUS.CREATED,
-      idempotencyKey: input.idempotencyKey,
+      idempotencyKey,
     });
 
     try {
@@ -475,7 +485,7 @@ export const checkoutService = {
         currency: payment.currency,
         customerEmail: input.userEmail ?? null,
         description: `Pedido ${order.orderNumber} en Verde Bowl`,
-        idempotencyKey: input.idempotencyKey,
+        idempotencyKey,
         successUrl: `${env.FRONTEND_URL}/checkout/confirmacion?pedido=${order.orderNumber}`,
         cancelUrl: `${env.FRONTEND_URL}/carrito`,
       });
@@ -488,7 +498,7 @@ export const checkoutService = {
 
       await PaymentAttempt.create({
         paymentId: payment.id,
-        idempotencyKey: input.idempotencyKey,
+        idempotencyKey,
         requestJson: { orderId: order.id, amount: Number(payment.amount) },
         responseJson: checkout.safeResponse,
         success: true,
@@ -505,7 +515,7 @@ export const checkoutService = {
 
       await PaymentAttempt.create({
         paymentId: payment.id,
-        idempotencyKey: input.idempotencyKey,
+        idempotencyKey,
         requestJson: { orderId: order.id },
         responseJson: null,
         success: false,
