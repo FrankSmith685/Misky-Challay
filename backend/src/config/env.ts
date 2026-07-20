@@ -68,6 +68,11 @@ const envSchema = z.object({
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   MOCK_WEBHOOK_SECRET: z.string().min(8).default('dev-mock-webhook-secret'),
 
+  // IGV. El precio del catalogo ya lo incluye (obligatorio de cara al consumidor en
+  // Peru); esta tasa solo sirve para DESGLOSARLO en el pedido y en el comprobante.
+  // Se guarda ademas en cada pedido, para que un cambio de tasa no reescriba el pasado.
+  IGV_RATE: z.coerce.number().min(0).max(1).default(0.18),
+
   // Franjas de entrega programada. Un job las mantiene generadas con horizonte movil:
   // antes solo existia un boton en el panel que creaba 7 dias y, al octavo, la entrega
   // programada desaparecia de la web sin error ni aviso.

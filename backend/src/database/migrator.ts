@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { Umzug, SequelizeStorage, type MigrationParams } from 'umzug';
 import type { QueryInterface } from 'sequelize';
 import { sequelize } from './connection';
@@ -95,14 +96,20 @@ export const migrator = new Umzug({
         };
       }
 
+      // En Windows una ruta absoluta ("c:\...") no es una URL valida para import():
+      // el cargador la interpreta como el protocolo "c:". pathToFileURL la normaliza.
+      const moduleUrl = pathToFileURL(filePath).href;
+      const load = async (): Promise<MigrationModule> =>
+        (await import(moduleUrl)) as MigrationModule;
+
       return {
         name,
         up: async () => {
-          const loaded = (await import(filePath)) as MigrationModule;
+          const loaded = await load();
           await loaded.up({ name, path: filePath, context });
         },
         down: async () => {
-          const loaded = (await import(filePath)) as MigrationModule;
+          const loaded = await load();
           if (!loaded.down) throw new Error(`La migracion ${name} no define down()`);
           await loaded.down({ name, path: filePath, context });
         },

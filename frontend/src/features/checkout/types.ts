@@ -50,6 +50,12 @@ export interface OrderQuote {
   walletAmount: number;
   /** Saldo total disponible del cliente. */
   walletBalance: number;
+  /** Tasa de IGV aplicada (0.18 = 18%). */
+  taxRate: number;
+  /** Valor de venta: el total sin el IGV que ya lleva dentro. */
+  taxableBase: number;
+  /** IGV incluido en el precio. Informativo: NO se suma al total. */
+  taxTotal: number;
   /** Lo que se cobra con tarjeta (0 si el saldo cubrio todo). */
   grandTotal: number;
   currency: string;
@@ -97,6 +103,11 @@ export interface OrderDetail {
   subtotal: number;
   deliveryFee: number;
   discountTotal: number;
+  /** Tasa de IGV congelada en el pedido. Opcional: los pedidos anteriores al
+   *  desglose no la tienen. */
+  taxRate?: number;
+  /** IGV incluido en el total. Informativo: no se suma. */
+  taxTotal: number;
   grandTotal: number;
   currency: string;
   placedAt: string;

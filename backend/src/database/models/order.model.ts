@@ -55,6 +55,12 @@ export class Order extends Model<InferAttributes<Order>, InferCreationAttributes
   declare deliveryFee: CreationOptional<number>;
   declare discountTotal: CreationOptional<number>;
   declare walletAmount: CreationOptional<number>;
+  /** Tasa de IGV vigente al cerrar el pedido. Congelada: si la tasa cambia, el
+   *  historico sigue explicando el importe con la que se le aplico. */
+  declare taxRate: CreationOptional<number>;
+  /** Valor de venta (lo cobrado menos el IGV que lleva dentro). */
+  declare taxableBase: CreationOptional<number>;
+  /** IGV contenido en el importe cobrado. NO se suma al total. */
   declare taxTotal: CreationOptional<number>;
   declare grandTotal: number;
   declare currency: CreationOptional<string>;
@@ -109,6 +115,8 @@ Order.init(
     deliveryFee: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
     discountTotal: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
     walletAmount: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
+    taxRate: { type: DataTypes.DECIMAL(5, 4), allowNull: false, defaultValue: 0 },
+    taxableBase: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
     taxTotal: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
     grandTotal: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
     currency: { type: DataTypes.CHAR(3), allowNull: false, defaultValue: CURRENCY },

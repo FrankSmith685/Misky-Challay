@@ -17,6 +17,8 @@ import {
   sequelize,
 } from '@database/models';
 import { deriveIdempotencyKey } from '@shared/utils/idempotency';
+import { round2 } from '@shared/utils/money';
+import { allocateProportionally, splitTaxFromGross } from '@shared/utils/tax';
 import { REDEMPTION_STATUS } from '@database/models/couponRedemption.model';
 import { DISCOUNT_SOURCE } from '@database/models/orderDiscount.model';
 import { PAYABLE_TYPE } from '@database/models/payment.model';
@@ -85,7 +87,7 @@ interface ResolvedDestination {
   routeDistanceKm?: number;
 }
 
-const round2 = (value: number): number => Math.round(value * 100) / 100;
+// round2 se importa de @shared/utils/money: un unico dueno para el redondeo del dinero.
 
 const generateOrderNumber = (): string => {
   const stamp = Date.now().toString(36).toUpperCase();
@@ -298,6 +300,8 @@ export const checkoutService = {
           deliveryFee: quote.deliveryFee,
           discountTotal: quote.discountTotal,
           walletAmount: quote.walletAmount,
+          taxRate: quote.taxRate,
+          taxableBase: quote.taxableBase,
           taxTotal: quote.taxTotal,
           grandTotal: quote.grandTotal,
           currency: quote.currency,
@@ -307,11 +311,24 @@ export const checkoutService = {
         { transaction },
       );
 
+      /* El descuento del pedido se reparte entre las lineas en proporcion a su importe.
+       * Hasta ahora cada linea guardaba discountTotal: 0, asi que la suma de las lineas
+       * no coincidia con lo cobrado y el detalle de una boleta no habria cuadrado.
+       * El delivery no entra en el reparto: no es una linea de producto. */
+      const lineDiscounts = allocateProportionally(
+        quote.discountTotal,
+        quote.items.map((line) => line.lineTotal),
+      );
+
       // Lineas con snapshot inmutable (RN-017)
       for (let index = 0; index < quote.items.length; index += 1) {
         const line = quote.items[index];
         const source = input.items[index];
         const product = await Product.findByPk(line.productId, { transaction });
+
+        const lineDiscount = lineDiscounts[index] ?? 0;
+        const lineGross = round2(Math.max(0, line.lineTotal - lineDiscount));
+        const lineTax = splitTaxFromGross(lineGross, quote.taxRate);
 
         const item = await OrderItem.create(
           {
@@ -324,8 +341,10 @@ export const checkoutService = {
             quantity: line.quantity,
             unitPrice: line.unitPrice,
             extrasTotal: line.extrasTotal,
-            discountTotal: 0,
+            discountTotal: lineDiscount,
             lineTotal: line.lineTotal,
+            taxableBase: lineTax.base,
+            taxTotal: lineTax.tax,
             nutritionSnapshotJson: line.nutrition,
             allergenSnapshotJson: allergensByProduct.get(line.productId) ?? [],
             specialInstructions: source?.specialInstructions ?? null,

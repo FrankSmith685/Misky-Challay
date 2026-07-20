@@ -123,6 +123,14 @@ const OrderDetailPage = () => {
                 <span>Total</span>
                 <span className="text-brand-700">{formatCurrency(order.grandTotal)}</span>
               </div>
+              {order.taxTotal > 0 && (
+                // El IGV va incluido en el precio: se informa aparte para que este
+                // detalle sirva como constancia de la operacion.
+                <div className="flex justify-between text-xs text-ink-muted">
+                  <span>Incluye IGV ({Math.round((order.taxRate ?? 0.18) * 100)}%)</span>
+                  <span>{formatCurrency(order.taxTotal)}</span>
+                </div>
+              )}
             </dl>
           </Card>
 

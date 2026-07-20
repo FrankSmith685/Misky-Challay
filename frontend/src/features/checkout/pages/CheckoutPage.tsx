@@ -551,6 +551,16 @@ const CheckoutPage = () => {
                   <dt>{quote.grandTotal > 0 ? 'A pagar con tarjeta' : 'Total'}</dt>
                   <dd className="text-brand-700">{formatCurrency(quote.grandTotal)}</dd>
                 </div>
+                {quote.taxTotal > 0 && (
+                  // El IGV ya está dentro del precio: se informa, no se suma. Mostrarlo
+                  // es obligatorio para que el cliente sepa qué parte es impuesto.
+                  <div className="flex justify-between text-xs text-ink-muted">
+                    <dt>
+                      Incluye IGV ({Math.round(quote.taxRate * 100)}%)
+                    </dt>
+                    <dd>{formatCurrency(quote.taxTotal)}</dd>
+                  </div>
+                )}
               </dl>
             )}
 

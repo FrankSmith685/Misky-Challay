@@ -39,8 +39,13 @@ export class OrderItem extends Model<
   declare quantity: number;
   declare unitPrice: number;
   declare extrasTotal: CreationOptional<number>;
+  /** Parte del descuento del pedido que corresponde a esta linea (reparto proporcional). */
   declare discountTotal: CreationOptional<number>;
   declare lineTotal: number;
+  /** Valor de venta de la linea, ya descontado y sin IGV. */
+  declare taxableBase: CreationOptional<number>;
+  /** IGV contenido en la linea. Lo exige el detalle de la boleta. */
+  declare taxTotal: CreationOptional<number>;
 
   declare nutritionSnapshotJson: CreationOptional<NutritionSnapshot | null>;
   declare allergenSnapshotJson: CreationOptional<string[] | null>;
@@ -68,6 +73,8 @@ OrderItem.init(
     extrasTotal: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
     discountTotal: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
     lineTotal: { type: DataTypes.DECIMAL(12, 2), allowNull: false },
+    taxableBase: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
+    taxTotal: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
 
     nutritionSnapshotJson: { type: DataTypes.JSON, allowNull: true },
     allergenSnapshotJson: { type: DataTypes.JSON, allowNull: true },

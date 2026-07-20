@@ -5,6 +5,8 @@ import { REDEMPTION_STATUS } from '@database/models/couponRedemption.model';
 import { CURRENCY, DELIVERY_TYPE, type DeliveryType } from '@config/constants';
 import { ApiError } from '@shared/errors/ApiError';
 import { round2 } from '@shared/utils/money';
+import { splitTaxFromGross } from '@shared/utils/tax';
+import { env } from '@config/env';
 import {
   customizationService,
   type QuoteResult,
@@ -50,6 +52,11 @@ export interface OrderQuote {
   walletAmount: number;
   /** Saldo disponible del cliente (para que la UI pueda ofrecerlo). */
   walletBalance: number;
+  /** Tasa de IGV aplicada, congelada en el pedido (0.18 = 18%). */
+  taxRate: number;
+  /** Valor de venta: lo cobrado sin el IGV que ya lleva dentro. */
+  taxableBase: number;
+  /** IGV contenido en el importe cobrado. No se suma al total: ya esta dentro. */
   taxTotal: number;
   /** Lo que se cobra con tarjeta. Si es 0, el saldo cubrio todo el pedido. */
   grandTotal: number;
@@ -235,6 +242,13 @@ export const pricingService = {
     const walletAmount = input.useWallet ? round2(Math.min(walletBalance, payable)) : 0;
     const grandTotal = round2(Math.max(0, payable - walletAmount));
 
+    /* 6) Desglose del IGV.
+     * Se calcula sobre `payable` y no sobre `grandTotal`: la operacion gravada es la
+     * venta completa, y pagar parte con saldo del plan es una forma de pago, no un
+     * descuento. Si se desglosara sobre lo cobrado con tarjeta, la boleta declararia
+     * menos venta de la que hubo. */
+    const { base: taxableBase, tax: taxTotal } = splitTaxFromGross(payable, env.IGV_RATE);
+
     return {
       items,
       subtotal,
@@ -242,7 +256,9 @@ export const pricingService = {
       discountTotal: round2(discountTotal),
       walletAmount,
       walletBalance: round2(walletBalance),
-      taxTotal: 0, // el IGV ya va incluido en el precio; se separa cuando se facture
+      taxRate: env.IGV_RATE,
+      taxableBase,
+      taxTotal,
       grandTotal,
       currency: CURRENCY,
       discounts,
