@@ -68,6 +68,8 @@ export class Order extends Model<InferAttributes<Order>, InferCreationAttributes
   declare confirmedAt: CreationOptional<Date | null>;
   declare deliveredAt: CreationOptional<Date | null>;
   declare cancelledAt: CreationOptional<Date | null>;
+  /** Borrado en blando (paranoid). Cancelar NO es borrar: eso vive en `status`. */
+  declare deletedAt: CreationOptional<Date | null>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
 
@@ -121,11 +123,17 @@ Order.init(
     cancelledAt: { type: DataTypes.DATE, allowNull: true },
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,
+    deletedAt: DataTypes.DATE,
   },
   {
     sequelize,
     modelName: 'Order',
     tableName: 'orders',
+    // Un pedido es un comprobante de venta: nunca desaparece de la base. `destroy()`
+    // solo marca `deleted_at`, y las consultas normales dejan de verlo. Para borrarlo
+    // de verdad hace falta `force: true`, que es una decision explicita y no un
+    // descuido. Nueve modelos ya lo tenian; este, el que mas lo necesita, no.
+    paranoid: true,
     indexes: [
       { name: 'uq_orders_number', unique: true, fields: ['order_number'] },
       { name: 'uq_orders_idempotency', unique: true, fields: ['idempotency_key'] },

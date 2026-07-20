@@ -48,7 +48,10 @@ ProductNutrition.init(
     sequelize,
     modelName: 'ProductNutrition',
     tableName: 'product_nutrition',
-    indexes: [{ unique: true, fields: ['variant_id'] }, { fields: ['product_id'] }],
+    indexes: [
+      { name: 'uq_product_nutrition_variant', unique: true, fields: ['variant_id'] },
+      { fields: ['product_id'] },
+    ],
   },
 );
 

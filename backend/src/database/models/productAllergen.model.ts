@@ -38,7 +38,9 @@ ProductAllergen.init(
     sequelize,
     modelName: 'ProductAllergen',
     tableName: 'product_allergens',
-    indexes: [{ unique: true, fields: ['product_id', 'allergen_id'] }],
+    indexes: [
+      { name: 'uq_product_allergens_product_allergen', unique: true, fields: ['product_id', 'allergen_id'] },
+    ],
   },
 );
 

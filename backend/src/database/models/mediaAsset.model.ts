@@ -44,7 +44,7 @@ MediaAsset.init(
     tableName: 'media_assets',
     paranoid: true,
     indexes: [
-      { unique: true, fields: ['filename'] },
+      { name: 'uq_media_assets_filename', unique: true, fields: ['filename'] },
       { fields: ['category'] },
       { fields: ['created_at'] },
     ],

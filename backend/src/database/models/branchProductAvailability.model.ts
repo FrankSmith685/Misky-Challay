@@ -38,7 +38,9 @@ BranchProductAvailability.init(
     sequelize,
     modelName: 'BranchProductAvailability',
     tableName: 'branch_product_availability',
-    indexes: [{ unique: true, fields: ['branch_id', 'product_id'] }],
+    indexes: [
+      { name: 'uq_branch_product_availability', unique: true, fields: ['branch_id', 'product_id'] },
+    ],
   },
 );
 

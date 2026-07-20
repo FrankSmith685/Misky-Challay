@@ -41,7 +41,7 @@ District.init(
     modelName: 'District',
     tableName: 'districts',
     indexes: [
-      { unique: true, fields: ['city_id', 'slug'] },
+      { name: 'uq_districts_city_slug', unique: true, fields: ['city_id', 'slug'] },
       { name: 'uq_districts_ubigeo_code', unique: true, fields: ['ubigeo_code'] },
     ],
   },

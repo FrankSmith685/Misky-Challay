@@ -36,7 +36,13 @@ OptionIncompatibility.init(
     sequelize,
     modelName: 'OptionIncompatibility',
     tableName: 'option_incompatibilities',
-    indexes: [{ unique: true, fields: ['option_id', 'incompatible_option_id'] }],
+    indexes: [
+      {
+        name: 'uq_option_incompatibilities_pair',
+        unique: true,
+        fields: ['option_id', 'incompatible_option_id'],
+      },
+    ],
   },
 );
 

@@ -38,7 +38,9 @@ ZoneBranch.init(
     sequelize,
     modelName: 'ZoneBranch',
     tableName: 'zone_branches',
-    indexes: [{ unique: true, fields: ['coverage_zone_id', 'branch_id'] }],
+    indexes: [
+      { name: 'uq_zone_branches_zone_branch', unique: true, fields: ['coverage_zone_id', 'branch_id'] },
+    ],
   },
 );
 

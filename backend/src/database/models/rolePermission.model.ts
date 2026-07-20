@@ -31,7 +31,9 @@ RolePermission.init(
     sequelize,
     modelName: 'RolePermission',
     tableName: 'role_permissions',
-    indexes: [{ unique: true, fields: ['role_id', 'permission_id'] }],
+    indexes: [
+      { name: 'uq_role_permissions_role_permission', unique: true, fields: ['role_id', 'permission_id'] },
+    ],
   },
 );
 

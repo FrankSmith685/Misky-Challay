@@ -47,7 +47,13 @@ ProductCustomizationGroup.init(
     sequelize,
     modelName: 'ProductCustomizationGroup',
     tableName: 'product_customization_groups',
-    indexes: [{ unique: true, fields: ['product_id', 'group_id', 'variant_id'] }],
+    indexes: [
+      {
+        name: 'uq_product_customization_groups',
+        unique: true,
+        fields: ['product_id', 'group_id', 'variant_id'],
+      },
+    ],
   },
 );
 

@@ -157,6 +157,43 @@ export const models = {
 
 export type Models = typeof models;
 
+/* ==========================================================================
+ * POLITICA DE BORRADO
+ * --------------------------------------------------------------------------
+ * Cuando una asociacion no declara `onDelete`, Sequelize la deduce de si la clave
+ * foranea admite nulos: CASCADE si es obligatoria, SET NULL si es opcional. Eso
+ * significa que la politica de borrado del negocio la estaba decidiendo un detalle
+ * de tipado, y en varios sitios decidia mal:
+ *
+ *   - borrar una sucursal borraba TODOS sus pedidos (order.branch_id es NOT NULL)
+ *   - borrar un pedido borraba sus lineas, descuentos e historial de estados
+ *   - borrar una billetera borraba el libro mayor del saldo
+ *   - borrar un cupon borraba el registro de quien lo habia canjeado
+ *
+ * A partir de aqui cada asociacion declara la suya con una de estas tres.
+ * ========================================================================== */
+
+/**
+ * El hijo no significa nada sin el padre y no es un registro contable:
+ * filas de tablas puente, configuracion, presets. Se borra con el padre.
+ */
+const OWNED = { onDelete: 'CASCADE', onUpdate: 'CASCADE' } as const;
+
+/**
+ * Registro historico, contable o legal. Impide borrar el padre mientras exista.
+ * Es deliberado que moleste: si hay que dar de baja algo con historial, se
+ * desactiva (`isActive`) o se borra en blando, no se destruye.
+ */
+const PROTECTED = { onDelete: 'RESTRICT', onUpdate: 'CASCADE' } as const;
+
+/**
+ * Referencia opcional de contexto: si el padre desaparece, el hijo sobrevive con el
+ * campo en null. Exige que la clave foranea admita nulos.
+ * En pedidos de invitado `user_id` ya es nulo, asi que esto ademas deja preparada la
+ * anonimizacion que pide el derecho de supresion (Ley 29733).
+ */
+const CONTEXT = { onDelete: 'SET NULL', onUpdate: 'CASCADE' } as const;
+
 let registered = false;
 
 export const registerModels = (): Models => {
@@ -168,56 +205,63 @@ export const registerModels = (): Models => {
     foreignKey: 'userId',
     otherKey: 'roleId',
     as: 'roles',
+    ...OWNED,
   });
-  User.hasOne(UserPreference, { foreignKey: 'userId', as: 'foodPreferences' });
-  UserPreference.belongsTo(User, { foreignKey: 'userId', as: 'user' });
-  User.hasMany(AdminDraft, { foreignKey: 'ownerUserId', as: 'adminDrafts' });
-  AdminDraft.belongsTo(User, { foreignKey: 'ownerUserId', as: 'owner' });
-  User.hasMany(UxEvent, { foreignKey: 'userId', as: 'uxEvents' });
-  UxEvent.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+  User.hasOne(UserPreference, { foreignKey: 'userId', as: 'foodPreferences', ...OWNED });
+  UserPreference.belongsTo(User, { foreignKey: 'userId', as: 'user', ...OWNED });
+  // owner_user_id es obligatorio: un borrador sin dueno no tiene a quien mostrarse.
+  User.hasMany(AdminDraft, { foreignKey: 'ownerUserId', as: 'adminDrafts', ...OWNED });
+  AdminDraft.belongsTo(User, { foreignKey: 'ownerUserId', as: 'owner', ...OWNED });
+  User.hasMany(UxEvent, { foreignKey: 'userId', as: 'uxEvents', ...CONTEXT });
+  UxEvent.belongsTo(User, { foreignKey: 'userId', as: 'user', ...CONTEXT });
   Role.belongsToMany(User, {
     through: UserRole,
     foreignKey: 'roleId',
     otherKey: 'userId',
     as: 'users',
+    ...OWNED,
   });
 
   // La asignacion directa permite mostrar y auditar el alcance por cocina.
-  UserRole.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
-  Branch.hasMany(UserRole, { foreignKey: 'branchId', as: 'staffAssignments' });
+  UserRole.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch', ...CONTEXT });
+  Branch.hasMany(UserRole, { foreignKey: 'branchId', as: 'staffAssignments', ...CONTEXT });
 
   Role.belongsToMany(Permission, {
     through: RolePermission,
     foreignKey: 'roleId',
     otherKey: 'permissionId',
     as: 'permissions',
+    ...OWNED,
   });
   Permission.belongsToMany(Role, {
     through: RolePermission,
     foreignKey: 'permissionId',
     otherKey: 'roleId',
     as: 'roles',
+    ...OWNED,
   });
 
   // --- Direcciones del cliente ---
-  User.hasMany(Address, { foreignKey: 'userId', as: 'addresses' });
-  Address.belongsTo(User, { foreignKey: 'userId', as: 'user' });
-  Address.belongsTo(District, { foreignKey: 'districtId', as: 'district' });
+  User.hasMany(Address, { foreignKey: 'userId', as: 'addresses', ...OWNED });
+  Address.belongsTo(User, { foreignKey: 'userId', as: 'user', ...OWNED });
+  Address.belongsTo(District, { foreignKey: 'districtId', as: 'district', ...CONTEXT });
 
   // --- Geografia y cobertura ---
-  City.hasMany(District, { foreignKey: 'cityId', as: 'districts' });
-  District.belongsTo(City, { foreignKey: 'cityId', as: 'city' });
+  // El maestro territorial no se borra si algo cuelga de el: un distrito con
+  // direcciones o una zona con pedidos son historia que no se puede evaporar.
+  City.hasMany(District, { foreignKey: 'cityId', as: 'districts', ...PROTECTED });
+  District.belongsTo(City, { foreignKey: 'cityId', as: 'city', ...PROTECTED });
 
-  City.hasMany(CoverageZone, { foreignKey: 'cityId', as: 'zones' });
-  CoverageZone.belongsTo(City, { foreignKey: 'cityId', as: 'city' });
+  City.hasMany(CoverageZone, { foreignKey: 'cityId', as: 'zones', ...PROTECTED });
+  CoverageZone.belongsTo(City, { foreignKey: 'cityId', as: 'city', ...PROTECTED });
 
   // Un distrito puede resolverse a una zona sin geocodificar (MVP).
-  CoverageZone.hasMany(District, { foreignKey: 'coverageZoneId', as: 'districts' });
-  District.belongsTo(CoverageZone, { foreignKey: 'coverageZoneId', as: 'coverageZone' });
+  CoverageZone.hasMany(District, { foreignKey: 'coverageZoneId', as: 'districts', ...CONTEXT });
+  District.belongsTo(CoverageZone, { foreignKey: 'coverageZoneId', as: 'coverageZone', ...CONTEXT });
 
-  City.hasMany(Branch, { foreignKey: 'cityId', as: 'branches' });
-  Branch.belongsTo(City, { foreignKey: 'cityId', as: 'city' });
-  Branch.belongsTo(District, { foreignKey: 'districtId', as: 'district' });
+  City.hasMany(Branch, { foreignKey: 'cityId', as: 'branches', ...PROTECTED });
+  Branch.belongsTo(City, { foreignKey: 'cityId', as: 'city', ...PROTECTED });
+  Branch.belongsTo(District, { foreignKey: 'districtId', as: 'district', ...CONTEXT });
 
   // Una zona la pueden atender varias sucursales, con prioridad (RN-002).
   CoverageZone.belongsToMany(Branch, {
@@ -233,39 +277,44 @@ export const registerModels = (): Models => {
     as: 'zones',
   });
 
-  Branch.hasMany(BranchSchedule, { foreignKey: 'branchId', as: 'schedules' });
-  BranchSchedule.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
+  Branch.hasMany(BranchSchedule, { foreignKey: 'branchId', as: 'schedules', ...OWNED });
+  BranchSchedule.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch', ...OWNED });
 
-  Branch.hasMany(DeliverySlot, { foreignKey: 'branchId', as: 'slots' });
-  DeliverySlot.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
-  DeliverySlot.belongsTo(CoverageZone, { foreignKey: 'coverageZoneId', as: 'zone' });
+  // Una franja puede tener pedidos reservados: no desaparece con la sucursal.
+  Branch.hasMany(DeliverySlot, { foreignKey: 'branchId', as: 'slots', ...PROTECTED });
+  DeliverySlot.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch', ...PROTECTED });
+  DeliverySlot.belongsTo(CoverageZone, { foreignKey: 'coverageZoneId', as: 'zone', ...CONTEXT });
 
   // --- Catalogo (M04) ---
-  Category.hasMany(Category, { foreignKey: 'parentId', as: 'children' });
-  Category.belongsTo(Category, { foreignKey: 'parentId', as: 'parent' });
+  // Categorias y productos son `paranoid`: el borrado normal es en blando y esto solo
+  // actua ante un DELETE fisico, que es justo cuando conviene que proteja.
+  Category.hasMany(Category, { foreignKey: 'parentId', as: 'children', ...CONTEXT });
+  Category.belongsTo(Category, { foreignKey: 'parentId', as: 'parent', ...CONTEXT });
 
-  Category.hasMany(Product, { foreignKey: 'categoryId', as: 'products' });
-  Product.belongsTo(Category, { foreignKey: 'categoryId', as: 'category' });
+  Category.hasMany(Product, { foreignKey: 'categoryId', as: 'products', ...PROTECTED });
+  Product.belongsTo(Category, { foreignKey: 'categoryId', as: 'category', ...PROTECTED });
 
-  Product.hasMany(ProductVariant, { foreignKey: 'productId', as: 'variants' });
-  ProductVariant.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
+  Product.hasMany(ProductVariant, { foreignKey: 'productId', as: 'variants', ...OWNED });
+  ProductVariant.belongsTo(Product, { foreignKey: 'productId', as: 'product', ...OWNED });
 
   // La nutricion se guarda por variante (decision de Fase 0: carga manual).
-  ProductVariant.hasOne(ProductNutrition, { foreignKey: 'variantId', as: 'nutrition' });
-  ProductNutrition.belongsTo(ProductVariant, { foreignKey: 'variantId', as: 'variant' });
-  Product.hasMany(ProductNutrition, { foreignKey: 'productId', as: 'nutritionRows' });
+  ProductVariant.hasOne(ProductNutrition, { foreignKey: 'variantId', as: 'nutrition', ...OWNED });
+  ProductNutrition.belongsTo(ProductVariant, { foreignKey: 'variantId', as: 'variant', ...OWNED });
+  Product.hasMany(ProductNutrition, { foreignKey: 'productId', as: 'nutritionRows', ...OWNED });
 
   Product.belongsToMany(Allergen, {
     through: ProductAllergen,
     foreignKey: 'productId',
     otherKey: 'allergenId',
     as: 'allergens',
+    ...OWNED,
   });
   Allergen.belongsToMany(Product, {
     through: ProductAllergen,
     foreignKey: 'allergenId',
     otherKey: 'productId',
     as: 'products',
+    ...OWNED,
   });
 
   Product.belongsToMany(DietaryTag, {
@@ -273,21 +322,30 @@ export const registerModels = (): Models => {
     foreignKey: 'productId',
     otherKey: 'dietaryTagId',
     as: 'dietaryTags',
+    ...OWNED,
   });
   DietaryTag.belongsToMany(Product, {
     through: ProductDietaryTag,
     foreignKey: 'dietaryTagId',
     otherKey: 'productId',
     as: 'products',
+    ...OWNED,
   });
 
-  Product.hasMany(BranchProductAvailability, { foreignKey: 'productId', as: 'branchAvailability' });
-  BranchProductAvailability.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
-  BranchProductAvailability.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
+  Product.hasMany(BranchProductAvailability, {
+    foreignKey: 'productId',
+    as: 'branchAvailability',
+    ...OWNED,
+  });
+  BranchProductAvailability.belongsTo(Product, { foreignKey: 'productId', as: 'product', ...OWNED });
+  BranchProductAvailability.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch', ...OWNED });
 
   // --- Motor de personalizacion (M05) ---
-  CustomizationGroup.hasMany(CustomizationOption, { foreignKey: 'groupId', as: 'options' });
-  CustomizationOption.belongsTo(CustomizationGroup, { foreignKey: 'groupId', as: 'group' });
+  // Una opcion del constructor esta congelada en `order_item_customizations` de los
+  // pedidos que la usaron, asi que borrarla no rompe el historico; lo que se protege
+  // aqui es la configuracion viva.
+  CustomizationGroup.hasMany(CustomizationOption, { foreignKey: 'groupId', as: 'options', ...OWNED });
+  CustomizationOption.belongsTo(CustomizationGroup, { foreignKey: 'groupId', as: 'group', ...OWNED });
 
   // Un grupo se reutiliza en varios productos, con reglas ajustables por producto.
   Product.belongsToMany(CustomizationGroup, {
@@ -295,156 +353,210 @@ export const registerModels = (): Models => {
     foreignKey: 'productId',
     otherKey: 'groupId',
     as: 'customizationGroups',
+    ...OWNED,
   });
   CustomizationGroup.belongsToMany(Product, {
     through: ProductCustomizationGroup,
     foreignKey: 'groupId',
     otherKey: 'productId',
     as: 'products',
+    ...OWNED,
   });
-  ProductCustomizationGroup.belongsTo(CustomizationGroup, { foreignKey: 'groupId', as: 'group' });
-  ProductCustomizationGroup.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
+  ProductCustomizationGroup.belongsTo(CustomizationGroup, {
+    foreignKey: 'groupId',
+    as: 'group',
+    ...OWNED,
+  });
+  ProductCustomizationGroup.belongsTo(Product, { foreignKey: 'productId', as: 'product', ...OWNED });
 
   CustomizationOption.hasMany(OptionIncompatibility, {
     foreignKey: 'optionId',
     as: 'incompatibilities',
+    ...OWNED,
   });
-  OptionIncompatibility.belongsTo(CustomizationOption, { foreignKey: 'optionId', as: 'option' });
+  OptionIncompatibility.belongsTo(CustomizationOption, {
+    foreignKey: 'optionId',
+    as: 'option',
+    ...OWNED,
+  });
 
   CustomizationOption.hasMany(BranchOptionAvailability, {
     foreignKey: 'optionId',
     as: 'branchAvailability',
+    ...OWNED,
   });
-  BranchOptionAvailability.belongsTo(CustomizationOption, { foreignKey: 'optionId', as: 'option' });
-  BranchOptionAvailability.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
-
-  Product.hasMany(BuilderPreset, { foreignKey: 'productId', as: 'builderPresets' });
-  BuilderPreset.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
-  BuilderPreset.hasMany(BuilderPresetItem, {
-    foreignKey: 'presetId',
-    as: 'items',
-    onDelete: 'CASCADE',
+  BranchOptionAvailability.belongsTo(CustomizationOption, {
+    foreignKey: 'optionId',
+    as: 'option',
+    ...OWNED,
   });
-  BuilderPresetItem.belongsTo(BuilderPreset, { foreignKey: 'presetId', as: 'preset' });
-  BuilderPresetItem.belongsTo(CustomizationOption, { foreignKey: 'optionId', as: 'option' });
-  CustomizationOption.hasMany(BuilderPresetItem, { foreignKey: 'optionId', as: 'presetItems' });
+  BranchOptionAvailability.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch', ...OWNED });
 
-  User.hasMany(SavedBowl, { foreignKey: 'userId', as: 'savedBowls' });
-  SavedBowl.belongsTo(User, { foreignKey: 'userId', as: 'user' });
-  SavedBowl.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
-  SavedBowl.belongsTo(ProductVariant, { foreignKey: 'variantId', as: 'variant' });
+  Product.hasMany(BuilderPreset, { foreignKey: 'productId', as: 'builderPresets', ...OWNED });
+  BuilderPreset.belongsTo(Product, { foreignKey: 'productId', as: 'product', ...OWNED });
+  BuilderPreset.hasMany(BuilderPresetItem, { foreignKey: 'presetId', as: 'items', ...OWNED });
+  BuilderPresetItem.belongsTo(BuilderPreset, { foreignKey: 'presetId', as: 'preset', ...OWNED });
+  BuilderPresetItem.belongsTo(CustomizationOption, { foreignKey: 'optionId', as: 'option', ...OWNED });
+  CustomizationOption.hasMany(BuilderPresetItem, {
+    foreignKey: 'optionId',
+    as: 'presetItems',
+    ...OWNED,
+  });
 
-  MediaAsset.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
-  BuilderEvent.belongsTo(User, { foreignKey: 'userId', as: 'user' });
-  BuilderEvent.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
-  BuilderEvent.belongsTo(CustomizationGroup, { foreignKey: 'groupId', as: 'group' });
-  BuilderEvent.belongsTo(CustomizationOption, { foreignKey: 'optionId', as: 'option' });
-  BuilderEvent.belongsTo(BuilderPreset, { foreignKey: 'presetId', as: 'preset' });
+  // Bowls guardados: contenido del cliente, se va con el cliente.
+  User.hasMany(SavedBowl, { foreignKey: 'userId', as: 'savedBowls', ...OWNED });
+  SavedBowl.belongsTo(User, { foreignKey: 'userId', as: 'user', ...OWNED });
+  SavedBowl.belongsTo(Product, { foreignKey: 'productId', as: 'product', ...OWNED });
+  // variant_id es obligatorio: un bowl guardado sin su variante no se puede recomponer.
+  SavedBowl.belongsTo(ProductVariant, { foreignKey: 'variantId', as: 'variant', ...OWNED });
 
-  // --- Pedidos (M09) ---
-  User.hasMany(Order, { foreignKey: 'userId', as: 'orders' });
-  Order.belongsTo(User, { foreignKey: 'userId', as: 'user' });
-  Order.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
-  Order.belongsTo(CoverageZone, { foreignKey: 'coverageZoneId', as: 'zone' });
-  Order.belongsTo(DeliverySlot, { foreignKey: 'deliverySlotId', as: 'slot' });
+  MediaAsset.belongsTo(User, { foreignKey: 'createdBy', as: 'creator', ...CONTEXT });
 
-  Order.hasMany(OrderItem, { foreignKey: 'orderId', as: 'items' });
-  OrderItem.belongsTo(Order, { foreignKey: 'orderId', as: 'order' });
+  // Telemetria: sobrevive a lo que mide, o los embudos se falsean solos.
+  BuilderEvent.belongsTo(User, { foreignKey: 'userId', as: 'user', ...CONTEXT });
+  // product_id es obligatorio en el evento: sin producto no hay embudo que medir.
+  BuilderEvent.belongsTo(Product, { foreignKey: 'productId', as: 'product', ...OWNED });
+  BuilderEvent.belongsTo(CustomizationGroup, { foreignKey: 'groupId', as: 'group', ...CONTEXT });
+  BuilderEvent.belongsTo(CustomizationOption, { foreignKey: 'optionId', as: 'option', ...CONTEXT });
+  BuilderEvent.belongsTo(BuilderPreset, { foreignKey: 'presetId', as: 'preset', ...CONTEXT });
 
-  OrderItem.hasMany(OrderItemCustomization, { foreignKey: 'orderItemId', as: 'customizations' });
-  OrderItemCustomization.belongsTo(OrderItem, { foreignKey: 'orderItemId', as: 'item' });
+  /* --- Pedidos (M09) ---
+   * Un pedido es el registro contable de una venta. Nada de lo que cuelga de el se
+   * borra en cascada, y nada de lo que apunta a el se puede borrar mientras exista.
+   * `user_id` es la excepcion deliberada: es nulo en los pedidos de invitado, y
+   * dejarlo en CONTEXT permite anonimizar a un cliente sin destruir su facturacion,
+   * que es exactamente lo que exige el derecho de supresion. */
+  User.hasMany(Order, { foreignKey: 'userId', as: 'orders', ...CONTEXT });
+  Order.belongsTo(User, { foreignKey: 'userId', as: 'user', ...CONTEXT });
+  // Sin esto, borrar una sucursal borraba TODOS sus pedidos: branch_id es NOT NULL.
+  Order.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch', ...PROTECTED });
+  Order.belongsTo(CoverageZone, { foreignKey: 'coverageZoneId', as: 'zone', ...CONTEXT });
+  Order.belongsTo(DeliverySlot, { foreignKey: 'deliverySlotId', as: 'slot', ...CONTEXT });
 
-  Order.hasMany(OrderDiscount, { foreignKey: 'orderId', as: 'discounts' });
-  OrderDiscount.belongsTo(Order, { foreignKey: 'orderId', as: 'order' });
+  Order.hasMany(OrderItem, { foreignKey: 'orderId', as: 'items', ...PROTECTED });
+  OrderItem.belongsTo(Order, { foreignKey: 'orderId', as: 'order', ...PROTECTED });
 
-  Order.hasMany(OrderStatusHistory, { foreignKey: 'orderId', as: 'statusHistory' });
-  OrderStatusHistory.belongsTo(Order, { foreignKey: 'orderId', as: 'order' });
+  OrderItem.hasMany(OrderItemCustomization, {
+    foreignKey: 'orderItemId',
+    as: 'customizations',
+    ...PROTECTED,
+  });
+  OrderItemCustomization.belongsTo(OrderItem, {
+    foreignKey: 'orderItemId',
+    as: 'item',
+    ...PROTECTED,
+  });
+
+  Order.hasMany(OrderDiscount, { foreignKey: 'orderId', as: 'discounts', ...PROTECTED });
+  OrderDiscount.belongsTo(Order, { foreignKey: 'orderId', as: 'order', ...PROTECTED });
+
+  Order.hasMany(OrderStatusHistory, { foreignKey: 'orderId', as: 'statusHistory', ...PROTECTED });
+  OrderStatusHistory.belongsTo(Order, { foreignKey: 'orderId', as: 'order', ...PROTECTED });
 
   // --- Cupones (M07) ---
-  Coupon.hasMany(CouponRedemption, { foreignKey: 'couponId', as: 'redemptions' });
-  CouponRedemption.belongsTo(Coupon, { foreignKey: 'couponId', as: 'coupon' });
-  CouponRedemption.belongsTo(Order, { foreignKey: 'orderId', as: 'order' });
-  CouponRedemption.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+  // El canje es la prueba de que ese descuento se aplico: sobrevive al cupon.
+  Coupon.hasMany(CouponRedemption, { foreignKey: 'couponId', as: 'redemptions', ...PROTECTED });
+  CouponRedemption.belongsTo(Coupon, { foreignKey: 'couponId', as: 'coupon', ...PROTECTED });
+  CouponRedemption.belongsTo(Order, { foreignKey: 'orderId', as: 'order', ...PROTECTED });
+  CouponRedemption.belongsTo(User, { foreignKey: 'userId', as: 'user', ...CONTEXT });
 
   // --- Pagos (M08) ---
   // payments es polimorfica (ORDER o PLAN_PURCHASE): la relacion con el pedido se
   // resuelve en el servicio, no con una FK, para poder cubrir tambien la compra de planes.
-  Payment.hasMany(PaymentAttempt, { foreignKey: 'paymentId', as: 'attempts' });
-  PaymentAttempt.belongsTo(Payment, { foreignKey: 'paymentId', as: 'payment' });
+  Payment.hasMany(PaymentAttempt, { foreignKey: 'paymentId', as: 'attempts', ...PROTECTED });
+  PaymentAttempt.belongsTo(Payment, { foreignKey: 'paymentId', as: 'payment', ...PROTECTED });
 
-  Payment.hasMany(Refund, { foreignKey: 'paymentId', as: 'refunds' });
-  Refund.belongsTo(Payment, { foreignKey: 'paymentId', as: 'payment' });
+  // Un reembolso es dinero que salio de la cuenta: no se borra con nada.
+  Payment.hasMany(Refund, { foreignKey: 'paymentId', as: 'refunds', ...PROTECTED });
+  Refund.belongsTo(Payment, { foreignKey: 'paymentId', as: 'payment', ...PROTECTED });
 
   // --- Cocina (M10) ---
-  Order.hasOne(KitchenTicket, { foreignKey: 'orderId', as: 'kitchenTicket' });
-  KitchenTicket.belongsTo(Order, { foreignKey: 'orderId', as: 'order' });
-  KitchenTicket.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
+  // El ticket y sus eventos son la trazabilidad de la preparacion (tiempos reales).
+  Order.hasOne(KitchenTicket, { foreignKey: 'orderId', as: 'kitchenTicket', ...PROTECTED });
+  KitchenTicket.belongsTo(Order, { foreignKey: 'orderId', as: 'order', ...PROTECTED });
+  KitchenTicket.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch', ...PROTECTED });
 
-  KitchenTicket.hasMany(KitchenTicketEvent, { foreignKey: 'ticketId', as: 'events' });
-  KitchenTicketEvent.belongsTo(KitchenTicket, { foreignKey: 'ticketId', as: 'ticket' });
+  KitchenTicket.hasMany(KitchenTicketEvent, { foreignKey: 'ticketId', as: 'events', ...PROTECTED });
+  KitchenTicketEvent.belongsTo(KitchenTicket, { foreignKey: 'ticketId', as: 'ticket', ...PROTECTED });
 
   // --- Inventario (M10) ---
-  InventoryItem.hasMany(BranchInventory, { foreignKey: 'inventoryItemId', as: 'stocks' });
-  BranchInventory.belongsTo(InventoryItem, { foreignKey: 'inventoryItemId', as: 'item' });
-  BranchInventory.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
+  InventoryItem.hasMany(BranchInventory, { foreignKey: 'inventoryItemId', as: 'stocks', ...OWNED });
+  BranchInventory.belongsTo(InventoryItem, { foreignKey: 'inventoryItemId', as: 'item', ...OWNED });
+  BranchInventory.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch', ...OWNED });
 
-  InventoryItem.hasMany(InventoryMovement, { foreignKey: 'inventoryItemId', as: 'movements' });
-  InventoryMovement.belongsTo(InventoryItem, { foreignKey: 'inventoryItemId', as: 'item' });
-  InventoryMovement.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
-  InventoryMovement.belongsTo(Order, { foreignKey: 'orderId', as: 'order' });
+  // Los movimientos son el libro del stock: sin ellos no se puede auditar una merma.
+  InventoryItem.hasMany(InventoryMovement, {
+    foreignKey: 'inventoryItemId',
+    as: 'movements',
+    ...PROTECTED,
+  });
+  InventoryMovement.belongsTo(InventoryItem, {
+    foreignKey: 'inventoryItemId',
+    as: 'item',
+    ...PROTECTED,
+  });
+  InventoryMovement.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch', ...PROTECTED });
+  InventoryMovement.belongsTo(Order, { foreignKey: 'orderId', as: 'order', ...CONTEXT });
 
   // Receta de una variante fija -> insumos
-  ProductVariant.hasOne(Recipe, { foreignKey: 'variantId', as: 'recipe' });
-  Recipe.belongsTo(ProductVariant, { foreignKey: 'variantId', as: 'variant' });
-  Recipe.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
+  ProductVariant.hasOne(Recipe, { foreignKey: 'variantId', as: 'recipe', ...OWNED });
+  Recipe.belongsTo(ProductVariant, { foreignKey: 'variantId', as: 'variant', ...OWNED });
+  Recipe.belongsTo(Product, { foreignKey: 'productId', as: 'product', ...OWNED });
 
-  Recipe.hasMany(RecipeItem, { foreignKey: 'recipeId', as: 'items' });
-  RecipeItem.belongsTo(Recipe, { foreignKey: 'recipeId', as: 'recipe' });
-  RecipeItem.belongsTo(InventoryItem, { foreignKey: 'inventoryItemId', as: 'item' });
+  Recipe.hasMany(RecipeItem, { foreignKey: 'recipeId', as: 'items', ...OWNED });
+  RecipeItem.belongsTo(Recipe, { foreignKey: 'recipeId', as: 'recipe', ...OWNED });
+  RecipeItem.belongsTo(InventoryItem, { foreignKey: 'inventoryItemId', as: 'item', ...PROTECTED });
 
   // Cada opcion del constructor puede descontar un insumo
   CustomizationOption.belongsTo(InventoryItem, {
     foreignKey: 'inventoryItemId',
     as: 'inventoryItem',
+    ...CONTEXT,
   });
 
   // --- Delivery (M11) ---
-  Order.hasOne(Delivery, { foreignKey: 'orderId', as: 'delivery' });
-  Delivery.belongsTo(Order, { foreignKey: 'orderId', as: 'order' });
-  Delivery.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
-  Delivery.belongsTo(Driver, { foreignKey: 'driverId', as: 'driver' });
+  Order.hasOne(Delivery, { foreignKey: 'orderId', as: 'delivery', ...PROTECTED });
+  Delivery.belongsTo(Order, { foreignKey: 'orderId', as: 'order', ...PROTECTED });
+  Delivery.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch', ...PROTECTED });
+  // Dar de baja a un repartidor no puede borrar los repartos que hizo.
+  Delivery.belongsTo(Driver, { foreignKey: 'driverId', as: 'driver', ...CONTEXT });
 
-  Delivery.hasMany(DeliveryEvent, { foreignKey: 'deliveryId', as: 'events' });
-  DeliveryEvent.belongsTo(Delivery, { foreignKey: 'deliveryId', as: 'delivery' });
+  Delivery.hasMany(DeliveryEvent, { foreignKey: 'deliveryId', as: 'events', ...PROTECTED });
+  DeliveryEvent.belongsTo(Delivery, { foreignKey: 'deliveryId', as: 'delivery', ...PROTECTED });
 
-  Driver.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' });
-  Driver.belongsTo(User, { foreignKey: 'userId', as: 'user' });
-  Driver.hasMany(Delivery, { foreignKey: 'driverId', as: 'deliveries' });
+  Driver.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch', ...PROTECTED });
+  Driver.belongsTo(User, { foreignKey: 'userId', as: 'user', ...CONTEXT });
+  Driver.hasMany(Delivery, { foreignKey: 'driverId', as: 'deliveries', ...CONTEXT });
 
   // --- Gobierno (M13) ---
-  AuditLog.belongsTo(User, { foreignKey: 'actorId', as: 'actor' });
+  // La auditoria sobrevive al usuario auditado: si no, basta con borrar la cuenta
+  // para borrar el rastro de lo que hizo.
+  AuditLog.belongsTo(User, { foreignKey: 'actorId', as: 'actor', ...CONTEXT });
 
   // --- Notificaciones (M12) ---
-  User.hasMany(Notification, { foreignKey: 'userId', as: 'notifications' });
-  Notification.belongsTo(User, { foreignKey: 'userId', as: 'user' });
-  Notification.belongsTo(Order, { foreignKey: 'orderId', as: 'order' });
+  User.hasMany(Notification, { foreignKey: 'userId', as: 'notifications', ...OWNED });
+  Notification.belongsTo(User, { foreignKey: 'userId', as: 'user', ...OWNED });
+  Notification.belongsTo(Order, { foreignKey: 'orderId', as: 'order', ...CONTEXT });
 
   // --- Planes y billetera (M06) ---
-  Plan.hasMany(PlanBenefit, { foreignKey: 'planId', as: 'benefits' });
-  PlanBenefit.belongsTo(Plan, { foreignKey: 'planId', as: 'plan' });
-  Plan.belongsTo(City, { foreignKey: 'cityId', as: 'city' });
+  Plan.hasMany(PlanBenefit, { foreignKey: 'planId', as: 'benefits', ...OWNED });
+  PlanBenefit.belongsTo(Plan, { foreignKey: 'planId', as: 'plan', ...OWNED });
+  Plan.belongsTo(City, { foreignKey: 'cityId', as: 'city', ...CONTEXT });
 
-  User.hasMany(UserPlan, { foreignKey: 'userId', as: 'plans' });
-  UserPlan.belongsTo(User, { foreignKey: 'userId', as: 'user' });
-  UserPlan.belongsTo(Plan, { foreignKey: 'planId', as: 'plan' });
+  // Una activacion es una compra: el plan no se puede borrar mientras alguien lo tenga.
+  User.hasMany(UserPlan, { foreignKey: 'userId', as: 'plans', ...PROTECTED });
+  UserPlan.belongsTo(User, { foreignKey: 'userId', as: 'user', ...PROTECTED });
+  UserPlan.belongsTo(Plan, { foreignKey: 'planId', as: 'plan', ...PROTECTED });
 
-  User.hasOne(Wallet, { foreignKey: 'userId', as: 'wallet' });
-  Wallet.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+  User.hasOne(Wallet, { foreignKey: 'userId', as: 'wallet', ...PROTECTED });
+  Wallet.belongsTo(User, { foreignKey: 'userId', as: 'user', ...PROTECTED });
 
-  Wallet.hasMany(WalletTransaction, { foreignKey: 'walletId', as: 'transactions' });
-  WalletTransaction.belongsTo(Wallet, { foreignKey: 'walletId', as: 'wallet' });
-  WalletTransaction.belongsTo(UserPlan, { foreignKey: 'userPlanId', as: 'userPlan' });
-  WalletTransaction.belongsTo(Order, { foreignKey: 'orderId', as: 'order' });
+  // RN-013: el libro mayor del saldo. Es dinero prepagado del cliente; borrarlo en
+  // cascada con la billetera dejaba el saldo sin ninguna justificacion documental.
+  Wallet.hasMany(WalletTransaction, { foreignKey: 'walletId', as: 'transactions', ...PROTECTED });
+  WalletTransaction.belongsTo(Wallet, { foreignKey: 'walletId', as: 'wallet', ...PROTECTED });
+  WalletTransaction.belongsTo(UserPlan, { foreignKey: 'userPlanId', as: 'userPlan', ...CONTEXT });
+  WalletTransaction.belongsTo(Order, { foreignKey: 'orderId', as: 'order', ...CONTEXT });
 
   registered = true;
   return models;

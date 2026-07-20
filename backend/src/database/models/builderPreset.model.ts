@@ -49,7 +49,7 @@ BuilderPreset.init(
     modelName: 'BuilderPreset',
     tableName: 'builder_presets',
     indexes: [
-      { unique: true, fields: ['product_id', 'code'] },
+      { name: 'uq_builder_presets_product_code', unique: true, fields: ['product_id', 'code'] },
       { fields: ['product_id', 'is_active', 'sort_order'] },
     ],
   },

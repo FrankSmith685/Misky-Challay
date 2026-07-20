@@ -25,10 +25,10 @@ CREATE TABLE `addresses` (
   `updated_at` datetime DEFAULT NULL,
   `deleted_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
-  KEY `addresses_user_id` (`user_id`),
   KEY `district_id` (`district_id`),
-  CONSTRAINT `addresses_ibfk_157` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `addresses_ibfk_158` FOREIGN KEY (`district_id`) REFERENCES `districts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+  KEY `addresses_user_id` (`user_id`),
+  CONSTRAINT `addresses_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `addresses_ibfk_2` FOREIGN KEY (`district_id`) REFERENCES `districts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -46,8 +46,8 @@ CREATE TABLE `admin_drafts` (
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_admin_drafts_key` (`key`),
-  KEY `idx_admin_drafts_schedule` (`status`,`publish_at`),
   KEY `owner_user_id` (`owner_user_id`),
+  KEY `idx_admin_drafts_schedule` (`status`,`publish_at`),
   CONSTRAINT `admin_drafts_ibfk_1` FOREIGN KEY (`owner_user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -98,8 +98,8 @@ CREATE TABLE `branch_inventory` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_branch_inventory` (`branch_id`,`inventory_item_id`),
   KEY `inventory_item_id` (`inventory_item_id`),
-  CONSTRAINT `branch_inventory_ibfk_109` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`id`) ON UPDATE CASCADE,
-  CONSTRAINT `branch_inventory_ibfk_110` FOREIGN KEY (`inventory_item_id`) REFERENCES `inventory_items` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `branch_inventory_ibfk_1` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `branch_inventory_ibfk_2` FOREIGN KEY (`inventory_item_id`) REFERENCES `inventory_items` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -110,15 +110,15 @@ CREATE TABLE `branch_option_availability` (
   `option_id` bigint unsigned NOT NULL,
   `is_available` tinyint(1) NOT NULL DEFAULT '1',
   `price_override` decimal(12,2) DEFAULT NULL,
-  `created_at` datetime DEFAULT NULL,
-  `updated_at` datetime DEFAULT NULL,
   `available_from` datetime DEFAULT NULL,
   `available_until` datetime DEFAULT NULL,
+  `created_at` datetime DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `branch_option_availability_branch_id_option_id` (`branch_id`,`option_id`),
+  UNIQUE KEY `uq_branch_option_availability` (`branch_id`,`option_id`),
   KEY `option_id` (`option_id`),
-  CONSTRAINT `branch_option_availability_ibfk_145` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`id`) ON UPDATE CASCADE,
-  CONSTRAINT `branch_option_availability_ibfk_146` FOREIGN KEY (`option_id`) REFERENCES `customization_options` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `branch_option_availability_ibfk_1` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `branch_option_availability_ibfk_2` FOREIGN KEY (`option_id`) REFERENCES `customization_options` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -132,10 +132,10 @@ CREATE TABLE `branch_product_availability` (
   `created_at` datetime DEFAULT NULL,
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `branch_product_availability_branch_id_product_id` (`branch_id`,`product_id`),
+  UNIQUE KEY `uq_branch_product_availability` (`branch_id`,`product_id`),
   KEY `product_id` (`product_id`),
-  CONSTRAINT `branch_product_availability_ibfk_151` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`id`) ON UPDATE CASCADE,
-  CONSTRAINT `branch_product_availability_ibfk_152` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `branch_product_availability_ibfk_1` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `branch_product_availability_ibfk_2` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -178,8 +178,8 @@ CREATE TABLE `branches` (
   UNIQUE KEY `uq_branches_slug` (`slug`),
   KEY `city_id` (`city_id`),
   KEY `district_id` (`district_id`),
-  CONSTRAINT `branches_ibfk_163` FOREIGN KEY (`city_id`) REFERENCES `cities` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `branches_ibfk_164` FOREIGN KEY (`district_id`) REFERENCES `districts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+  CONSTRAINT `branches_ibfk_1` FOREIGN KEY (`city_id`) REFERENCES `cities` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `branches_ibfk_2` FOREIGN KEY (`district_id`) REFERENCES `districts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -197,18 +197,18 @@ CREATE TABLE `builder_events` (
   `created_at` datetime DEFAULT NULL,
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
+  KEY `user_id` (`user_id`),
+  KEY `group_id` (`group_id`),
+  KEY `preset_id` (`preset_id`),
   KEY `builder_events_product_id_created_at` (`product_id`,`created_at`),
   KEY `builder_events_event_type_created_at` (`event_type`,`created_at`),
   KEY `builder_events_session_id` (`session_id`),
   KEY `builder_events_option_id` (`option_id`),
-  KEY `user_id` (`user_id`),
-  KEY `group_id` (`group_id`),
-  KEY `preset_id` (`preset_id`),
-  CONSTRAINT `builder_events_ibfk_281` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT `builder_events_ibfk_282` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON UPDATE CASCADE,
-  CONSTRAINT `builder_events_ibfk_283` FOREIGN KEY (`group_id`) REFERENCES `customization_groups` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT `builder_events_ibfk_284` FOREIGN KEY (`option_id`) REFERENCES `customization_options` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT `builder_events_ibfk_285` FOREIGN KEY (`preset_id`) REFERENCES `builder_presets` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+  CONSTRAINT `builder_events_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `builder_events_ibfk_2` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `builder_events_ibfk_3` FOREIGN KEY (`group_id`) REFERENCES `customization_groups` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `builder_events_ibfk_4` FOREIGN KEY (`option_id`) REFERENCES `customization_options` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `builder_events_ibfk_5` FOREIGN KEY (`preset_id`) REFERENCES `builder_presets` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -222,10 +222,10 @@ CREATE TABLE `builder_preset_items` (
   `created_at` datetime DEFAULT NULL,
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `builder_preset_items_preset_id_option_id` (`preset_id`,`option_id`),
+  UNIQUE KEY `uq_builder_preset_items_preset_option` (`preset_id`,`option_id`),
   KEY `option_id` (`option_id`),
-  CONSTRAINT `builder_preset_items_ibfk_131` FOREIGN KEY (`preset_id`) REFERENCES `builder_presets` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `builder_preset_items_ibfk_132` FOREIGN KEY (`option_id`) REFERENCES `customization_options` (`id`) ON UPDATE CASCADE
+  CONSTRAINT `builder_preset_items_ibfk_1` FOREIGN KEY (`preset_id`) REFERENCES `builder_presets` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `builder_preset_items_ibfk_2` FOREIGN KEY (`option_id`) REFERENCES `customization_options` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -244,7 +244,7 @@ CREATE TABLE `builder_presets` (
   `created_at` datetime DEFAULT NULL,
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `builder_presets_product_id_code` (`product_id`,`code`),
+  UNIQUE KEY `uq_builder_presets_product_code` (`product_id`,`code`),
   KEY `builder_presets_product_id_is_active_sort_order` (`product_id`,`is_active`,`sort_order`),
   CONSTRAINT `builder_presets_ibfk_1` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -298,12 +298,12 @@ CREATE TABLE `coupon_redemptions` (
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_coupon_redemptions_order` (`coupon_id`,`order_id`),
-  KEY `idx_coupon_redemptions_user` (`coupon_id`,`user_id`),
   KEY `user_id` (`user_id`),
   KEY `order_id` (`order_id`),
-  CONSTRAINT `coupon_redemptions_ibfk_166` FOREIGN KEY (`coupon_id`) REFERENCES `coupons` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `coupon_redemptions_ibfk_167` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT `coupon_redemptions_ibfk_168` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON UPDATE CASCADE
+  KEY `idx_coupon_redemptions_user` (`coupon_id`,`user_id`),
+  CONSTRAINT `coupon_redemptions_ibfk_1` FOREIGN KEY (`coupon_id`) REFERENCES `coupons` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `coupon_redemptions_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `coupon_redemptions_ibfk_3` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -344,7 +344,7 @@ CREATE TABLE `coverage_zones` (
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `city_id` (`city_id`),
-  CONSTRAINT `coverage_zones_ibfk_1` FOREIGN KEY (`city_id`) REFERENCES `cities` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `coverage_zones_ibfk_1` FOREIGN KEY (`city_id`) REFERENCES `cities` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -375,6 +375,11 @@ CREATE TABLE `customization_options` (
   `name` varchar(80) COLLATE utf8mb4_unicode_ci NOT NULL,
   `description` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `image_url` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `image_alt` varchar(180) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `image_position` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '50% 50%',
+  `dietary_tags` json NOT NULL,
+  `allergens` json NOT NULL,
+  `spice_level` tinyint unsigned NOT NULL DEFAULT '0',
   `price_delta` decimal(12,2) NOT NULL DEFAULT '0.00',
   `charge_always` tinyint(1) NOT NULL DEFAULT '0',
   `calories` decimal(8,2) NOT NULL DEFAULT '0.00',
@@ -388,17 +393,12 @@ CREATE TABLE `customization_options` (
   `sort_order` int NOT NULL DEFAULT '0',
   `created_at` datetime DEFAULT NULL,
   `updated_at` datetime DEFAULT NULL,
-  `image_alt` varchar(180) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `image_position` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '50% 50%',
-  `dietary_tags` json NOT NULL,
-  `allergens` json NOT NULL,
-  `spice_level` tinyint unsigned NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`),
+  KEY `inventory_item_id` (`inventory_item_id`),
   KEY `customization_options_group_id` (`group_id`),
   KEY `customization_options_status` (`status`),
-  KEY `inventory_item_id` (`inventory_item_id`),
-  CONSTRAINT `customization_options_ibfk_147` FOREIGN KEY (`group_id`) REFERENCES `customization_groups` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `customization_options_ibfk_148` FOREIGN KEY (`inventory_item_id`) REFERENCES `inventory_items` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+  CONSTRAINT `customization_options_ibfk_1` FOREIGN KEY (`group_id`) REFERENCES `customization_groups` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `customization_options_ibfk_2` FOREIGN KEY (`inventory_item_id`) REFERENCES `inventory_items` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -423,11 +423,11 @@ CREATE TABLE `deliveries` (
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_deliveries_order` (`order_id`),
-  KEY `idx_deliveries_branch_status` (`branch_id`,`status`),
   KEY `driver_id` (`driver_id`),
-  CONSTRAINT `deliveries_ibfk_160` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `deliveries_ibfk_161` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`id`) ON UPDATE CASCADE,
-  CONSTRAINT `deliveries_ibfk_162` FOREIGN KEY (`driver_id`) REFERENCES `drivers` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+  KEY `idx_deliveries_branch_status` (`branch_id`,`status`),
+  CONSTRAINT `deliveries_ibfk_1` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `deliveries_ibfk_2` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `deliveries_ibfk_3` FOREIGN KEY (`driver_id`) REFERENCES `drivers` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -445,7 +445,7 @@ CREATE TABLE `delivery_events` (
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_delivery_events_delivery` (`delivery_id`),
-  CONSTRAINT `delivery_events_ibfk_1` FOREIGN KEY (`delivery_id`) REFERENCES `deliveries` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `delivery_events_ibfk_1` FOREIGN KEY (`delivery_id`) REFERENCES `deliveries` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -464,10 +464,10 @@ CREATE TABLE `delivery_slots` (
   `created_at` datetime DEFAULT NULL,
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
-  KEY `delivery_slots_branch_id_starts_at` (`branch_id`,`starts_at`),
   KEY `coverage_zone_id` (`coverage_zone_id`),
-  CONSTRAINT `delivery_slots_ibfk_153` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `delivery_slots_ibfk_154` FOREIGN KEY (`coverage_zone_id`) REFERENCES `coverage_zones` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+  KEY `delivery_slots_branch_id_starts_at` (`branch_id`,`starts_at`),
+  CONSTRAINT `delivery_slots_ibfk_1` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `delivery_slots_ibfk_2` FOREIGN KEY (`coverage_zone_id`) REFERENCES `coverage_zones` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -496,11 +496,11 @@ CREATE TABLE `districts` (
   `created_at` datetime DEFAULT NULL,
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `districts_city_id_slug` (`city_id`,`slug`),
+  UNIQUE KEY `uq_districts_city_slug` (`city_id`,`slug`),
   UNIQUE KEY `uq_districts_ubigeo_code` (`ubigeo_code`),
   KEY `coverage_zone_id` (`coverage_zone_id`),
-  CONSTRAINT `districts_ibfk_165` FOREIGN KEY (`city_id`) REFERENCES `cities` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `districts_ibfk_166` FOREIGN KEY (`coverage_zone_id`) REFERENCES `coverage_zones` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+  CONSTRAINT `districts_ibfk_1` FOREIGN KEY (`city_id`) REFERENCES `cities` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `districts_ibfk_2` FOREIGN KEY (`coverage_zone_id`) REFERENCES `coverage_zones` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -517,10 +517,10 @@ CREATE TABLE `drivers` (
   `created_at` datetime DEFAULT NULL,
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
-  KEY `idx_drivers_branch_status` (`branch_id`,`status`),
   KEY `user_id` (`user_id`),
-  CONSTRAINT `drivers_ibfk_107` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT `drivers_ibfk_108` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`id`) ON UPDATE CASCADE
+  KEY `idx_drivers_branch_status` (`branch_id`,`status`),
+  CONSTRAINT `drivers_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `drivers_ibfk_2` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -555,12 +555,12 @@ CREATE TABLE `inventory_movements` (
   `created_at` datetime DEFAULT NULL,
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
+  KEY `inventory_item_id` (`inventory_item_id`),
   KEY `idx_inv_mov_branch_item` (`branch_id`,`inventory_item_id`),
   KEY `idx_inv_mov_order` (`order_id`),
-  KEY `inventory_item_id` (`inventory_item_id`),
-  CONSTRAINT `inventory_movements_ibfk_160` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`id`) ON UPDATE CASCADE,
-  CONSTRAINT `inventory_movements_ibfk_161` FOREIGN KEY (`inventory_item_id`) REFERENCES `inventory_items` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `inventory_movements_ibfk_162` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+  CONSTRAINT `inventory_movements_ibfk_1` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `inventory_movements_ibfk_2` FOREIGN KEY (`inventory_item_id`) REFERENCES `inventory_items` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `inventory_movements_ibfk_3` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -576,7 +576,7 @@ CREATE TABLE `kitchen_ticket_events` (
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_kte_ticket` (`ticket_id`),
-  CONSTRAINT `kitchen_ticket_events_ibfk_1` FOREIGN KEY (`ticket_id`) REFERENCES `kitchen_tickets` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `kitchen_ticket_events_ibfk_1` FOREIGN KEY (`ticket_id`) REFERENCES `kitchen_tickets` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -599,8 +599,8 @@ CREATE TABLE `kitchen_tickets` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_kitchen_tickets_order` (`order_id`),
   KEY `idx_kitchen_tickets_board` (`branch_id`,`status`,`target_at`),
-  CONSTRAINT `kitchen_tickets_ibfk_111` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `kitchen_tickets_ibfk_112` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`id`) ON UPDATE CASCADE
+  CONSTRAINT `kitchen_tickets_ibfk_1` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `kitchen_tickets_ibfk_2` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -619,10 +619,10 @@ CREATE TABLE `media_assets` (
   `updated_at` datetime DEFAULT NULL,
   `deleted_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `media_assets_filename` (`filename`),
+  UNIQUE KEY `uq_media_assets_filename` (`filename`),
+  KEY `created_by` (`created_by`),
   KEY `media_assets_category` (`category`),
   KEY `media_assets_created_at` (`created_at`),
-  KEY `created_by` (`created_by`),
   CONSTRAINT `media_assets_ibfk_1` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -648,8 +648,8 @@ CREATE TABLE `notifications` (
   UNIQUE KEY `uq_notifications_idempotency` (`idempotency_key`),
   KEY `idx_notifications_user` (`user_id`),
   KEY `idx_notifications_order` (`order_id`),
-  CONSTRAINT `notifications_ibfk_105` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT `notifications_ibfk_106` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+  CONSTRAINT `notifications_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `notifications_ibfk_2` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -662,7 +662,7 @@ CREATE TABLE `option_incompatibilities` (
   `created_at` datetime DEFAULT NULL,
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `option_incompatibilities_option_id_incompatible_option_id` (`option_id`,`incompatible_option_id`),
+  UNIQUE KEY `uq_option_incompatibilities_pair` (`option_id`,`incompatible_option_id`),
   CONSTRAINT `option_incompatibilities_ibfk_1` FOREIGN KEY (`option_id`) REFERENCES `customization_options` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -680,7 +680,7 @@ CREATE TABLE `order_discounts` (
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_order_discounts_order` (`order_id`),
-  CONSTRAINT `order_discounts_ibfk_1` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `order_discounts_ibfk_1` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -700,7 +700,7 @@ CREATE TABLE `order_item_customizations` (
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_oic_item` (`order_item_id`),
-  CONSTRAINT `order_item_customizations_ibfk_1` FOREIGN KEY (`order_item_id`) REFERENCES `order_items` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `order_item_customizations_ibfk_1` FOREIGN KEY (`order_item_id`) REFERENCES `order_items` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -725,7 +725,7 @@ CREATE TABLE `order_items` (
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_order_items_order` (`order_id`),
-  CONSTRAINT `order_items_ibfk_1` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `order_items_ibfk_1` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -742,7 +742,7 @@ CREATE TABLE `order_status_history` (
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_osh_order` (`order_id`),
-  CONSTRAINT `order_status_history_ibfk_1` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `order_status_history_ibfk_1` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -777,20 +777,21 @@ CREATE TABLE `orders` (
   `cancelled_at` datetime DEFAULT NULL,
   `created_at` datetime DEFAULT NULL,
   `updated_at` datetime DEFAULT NULL,
+  `deleted_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_orders_number` (`order_number`),
   UNIQUE KEY `uq_orders_idempotency` (`idempotency_key`),
+  KEY `coverage_zone_id` (`coverage_zone_id`),
+  KEY `delivery_slot_id` (`delivery_slot_id`),
   KEY `idx_orders_user` (`user_id`),
   KEY `idx_orders_branch_status` (`branch_id`,`status`),
   KEY `idx_orders_scheduled` (`scheduled_at`),
   KEY `idx_orders_status_placed` (`status`,`placed_at`),
   KEY `idx_orders_branch_placed` (`branch_id`,`placed_at`),
-  KEY `coverage_zone_id` (`coverage_zone_id`),
-  KEY `delivery_slot_id` (`delivery_slot_id`),
-  CONSTRAINT `orders_ibfk_249` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT `orders_ibfk_250` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`id`) ON UPDATE CASCADE,
-  CONSTRAINT `orders_ibfk_251` FOREIGN KEY (`coverage_zone_id`) REFERENCES `coverage_zones` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT `orders_ibfk_252` FOREIGN KEY (`delivery_slot_id`) REFERENCES `delivery_slots` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+  CONSTRAINT `orders_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `orders_ibfk_2` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `orders_ibfk_3` FOREIGN KEY (`coverage_zone_id`) REFERENCES `coverage_zones` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `orders_ibfk_4` FOREIGN KEY (`delivery_slot_id`) REFERENCES `delivery_slots` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -807,7 +808,7 @@ CREATE TABLE `payment_attempts` (
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_payment_attempts_payment` (`payment_id`),
-  CONSTRAINT `payment_attempts_ibfk_1` FOREIGN KEY (`payment_id`) REFERENCES `payments` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `payment_attempts_ibfk_1` FOREIGN KEY (`payment_id`) REFERENCES `payments` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -904,10 +905,10 @@ CREATE TABLE `product_allergens` (
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `product_allergens_allergenId_productId_unique` (`product_id`,`allergen_id`),
-  UNIQUE KEY `product_allergens_product_id_allergen_id` (`product_id`,`allergen_id`),
+  UNIQUE KEY `uq_product_allergens_product_allergen` (`product_id`,`allergen_id`),
   KEY `allergen_id` (`allergen_id`),
-  CONSTRAINT `product_allergens_ibfk_151` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `product_allergens_ibfk_152` FOREIGN KEY (`allergen_id`) REFERENCES `allergens` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `product_allergens_ibfk_1` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `product_allergens_ibfk_2` FOREIGN KEY (`allergen_id`) REFERENCES `allergens` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -926,10 +927,10 @@ CREATE TABLE `product_customization_groups` (
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `product_customization_groups_groupId_productId_unique` (`product_id`,`group_id`),
-  UNIQUE KEY `product_customization_groups_product_id_group_id_variant_id` (`product_id`,`group_id`,`variant_id`),
+  UNIQUE KEY `uq_product_customization_groups` (`product_id`,`group_id`,`variant_id`),
   KEY `group_id` (`group_id`),
-  CONSTRAINT `product_customization_groups_ibfk_145` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `product_customization_groups_ibfk_146` FOREIGN KEY (`group_id`) REFERENCES `customization_groups` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `product_customization_groups_ibfk_1` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `product_customization_groups_ibfk_2` FOREIGN KEY (`group_id`) REFERENCES `customization_groups` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -942,10 +943,10 @@ CREATE TABLE `product_dietary_tags` (
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `product_dietary_tags_dietaryTagId_productId_unique` (`product_id`,`dietary_tag_id`),
-  UNIQUE KEY `product_dietary_tags_product_id_dietary_tag_id` (`product_id`,`dietary_tag_id`),
+  UNIQUE KEY `uq_product_dietary_tags_product_tag` (`product_id`,`dietary_tag_id`),
   KEY `dietary_tag_id` (`dietary_tag_id`),
-  CONSTRAINT `product_dietary_tags_ibfk_151` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `product_dietary_tags_ibfk_152` FOREIGN KEY (`dietary_tag_id`) REFERENCES `dietary_tags` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `product_dietary_tags_ibfk_1` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `product_dietary_tags_ibfk_2` FOREIGN KEY (`dietary_tag_id`) REFERENCES `dietary_tags` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -963,10 +964,10 @@ CREATE TABLE `product_nutrition` (
   `created_at` datetime DEFAULT NULL,
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `product_nutrition_variant_id` (`variant_id`),
+  UNIQUE KEY `uq_product_nutrition_variant` (`variant_id`),
   KEY `product_nutrition_product_id` (`product_id`),
-  CONSTRAINT `product_nutrition_ibfk_151` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `product_nutrition_ibfk_152` FOREIGN KEY (`variant_id`) REFERENCES `product_variants` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+  CONSTRAINT `product_nutrition_ibfk_1` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `product_nutrition_ibfk_2` FOREIGN KEY (`variant_id`) REFERENCES `product_variants` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -1001,19 +1002,19 @@ CREATE TABLE `products` (
   `slug` varchar(120) COLLATE utf8mb4_unicode_ci NOT NULL,
   `description` text COLLATE utf8mb4_unicode_ci,
   `image_url` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `image_alt` varchar(180) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `image_position` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '50% 50%',
   `status` enum('DRAFT','ACTIVE','INACTIVE') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'ACTIVE',
   `is_featured` tinyint(1) NOT NULL DEFAULT '0',
   `sort_order` int NOT NULL DEFAULT '0',
   `created_at` datetime DEFAULT NULL,
   `updated_at` datetime DEFAULT NULL,
   `deleted_at` datetime DEFAULT NULL,
-  `image_alt` varchar(180) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `image_position` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '50% 50%',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_products_slug` (`slug`),
   KEY `idx_products_category` (`category_id`),
   KEY `idx_products_status` (`status`),
-  CONSTRAINT `products_ibfk_1` FOREIGN KEY (`category_id`) REFERENCES `categories` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `products_ibfk_1` FOREIGN KEY (`category_id`) REFERENCES `categories` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -1029,8 +1030,8 @@ CREATE TABLE `recipe_items` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_recipe_items` (`recipe_id`,`inventory_item_id`),
   KEY `inventory_item_id` (`inventory_item_id`),
-  CONSTRAINT `recipe_items_ibfk_107` FOREIGN KEY (`recipe_id`) REFERENCES `recipes` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `recipe_items_ibfk_108` FOREIGN KEY (`inventory_item_id`) REFERENCES `inventory_items` (`id`) ON UPDATE CASCADE
+  CONSTRAINT `recipe_items_ibfk_1` FOREIGN KEY (`recipe_id`) REFERENCES `recipes` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `recipe_items_ibfk_2` FOREIGN KEY (`inventory_item_id`) REFERENCES `inventory_items` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -1046,8 +1047,8 @@ CREATE TABLE `recipes` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_recipes_variant` (`variant_id`),
   KEY `product_id` (`product_id`),
-  CONSTRAINT `recipes_ibfk_107` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON UPDATE CASCADE,
-  CONSTRAINT `recipes_ibfk_108` FOREIGN KEY (`variant_id`) REFERENCES `product_variants` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `recipes_ibfk_1` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `recipes_ibfk_2` FOREIGN KEY (`variant_id`) REFERENCES `product_variants` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -1064,7 +1065,7 @@ CREATE TABLE `refunds` (
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_refunds_payment` (`payment_id`),
-  CONSTRAINT `refunds_ibfk_1` FOREIGN KEY (`payment_id`) REFERENCES `payments` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `refunds_ibfk_1` FOREIGN KEY (`payment_id`) REFERENCES `payments` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -1077,10 +1078,10 @@ CREATE TABLE `role_permissions` (
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `role_permissions_permissionId_roleId_unique` (`role_id`,`permission_id`),
-  UNIQUE KEY `role_permissions_role_id_permission_id` (`role_id`,`permission_id`),
+  UNIQUE KEY `uq_role_permissions_role_permission` (`role_id`,`permission_id`),
   KEY `permission_id` (`permission_id`),
-  CONSTRAINT `role_permissions_ibfk_157` FOREIGN KEY (`role_id`) REFERENCES `roles` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `role_permissions_ibfk_158` FOREIGN KEY (`permission_id`) REFERENCES `permissions` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `role_permissions_ibfk_1` FOREIGN KEY (`role_id`) REFERENCES `roles` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `role_permissions_ibfk_2` FOREIGN KEY (`permission_id`) REFERENCES `permissions` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -1111,12 +1112,12 @@ CREATE TABLE `saved_bowls` (
   `updated_at` datetime DEFAULT NULL,
   `deleted_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
+  KEY `variant_id` (`variant_id`),
   KEY `saved_bowls_user_id_updated_at` (`user_id`,`updated_at`),
   KEY `saved_bowls_product_id` (`product_id`),
-  KEY `variant_id` (`variant_id`),
-  CONSTRAINT `saved_bowls_ibfk_196` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `saved_bowls_ibfk_197` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON UPDATE CASCADE,
-  CONSTRAINT `saved_bowls_ibfk_198` FOREIGN KEY (`variant_id`) REFERENCES `product_variants` (`id`) ON UPDATE CASCADE
+  CONSTRAINT `saved_bowls_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `saved_bowls_ibfk_2` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `saved_bowls_ibfk_3` FOREIGN KEY (`variant_id`) REFERENCES `product_variants` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -1137,11 +1138,11 @@ CREATE TABLE `user_plans` (
   `created_at` datetime DEFAULT NULL,
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
+  KEY `plan_id` (`plan_id`),
   KEY `idx_user_plans_user_status` (`user_id`,`status`),
   KEY `idx_user_plans_expires` (`expires_at`),
-  KEY `plan_id` (`plan_id`),
-  CONSTRAINT `user_plans_ibfk_105` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `user_plans_ibfk_106` FOREIGN KEY (`plan_id`) REFERENCES `plans` (`id`) ON UPDATE CASCADE
+  CONSTRAINT `user_plans_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `user_plans_ibfk_2` FOREIGN KEY (`plan_id`) REFERENCES `plans` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -1175,9 +1176,9 @@ CREATE TABLE `user_roles` (
   UNIQUE KEY `uq_user_roles_user_role_branch` (`user_id`,`role_id`,`branch_id`),
   KEY `role_id` (`role_id`),
   KEY `branch_id` (`branch_id`),
-  CONSTRAINT `user_roles_ibfk_235` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `user_roles_ibfk_236` FOREIGN KEY (`role_id`) REFERENCES `roles` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `user_roles_ibfk_237` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+  CONSTRAINT `user_roles_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `user_roles_ibfk_2` FOREIGN KEY (`role_id`) REFERENCES `roles` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `user_roles_ibfk_3` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -1214,9 +1215,9 @@ CREATE TABLE `ux_events` (
   `created_at` datetime DEFAULT NULL,
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
+  KEY `user_id` (`user_id`),
   KEY `ux_events_event_type_created_at` (`event_type`,`created_at`),
   KEY `ux_events_session_id` (`session_id`),
-  KEY `user_id` (`user_id`),
   CONSTRAINT `ux_events_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -1237,12 +1238,12 @@ CREATE TABLE `wallet_transactions` (
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_wallet_tx_idempotency` (`idempotency_key`),
+  KEY `user_plan_id` (`user_plan_id`),
   KEY `idx_wallet_tx_wallet` (`wallet_id`),
   KEY `idx_wallet_tx_order` (`order_id`),
-  KEY `user_plan_id` (`user_plan_id`),
-  CONSTRAINT `wallet_transactions_ibfk_157` FOREIGN KEY (`wallet_id`) REFERENCES `wallets` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `wallet_transactions_ibfk_158` FOREIGN KEY (`user_plan_id`) REFERENCES `user_plans` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT `wallet_transactions_ibfk_159` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+  CONSTRAINT `wallet_transactions_ibfk_1` FOREIGN KEY (`wallet_id`) REFERENCES `wallets` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `wallet_transactions_ibfk_2` FOREIGN KEY (`user_plan_id`) REFERENCES `user_plans` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `wallet_transactions_ibfk_3` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -1256,7 +1257,7 @@ CREATE TABLE `wallets` (
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_wallets_user_currency` (`user_id`,`currency`),
-  CONSTRAINT `wallets_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `wallets_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -1286,10 +1287,10 @@ CREATE TABLE `zone_branches` (
   `updated_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `zone_branches_branchId_coverageZoneId_unique` (`coverage_zone_id`,`branch_id`),
-  UNIQUE KEY `zone_branches_coverage_zone_id_branch_id` (`coverage_zone_id`,`branch_id`),
+  UNIQUE KEY `uq_zone_branches_zone_branch` (`coverage_zone_id`,`branch_id`),
   KEY `branch_id` (`branch_id`),
-  CONSTRAINT `zone_branches_ibfk_153` FOREIGN KEY (`coverage_zone_id`) REFERENCES `coverage_zones` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `zone_branches_ibfk_154` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `zone_branches_ibfk_1` FOREIGN KEY (`coverage_zone_id`) REFERENCES `coverage_zones` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `zone_branches_ibfk_2` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;

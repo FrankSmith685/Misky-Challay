@@ -31,7 +31,9 @@ ProductDietaryTag.init(
     sequelize,
     modelName: 'ProductDietaryTag',
     tableName: 'product_dietary_tags',
-    indexes: [{ unique: true, fields: ['product_id', 'dietary_tag_id'] }],
+    indexes: [
+      { name: 'uq_product_dietary_tags_product_tag', unique: true, fields: ['product_id', 'dietary_tag_id'] },
+    ],
   },
 );
 

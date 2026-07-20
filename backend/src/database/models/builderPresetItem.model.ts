@@ -34,7 +34,9 @@ BuilderPresetItem.init(
     sequelize,
     modelName: 'BuilderPresetItem',
     tableName: 'builder_preset_items',
-    indexes: [{ unique: true, fields: ['preset_id', 'option_id'] }],
+    indexes: [
+      { name: 'uq_builder_preset_items_preset_option', unique: true, fields: ['preset_id', 'option_id'] },
+    ],
   },
 );
 
