@@ -1,0 +1,144 @@
+import {
+  CreationOptional,
+  DataTypes,
+  InferAttributes,
+  InferCreationAttributes,
+  Model,
+  NonAttribute,
+} from 'sequelize';
+import { sequelize } from '../connection';
+import {
+  CURRENCY,
+  DELIVERY_TYPE,
+  ORDER_STATUS,
+  SERVICE_MODE,
+  type DeliveryType,
+  type OrderStatus,
+  type ServiceMode,
+} from '@config/constants';
+import type { OrderItem } from './orderItem.model';
+
+export interface AddressSnapshot {
+  label: string;
+  line1: string;
+  reference?: string | null;
+  districtId?: number | null;
+  districtName?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+}
+
+/**
+ * Tabla `orders` (seccion 14.4): la entidad principal de venta.
+ *
+ * Nada de esto se recalcula despues: los importes y la direccion quedan
+ * congelados (RN-017). El estado solo pasa a CONFIRMED por un evento confiable
+ * del proveedor de pago (RN-014).
+ */
+export class Order extends Model<InferAttributes<Order>, InferCreationAttributes<Order>> {
+  declare id: CreationOptional<number>;
+  declare orderNumber: string;
+  declare userId: number | null;
+  declare branchId: number;
+  declare coverageZoneId: CreationOptional<number | null>;
+  declare deliveryType: DeliveryType;
+  declare serviceMode: CreationOptional<ServiceMode>;
+  declare deliverySlotId: CreationOptional<number | null>;
+  declare scheduledAt: CreationOptional<Date | null>;
+  declare status: CreationOptional<OrderStatus>;
+
+  declare addressSnapshotJson: CreationOptional<AddressSnapshot | null>;
+  declare contactName: CreationOptional<string | null>;
+  declare contactPhone: CreationOptional<string | null>;
+
+  declare subtotal: number;
+  declare deliveryFee: CreationOptional<number>;
+  declare discountTotal: CreationOptional<number>;
+  declare walletAmount: CreationOptional<number>;
+  declare taxTotal: CreationOptional<number>;
+  declare grandTotal: number;
+  declare currency: CreationOptional<string>;
+
+  declare notes: CreationOptional<string | null>;
+  declare cancelReason: CreationOptional<string | null>;
+  /** RN-015: repetir el mismo checkout con la misma clave no crea otro pedido. */
+  declare idempotencyKey: CreationOptional<string | null>;
+
+  declare placedAt: CreationOptional<Date>;
+  declare confirmedAt: CreationOptional<Date | null>;
+  declare deliveredAt: CreationOptional<Date | null>;
+  declare cancelledAt: CreationOptional<Date | null>;
+  declare createdAt: CreationOptional<Date>;
+  declare updatedAt: CreationOptional<Date>;
+
+  declare items?: NonAttribute<OrderItem[]>;
+}
+
+Order.init(
+  {
+    id: { type: DataTypes.BIGINT.UNSIGNED, autoIncrement: true, primaryKey: true },
+    orderNumber: { type: DataTypes.STRING(20), allowNull: false },
+    userId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
+    branchId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
+    coverageZoneId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true },
+    deliveryType: {
+      type: DataTypes.ENUM(...Object.values(DELIVERY_TYPE)),
+      allowNull: false,
+      defaultValue: DELIVERY_TYPE.DELIVERY,
+    },
+    serviceMode: {
+      type: DataTypes.ENUM(...Object.values(SERVICE_MODE)),
+      allowNull: false,
+      defaultValue: SERVICE_MODE.ASAP,
+    },
+    deliverySlotId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
+    scheduledAt: { type: DataTypes.DATE, allowNull: true },
+    status: {
+      type: DataTypes.ENUM(...Object.values(ORDER_STATUS)),
+      allowNull: false,
+      defaultValue: ORDER_STATUS.PENDING_PAYMENT,
+    },
+
+    addressSnapshotJson: { type: DataTypes.JSON, allowNull: true },
+    contactName: { type: DataTypes.STRING(120), allowNull: true },
+    contactPhone: { type: DataTypes.STRING(30), allowNull: true },
+
+    subtotal: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
+    deliveryFee: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
+    discountTotal: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
+    walletAmount: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
+    taxTotal: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
+    grandTotal: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
+    currency: { type: DataTypes.CHAR(3), allowNull: false, defaultValue: CURRENCY },
+
+    notes: { type: DataTypes.TEXT, allowNull: true },
+    cancelReason: { type: DataTypes.STRING(255), allowNull: true },
+    idempotencyKey: { type: DataTypes.STRING(80), allowNull: true },
+
+    placedAt: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
+    confirmedAt: { type: DataTypes.DATE, allowNull: true },
+    deliveredAt: { type: DataTypes.DATE, allowNull: true },
+    cancelledAt: { type: DataTypes.DATE, allowNull: true },
+    createdAt: DataTypes.DATE,
+    updatedAt: DataTypes.DATE,
+  },
+  {
+    sequelize,
+    modelName: 'Order',
+    tableName: 'orders',
+    indexes: [
+      { name: 'uq_orders_number', unique: true, fields: ['order_number'] },
+      { name: 'uq_orders_idempotency', unique: true, fields: ['idempotency_key'] },
+      { name: 'idx_orders_user', fields: ['user_id'] },
+      { name: 'idx_orders_branch_status', fields: ['branch_id', 'status'] },
+      { name: 'idx_orders_scheduled', fields: ['scheduled_at'] },
+      // El job de reservas vencidas filtra por status + placed_at cada minuto: sin este
+      // indice recorre el historico completo de pedidos, para siempre.
+      { name: 'idx_orders_status_placed', fields: ['status', 'placed_at'] },
+      // Tablero de pedidos y reportes del panel: filtran por sucursal y rango de fechas.
+      { name: 'idx_orders_branch_placed', fields: ['branch_id', 'placed_at'] },
+    ],
+  },
+);
+
+export default Order;

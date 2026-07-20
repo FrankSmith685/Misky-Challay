@@ -1,0 +1,45 @@
+/** Rutas de la aplicacion. Se usan en el router y en los links (nunca strings sueltos). */
+export const ROUTES = {
+  home: '/',
+  menu: '/menu',
+  product: (slug = ':slug') => `/menu/${slug}`,
+  builder: '/arma-tu-bowl',
+  plans: '/planes',
+  coverage: '/cobertura',
+  branches: '/locales',
+  faq: '/preguntas-frecuentes',
+
+  login: '/ingresar',
+  register: '/crear-cuenta',
+
+  cart: '/carrito',
+  checkout: '/checkout',
+  checkoutSuccess: '/checkout/confirmacion',
+  /** Solo desarrollo: reemplaza a la pagina de Stripe mientras no haya claves. */
+  paymentSimulator: '/checkout/simulador',
+
+  account: '/cuenta',
+  accountOrders: '/cuenta/pedidos',
+  accountOrderDetail: (id: string | number = ':id') => `/cuenta/pedidos/${id}`,
+  accountAddresses: '/cuenta/direcciones',
+  accountWallet: '/cuenta/saldo',
+  accountFavorites: '/cuenta/favoritos',
+  accountSavedBowls: '/cuenta/bowls-guardados',
+  accountProfile: '/cuenta/perfil',
+
+  admin: '/admin',
+  adminDashboard: '/admin/resumen',
+  adminOrders: '/admin/pedidos',
+  adminKitchen: '/admin/cocina',
+  adminDelivery: '/admin/reparto',
+  adminInventory: '/admin/inventario',
+  adminCatalog: '/admin/catalogo',
+  adminBuilder: '/admin/constructor',
+  adminMedia: '/admin/medios',
+  adminCoupons: '/admin/cupones',
+  adminPlans: '/admin/planes',
+  adminCoverage: '/admin/cobertura',
+  adminUsers: '/admin/usuarios',
+  adminRoles: '/admin/roles',
+  adminDesign: '/admin/sistema-diseno',
+} as const;

@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Una sola corrida por rama: un push nuevo cancela el anterior.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests del backend
+        run: npm test --workspace backend
+
+      # Compila de verdad: detecta lo que el typecheck no ve (alias sin resolver,
+      # imports que solo existen en desarrollo, fallos de la build de Vite).
+      - name: Build
+        run: npm run build

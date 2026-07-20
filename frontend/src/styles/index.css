@@ -1,0 +1,173 @@
+@import 'tailwindcss';
+
+/* ==========================================================================
+ * Design tokens de Verde Bowl (Tailwind v4: se configuran en CSS, no en JS).
+ * Uso: bg-brand-600, text-brand-700, bg-surface, border-line...
+ * ========================================================================== */
+@theme {
+  --color-brand-50: #f0f9f4;
+  --color-brand-100: #dcf2e4;
+  --color-brand-200: #bbe5cd;
+  --color-brand-300: #8ed1ac;
+  --color-brand-400: #5ab585;
+  --color-brand-500: #369a68;
+  --color-brand-600: #237c52;
+  --color-brand-700: #1c6243;
+  --color-brand-800: #194e37;
+  --color-brand-900: #16412f;
+
+  --color-accent-400: #f5a524;
+  --color-accent-500: #e8940f;
+
+  /* Tercer color de marca (gestionable desde el editor de tema). */
+  --color-tertiary-50: #f3f2fd;
+  --color-tertiary-100: #e8e5fb;
+  --color-tertiary-200: #d0caf8;
+  --color-tertiary-300: #b3a9f3;
+  --color-tertiary-400: #9385ee;
+  --color-tertiary-500: #7c6bea;
+  --color-tertiary-600: #6d5ae8;
+  --color-tertiary-700: #594abe;
+  --color-tertiary-800: #483b99;
+  --color-tertiary-900: #392f79;
+
+  --color-surface: #ffffff;
+  --color-surface-muted: #f6f8f7;
+  --color-line: #e3e8e5;
+  --color-ink: #14201a;
+  --color-ink-muted: #5d6b64;
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --radius-card: 1rem;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-surface-muted text-ink antialiased;
+    font-family: var(--font-sans);
+    min-width: 320px;
+    overflow-x: hidden;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand-600;
+  }
+
+  ::selection { @apply bg-brand-200 text-brand-900; }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-brand-200) transparent;
+  }
+
+  *::-webkit-scrollbar { width: 9px; height: 9px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: var(--color-brand-200);
+    background-clip: padding-box;
+  }
+  *::-webkit-scrollbar-thumb:hover { background-color: var(--color-brand-300); }
+}
+
+.skip-link {
+  position: fixed;
+  left: 1rem;
+  top: -4rem;
+  z-index: 9999;
+  border-radius: .75rem;
+  background: var(--color-brand-800);
+  color: white;
+  padding: .65rem 1rem;
+  font-size: .875rem;
+  font-weight: 700;
+  transition: top 160ms ease;
+}
+
+.skip-link:focus { top: 1rem; }
+
+.public-shell main { background: linear-gradient(180deg, #fff 0%, #f8fbf9 100%); }
+
+.public-shell main { min-height: 55vh; }
+
+img { max-width: 100%; }
+
+/* Los paneles de datos siguen siendo utilizables en pantallas estrechas. */
+.admin-shell main { container-type: inline-size; }
+.admin-shell main .overflow-x-auto { scrollbar-width: thin; scrollbar-color: var(--color-brand-200) transparent; }
+
+.admin-shell main {
+  background:
+    radial-gradient(circle at 94% 2%, color-mix(in srgb, var(--color-brand-100) 42%, transparent) 0, transparent 24rem),
+    var(--color-surface-muted);
+}
+
+.admin-shell main > * { animation: ds-fade-in .22s ease-out; }
+
+/* Controles nativos heredados conservan una apariencia coherente hasta migrarlos. */
+.admin-shell main select,
+.public-shell main select {
+  min-height: 44px;
+  border-color: var(--color-line);
+  border-radius: .75rem;
+  background-color: var(--color-surface);
+}
+
+@media (max-width: 639px) {
+  .admin-shell main table { min-width: 640px; }
+  .admin-shell main input,
+  .admin-shell main select,
+  .admin-shell main textarea { font-size: 16px; }
+}
+
+.public-shell main > div:not(.admin-shell) h1,
+.public-shell main > div:not(.admin-shell) h2 { text-wrap: balance; }
+
+@media (hover: hover) {
+  a, button { -webkit-tap-highlight-color: transparent; }
+}
+
+/* Entrada suave para contenido que cambia (ej. secciones del sistema de diseno). */
+@keyframes ds-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: ds-fade-in 0.25s ease-out;
+}
+
+.admin-shell main table tbody tr { transition: background-color 160ms ease; }
+.admin-shell main table tbody tr:hover { background: color-mix(in srgb, var(--color-brand-50) 45%, white); }
+.admin-scrollbar { scrollbar-width: thin; scrollbar-color: var(--color-brand-200) transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .animate-fade-in,
+  .admin-shell main > * {
+    animation: none;
+  }
+}

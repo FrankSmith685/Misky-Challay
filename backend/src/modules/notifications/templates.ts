@@ -1,0 +1,141 @@
+import { env } from '@config/env';
+
+/**
+ * PLANTILLAS DE CORREO
+ * ---------------------------------------------------------------------------
+ * HTML simple y en linea a proposito: los clientes de correo (Gmail, Outlook)
+ * ignoran hojas de estilo externas y muchas etiquetas modernas.
+ */
+
+const money = (value: number): string => `S/ ${value.toFixed(2)}`;
+
+const layout = (title: string, body: string, cta?: { label: string; url: string }): string => `
+<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#14201a">
+  <div style="background:#237c52;padding:20px;text-align:center">
+    <span style="color:#fff;font-size:20px;font-weight:bold">Verde Bowl</span>
+  </div>
+  <div style="padding:24px;background:#ffffff;border:1px solid #e3e8e5;border-top:none">
+    <h1 style="font-size:20px;margin:0 0 12px">${title}</h1>
+    ${body}
+    ${
+      cta
+        ? `<p style="margin:24px 0 0">
+            <a href="${cta.url}" style="background:#237c52;color:#fff;text-decoration:none;padding:12px 20px;border-radius:999px;display:inline-block">${cta.label}</a>
+          </p>`
+        : ''
+    }
+  </div>
+  <p style="font-size:12px;color:#5d6b64;text-align:center;padding:16px">
+    Verde Bowl - comida saludable a tu medida
+  </p>
+</div>`;
+
+export interface OrderEmailData {
+  orderNumber: string;
+  customerName: string | null;
+  grandTotal: number;
+  branchName?: string | null;
+  etaMinutes?: number | null;
+  items: Array<{ quantity: number; name: string }>;
+}
+
+export interface PlanEmailData {
+  customerName: string | null;
+  planName: string;
+  credit: number;
+  expiresAt: Date | null;
+}
+
+const itemsList = (items: OrderEmailData['items']): string =>
+  `<ul style="padding-left:18px;color:#5d6b64">${items
+    .map((item) => `<li>${item.quantity}x ${item.name}</li>`)
+    .join('')}</ul>`;
+
+/**
+ * Seguimiento del pedido. NO apunta a /checkout/confirmacion: esa pantalla esta
+ * escrita para el retorno inmediato de la pasarela y muestra "Estamos esperando la
+ * confirmacion del banco, no cierres esta pagina" en cualquier estado que no sea
+ * CONFIRMED o CANCELLED. Un correo de "va en camino" que lleva ahi hace creer al
+ * cliente que le cobraron sin generar el pedido.
+ */
+const orderUrl = (orderNumber: string): string =>
+  `${env.FRONTEND_URL}/cuenta/pedidos/${orderNumber}`;
+
+export const TEMPLATES = {
+  ORDER_CONFIRMED: (data: OrderEmailData) => ({
+    subject: `Tu pedido ${data.orderNumber} esta confirmado`,
+    text: `Hola${data.customerName ? ` ${data.customerName}` : ''}, recibimos tu pago. Tu pedido ${data.orderNumber} (${money(data.grandTotal)}) ya esta en cocina.`,
+    html: layout(
+      'Pedido confirmado',
+      `<p>Hola${data.customerName ? ` <strong>${data.customerName}</strong>` : ''}, recibimos tu pago y ya estamos preparando tu pedido.</p>
+       ${itemsList(data.items)}
+       <p style="margin-top:16px"><strong>Total:</strong> ${money(data.grandTotal)}<br/>
+       ${data.branchName ? `<strong>Prepara:</strong> ${data.branchName}<br/>` : ''}
+       ${data.etaMinutes ? `<strong>Llega en:</strong> ~${data.etaMinutes} minutos` : ''}</p>`,
+      { label: 'Seguir mi pedido', url: orderUrl(data.orderNumber) },
+    ),
+  }),
+
+  ORDER_PREPARING: (data: OrderEmailData) => ({
+    subject: `Estamos preparando tu pedido ${data.orderNumber}`,
+    text: `Tu pedido ${data.orderNumber} entro a cocina. Te avisamos cuando salga.`,
+    html: layout(
+      'Manos a la obra',
+      `<p>Tu pedido <strong>${data.orderNumber}</strong> ya esta en la cocina. Te avisamos apenas salga.</p>`,
+      { label: 'Ver el estado', url: orderUrl(data.orderNumber) },
+    ),
+  }),
+
+  ORDER_OUT_FOR_DELIVERY: (data: OrderEmailData) => ({
+    subject: `Tu pedido ${data.orderNumber} va en camino`,
+    text: `Tu pedido ${data.orderNumber} salio a reparto.`,
+    html: layout(
+      'Va en camino',
+      `<p>Tu pedido <strong>${data.orderNumber}</strong> ya salio. Atento a la puerta.</p>`,
+      { label: 'Ver el estado', url: orderUrl(data.orderNumber) },
+    ),
+  }),
+
+  ORDER_DELIVERED: (data: OrderEmailData) => ({
+    subject: `Entregado: ${data.orderNumber}`,
+    text: `Tu pedido ${data.orderNumber} fue entregado. Buen provecho.`,
+    html: layout(
+      'Buen provecho',
+      `<p>Tu pedido <strong>${data.orderNumber}</strong> fue entregado. Esperamos que lo disfrutes.</p>`,
+    ),
+  }),
+
+  ORDER_CANCELLED: (data: OrderEmailData & { reason?: string | null }) => ({
+    subject: `Tu pedido ${data.orderNumber} fue cancelado`,
+    text: `Tu pedido ${data.orderNumber} fue cancelado. ${data.reason ?? ''}`,
+    html: layout(
+      'Pedido cancelado',
+      // El saldo y el cupon si se liberan solos al cancelar; el cobro con tarjeta
+      // todavia NO se devuelve de forma automatica. No se puede afirmar por escrito
+      // un reembolso que el sistema no ejecuta: eso es material de reclamo.
+      `<p>Tu pedido <strong>${data.orderNumber}</strong> fue cancelado.</p>
+       ${data.reason ? `<p style="color:#5d6b64">Motivo: ${data.reason}</p>` : ''}
+       <p>Si usaste saldo de tu plan o un cupon, ya estan disponibles de nuevo en tu cuenta.</p>
+       <p style="color:#5d6b64">Si pagaste con tarjeta, escribenos a ${env.MAIL_FROM} con el numero de tu pedido y gestionamos la devolucion.</p>`,
+      { label: 'Volver al menu', url: `${env.FRONTEND_URL}/menu` },
+    ),
+  }),
+
+  PLAN_ACTIVATED: (data: PlanEmailData) => ({
+    subject: `Tu ${data.planName} esta activo`,
+    text: `Tu plan ${data.planName} esta activo con ${money(data.credit)} de saldo.`,
+    html: layout(
+      'Tu plan esta activo',
+      `<p>Hola${data.customerName ? ` <strong>${data.customerName}</strong>` : ''}, tu <strong>${data.planName}</strong> ya esta activo.</p>
+       <p style="font-size:24px;color:#237c52;font-weight:bold;margin:16px 0">${money(data.credit)} de saldo</p>
+       ${
+         data.expiresAt
+           ? `<p style="color:#5d6b64">Vence el ${data.expiresAt.toLocaleDateString('es-PE')}. El saldo que no uses se pierde.</p>`
+           : ''
+       }`,
+      { label: 'Ver mi saldo', url: `${env.FRONTEND_URL}/cuenta/saldo` },
+    ),
+  }),
+};
+
+export type TemplateName = keyof typeof TEMPLATES;
