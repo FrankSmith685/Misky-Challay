@@ -1,0 +1,100 @@
+# =============================================================================
+# Verde Bowl — pila completa
+#
+#   docker compose up -d --build     levanta base, API y web
+#   docker compose logs -f api       ver el backend
+#   docker compose down              parar (los datos sobreviven en el volumen)
+#
+# La configuracion se lee de un archivo .env en esta misma carpeta. Copia
+# .env.docker.example a .env y rellena las claves antes de arrancar.
+# =============================================================================
+
+services:
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?falta DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME:-verde_bowl_v3}
+      MYSQL_USER: ${DB_USER:?falta DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?falta DB_PASSWORD}
+      TZ: America/Lima
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      # Zona horaria de la conexion: la app guarda en UTC y convierte a Lima al leer.
+      - --default-time-zone=+00:00
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./backups:/backups
+    # Sin puertos publicados: la base solo es accesible desde la red interna.
+    # Para inspeccionarla desde fuera, descomenta y usa 127.0.0.1:3307.
+    # ports:
+    #   - "127.0.0.1:3307:3306"
+    healthcheck:
+      test: ['CMD', 'mysqladmin', 'ping', '-h', '127.0.0.1', '-u', 'root', '-p${DB_ROOT_PASSWORD}']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # Las migraciones corren como paso PROPIO y terminan. Si fallan, `api` no arranca
+  # (depends_on: service_completed_successfully) y el despliegue se detiene ahi,
+  # en vez de dejar el servicio en pie contra un esquema incompleto.
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: ['node', 'backend/dist/database/migrate.js', 'up']
+    restart: 'no'
+    env_file: [.env]
+    environment:
+      DB_HOST: db
+      DB_PORT: '3306'
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      DB_HOST: db
+      DB_PORT: '3306'
+      # El esquema ya lo gestiona el servicio `migrate`. La guarda de produccion de
+      # env.ts rechaza el arranque si estos vienen en true, asi que son explicitos.
+      DB_SYNC: 'false'
+      DB_ALTER: 'false'
+      DB_AUTO_CREATE: 'false'
+      SEED_DEMO_DATA: 'false'
+      TRUST_PROXY: '1'
+    volumes:
+      # Las imagenes del panel viven fuera del contenedor: si no, cada despliegue
+      # borra el catalogo de fotos y deja los productos con la URL rota.
+      - uploads:/app/backend/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        # Relativa: nginx hace de proxy hacia `api` por la red interna.
+        VITE_API_URL: /api/v1
+    restart: unless-stopped
+    ports:
+      - '${WEB_PORT:-8080}:80'
+    depends_on:
+      api:
+        condition: service_started
+
+volumes:
+  db_data:
+  uploads:

@@ -1,0 +1,35 @@
+# Lo que nunca debe entrar en la imagen ni invalidar la cache de capas.
+node_modules
+**/node_modules
+dist
+**/dist
+build
+**/build
+
+# Secretos. El .env se inyecta en tiempo de ejecucion, jamas se copia dentro.
+.env
+**/.env
+!**/.env.example
+
+.git
+.github
+.gitignore
+
+playwright-report
+test-results
+e2e
+coverage
+*.log
+
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+docs
+README.md
+**/*.md
+!backend/src/database/migrations/README.md
+
+backend/uploads
+backend/tmp

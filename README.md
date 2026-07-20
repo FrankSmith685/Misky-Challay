@@ -45,6 +45,16 @@ npm run dev                 # backend :4000  +  frontend :5173
 
 La portada muestra un panel de diagnóstico que confirma si el frontend está hablando con el backend y con la base de datos.
 
+### Levantar la pila completa con Docker
+
+```bash
+cp .env.docker.example .env      # rellena los CAMBIAME
+docker compose up -d --build     # web en http://localhost:8080
+```
+
+Las migraciones corren como paso previo y separado: si fallan, el API no arranca.
+Despliegue, copias de seguridad y restauración en [docs/DESPLIEGUE.md](docs/DESPLIEGUE.md).
+
 ## 3. Comandos
 
 | Comando                                | Qué hace                              |

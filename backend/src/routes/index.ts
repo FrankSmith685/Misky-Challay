@@ -23,7 +23,31 @@ import mediaRoutes from '@modules/media/media.routes';
 
 const router = Router();
 
-/** Health check: verifica proceso + base de datos. */
+/**
+ * SONDAS DE SALUD
+ * ---------------------------------------------------------------------------
+ * Son dos preguntas distintas y mezclarlas cuesta caro:
+ *
+ *   /live   ¿el proceso responde? -> si falla, reiniciame.
+ *   /ready  ¿puedo atender trafico? -> si falla, sacame del balanceador, pero NO
+ *           me reinicies: un hipo de la base tumbaria todas las instancias a la vez.
+ *
+ * `/live` no toca la base a proposito. `/ready` si, porque servir peticiones sin
+ * base de datos no sirve de nada.
+ */
+router.get('/live', (_req, res) =>
+  ok(res, { service: 'verde-bowl-api', status: 'up', uptimeSeconds: Math.round(process.uptime()) }),
+);
+
+router.get(
+  '/ready',
+  asyncHandler(async (_req, res) => {
+    await sequelize.authenticate();
+    return ok(res, { service: 'verde-bowl-api', status: 'ready', database: 'up' });
+  }),
+);
+
+/** Se mantiene por compatibilidad: la portada lo usa como diagnostico. */
 router.get(
   '/health',
   asyncHandler(async (_req, res) => {

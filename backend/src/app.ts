@@ -66,7 +66,14 @@ export const createApp = (): Application => {
     );
   }
 
-  app.use(env.API_PREFIX, apiLimiter, apiRoutes);
+  // Las sondas van ANTES del limitador: si el orquestador sondea cada pocos segundos
+  // desde varias instancias, acabaria consumiendo la cuota y recibiendo 429. Un 429
+  // en /ready se lee como "instancia enferma" y el balanceador retira nodos sanos:
+  // la cascada clasica que convierte un pico de trafico en una caida completa.
+  app.use(env.API_PREFIX, (req, res, next) => {
+    if (req.path === '/live' || req.path === '/ready') return next();
+    return apiLimiter(req, res, next);
+  }, apiRoutes);
 
   app.get('/', (_req, res) => {
     res.json({
