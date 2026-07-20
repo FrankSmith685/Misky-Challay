@@ -71,4 +71,13 @@ export const ENDPOINTS = {
     /** Solo desarrollo: simulador de pago mientras no haya claves de Stripe. */
     simulate: '/payments/dev/simulate',
   },
+
+  settings: {
+    public: '/settings/public',
+  },
+
+  complaints: {
+    root: '/complaints',
+    track: '/complaints/track',
+  },
 } as const;

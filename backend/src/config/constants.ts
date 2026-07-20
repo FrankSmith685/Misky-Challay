@@ -145,6 +145,7 @@ export const PERMISSIONS = {
   ROLE_MANAGE: 'role.manage',
   AUDIT_READ: 'audit.read',
   SETTINGS_MANAGE: 'settings.manage',
+  COMPLAINT_MANAGE: 'complaint.manage',
 } as const;
 export type PermissionCode = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 
@@ -256,6 +257,7 @@ export const PERMISSION_CATALOG: Array<{
       { code: PERMISSIONS.ROLE_MANAGE, label: 'Crear y editar roles' },
       { code: PERMISSIONS.AUDIT_READ, label: 'Ver la bitacora de auditoria' },
       { code: PERMISSIONS.SETTINGS_MANAGE, label: 'Cambiar la configuracion del sistema' },
+      { code: PERMISSIONS.COMPLAINT_MANAGE, label: 'Gestionar el Libro de Reclamaciones' },
     ],
   },
 ];

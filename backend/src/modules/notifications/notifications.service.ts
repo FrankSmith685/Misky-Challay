@@ -1,5 +1,6 @@
 import {
   Branch,
+  Complaint,
   Notification,
   Order,
   OrderItem,
@@ -7,6 +8,7 @@ import {
   User,
   UserPlan,
 } from '@database/models';
+import { businessInfo } from '@config/business';
 import { NOTIFICATION_STATUS } from '@database/models/notification.model';
 import { ORDER_STATUS, type OrderStatus } from '@config/constants';
 import { env } from '@config/env';
@@ -222,6 +224,64 @@ export const notificationsService = {
       text: content.text,
       userId: user.id,
       idempotencyKey: `plan-${userPlan.id}-activated`,
+    });
+  },
+
+  /**
+   * Copia del reclamo al consumidor + aviso al negocio.
+   * INDECOPI exige entregar constancia al consumidor; el aviso interno es para que
+   * alguien lo atienda dentro del plazo.
+   */
+  async notifyComplaintReceived(complaint: Complaint): Promise<void> {
+    const content = TEMPLATES.COMPLAINT_RECEIVED({
+      code: complaint.code ?? '',
+      type: complaint.type,
+      consumerName: complaint.consumerName,
+      dueAt: complaint.dueAt.toLocaleDateString('es-PE'),
+    });
+
+    await deliver({
+      template: 'COMPLAINT_RECEIVED',
+      to: complaint.email,
+      subject: content.subject,
+      html: content.html,
+      text: content.text,
+      userId: complaint.userId,
+      idempotencyKey: `complaint-${complaint.id}-received`,
+    });
+
+    // Aviso interno al buzon de reclamos: el consumidor no debe esperar a que alguien
+    // mire el panel por casualidad.
+    await deliver({
+      template: 'COMPLAINT_RECEIVED_INTERNAL',
+      to: businessInfo.supportEmail,
+      subject: `Nuevo ${complaint.type === 'QUEJA' ? 'queja' : 'reclamo'} ${complaint.code}`,
+      html: content.html,
+      text: `Nuevo registro ${complaint.code} de ${complaint.consumerName}. Responder antes del ${complaint.dueAt.toLocaleDateString('es-PE')}.`,
+      idempotencyKey: `complaint-${complaint.id}-internal`,
+    });
+  },
+
+  async notifyComplaintResponded(complaint: Complaint): Promise<void> {
+    if (!complaint.response) return;
+
+    const content = TEMPLATES.COMPLAINT_RESPONDED({
+      code: complaint.code ?? '',
+      type: complaint.type,
+      consumerName: complaint.consumerName,
+      dueAt: complaint.dueAt.toLocaleDateString('es-PE'),
+      response: complaint.response,
+    });
+
+    await deliver({
+      template: 'COMPLAINT_RESPONDED',
+      to: complaint.email,
+      subject: content.subject,
+      html: content.html,
+      text: content.text,
+      userId: complaint.userId,
+      // La clave incluye respondedAt: si se responde otra vez (correccion), se reenvia.
+      idempotencyKey: `complaint-${complaint.id}-responded-${complaint.respondedAt?.getTime() ?? 'x'}`,
     });
   },
 

@@ -68,6 +68,7 @@ import { Delivery } from './delivery.model';
 import { DeliveryEvent } from './deliveryEvent.model';
 import { AuditLog } from './auditLog.model';
 import { AdminDraft } from './adminDraft.model';
+import { Complaint } from './complaint.model';
 
 // Notificaciones
 import { Notification } from './notification.model';
@@ -147,6 +148,7 @@ export const models = {
   DeliveryEvent,
   AuditLog,
   AdminDraft,
+  Complaint,
   Plan,
   PlanBenefit,
   UserPlan,
@@ -533,6 +535,13 @@ export const registerModels = (): Models => {
   // para borrar el rastro de lo que hizo.
   AuditLog.belongsTo(User, { foreignKey: 'actorId', as: 'actor', ...CONTEXT });
 
+  // --- Libro de Reclamaciones ---
+  // Registro legal: no se borra con el cliente ni con el pedido, solo pierde el
+  // vinculo. Un reclamo puede llegar de un invitado, asi que ambas FK son opcionales.
+  Complaint.belongsTo(User, { foreignKey: 'userId', as: 'user', ...CONTEXT });
+  Complaint.belongsTo(Order, { foreignKey: 'orderId', as: 'order', ...CONTEXT });
+  User.hasMany(Complaint, { foreignKey: 'userId', as: 'complaints', ...CONTEXT });
+
   // --- Notificaciones (M12) ---
   User.hasMany(Notification, { foreignKey: 'userId', as: 'notifications', ...OWNED });
   Notification.belongsTo(User, { foreignKey: 'userId', as: 'user', ...OWNED });
@@ -627,4 +636,5 @@ export {
   UserPreference,
   AdminDraft,
   UxEvent,
+  Complaint,
 };

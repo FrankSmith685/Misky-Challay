@@ -20,6 +20,8 @@ import engagementRoutes from '@modules/engagement/engagement.routes';
 import adminRoutes from '@modules/admin/admin.routes';
 import accessRoutes from '@modules/access/access.routes';
 import mediaRoutes from '@modules/media/media.routes';
+import complaintsRoutes from '@modules/complaints/complaints.routes';
+import settingsRoutes from '@modules/settings/settings.routes';
 
 const router = Router();
 
@@ -83,5 +85,7 @@ router.use('/engagement', engagementRoutes);
 router.use('/admin', adminRoutes);
 router.use('/access', accessRoutes);
 router.use('/media', mediaRoutes);
+router.use('/complaints', complaintsRoutes);
+router.use('/settings', settingsRoutes);
 
 export default router;

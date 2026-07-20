@@ -46,6 +46,14 @@ export interface PlanEmailData {
   expiresAt: Date | null;
 }
 
+export interface ComplaintEmailData {
+  code: string;
+  type: 'RECLAMO' | 'QUEJA';
+  consumerName: string | null;
+  /** Ya formateada como texto (es-PE), para no arrastrar Date a la plantilla. */
+  dueAt: string;
+}
+
 const itemsList = (items: OrderEmailData['items']): string =>
   `<ul style="padding-left:18px;color:#5d6b64">${items
     .map((item) => `<li>${item.quantity}x ${item.name}</li>`)
@@ -134,6 +142,35 @@ export const TEMPLATES = {
            : ''
        }`,
       { label: 'Ver mi saldo', url: `${env.FRONTEND_URL}/cuenta/saldo` },
+    ),
+  }),
+
+  // --- Libro de Reclamaciones ---
+  COMPLAINT_RECEIVED: (data: ComplaintEmailData) => ({
+    subject: `Recibimos tu ${data.type === 'QUEJA' ? 'queja' : 'reclamo'} ${data.code}`,
+    text: `Registramos tu ${data.type === 'QUEJA' ? 'queja' : 'reclamo'} ${data.code}. Te responderemos a mas tardar el ${data.dueAt}.`,
+    html: layout(
+      'Constancia de tu registro',
+      `<p>Hola${data.consumerName ? ` <strong>${data.consumerName}</strong>` : ''}, dejamos constancia de tu ${data.type === 'QUEJA' ? 'queja' : 'reclamo'} en nuestro Libro de Reclamaciones.</p>
+       <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px">
+         <tr><td style="padding:6px 0;color:#5d6b64">Codigo</td><td style="padding:6px 0;text-align:right;font-weight:bold">${data.code}</td></tr>
+         <tr><td style="padding:6px 0;color:#5d6b64">Tipo</td><td style="padding:6px 0;text-align:right">${data.type === 'QUEJA' ? 'Queja' : 'Reclamo'}</td></tr>
+         <tr><td style="padding:6px 0;color:#5d6b64">Respuesta a mas tardar</td><td style="padding:6px 0;text-align:right">${data.dueAt}</td></tr>
+       </table>
+       <p style="color:#5d6b64">Guarda este codigo: con el y tu numero de documento puedes consultar el estado en cualquier momento. La respuesta a tu ${data.type === 'QUEJA' ? 'queja' : 'reclamo'} no impide que acudas a otras instancias que la ley te reconoce.</p>`,
+      { label: 'Consultar el estado', url: `${env.FRONTEND_URL}/libro-de-reclamaciones` },
+    ),
+  }),
+
+  COMPLAINT_RESPONDED: (data: ComplaintEmailData & { response: string }) => ({
+    subject: `Respuesta a tu ${data.type === 'QUEJA' ? 'queja' : 'reclamo'} ${data.code}`,
+    text: `Respondimos tu ${data.code}: ${data.response}`,
+    html: layout(
+      'Tenemos una respuesta',
+      `<p>Hola${data.consumerName ? ` <strong>${data.consumerName}</strong>` : ''}, esta es nuestra respuesta a tu ${data.type === 'QUEJA' ? 'queja' : 'reclamo'} <strong>${data.code}</strong>:</p>
+       <div style="background:#f3f6f4;border-left:3px solid #237c52;padding:12px 16px;margin:16px 0;white-space:pre-line">${data.response}</div>
+       <p style="color:#5d6b64">Si no estas conforme, puedes acudir a las instancias que la ley te reconoce (INDECOPI).</p>`,
+      { label: 'Ver el estado', url: `${env.FRONTEND_URL}/libro-de-reclamaciones` },
     ),
   }),
 };

@@ -8,6 +8,9 @@ export const ROUTES = {
   coverage: '/cobertura',
   branches: '/locales',
   faq: '/preguntas-frecuentes',
+  complaints: '/libro-de-reclamaciones',
+  privacy: '/privacidad',
+  terms: '/terminos',
 
   login: '/ingresar',
   register: '/crear-cuenta',

@@ -100,6 +100,8 @@ export const authService = {
       lastName: input.lastName,
       status: USER_STATUS.ACTIVE,
       emailVerifiedAt: null,
+      // Se sella el momento del consentimiento: es la prueba que exige la Ley 29733.
+      termsAcceptedAt: new Date(),
       lastLoginAt: null,
     });
 

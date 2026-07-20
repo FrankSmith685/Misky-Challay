@@ -43,6 +43,9 @@ const AdminCoveragePage = lazy(() => import('@features/admin/pages/CoveragePage'
 const UsersPage = lazy(() => import('@features/admin/pages/UsersPage'));
 const RolesPage = lazy(() => import('@features/admin/pages/RolesPage'));
 const DesignSystemPage = lazy(() => import('@features/admin/pages/DesignSystemPage'));
+const ComplaintsPage = lazy(() => import('@features/legal/pages/ComplaintsPage'));
+const PrivacyPage = lazy(() => import('@features/legal/pages/PrivacyPage'));
+const TermsPage = lazy(() => import('@features/legal/pages/TermsPage'));
 const NotFoundPage = lazy(() => import('@features/home/pages/NotFoundPage'));
 
 const withSuspense = (element: React.ReactNode) => (
@@ -60,6 +63,9 @@ export const router = createBrowserRouter([
       { path: ROUTES.plans, element: withSuspense(<PlansPage />) },
       { path: ROUTES.coverage, element: withSuspense(<CoveragePage />) },
       { path: ROUTES.cart, element: withSuspense(<CartPage />) },
+      { path: ROUTES.complaints, element: withSuspense(<ComplaintsPage />) },
+      { path: ROUTES.privacy, element: withSuspense(<PrivacyPage />) },
+      { path: ROUTES.terms, element: withSuspense(<TermsPage />) },
       { path: ROUTES.login, element: withSuspense(<LoginPage />) },
       { path: ROUTES.register, element: withSuspense(<RegisterPage />) },
       // El checkout NO exige sesion: se puede comprar como invitado (el backend

@@ -73,6 +73,22 @@ const envSchema = z.object({
   // Se guarda ademas en cada pedido, para que un cambio de tasa no reescriba el pasado.
   IGV_RATE: z.coerce.number().min(0).max(1).default(0.18),
 
+  // --- Identidad legal del negocio -------------------------------------------
+  // Datos del proveedor que la ley peruana obliga a mostrar al consumidor (razon
+  // social, RUC, domicilio) y que encabezan el Libro de Reclamaciones y los correos.
+  // Los valores por defecto son marcadores: rellenalos con los datos reales de tu
+  // empresa antes de vender. No hacen falta para desarrollar.
+  BUSINESS_LEGAL_NAME: z.string().default('Verde Bowl S.A.C.'),
+  BUSINESS_COMMERCIAL_NAME: z.string().default('Verde Bowl'),
+  BUSINESS_RUC: z.string().default('20600000000'),
+  BUSINESS_ADDRESS: z.string().default('Av. Ejemplo 123, Miraflores, Lima'),
+  BUSINESS_PHONE: z.string().default('+51 999 999 999'),
+  BUSINESS_EMAIL: z.string().default('hola@verdebowl.com'),
+  /** Correo al que se dirigen los reclamos y las solicitudes de datos personales. */
+  BUSINESS_SUPPORT_EMAIL: z.string().default('reclamos@verdebowl.com'),
+  /** Dias habiles para responder un reclamo del Libro (INDECOPI). */
+  COMPLAINT_RESPONSE_DAYS: z.coerce.number().int().min(1).max(60).default(15),
+
   // Franjas de entrega programada. Un job las mantiene generadas con horizonte movil:
   // antes solo existia un boton en el panel que creaba 7 dias y, al octavo, la entrega
   // programada desaparecia de la web sin error ni aviso.

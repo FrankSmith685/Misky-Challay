@@ -37,6 +37,12 @@ export class User extends Model<InferAttributes<User>, InferCreationAttributes<U
    */
   declare tokenVersion: CreationOptional<number>;
   declare emailVerifiedAt: Date | null;
+  /**
+   * Cuando el cliente acepto los terminos y la politica de privacidad.
+   * Ley 29733: el consentimiento debe ser libre, previo, expreso e informado, y hay
+   * que poder demostrarlo. Un parrafo pasivo no basta; esta fecha es la prueba.
+   */
+  declare termsAcceptedAt: Date | null;
   declare lastLoginAt: Date | null;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
@@ -67,6 +73,7 @@ User.init(
     isSuperAdmin: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     tokenVersion: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 0 },
     emailVerifiedAt: { type: DataTypes.DATE, allowNull: true },
+    termsAcceptedAt: { type: DataTypes.DATE, allowNull: true },
     lastLoginAt: { type: DataTypes.DATE, allowNull: true },
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,

@@ -6,8 +6,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   Box,
   Button,
+  Checkbox,
   CircularProgress,
   Divider,
+  FormControlLabel,
+  FormHelperText,
   IconButton,
   InputAdornment,
   LinearProgress,
@@ -36,10 +39,15 @@ const registerSchema = z
       .or(z.literal('')),
     password: z.string().min(8, 'Minimo 8 caracteres'),
     confirmPassword: z.string(),
+    acceptedTerms: z.boolean(),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: 'Las contrasenas no coinciden',
     path: ['confirmPassword'],
+  })
+  .refine((data) => data.acceptedTerms === true, {
+    message: 'Debes aceptar los términos y la política de privacidad',
+    path: ['acceptedTerms'],
   });
 
 type RegisterForm = z.infer<typeof registerSchema>;
@@ -71,6 +79,7 @@ const RegisterPage = () => {
         email: values.email,
         password: values.password,
         phone: values.phone ? values.phone : undefined,
+        acceptedTerms: values.acceptedTerms,
       }),
     );
 
@@ -188,9 +197,30 @@ const RegisterPage = () => {
             {...register('confirmPassword')}
           />
 
-          <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.55 }}>
-            Al crear tu cuenta aceptas el tratamiento de tus datos para gestionar pedidos y beneficios de Verde Bowl.
-          </Typography>
+          <Box>
+            <FormControlLabel
+              sx={{ alignItems: 'flex-start', m: 0 }}
+              control={<Checkbox size="small" sx={{ pt: 0 }} {...register('acceptedTerms')} />}
+              label={
+                <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.55 }}>
+                  He leído y acepto los{' '}
+                  <MuiLink component={Link} to={ROUTES.terms} target="_blank" underline="hover">
+                    Términos y Condiciones
+                  </MuiLink>{' '}
+                  y la{' '}
+                  <MuiLink component={Link} to={ROUTES.privacy} target="_blank" underline="hover">
+                    Política de Privacidad
+                  </MuiLink>
+                  , y consiento el tratamiento de mis datos para gestionar mis pedidos y beneficios.
+                </Typography>
+              }
+            />
+            {errors.acceptedTerms && (
+              <FormHelperText error sx={{ ml: 0 }}>
+                {errors.acceptedTerms.message}
+              </FormHelperText>
+            )}
+          </Box>
 
           <Button
             type="submit"

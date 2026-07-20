@@ -7,6 +7,12 @@ export const registerSchema = z.object({
     firstName: z.string().min(2, 'Nombre demasiado corto'),
     lastName: z.string().min(2, 'Apellido demasiado corto'),
     phone: z.string().min(6).max(20).optional(),
+    // El consentimiento se valida en el servidor, no solo en el formulario: un
+    // registro sin aceptacion expresa es invalido bajo la Ley 29733, venga de donde
+    // venga la peticion.
+    acceptedTerms: z.literal(true, {
+      errorMap: () => ({ message: 'Debes aceptar los terminos y la politica de privacidad' }),
+    }),
   }),
 });
 
