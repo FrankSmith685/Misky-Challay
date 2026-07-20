@@ -70,7 +70,16 @@ Están en [backend/src/index.ts](backend/src/index.ts) (`DATABASE_STARTUP`) y se
 | `DB_SEED`        | `true`: inserta los datos base que falten                               |
 | `SEED_DEMO_DATA` | `true`: agrega catálogo, planes, cupones, sucursal y operación; por defecto `true` |
 
-Flujo recomendado: trabaja con `DB_SYNC=true, DB_ALTER=true` durante el desarrollo; cuando el modelo se estabilice, pasa a migraciones (`backend/src/database/migrations/`) y pon `DB_SYNC=false`.
+Flujo real: en **desarrollo** trabajas con `DB_SYNC=true, DB_ALTER=true` (tocas un modelo, reinicias, la tabla se ajusta sola). En **producción** el esquema se construye solo con migraciones, y el arranque falla si detecta esos interruptores activos.
+
+| Comando | Qué hace |
+| ------- | -------- |
+| `npm run db:migrate --workspace backend` | Aplica las migraciones pendientes |
+| `npm run db:migrate:status --workspace backend` | Qué falta por aplicar |
+| `npm run db:migrate:create --workspace backend -- --name algo` | Crea una migración |
+| `npm run db:check-drift --workspace backend` | Comprueba que migraciones y modelos coinciden |
+
+Lo que evita que el híbrido se rompa es el **chequeo de deriva**: levanta dos bases —una desde las migraciones, otra con `sync()` desde los modelos— y compara los esquemas. Si cambias un modelo y olvidas la migración, CI falla en el pull request en lugar de descubrirlo en producción. Detalle completo en [backend/src/database/migrations/README.md](backend/src/database/migrations/README.md).
 
 ### Dos reglas que evitan problemas reales
 

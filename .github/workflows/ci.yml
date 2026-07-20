@@ -38,3 +38,50 @@ jobs:
       # imports que solo existen en desarrollo, fallos de la build de Vite).
       - name: Build
         run: npm run build
+
+  # En desarrollo el esquema se crea desde los modelos con sync(); en produccion,
+  # aplicando migraciones. Este job comprueba que ambos caminos llegan al mismo sitio:
+  # si alguien toca un modelo y no escribe la migracion, falla aqui y no en produccion.
+  esquema:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ci_root_password
+          MYSQL_DATABASE: verde_bowl_ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci_root_password"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      NODE_ENV: test
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_NAME: verde_bowl_ci
+      DB_USER: root
+      DB_PASSWORD: ci_root_password
+      JWT_ACCESS_SECRET: clave-de-integracion-continua-access
+      JWT_REFRESH_SECRET: clave-de-integracion-continua-refresh
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Aplicar migraciones sobre una base limpia
+        run: npm run db:migrate --workspace backend
+
+      - name: Comprobar que no hay deriva entre migraciones y modelos
+        run: npm run db:check-drift --workspace backend
