@@ -79,5 +79,8 @@ export const ENDPOINTS = {
   complaints: {
     root: '/complaints',
     track: '/complaints/track',
+    summary: '/complaints/summary',
+    detail: (id: number | string) => `/complaints/${id}`,
+    respond: (id: number | string) => `/complaints/${id}/respond`,
   },
 } as const;

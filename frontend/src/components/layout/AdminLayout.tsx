@@ -27,6 +27,7 @@ import {
   PanelLeftOpen,
   CircleUserRound,
   Images,
+  BookText,
 } from 'lucide-react';
 import { ROUTES } from '@constants/routes';
 import { PERM } from '@constants/permissions';
@@ -70,6 +71,7 @@ const ADMIN_LINKS: Array<{
   { to: ROUTES.adminCoverage, label: 'Cobertura y cocinas', icon: MapPin, end: false, anyOf: [PERM.GEO_READ, PERM.GEO_WRITE], section: 'GOBIERNO' },
   { to: ROUTES.adminUsers, label: 'Usuarios', icon: Users, end: false, anyOf: [PERM.USER_READ], section: 'GOBIERNO' },
   { to: ROUTES.adminRoles, label: 'Roles y permisos', icon: ShieldCheck, end: false, anyOf: [PERM.ROLE_READ], section: 'GOBIERNO' },
+  { to: ROUTES.adminComplaints, label: 'Libro de reclamaciones', icon: BookText, end: false, anyOf: [PERM.COMPLAINT_MANAGE], section: 'GOBIERNO' },
   { to: ROUTES.adminDesign, label: 'Sistema de diseno', icon: Palette, end: false, anyOf: [PERM.SETTINGS_MANAGE], section: 'GOBIERNO' },
 ];
 

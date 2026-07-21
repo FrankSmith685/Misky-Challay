@@ -121,12 +121,48 @@ export const complaintsService = {
 
     const { rows, count } = await Complaint.findAndCountAll({
       where,
+      // La lista NO necesita el documento, telefono, direccion ni los textos libres:
+      // esos datos personales solo se cargan en el detalle. Proyectar aqui evita
+      // enviar PII de mas al listado y aligera la respuesta.
+      attributes: [
+        'id',
+        'code',
+        'type',
+        'itemType',
+        'consumerName',
+        'email',
+        'status',
+        'createdAt',
+        'dueAt',
+        'respondedAt',
+      ],
       order: [['id', 'DESC']],
       limit: pagination.limit,
       offset: pagination.offset,
     });
 
     return { complaints: rows, meta: buildMeta(pagination, count) };
+  },
+
+  /**
+   * Contadores globales para el panel. El banner de "vencidos" NO puede derivarse de
+   * la pagina visible: un admin en la pagina 2, o filtrando por "atendidos", veria un
+   * numero enganoso. Aqui se cuenta sobre TODA la tabla.
+   */
+  async summary() {
+    const [received, inProgress, resolved, overdue] = await Promise.all([
+      Complaint.count({ where: { status: COMPLAINT_STATUS.RECEIVED } }),
+      Complaint.count({ where: { status: COMPLAINT_STATUS.IN_PROGRESS } }),
+      Complaint.count({ where: { status: COMPLAINT_STATUS.RESOLVED } }),
+      Complaint.count({
+        where: {
+          status: { [Op.ne]: COMPLAINT_STATUS.RESOLVED },
+          dueAt: { [Op.lt]: new Date() },
+        },
+      }),
+    ]);
+
+    return { received, inProgress, resolved, overdue };
   },
 
   async getById(id: number): Promise<Complaint> {

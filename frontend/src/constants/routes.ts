@@ -44,5 +44,6 @@ export const ROUTES = {
   adminCoverage: '/admin/cobertura',
   adminUsers: '/admin/usuarios',
   adminRoles: '/admin/roles',
+  adminComplaints: '/admin/reclamaciones',
   adminDesign: '/admin/sistema-diseno',
 } as const;

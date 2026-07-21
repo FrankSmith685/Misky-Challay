@@ -46,6 +46,7 @@ const DesignSystemPage = lazy(() => import('@features/admin/pages/DesignSystemPa
 const ComplaintsPage = lazy(() => import('@features/legal/pages/ComplaintsPage'));
 const PrivacyPage = lazy(() => import('@features/legal/pages/PrivacyPage'));
 const TermsPage = lazy(() => import('@features/legal/pages/TermsPage'));
+const AdminComplaintsPage = lazy(() => import('@features/admin/pages/AdminComplaintsPage'));
 const NotFoundPage = lazy(() => import('@features/home/pages/NotFoundPage'));
 
 const withSuspense = (element: React.ReactNode) => (
@@ -116,6 +117,9 @@ export const router = createBrowserRouter([
           PERM.REPORT_SALES_READ,
           PERM.REPORT_OPERATIONS_READ,
           PERM.SETTINGS_MANAGE,
+          // Sin esto, un usuario cuyo unico permiso sea complaint.manage no podria
+          // entrar al panel: este array es la lista blanca de la raiz /admin.
+          PERM.COMPLAINT_MANAGE,
         ]}
       >
         <AdminLayout />
@@ -226,6 +230,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute permissions={[PERM.ROLE_READ]}>
             {withSuspense(<RolesPage />)}
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'reclamaciones',
+        element: (
+          <ProtectedRoute permissions={[PERM.COMPLAINT_MANAGE]}>
+            {withSuspense(<AdminComplaintsPage />)}
           </ProtectedRoute>
         ),
       },

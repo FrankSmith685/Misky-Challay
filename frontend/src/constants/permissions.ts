@@ -46,4 +46,5 @@ export const PERM = {
   ROLE_MANAGE: 'role.manage',
   AUDIT_READ: 'audit.read',
   SETTINGS_MANAGE: 'settings.manage',
+  COMPLAINT_MANAGE: 'complaint.manage',
 } as const;

@@ -32,6 +32,12 @@ router.get(
   complaintsController.list,
 );
 router.get(
+  '/summary',
+  authenticate,
+  requirePermissions(PERMISSIONS.COMPLAINT_MANAGE),
+  complaintsController.summary,
+);
+router.get(
   '/:id',
   authenticate,
   requirePermissions(PERMISSIONS.COMPLAINT_MANAGE),

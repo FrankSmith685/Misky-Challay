@@ -41,6 +41,11 @@ export const complaintsController = {
     return ok(res, complaints, `${meta.total} reclamos`, meta);
   }),
 
+  summary: asyncHandler(async (_req: Request, res: Response) => {
+    const summary = await complaintsService.summary();
+    return ok(res, summary);
+  }),
+
   detail: asyncHandler(async (req: Request, res: Response) => {
     const complaint = await complaintsService.getById(Number(req.params.id));
     return ok(res, complaint);
