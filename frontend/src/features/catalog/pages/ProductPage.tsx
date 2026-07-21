@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AlertTriangle, Minus, Plus, Salad } from 'lucide-react';
-import toast from 'react-hot-toast';
+import toast from '@components/mui/MuiToast';
 import { PageLoader } from '@components/common/PageLoader';
 import { Button } from '@components/ui/Button';
 import { Card, CardDescription, CardTitle } from '@components/ui/Card';
@@ -81,7 +81,9 @@ const ProductPage = () => {
     );
 
     toast.success(`${product.name} agregado al carrito`);
-    navigate(ROUTES.cart);
+    // No se expulsa al carrito: el cliente se queda en la ficha para seguir comprando
+    // (armar una canasta era imposible cuando cada anadido llevaba al carrito).
+    setQuantity(1);
   };
 
   return (
@@ -198,7 +200,7 @@ const ProductPage = () => {
               </button>
             </div>
 
-            <Button size="lg" className="flex-1" onClick={handleAdd} disabled={!product.isAvailable}>
+            <Button size="lg" className="flex-1" onClick={handleAdd} disabled={!product.isAvailable || !variant}>
               {product.isAvailable
                 ? `Agregar · ${formatCurrency((variant?.basePrice ?? 0) * quantity)}`
                 : 'No disponible'}

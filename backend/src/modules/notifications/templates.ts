@@ -129,6 +129,17 @@ export const TEMPLATES = {
     ),
   }),
 
+  PASSWORD_RESET: (data: { customerName: string | null; resetUrl: string; ttlMinutes: number }) => ({
+    subject: 'Restablece tu contrasena de Verde Bowl',
+    text: `Hola${data.customerName ? ` ${data.customerName}` : ''}, recibimos una solicitud para restablecer tu contrasena. Abre este enlace (vence en ${data.ttlMinutes} minutos): ${data.resetUrl}. Si no fuiste tu, ignora este correo.`,
+    html: layout(
+      'Restablece tu contrasena',
+      `<p>Hola${data.customerName ? ` <strong>${data.customerName}</strong>` : ''}, recibimos una solicitud para restablecer la contrasena de tu cuenta.</p>
+       <p>El enlace vence en <strong>${data.ttlMinutes} minutos</strong>. Si no lo pediste tu, ignora este correo: tu contrasena no cambia.</p>`,
+      { label: 'Crear una contrasena nueva', url: data.resetUrl },
+    ),
+  }),
+
   PLAN_ACTIVATED: (data: PlanEmailData) => ({
     subject: `Tu ${data.planName} esta activo`,
     text: `Tu plan ${data.planName} esta activo con ${money(data.credit)} de saldo.`,

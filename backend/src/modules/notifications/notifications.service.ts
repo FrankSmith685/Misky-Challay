@@ -8,6 +8,7 @@ import {
   User,
   UserPlan,
 } from '@database/models';
+import { createHash } from 'node:crypto';
 import { businessInfo } from '@config/business';
 import { NOTIFICATION_STATUS } from '@database/models/notification.model';
 import { ORDER_STATUS, type OrderStatus } from '@config/constants';
@@ -282,6 +283,32 @@ export const notificationsService = {
       userId: complaint.userId,
       // La clave incluye respondedAt: si se responde otra vez (correccion), se reenvia.
       idempotencyKey: `complaint-${complaint.id}-responded-${complaint.respondedAt?.getTime() ?? 'x'}`,
+    });
+  },
+
+  /** Enlace de recuperacion de contrasena. El token en claro solo viaja en este correo. */
+  async notifyPasswordReset(userId: number, rawToken: string, ttlMinutes: number): Promise<void> {
+    const user = await User.findByPk(userId);
+    if (!user?.email) return;
+
+    const base = env.FRONTEND_URL.replace(/\/$/, '');
+    const resetUrl = `${base}/restablecer-clave?token=${rawToken}`;
+    const content = TEMPLATES.PASSWORD_RESET({
+      customerName: user.firstName,
+      resetUrl,
+      ttlMinutes,
+    });
+
+    await deliver({
+      template: 'PASSWORD_RESET',
+      to: user.email,
+      subject: content.subject,
+      html: content.html,
+      text: content.text,
+      userId: user.id,
+      // La clave incluye un prefijo del hash del token: un reintento del mismo envio
+      // no duplica, pero cada solicitud nueva (token nuevo) si manda un correo nuevo.
+      idempotencyKey: `password-reset-${user.id}-${createHash('sha256').update(rawToken).digest('hex').slice(0, 16)}`,
     });
   },
 

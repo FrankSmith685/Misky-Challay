@@ -1,8 +1,11 @@
 import { Link } from 'react-router-dom';
-import { Box, Card, CardActionArea, CardContent, Chip, Stack, Typography } from '@mui/material';
-import { Flame, Salad, Sparkles } from 'lucide-react';
+import { Box, Button, Card, CardActionArea, CardContent, Chip, Stack, Typography } from '@mui/material';
+import { Flame, Plus, Salad, Sparkles } from 'lucide-react';
+import toast from '@components/mui/MuiToast';
 import { ROUTES } from '@constants/routes';
 import { formatCurrency } from '@lib/format';
+import { useAppDispatch } from '@app/hooks';
+import { addItem } from '@features/cart/cartSlice';
 import { FavoriteButton } from '@features/favorites/components/FavoriteButton';
 import type { Product } from '../types';
 
@@ -15,8 +18,32 @@ const TAG_LABEL: Record<string, string> = {
 };
 
 export const ProductCard = ({ product }: { product: Product }) => {
+  const dispatch = useAppDispatch();
   const isBuilder = product.type === 'CUSTOMIZABLE';
   const to = isBuilder ? ROUTES.builder : ROUTES.product(product.slug);
+  // Se puede anadir directo solo si es FIJO y tenemos su variante por defecto.
+  const canQuickAdd = !isBuilder && product.defaultVariantId !== null;
+
+  const handleQuickAdd = () => {
+    if (product.defaultVariantId === null) return;
+    dispatch(
+      addItem({
+        id: crypto.randomUUID(),
+        productId: product.id,
+        variantId: product.defaultVariantId,
+        name: product.name,
+        variantName: product.defaultVariantName ?? '',
+        imageUrl: product.imageUrl,
+        quantity: 1,
+        unitPrice: product.defaultVariantPrice,
+        extrasTotal: 0,
+        lineTotal: product.defaultVariantPrice,
+        selections: [],
+        nutrition: product.nutrition,
+      }),
+    );
+    toast.success(`${product.name} agregado al carrito`);
+  };
 
   return (
     <Card
@@ -57,7 +84,9 @@ export const ProductCard = ({ product }: { product: Product }) => {
           <Stack direction="row" spacing={1} sx={{ mt: 'auto', pt: 2, alignItems: 'flex-end', justifyContent: 'space-between' }}>
             <Box>
               {isBuilder && <Typography variant="caption" color="text.secondary">Desde</Typography>}
-              <Typography sx={{ color: 'primary.dark', fontSize: 21, fontWeight: 850, lineHeight: 1.15 }}>{formatCurrency(product.priceFrom)}</Typography>
+              {/* Un FIJO muestra el precio de la variante que de verdad se anade, no el
+                  minimo entre variantes: si no, la tarjeta diria un precio y el carrito otro. */}
+              <Typography sx={{ color: 'primary.dark', fontSize: 21, fontWeight: 850, lineHeight: 1.15 }}>{formatCurrency(isBuilder ? product.priceFrom : (product.defaultVariantPrice || product.priceFrom))}</Typography>
             </Box>
             {product.nutrition && (
               <Stack direction="row" spacing={.5} sx={{ alignItems: 'center', color: 'text.secondary' }}>
@@ -69,6 +98,33 @@ export const ProductCard = ({ product }: { product: Product }) => {
           {!product.isAvailable && <Typography variant="caption" color="error.main" sx={{ mt: 1, fontWeight: 700 }}>No disponible en tu sucursal</Typography>}
         </CardContent>
       </CardActionArea>
+
+      {/* Accion FUERA del CardActionArea: anidar un boton dentro de un enlace es HTML
+          invalido. FIJO -> anade directo; PERSONALIZABLE -> lleva al constructor. */}
+      <Box sx={{ p: 2.25, pt: 0 }}>
+        {isBuilder ? (
+          <Button
+            component={Link}
+            to={ROUTES.builder}
+            fullWidth
+            variant="outlined"
+            startIcon={<Sparkles size={16} />}
+            disabled={!product.isAvailable}
+          >
+            Personalizar
+          </Button>
+        ) : (
+          <Button
+            fullWidth
+            variant="contained"
+            startIcon={<Plus size={16} />}
+            disabled={!product.isAvailable || !canQuickAdd}
+            onClick={handleQuickAdd}
+          >
+            Añadir al carrito
+          </Button>
+        )}
+      </Box>
     </Card>
   );
 };

@@ -118,6 +118,12 @@ const LoginPage = () => {
             {...register('password')}
           />
 
+          <Box sx={{ textAlign: 'right', mt: -1 }}>
+            <MuiLink component={Link} to={ROUTES.forgotPassword} underline="hover" variant="body2">
+              ¿Olvidaste tu contraseña?
+            </MuiLink>
+          </Box>
+
           <Button
             type="submit"
             variant="contained"

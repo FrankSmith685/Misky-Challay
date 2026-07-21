@@ -43,6 +43,12 @@ export class User extends Model<InferAttributes<User>, InferCreationAttributes<U
    * que poder demostrarlo. Un parrafo pasivo no basta; esta fecha es la prueba.
    */
   declare termsAcceptedAt: Date | null;
+  /**
+   * Recuperacion de clave: se guarda el SHA-256 del token, nunca el token en claro.
+   * Asi, aunque se filtre la base, nadie puede reconstruir un enlace de reset valido.
+   */
+  declare passwordResetTokenHash: CreationOptional<string | null>;
+  declare passwordResetExpiresAt: CreationOptional<Date | null>;
   declare lastLoginAt: Date | null;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
@@ -74,6 +80,8 @@ User.init(
     tokenVersion: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 0 },
     emailVerifiedAt: { type: DataTypes.DATE, allowNull: true },
     termsAcceptedAt: { type: DataTypes.DATE, allowNull: true },
+    passwordResetTokenHash: { type: DataTypes.STRING(64), allowNull: true },
+    passwordResetExpiresAt: { type: DataTypes.DATE, allowNull: true },
     lastLoginAt: { type: DataTypes.DATE, allowNull: true },
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,

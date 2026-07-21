@@ -31,4 +31,19 @@ export const authController = {
     if (req.user) await authService.logout(req.user.sub);
     return ok(res, null, 'Sesion cerrada');
   }),
+
+  forgotPassword: asyncHandler(async (req: Request, res: Response) => {
+    await authService.forgotPassword(req.body.email);
+    // Misma respuesta exista o no el correo: no se revela si hay cuenta (anti-enumeracion).
+    return ok(
+      res,
+      null,
+      'Si el correo esta registrado, te enviamos un enlace para restablecer tu contrasena',
+    );
+  }),
+
+  resetPassword: asyncHandler(async (req: Request, res: Response) => {
+    await authService.resetPassword(req.body.token, req.body.password);
+    return ok(res, null, 'Contrasena restablecida. Ya puedes iniciar sesion');
+  }),
 };

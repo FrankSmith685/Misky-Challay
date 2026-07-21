@@ -38,6 +38,34 @@ export const login = createAsyncThunk<
   }
 });
 
+// Recuperacion de contrasena. Ninguno de los dos autentica ni toca la sesion: solo
+// devuelven el mensaje del backend, asi que no necesitan extraReducers.
+export const requestPasswordReset = createAsyncThunk<
+  string,
+  { email: string },
+  { rejectValue: string }
+>('auth/forgotPassword', async (payload, { rejectWithValue }) => {
+  try {
+    const { data } = await api.post<ApiSuccess<null>>(ENDPOINTS.auth.forgotPassword, payload);
+    return data.message;
+  } catch (error) {
+    return rejectWithValue(getApiErrorMessage(error));
+  }
+});
+
+export const resetPassword = createAsyncThunk<
+  string,
+  { token: string; password: string },
+  { rejectValue: string }
+>('auth/resetPassword', async (payload, { rejectWithValue }) => {
+  try {
+    const { data } = await api.post<ApiSuccess<null>>(ENDPOINTS.auth.resetPassword, payload);
+    return data.message;
+  } catch (error) {
+    return rejectWithValue(getApiErrorMessage(error));
+  }
+});
+
 export const register = createAsyncThunk<
   AuthResponse,
   {

@@ -1,6 +1,9 @@
+import crypto from 'node:crypto';
+import { Op } from 'sequelize';
 import { ROLES, USER_STATUS } from '@config/constants';
 import { Permission, Role, User, UserRole } from '@database/models';
 import { ApiError } from '@shared/errors/ApiError';
+import { logger } from '@config/logger';
 import { comparePassword, hashPassword } from '@shared/utils/password';
 import {
   signAccessToken,
@@ -8,7 +11,12 @@ import {
   verifyRefreshToken,
   type TokenPayload,
 } from '@shared/utils/jwt';
+import { notificationsService } from '@modules/notifications/notifications.service';
 import type { LoginInput, RegisterInput } from './auth.validation';
+
+/** El enlace de reset caduca a la hora. Suficiente para el usuario, corto para un atacante. */
+const RESET_TOKEN_TTL_MINUTES = 60;
+const sha256 = (value: string): string => crypto.createHash('sha256').update(value).digest('hex');
 
 export interface AuthenticatedUser {
   id: number;
@@ -152,5 +160,61 @@ export const authService = {
   /** Revoca todos los refresh tokens del usuario subiendo su version. */
   async logout(userId: number): Promise<void> {
     await User.increment('tokenVersion', { where: { id: userId } });
+  },
+
+  /**
+   * Paso 1: genera un token de reset y lo envia por correo.
+   *
+   * Anti-enumeracion: responde SIEMPRE igual (el controlador da el mismo mensaje),
+   * exista o no el correo. En la base se guarda solo el SHA-256 del token; el token
+   * en claro solo viaja en el correo, una vez.
+   */
+  async forgotPassword(email: string): Promise<void> {
+    const user = await User.findOne({ where: { email } });
+    // Silencioso a proposito: no se revela si el email existe ni si esta activo.
+    if (!user?.email || user.status !== USER_STATUS.ACTIVE) return;
+
+    /* Fire-and-forget: la respuesta HTTP NO espera al UPDATE ni al envio del correo.
+     * Si lo hiciera, una cuenta existente responderia mas lento que una inexistente
+     * (el envio SMTP es un round-trip de red), y esa diferencia de latencia seria un
+     * oraculo de enumeracion — justo lo que la respuesta uniforme intenta evitar.
+     * El usuario tarda segundos en abrir el correo, asi que hacerlo despues de
+     * responder no afecta la experiencia. */
+    void (async () => {
+      try {
+        const rawToken = crypto.randomBytes(32).toString('hex'); // 64 chars, va en el enlace
+        user.passwordResetTokenHash = sha256(rawToken);
+        user.passwordResetExpiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MINUTES * 60_000);
+        await user.save();
+        await notificationsService.notifyPasswordReset(user.id, rawToken, RESET_TOKEN_TTL_MINUTES);
+      } catch (error) {
+        logger.error('Fallo al generar el enlace de recuperacion', error);
+      }
+    })();
+  },
+
+  /**
+   * Paso 2: consume el token y fija la nueva clave.
+   * El token es de un solo uso (se limpia al usarlo) y cierra las sesiones abiertas.
+   */
+  async resetPassword(rawToken: string, newPassword: string): Promise<void> {
+    const user = await User.findOne({
+      where: {
+        passwordResetTokenHash: sha256(rawToken),
+        passwordResetExpiresAt: { [Op.gt]: new Date() },
+        // Si la cuenta se bloqueo tras pedir el reset (p.ej. por fraude), el token
+        // deja de servir. El mensaje generico no revela el motivo.
+        status: USER_STATUS.ACTIVE,
+      },
+    });
+    if (!user) throw ApiError.badRequest('El enlace no es valido o ya expiro');
+
+    user.passwordHash = await hashPassword(newPassword);
+    // Un solo uso: el token se invalida al consumirlo.
+    user.passwordResetTokenHash = null;
+    user.passwordResetExpiresAt = null;
+    // Cierra cualquier sesion abierta: los refresh tokens previos dejan de servir.
+    user.tokenVersion += 1;
+    await user.save();
   },
 };

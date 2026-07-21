@@ -39,6 +39,10 @@ export interface Product {
   imageUrl: string | null;
   isFeatured: boolean;
   priceFrom: number;
+  /** Variante por defecto, para anadir un producto FIJO al carrito desde la grilla. */
+  defaultVariantId: number | null;
+  defaultVariantName: string | null;
+  defaultVariantPrice: number;
   nutrition: Nutrition | null;
   dietaryTags: string[];
   allergens: string[];

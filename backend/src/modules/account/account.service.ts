@@ -81,6 +81,9 @@ export const accountService = {
     if (!valid) throw ApiError.unauthorized('La contrasena actual no es correcta');
 
     user.passwordHash = await hashPassword(input.newPassword);
+    // Cambiar la clave cierra las demas sesiones: es lo que promete jwt.ts y lo que
+    // hace el reset. Sin esto, una sesion robada sobrevivia al cambio de contrasena.
+    user.tokenVersion += 1;
     await user.save();
   },
 

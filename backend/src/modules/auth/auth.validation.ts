@@ -29,6 +29,20 @@ export const refreshSchema = z.object({
   }),
 });
 
+export const forgotPasswordSchema = z.object({
+  body: z.object({
+    email: z.string().email('Email invalido'),
+  }),
+});
+
+export const resetPasswordSchema = z.object({
+  body: z.object({
+    // El token identifica al usuario, asi que reset NO pide email: no enumera cuentas.
+    token: z.string().min(20, 'Token invalido'),
+    password: z.string().min(8, 'La contrasena debe tener al menos 8 caracteres'),
+  }),
+});
+
 export type RegisterInput = z.infer<typeof registerSchema>['body'];
 export type LoginInput = z.infer<typeof loginSchema>['body'];
 export type RefreshInput = z.infer<typeof refreshSchema>['body'];

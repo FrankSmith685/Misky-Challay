@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, MapPin, Radio, Store } from 'lucide-react';
-import toast from 'react-hot-toast';
+import toast from '@components/mui/MuiToast';
 import { PageLoader } from '@components/common/PageLoader';
 import { Button } from '@components/ui/Button';
 import { Card, CardDescription } from '@components/ui/Card';
@@ -10,9 +10,12 @@ import { formatCurrency, formatDate } from '@lib/format';
 import { ROUTES } from '@constants/routes';
 import { ordersApi } from '../services/orders.service';
 import { OrderStatusBadge } from '../components/OrderStatusBadge';
+import { OrderTracker } from '../components/OrderTracker';
 import type { OrderWithPayment } from '@features/checkout/types';
 
 const CANCELLABLE = ['PENDING_PAYMENT', 'CONFIRMED'];
+// El pedido ya no cambia: se detiene el polling y el banner de "seguimiento activo".
+const TERMINAL = ['DELIVERED', 'CANCELLED', 'REFUNDED'];
 
 const OrderDetailPage = () => {
   const { orderNumber = '' } = useParams();
@@ -31,7 +34,7 @@ const OrderDetailPage = () => {
 
   useEffect(load, [orderNumber]);
   useEffect(() => {
-    if (!orderStatus || ['DELIVERED', 'CANCELLED'].includes(orderStatus)) return undefined;
+    if (!orderStatus || TERMINAL.includes(orderStatus)) return undefined;
     const timer = window.setInterval(() => {
       ordersApi.detail(orderNumber).then(setData).catch(() => undefined);
     }, 15_000);
@@ -84,7 +87,7 @@ const OrderDetailPage = () => {
         </div>
         <OrderStatusBadge status={order.status} />
       </div>
-      {!['DELIVERED', 'CANCELLED'].includes(order.status) && (
+      {!TERMINAL.includes(order.status) && (
         <div className="mt-4 flex items-center gap-2 rounded-2xl border border-brand-100 bg-brand-50/70 px-4 py-3 text-sm text-brand-800">
           <Radio className="size-4 animate-pulse" /> Seguimiento activo · actualizamos esta pantalla automáticamente cada 15 segundos.
         </div>
@@ -168,21 +171,10 @@ const OrderDetailPage = () => {
             )}
           </Card>
 
-          {order.statusHistory && order.statusHistory.length > 0 && (
-            <Card>
-              <p className="mb-3 font-semibold text-ink">Seguimiento</p>
-              <ol className="space-y-2">
-                {order.statusHistory.map((step, index) => (
-                  <li key={index} className="flex items-center gap-2 text-sm">
-                    <span className="size-2 rounded-full bg-brand-500" />
-                    <span className="text-ink-muted">
-                      {formatDate(step.createdAt)} · <OrderStatusBadge status={step.toStatus} />
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            </Card>
-          )}
+          <Card>
+            <p className="mb-3 font-semibold text-ink">Seguimiento</p>
+            <OrderTracker order={order} />
+          </Card>
 
           {CANCELLABLE.includes(order.status) && (
             <Button variant="danger" className="w-full" isLoading={cancelling} onClick={handleCancel}>

@@ -21,6 +21,8 @@ const CheckoutSuccessPage = lazy(() => import('@features/checkout/pages/Checkout
 const PaymentSimulatorPage = lazy(() => import('@features/checkout/pages/PaymentSimulatorPage'));
 const LoginPage = lazy(() => import('@features/auth/pages/LoginPage'));
 const RegisterPage = lazy(() => import('@features/auth/pages/RegisterPage'));
+const ForgotPasswordPage = lazy(() => import('@features/auth/pages/ForgotPasswordPage'));
+const ResetPasswordPage = lazy(() => import('@features/auth/pages/ResetPasswordPage'));
 const OrdersPage = lazy(() => import('@features/orders/pages/OrdersPage'));
 const OrderDetailPage = lazy(() => import('@features/orders/pages/OrderDetailPage'));
 const ProfilePage = lazy(() => import('@features/account/pages/ProfilePage'));
@@ -69,6 +71,8 @@ export const router = createBrowserRouter([
       { path: ROUTES.terms, element: withSuspense(<TermsPage />) },
       { path: ROUTES.login, element: withSuspense(<LoginPage />) },
       { path: ROUTES.register, element: withSuspense(<RegisterPage />) },
+      { path: ROUTES.forgotPassword, element: withSuspense(<ForgotPasswordPage />) },
+      { path: ROUTES.resetPassword, element: withSuspense(<ResetPasswordPage />) },
       // El checkout NO exige sesion: se puede comprar como invitado (el backend
       // asocia el pedido al cliente si hay token).
       { path: ROUTES.checkout, element: withSuspense(<CheckoutPage />) },

@@ -41,6 +41,10 @@ export interface ProductListItem {
   imageUrl: string | null;
   isFeatured: boolean;
   priceFrom: number;
+  /** Variante por defecto: permite anadir un producto FIJO al carrito sin abrir su ficha. */
+  defaultVariantId: number | null;
+  defaultVariantName: string | null;
+  defaultVariantPrice: number;
   nutrition: NutritionDto | null;
   dietaryTags: string[];
   allergens: string[];
@@ -149,6 +153,9 @@ export const catalogService = {
         priceFrom: variants.length
           ? Math.min(...variants.map((entry) => Number(entry.basePrice)))
           : 0,
+        defaultVariantId: variant?.id ?? null,
+        defaultVariantName: variant?.name ?? null,
+        defaultVariantPrice: variant ? Number(variant.basePrice) : 0,
         nutrition: toNutrition(variant?.nutrition),
         dietaryTags: tags.map((tag) => tag.code),
         allergens: allergens.map((allergen) => allergen.code),

@@ -14,6 +14,8 @@ export const ROUTES = {
 
   login: '/ingresar',
   register: '/crear-cuenta',
+  forgotPassword: '/recuperar-clave',
+  resetPassword: '/restablecer-clave',
 
   cart: '/carrito',
   checkout: '/checkout',
