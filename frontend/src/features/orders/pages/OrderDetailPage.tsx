@@ -134,6 +134,14 @@ const OrderDetailPage = () => {
                   <span>{formatCurrency(order.taxTotal)}</span>
                 </div>
               )}
+              <div className="flex justify-between text-xs text-ink-muted">
+                <span>Comprobante</span>
+                <span>
+                  {order.documentType === 'FACTURA'
+                    ? `Factura · RUC ${order.billingDocNumber ?? ''}`
+                    : 'Boleta'}
+                </span>
+              </div>
               {data.payment?.provider === 'cash' && (
                 <div className="flex justify-between border-t border-line pt-2 text-sm">
                   <span className="text-ink-muted">Pago contra entrega</span>

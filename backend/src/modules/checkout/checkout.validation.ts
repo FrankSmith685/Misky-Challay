@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isValidDni, isValidRuc } from '@shared/utils/peruDocs';
 
 const itemSchema = z.object({
   productId: z.coerce.number().int().positive(),
@@ -25,6 +26,31 @@ const addressSchema = z.object({
   longitude: z.coerce.number().min(-180).max(180).optional(),
 });
 
+/**
+ * Datos del comprobante (SUNAT). BOLETA no exige nada (se emite al consumidor con lo
+ * que ya tenemos). FACTURA exige RUC de 11 digitos y razon social.
+ */
+const billingSchema = z
+  .object({
+    documentType: z.enum(['BOLETA', 'FACTURA']).default('BOLETA'),
+    docNumber: z.string().trim().max(20).optional(),
+    name: z.string().trim().max(200).optional(),
+    address: z.string().trim().max(200).optional(),
+  })
+  .refine((value) => value.documentType !== 'FACTURA' || isValidRuc(value.docNumber ?? ''), {
+    message: 'Ingresa un RUC valido',
+    path: ['docNumber'],
+  })
+  .refine((value) => value.documentType !== 'FACTURA' || (value.name ?? '').trim().length >= 3, {
+    message: 'La factura necesita la razon social',
+    path: ['name'],
+  })
+  // En boleta el documento es opcional, pero si viene debe ser un DNI valido de 8 digitos.
+  .refine(
+    (value) => value.documentType !== 'BOLETA' || !value.docNumber || isValidDni(value.docNumber),
+    { message: 'El DNI debe tener 8 digitos', path: ['docNumber'] },
+  );
+
 const checkoutBody = z
   .object({
     items: z.array(itemSchema).min(1, 'El carrito esta vacio').max(30),
@@ -38,6 +64,8 @@ const checkoutBody = z
     useWallet: z.boolean().optional(),
     /** ONLINE = tarjeta/pasarela; CASH = pago contra entrega (efectivo al recibir). */
     paymentMethod: z.enum(['ONLINE', 'CASH']).default('ONLINE'),
+    /** Comprobante: boleta (por defecto) o factura con RUC. */
+    billing: billingSchema.optional(),
     contactName: z.string().max(120).optional(),
     contactPhone: z.string().max(30).optional(),
     // Cocina y reparto se guardan juntos con etiquetas; admite ambos campos de 250 caracteres.

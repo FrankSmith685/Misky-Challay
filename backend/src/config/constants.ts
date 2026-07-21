@@ -30,6 +30,29 @@ export const ORDER_STATUS_FLOW: Record<OrderStatus, OrderStatus[]> = {
 export const DELIVERY_TYPE = { DELIVERY: 'DELIVERY', PICKUP: 'PICKUP' } as const;
 export type DeliveryType = (typeof DELIVERY_TYPE)[keyof typeof DELIVERY_TYPE];
 
+/**
+ * Comprobante de pago (SUNAT). BOLETA al consumidor final; FACTURA a una empresa
+ * (da credito fiscal y exige RUC + razon social).
+ */
+export const DOCUMENT_TYPE = { BOLETA: 'BOLETA', FACTURA: 'FACTURA' } as const;
+export type DocumentType = (typeof DOCUMENT_TYPE)[keyof typeof DOCUMENT_TYPE];
+
+/** Documento de identidad del receptor del comprobante. */
+export const BILLING_DOC_TYPE = { DNI: 'DNI', RUC: 'RUC', CE: 'CE' } as const;
+export type BillingDocType = (typeof BILLING_DOC_TYPE)[keyof typeof BILLING_DOC_TYPE];
+
+/**
+ * Estado de emision del comprobante ante el OSE/SUNAT. Nace PENDING: los datos ya
+ * estan capturados, pero la emision real (XML+CDR) se hace cuando haya OSE contratado.
+ */
+export const INVOICE_STATUS = {
+  PENDING: 'PENDING',
+  ISSUED: 'ISSUED',
+  FAILED: 'FAILED',
+  VOID: 'VOID',
+} as const;
+export type InvoiceStatus = (typeof INVOICE_STATUS)[keyof typeof INVOICE_STATUS];
+
 export const SERVICE_MODE = { ASAP: 'ASAP', SCHEDULED: 'SCHEDULED' } as const;
 export type ServiceMode = (typeof SERVICE_MODE)[keyof typeof SERVICE_MODE];
 

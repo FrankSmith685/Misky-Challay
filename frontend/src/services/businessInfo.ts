@@ -31,9 +31,16 @@ export interface CodSettings {
   maxAmount: number;
 }
 
+/** Reglas de facturacion visibles al cliente. */
+export interface InvoicingSettings {
+  /** Importe a partir del cual la boleta pide DNI (regla SUNAT). */
+  boletaDniThreshold: number;
+}
+
 interface PublicSettings {
   business: BusinessInfo;
   cod: CodSettings;
+  invoicing: InvoicingSettings;
 }
 
 const FALLBACK: PublicSettings = {
@@ -48,6 +55,7 @@ const FALLBACK: PublicSettings = {
     complaintResponseDays: 15,
   },
   cod: { enabled: true, maxAmount: 300 },
+  invoicing: { boletaDniThreshold: 700 },
 };
 
 // Promesa compartida: aunque varios componentes la pidan a la vez, se hace una sola
@@ -62,7 +70,11 @@ const loadSettings = async (): Promise<PublicSettings> => {
   inflight = api
     .get<ApiSuccess<PublicSettings>>(ENDPOINTS.settings.public)
     .then((response) => {
-      cache = { business: response.data.data.business, cod: response.data.data.cod ?? FALLBACK.cod };
+      cache = {
+        business: response.data.data.business,
+        cod: response.data.data.cod ?? FALLBACK.cod,
+        invoicing: response.data.data.invoicing ?? FALLBACK.invoicing,
+      };
       return cache;
     })
     .catch(() => FALLBACK)
@@ -94,3 +106,6 @@ export const useBusinessInfo = (): BusinessInfo => useSettings().business;
 
 /** Configuracion del pago contra entrega (activo y tope). */
 export const useCodSettings = (): CodSettings => useSettings().cod;
+
+/** Reglas de facturacion (umbral de DNI en boleta). */
+export const useInvoicingSettings = (): InvoicingSettings => useSettings().invoicing;

@@ -28,6 +28,13 @@ export interface CheckoutInput {
   useWallet?: boolean;
   /** ONLINE = tarjeta; CASH = pago contra entrega (efectivo al recibir). */
   paymentMethod?: 'ONLINE' | 'CASH';
+  /** Comprobante: boleta (por defecto) o factura con RUC. */
+  billing?: {
+    documentType: 'BOLETA' | 'FACTURA';
+    docNumber?: string;
+    name?: string;
+    address?: string;
+  };
   contactName?: string;
   contactPhone?: string;
   notes?: string;
@@ -112,6 +119,11 @@ export interface OrderDetail {
   taxTotal: number;
   grandTotal: number;
   currency: string;
+  /** Comprobante emitido para el pedido. */
+  documentType?: 'BOLETA' | 'FACTURA';
+  billingDocType?: string | null;
+  billingDocNumber?: string | null;
+  billingName?: string | null;
   placedAt: string;
   confirmedAt: string | null;
   cancelReason: string | null;

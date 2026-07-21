@@ -8,11 +8,17 @@ import {
 } from 'sequelize';
 import { sequelize } from '../connection';
 import {
+  BILLING_DOC_TYPE,
   CURRENCY,
   DELIVERY_TYPE,
+  DOCUMENT_TYPE,
+  INVOICE_STATUS,
   ORDER_STATUS,
   SERVICE_MODE,
+  type BillingDocType,
   type DeliveryType,
+  type DocumentType,
+  type InvoiceStatus,
   type OrderStatus,
   type ServiceMode,
 } from '@config/constants';
@@ -64,6 +70,19 @@ export class Order extends Model<InferAttributes<Order>, InferCreationAttributes
   declare taxTotal: CreationOptional<number>;
   declare grandTotal: number;
   declare currency: CreationOptional<string>;
+
+  // --- Comprobante de pago (SUNAT) ---
+  /** BOLETA (por defecto) o FACTURA. */
+  declare documentType: CreationOptional<DocumentType>;
+  /** Documento del receptor: DNI/CE en boleta, RUC en factura. */
+  declare billingDocType: CreationOptional<BillingDocType | null>;
+  declare billingDocNumber: CreationOptional<string | null>;
+  /** Nombre del receptor o razon social (factura). */
+  declare billingName: CreationOptional<string | null>;
+  /** Domicilio fiscal (solo factura). */
+  declare billingAddress: CreationOptional<string | null>;
+  /** Estado de emision ante el OSE. Nace PENDING hasta que exista OSE configurado. */
+  declare invoiceStatus: CreationOptional<InvoiceStatus>;
 
   declare notes: CreationOptional<string | null>;
   declare cancelReason: CreationOptional<string | null>;
@@ -120,6 +139,21 @@ Order.init(
     taxTotal: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
     grandTotal: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
     currency: { type: DataTypes.CHAR(3), allowNull: false, defaultValue: CURRENCY },
+
+    documentType: {
+      type: DataTypes.ENUM(...Object.values(DOCUMENT_TYPE)),
+      allowNull: false,
+      defaultValue: DOCUMENT_TYPE.BOLETA,
+    },
+    billingDocType: { type: DataTypes.ENUM(...Object.values(BILLING_DOC_TYPE)), allowNull: true },
+    billingDocNumber: { type: DataTypes.STRING(20), allowNull: true },
+    billingName: { type: DataTypes.STRING(200), allowNull: true },
+    billingAddress: { type: DataTypes.STRING(200), allowNull: true },
+    invoiceStatus: {
+      type: DataTypes.ENUM(...Object.values(INVOICE_STATUS)),
+      allowNull: false,
+      defaultValue: INVOICE_STATUS.PENDING,
+    },
 
     notes: { type: DataTypes.TEXT, allowNull: true },
     cancelReason: { type: DataTypes.STRING(255), allowNull: true },

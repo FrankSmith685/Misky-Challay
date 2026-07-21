@@ -78,6 +78,9 @@ const envSchema = z.object({
   COD_ENABLED: booleanFromString(true),
   COD_MAX_AMOUNT: z.coerce.number().min(0).default(300),
 
+  // Boleta: a partir de este importe SUNAT exige identificar al comprador con DNI.
+  BOLETA_DNI_THRESHOLD: z.coerce.number().min(0).default(700),
+
   // --- Identidad legal del negocio -------------------------------------------
   // Datos del proveedor que la ley peruana obliga a mostrar al consumidor (razon
   // social, RUC, domicilio) y que encabezan el Libro de Reclamaciones y los correos.

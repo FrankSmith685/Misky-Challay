@@ -28,12 +28,13 @@ import { useAppState } from '@context/AppStateContext';
 import { getApiErrorMessage } from '@services/api/client';
 import { formatCurrency, formatDate } from '@lib/format';
 import { cn } from '@lib/cn';
+import { isValidDni, isValidRuc } from '@lib/peruDocs';
 import { ROUTES } from '@constants/routes';
 import { geoApi } from '@features/geo/services/geo.service';
 import type { Address, DeliverySlot } from '@features/geo/types';
 import { accountApi } from '@features/account/services/account.service';
 import { trackUxEvent } from '@services/analytics';
-import { useCodSettings } from '@services/businessInfo';
+import { useCodSettings, useInvoicingSettings } from '@services/businessInfo';
 import { checkoutApi } from '../services/checkout.service';
 import type { CheckoutInput, OrderQuote } from '../types';
 
@@ -51,12 +52,21 @@ const CheckoutPage = () => {
   const user = useAppSelector((state) => state.auth.user);
   const { address, branchId, deliveryType, setDeliveryType, setAddress, setBranch, openLocationModal } = useAppState();
   const cod = useCodSettings();
+  const invoicing = useInvoicingSettings();
 
   const [couponInput, setCouponInput] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
   const [useWallet, setUseWallet] = useState(true);
   // Como paga: online (tarjeta) o en efectivo al recibir.
   const [paymentMethod, setPaymentMethod] = useState<'ONLINE' | 'CASH'>('ONLINE');
+  // Comprobante: boleta (por defecto) o factura con RUC.
+  const [documentType, setDocumentType] = useState<'BOLETA' | 'FACTURA'>('BOLETA');
+  const [ruc, setRuc] = useState('');
+  const [razonSocial, setRazonSocial] = useState('');
+  const [fiscalAddress, setFiscalAddress] = useState('');
+  // DNI del comprador: la boleta lo pide a partir del umbral SUNAT.
+  const [boletaDni, setBoletaDni] = useState('');
+  const [billingError, setBillingError] = useState<string | null>(null);
   const [serviceMode, setServiceMode] = useState<'ASAP' | 'SCHEDULED'>('ASAP');
   const [slotId, setSlotId] = useState<number | null>(null);
   const [slots, setSlots] = useState<DeliverySlot[]>([]);
@@ -80,6 +90,8 @@ const CheckoutPage = () => {
         couponInput?: string; appliedCoupon?: string | null; useWallet?: boolean;
         serviceMode?: 'ASAP' | 'SCHEDULED'; slotId?: number | null;
         contactName?: string; contactPhone?: string; kitchenNotes?: string; deliveryNotes?: string;
+        paymentMethod?: 'ONLINE' | 'CASH'; documentType?: 'BOLETA' | 'FACTURA';
+        ruc?: string; razonSocial?: string; fiscalAddress?: string; boletaDni?: string;
       } | null;
       if (!draft) return;
       setCouponInput(draft.couponInput ?? '');
@@ -91,6 +103,12 @@ const CheckoutPage = () => {
       setContactPhone(draft.contactPhone ?? '');
       setKitchenNotes(draft.kitchenNotes ?? '');
       setDeliveryNotes(draft.deliveryNotes ?? '');
+      setPaymentMethod(draft.paymentMethod === 'CASH' ? 'CASH' : 'ONLINE');
+      setDocumentType(draft.documentType === 'FACTURA' ? 'FACTURA' : 'BOLETA');
+      setRuc(draft.ruc ?? '');
+      setRazonSocial(draft.razonSocial ?? '');
+      setFiscalAddress(draft.fiscalAddress ?? '');
+      setBoletaDni(draft.boletaDni ?? '');
     } catch {
       localStorage.removeItem('verde-bowl:checkout-draft:v1');
     }
@@ -102,10 +120,11 @@ const CheckoutPage = () => {
     const timer = window.setTimeout(() => {
       localStorage.setItem('verde-bowl:checkout-draft:v1', JSON.stringify({
         couponInput, appliedCoupon, useWallet, serviceMode, slotId, contactName, contactPhone, kitchenNotes, deliveryNotes,
+        paymentMethod, documentType, ruc, razonSocial, fiscalAddress, boletaDni,
       }));
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [couponInput, appliedCoupon, useWallet, serviceMode, slotId, contactName, contactPhone, kitchenNotes, deliveryNotes]);
+  }, [couponInput, appliedCoupon, useWallet, serviceMode, slotId, contactName, contactPhone, kitchenNotes, deliveryNotes, paymentMethod, documentType, ruc, razonSocial, fiscalAddress, boletaDni]);
 
   useEffect(() => {
     if (!user) return;
@@ -214,6 +233,20 @@ const CheckoutPage = () => {
       contactPhone: contactPhone || undefined,
       notes: notes || undefined,
       paymentMethod,
+      billing:
+        documentType === 'FACTURA'
+          ? {
+              documentType: 'FACTURA',
+              docNumber: ruc.trim(),
+              name: razonSocial.trim(),
+              address: fiscalAddress.trim() || undefined,
+            }
+          : {
+              documentType: 'BOLETA',
+              // Solo se manda el DNI cuando el umbral lo exige y el campo esta visible:
+              // asi un DNI a medias de un total anterior no viaja escondido.
+              docNumber: boletaNeedsDni ? boletaDni.trim() || undefined : undefined,
+            },
     };
   };
 
@@ -257,6 +290,13 @@ const CheckoutPage = () => {
     };
   }, [quoteInput]);
 
+  // El comprobante se emite por el valor total de la venta (el saldo es un medio de
+  // pago, no un descuento): esto es lo que compara SUNAT contra el umbral.
+  const invoiceTotal = quote ? quote.grandTotal + quote.walletAmount : 0;
+  // La boleta pide DNI a partir del umbral SUNAT (el backend lo revalida).
+  const boletaNeedsDni =
+    documentType === 'BOLETA' && invoiceTotal >= invoicing.boletaDniThreshold;
+
   // El efectivo se ofrece si esta activo y el total a cobrar no supera el tope.
   const codAvailable =
     cod.enabled && quote != null && quote.grandTotal > 0 && quote.grandTotal <= cod.maxAmount;
@@ -293,6 +333,26 @@ const CheckoutPage = () => {
     setContactErrors(errors);
     if (Object.keys(errors).length) {
       document.getElementById('checkout-contact')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+
+    // Comprobante: la factura exige un RUC valido y razon social; la boleta pide DNI a
+    // partir del umbral SUNAT. El backend revalida todo antes de crear el pedido.
+    const billingIssue =
+      documentType === 'FACTURA'
+        ? !isValidRuc(ruc)
+          ? 'Ingresa un RUC válido (11 dígitos, empieza en 10/20).'
+          : razonSocial.trim().length < 3
+            ? 'Ingresa la razón social.'
+            : null
+        : boletaNeedsDni && !boletaDni.trim()
+          ? `Para una boleta de ${formatCurrency(invoiceTotal)} necesitamos tu DNI.`
+          : boletaNeedsDni && !isValidDni(boletaDni)
+            ? 'El DNI debe tener 8 dígitos.'
+            : null;
+    setBillingError(billingIssue);
+    if (billingIssue) {
+      document.getElementById('checkout-billing')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
 
@@ -480,6 +540,72 @@ const CheckoutPage = () => {
               <Textarea rows={3} label="Indicaciones para cocina" value={kitchenNotes} onChange={(event) => setKitchenNotes(event.target.value)} placeholder="Salsa aparte, sin cubiertos…" maxLength={250} />
               <Textarea rows={3} label="Indicaciones para reparto" value={deliveryNotes} onChange={(event) => setDeliveryNotes(event.target.value)} placeholder="Tocar el timbre, recepción…" maxLength={250} />
             </div>
+          </Card>
+
+          <Card id="checkout-billing">
+            <CardTitle className="mb-1 text-base">Comprobante de pago</CardTitle>
+            <CardDescription className="mb-3 text-xs">
+              Emitimos boleta por defecto. Elige factura si necesitas sustentar el gasto de tu empresa.
+            </CardDescription>
+            <div className="grid grid-cols-2 gap-2">
+              {(['BOLETA', 'FACTURA'] as const).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => { setDocumentType(type); setBillingError(null); }}
+                  aria-pressed={documentType === type}
+                  className={`rounded-xl border px-3 py-2.5 text-sm transition-colors ${
+                    documentType === type
+                      ? 'border-brand-600 bg-brand-50 text-brand-800'
+                      : 'border-line text-ink-muted hover:border-brand-300'
+                  }`}
+                >
+                  {type === 'BOLETA' ? 'Boleta' : 'Factura'}
+                </button>
+              ))}
+            </div>
+            {documentType === 'FACTURA' && (
+              <div className="mt-3 grid gap-3">
+                <Input
+                  label="RUC"
+                  value={ruc}
+                  onChange={(event) => { setRuc(event.target.value.replace(/\D/g, '').slice(0, 11)); setBillingError(null); }}
+                  placeholder="20123456789"
+                  inputMode="numeric"
+                  error={billingError && !isValidRuc(ruc) ? billingError : undefined}
+                />
+                <Input
+                  label="Razón social"
+                  value={razonSocial}
+                  onChange={(event) => { setRazonSocial(event.target.value); setBillingError(null); }}
+                  placeholder="Mi Empresa S.A.C."
+                  maxLength={200}
+                  error={billingError && isValidRuc(ruc) ? billingError : undefined}
+                />
+                <Input
+                  label="Dirección fiscal (opcional)"
+                  value={fiscalAddress}
+                  onChange={(event) => setFiscalAddress(event.target.value)}
+                  placeholder="Av. Ejemplo 123, Lima"
+                  maxLength={200}
+                />
+              </div>
+            )}
+            {documentType === 'BOLETA' && boletaNeedsDni && (
+              <div className="mt-3">
+                <Input
+                  label="DNI"
+                  value={boletaDni}
+                  onChange={(event) => { setBoletaDni(event.target.value.replace(/\D/g, '').slice(0, 8)); setBillingError(null); }}
+                  placeholder="12345678"
+                  inputMode="numeric"
+                  error={billingError ?? undefined}
+                />
+                <p className="mt-1 text-xs text-ink-muted">
+                  A partir de {formatCurrency(invoicing.boletaDniThreshold)}, SUNAT pide identificar la boleta con tu DNI.
+                </p>
+              </div>
+            )}
           </Card>
 
           <Card>

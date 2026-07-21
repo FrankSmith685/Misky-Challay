@@ -19,12 +19,16 @@ import {
 import { deriveIdempotencyKey } from '@shared/utils/idempotency';
 import { round2 } from '@shared/utils/money';
 import { allocateProportionally, splitTaxFromGross } from '@shared/utils/tax';
+import { isValidDni, isValidRuc } from '@shared/utils/peruDocs';
 import { REDEMPTION_STATUS } from '@database/models/couponRedemption.model';
 import { DISCOUNT_SOURCE } from '@database/models/orderDiscount.model';
 import { PAYABLE_TYPE } from '@database/models/payment.model';
 import type { AddressSnapshot } from '@database/models/order.model';
 import {
+  BILLING_DOC_TYPE,
   DELIVERY_TYPE,
+  DOCUMENT_TYPE,
+  INVOICE_STATUS,
   ORDER_STATUS,
   PAYMENT_METHOD,
   PAYMENT_PROVIDER,
@@ -32,6 +36,7 @@ import {
   SERVICE_MODE,
   WALLET_TX_TYPE,
   type DeliveryType,
+  type DocumentType,
   type PaymentMethod,
   type ServiceMode,
 } from '@config/constants';
@@ -71,6 +76,13 @@ export interface CheckoutInput {
   useWallet?: boolean;
   /** ONLINE = pasarela; CASH = pago contra entrega. Por defecto ONLINE. */
   paymentMethod?: PaymentMethod;
+  /** Datos del comprobante (SUNAT). Boleta si no se envia. */
+  billing?: {
+    documentType: DocumentType;
+    docNumber?: string;
+    name?: string;
+    address?: string;
+  } | null;
   contactName?: string | null;
   contactPhone?: string | null;
   notes?: string | null;
@@ -287,6 +299,37 @@ export const checkoutService = {
       throw ApiError.badRequest('Elige una franja horaria para tu pedido programado');
     }
 
+    // Comprobante: se normaliza y valida antes de crear el pedido. La factura exige
+    // RUC valido y razon social; la boleta usa lo que haya (nombre de contacto) y pide
+    // DNI a partir del umbral SUNAT.
+    const documentType = input.billing?.documentType ?? DOCUMENT_TYPE.BOLETA;
+    const isInvoice = documentType === DOCUMENT_TYPE.FACTURA;
+    const docNumber = input.billing?.docNumber?.trim() || null;
+    const billing = {
+      documentType,
+      docType: isInvoice ? BILLING_DOC_TYPE.RUC : docNumber ? BILLING_DOC_TYPE.DNI : null,
+      docNumber,
+      name: (isInvoice ? input.billing?.name : (input.billing?.name ?? input.contactName)) || null,
+      address: (isInvoice ? input.billing?.address : null) || null,
+    };
+
+    // Defensa por si el body no paso por el refine de zod (cliente de API directo).
+    if (isInvoice && (!billing.docNumber || !isValidRuc(billing.docNumber) || !billing.name)) {
+      throw ApiError.badRequest('La factura necesita un RUC valido y la razon social');
+    }
+    if (!isInvoice && billing.docNumber && !isValidDni(billing.docNumber)) {
+      throw ApiError.badRequest('El DNI debe tener 8 digitos');
+    }
+    // El comprobante se emite por el valor total de la venta, no por lo que se cobra a
+    // la tarjeta: el saldo (wallet) es un medio de pago, no un descuento. Sobre el umbral
+    // SUNAT, la boleta debe identificar al comprador con DNI.
+    const invoiceTotal = round2(quote.grandTotal + quote.walletAmount);
+    if (!isInvoice && invoiceTotal >= env.BOLETA_DNI_THRESHOLD && !billing.docNumber) {
+      throw ApiError.badRequest(
+        `Para una boleta de S/ ${invoiceTotal.toFixed(2)} o mas necesitamos tu DNI.`,
+      );
+    }
+
     const allergensByProduct = await loadAllergenCodes([
       ...new Set(input.items.map((item) => item.productId)),
     ]);
@@ -323,6 +366,12 @@ export const checkoutService = {
           taxTotal: quote.taxTotal,
           grandTotal: quote.grandTotal,
           currency: quote.currency,
+          documentType: billing.documentType,
+          billingDocType: billing.docType,
+          billingDocNumber: billing.docNumber,
+          billingName: billing.name,
+          billingAddress: billing.address,
+          invoiceStatus: INVOICE_STATUS.PENDING,
           notes: input.notes ?? null,
           idempotencyKey,
         },

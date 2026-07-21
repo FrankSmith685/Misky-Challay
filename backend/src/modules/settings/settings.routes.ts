@@ -25,6 +25,10 @@ router.get(
         enabled: env.COD_ENABLED,
         maxAmount: env.COD_MAX_AMOUNT,
       },
+      // A partir de este importe la boleta pide el DNI del comprador (regla SUNAT).
+      invoicing: {
+        boletaDniThreshold: env.BOLETA_DNI_THRESHOLD,
+      },
     }),
   ),
 );
