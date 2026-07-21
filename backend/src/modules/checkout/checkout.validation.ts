@@ -36,6 +36,8 @@ const checkoutBody = z
     couponCode: z.string().max(40).optional(),
     /** El cliente decide si gasta el saldo de su plan en este pedido. */
     useWallet: z.boolean().optional(),
+    /** ONLINE = tarjeta/pasarela; CASH = pago contra entrega (efectivo al recibir). */
+    paymentMethod: z.enum(['ONLINE', 'CASH']).default('ONLINE'),
     contactName: z.string().max(120).optional(),
     contactPhone: z.string().max(30).optional(),
     // Cocina y reparto se guardan juntos con etiquetas; admite ambos campos de 250 caracteres.

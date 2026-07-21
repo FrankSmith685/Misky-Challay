@@ -4,6 +4,7 @@ import {
   Notification,
   Order,
   OrderItem,
+  Payment,
   Role,
   User,
   UserPlan,
@@ -11,7 +12,8 @@ import {
 import { createHash } from 'node:crypto';
 import { businessInfo } from '@config/business';
 import { NOTIFICATION_STATUS } from '@database/models/notification.model';
-import { ORDER_STATUS, type OrderStatus } from '@config/constants';
+import { PAYABLE_TYPE } from '@database/models/payment.model';
+import { ORDER_STATUS, PAYMENT_PROVIDER, PAYMENT_STATUS, type OrderStatus } from '@config/constants';
 import { env } from '@config/env';
 import { logger } from '@config/logger';
 import { getMailProvider } from '@integrations/mail';
@@ -175,7 +177,22 @@ export const notificationsService = {
     const email = user?.email;
     if (!email) return;
 
-    const data: OrderEmailData & { reason?: string | null } = {
+    // Pago contra entrega: el correo de confirmacion no puede decir "recibimos tu
+    // pago" si el efectivo aun no se cobro. Se anota cuanto queda por pagar al recibir.
+    let cashDue: number | null = null;
+    if (status === ORDER_STATUS.CONFIRMED) {
+      const cash = await Payment.findOne({
+        where: {
+          payableType: PAYABLE_TYPE.ORDER,
+          payableId: order.id,
+          provider: PAYMENT_PROVIDER.CASH,
+          status: PAYMENT_STATUS.PENDING,
+        },
+      });
+      if (cash) cashDue = Number(cash.amount);
+    }
+
+    const data: OrderEmailData & { reason?: string | null; cashDue?: number | null } = {
       orderNumber: order.orderNumber,
       customerName: order.contactName ?? user.firstName,
       grandTotal: Number(order.grandTotal),
@@ -185,6 +202,7 @@ export const notificationsService = {
         name: item.productNameSnapshot,
       })),
       reason: order.cancelReason,
+      cashDue,
     };
 
     const content = TEMPLATES[templateName](data as never);

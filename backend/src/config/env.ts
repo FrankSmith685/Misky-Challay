@@ -73,6 +73,11 @@ const envSchema = z.object({
   // Se guarda ademas en cada pedido, para que un cambio de tasa no reescriba el pasado.
   IGV_RATE: z.coerce.number().min(0).max(1).default(0.18),
 
+  // Pago contra entrega (efectivo al recibir). Dominante en delivery en Peru.
+  // El tope acota el riesgo de pedidos falsos: por encima de ese monto, solo pago online.
+  COD_ENABLED: booleanFromString(true),
+  COD_MAX_AMOUNT: z.coerce.number().min(0).default(300),
+
   // --- Identidad legal del negocio -------------------------------------------
   // Datos del proveedor que la ley peruana obliga a mostrar al consumidor (razon
   // social, RUC, domicilio) y que encabezan el Libro de Reclamaciones y los correos.

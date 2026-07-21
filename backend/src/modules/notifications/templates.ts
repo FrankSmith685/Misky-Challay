@@ -37,6 +37,8 @@ export interface OrderEmailData {
   branchName?: string | null;
   etaMinutes?: number | null;
   items: Array<{ quantity: number; name: string }>;
+  /** Pago contra entrega: monto en efectivo a cobrar al recibir. */
+  cashDue?: number | null;
 }
 
 export interface PlanEmailData {
@@ -70,19 +72,25 @@ const orderUrl = (orderNumber: string): string =>
   `${env.FRONTEND_URL}/cuenta/pedidos/${orderNumber}`;
 
 export const TEMPLATES = {
-  ORDER_CONFIRMED: (data: OrderEmailData) => ({
-    subject: `Tu pedido ${data.orderNumber} esta confirmado`,
-    text: `Hola${data.customerName ? ` ${data.customerName}` : ''}, recibimos tu pago. Tu pedido ${data.orderNumber} (${money(data.grandTotal)}) ya esta en cocina.`,
-    html: layout(
-      'Pedido confirmado',
-      `<p>Hola${data.customerName ? ` <strong>${data.customerName}</strong>` : ''}, recibimos tu pago y ya estamos preparando tu pedido.</p>
-       ${itemsList(data.items)}
-       <p style="margin-top:16px"><strong>Total:</strong> ${money(data.grandTotal)}<br/>
-       ${data.branchName ? `<strong>Prepara:</strong> ${data.branchName}<br/>` : ''}
-       ${data.etaMinutes ? `<strong>Llega en:</strong> ~${data.etaMinutes} minutos` : ''}</p>`,
-      { label: 'Seguir mi pedido', url: orderUrl(data.orderNumber) },
-    ),
-  }),
+  ORDER_CONFIRMED: (data: OrderEmailData) => {
+    const isCash = data.cashDue != null && data.cashDue > 0;
+    return {
+      subject: `Tu pedido ${data.orderNumber} esta confirmado`,
+      text: isCash
+        ? `Hola${data.customerName ? ` ${data.customerName}` : ''}, confirmamos tu pedido ${data.orderNumber} y ya esta en cocina. Paga ${money(data.cashDue!)} en efectivo al recibirlo.`
+        : `Hola${data.customerName ? ` ${data.customerName}` : ''}, recibimos tu pago. Tu pedido ${data.orderNumber} (${money(data.grandTotal)}) ya esta en cocina.`,
+      html: layout(
+        'Pedido confirmado',
+        `<p>Hola${data.customerName ? ` <strong>${data.customerName}</strong>` : ''}, ${isCash ? 'confirmamos tu pedido y ya estamos preparandolo.' : 'recibimos tu pago y ya estamos preparando tu pedido.'}</p>
+         ${itemsList(data.items)}
+         <p style="margin-top:16px"><strong>Total:</strong> ${money(data.grandTotal)}<br/>
+         ${data.branchName ? `<strong>Prepara:</strong> ${data.branchName}<br/>` : ''}
+         ${data.etaMinutes ? `<strong>Llega en:</strong> ~${data.etaMinutes} minutos` : ''}</p>
+         ${isCash ? `<p style="margin-top:16px;padding:12px 16px;background:#f3f6f4;border-left:3px solid #237c52"><strong>Pago contra entrega:</strong> ten listos ${money(data.cashDue!)} en efectivo para pagar al recibir tu pedido.</p>` : ''}`,
+        { label: 'Seguir mi pedido', url: orderUrl(data.orderNumber) },
+      ),
+    };
+  },
 
   ORDER_PREPARING: (data: OrderEmailData) => ({
     subject: `Estamos preparando tu pedido ${data.orderNumber}`,

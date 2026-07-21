@@ -45,6 +45,24 @@ export const PAYMENT_STATUS = {
 } as const;
 export type PaymentStatus = (typeof PAYMENT_STATUS)[keyof typeof PAYMENT_STATUS];
 
+/**
+ * Proveedor de cada pago. `stripe` y `wallet` ya existian; `cash` es el pago contra
+ * entrega: el pedido se confirma sin cobro online y el efectivo se cobra al entregar.
+ */
+export const PAYMENT_PROVIDER = {
+  STRIPE: 'stripe',
+  WALLET: 'wallet',
+  CASH: 'cash',
+} as const;
+export type PaymentProviderName = (typeof PAYMENT_PROVIDER)[keyof typeof PAYMENT_PROVIDER];
+
+/** Como paga el cliente al hacer el checkout. */
+export const PAYMENT_METHOD = {
+  ONLINE: 'ONLINE',
+  CASH: 'CASH',
+} as const;
+export type PaymentMethod = (typeof PAYMENT_METHOD)[keyof typeof PAYMENT_METHOD];
+
 export const WALLET_TX_TYPE = {
   CREDIT: 'CREDIT',
   DEBIT: 'DEBIT',

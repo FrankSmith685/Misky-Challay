@@ -25,30 +25,44 @@ export interface BusinessInfo {
   complaintResponseDays: number;
 }
 
-const FALLBACK: BusinessInfo = {
-  legalName: 'Verde Bowl S.A.C.',
-  commercialName: 'Verde Bowl',
-  ruc: '20600000000',
-  address: 'Miraflores, Lima',
-  phone: '+51 999 999 999',
-  email: 'hola@verdebowl.com',
-  supportEmail: 'reclamos@verdebowl.com',
-  complaintResponseDays: 15,
+/** Configuracion publica del pago contra entrega. */
+export interface CodSettings {
+  enabled: boolean;
+  maxAmount: number;
+}
+
+interface PublicSettings {
+  business: BusinessInfo;
+  cod: CodSettings;
+}
+
+const FALLBACK: PublicSettings = {
+  business: {
+    legalName: 'Verde Bowl S.A.C.',
+    commercialName: 'Verde Bowl',
+    ruc: '20600000000',
+    address: 'Miraflores, Lima',
+    phone: '+51 999 999 999',
+    email: 'hola@verdebowl.com',
+    supportEmail: 'reclamos@verdebowl.com',
+    complaintResponseDays: 15,
+  },
+  cod: { enabled: true, maxAmount: 300 },
 };
 
-// Promesa compartida: aunque tres componentes pidan la info a la vez, se hace una
-// sola peticion.
-let cache: BusinessInfo | null = null;
-let inflight: Promise<BusinessInfo> | null = null;
+// Promesa compartida: aunque varios componentes la pidan a la vez, se hace una sola
+// peticion.
+let cache: PublicSettings | null = null;
+let inflight: Promise<PublicSettings> | null = null;
 
-export const loadBusinessInfo = async (): Promise<BusinessInfo> => {
+const loadSettings = async (): Promise<PublicSettings> => {
   if (cache) return cache;
   if (inflight) return inflight;
 
   inflight = api
-    .get<ApiSuccess<{ business: BusinessInfo }>>(ENDPOINTS.settings.public)
+    .get<ApiSuccess<PublicSettings>>(ENDPOINTS.settings.public)
     .then((response) => {
-      cache = response.data.data.business;
+      cache = { business: response.data.data.business, cod: response.data.data.cod ?? FALLBACK.cod };
       return cache;
     })
     .catch(() => FALLBACK)
@@ -59,19 +73,24 @@ export const loadBusinessInfo = async (): Promise<BusinessInfo> => {
   return inflight;
 };
 
-/** La info del negocio, con el fallback disponible desde el primer render. */
-export const useBusinessInfo = (): BusinessInfo => {
-  const [info, setInfo] = useState<BusinessInfo>(cache ?? FALLBACK);
+const useSettings = (): PublicSettings => {
+  const [settings, setSettings] = useState<PublicSettings>(cache ?? FALLBACK);
 
   useEffect(() => {
     let active = true;
-    void loadBusinessInfo().then((loaded) => {
-      if (active) setInfo(loaded);
+    void loadSettings().then((loaded) => {
+      if (active) setSettings(loaded);
     });
     return () => {
       active = false;
     };
   }, []);
 
-  return info;
+  return settings;
 };
+
+/** La info del negocio, con el fallback disponible desde el primer render. */
+export const useBusinessInfo = (): BusinessInfo => useSettings().business;
+
+/** Configuracion del pago contra entrega (activo y tope). */
+export const useCodSettings = (): CodSettings => useSettings().cod;

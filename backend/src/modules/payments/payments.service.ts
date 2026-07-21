@@ -2,7 +2,7 @@ import type { Transaction } from 'sequelize';
 import { Order, Payment, Refund, WebhookEvent, sequelize } from '@database/models';
 import { PAYABLE_TYPE } from '@database/models/payment.model';
 import { REFUND_STATUS } from '@database/models/refund.model';
-import { ORDER_STATUS, PAYMENT_STATUS } from '@config/constants';
+import { ORDER_STATUS, PAYMENT_PROVIDER, PAYMENT_STATUS } from '@config/constants';
 import { logger } from '@config/logger';
 import { ApiError } from '@shared/errors/ApiError';
 import { round2 } from '@shared/utils/money';
@@ -216,7 +216,9 @@ export const paymentsService = {
       if (locked.status !== PAYMENT_STATUS.SUCCEEDED) {
         throw ApiError.unprocessable('Solo se puede devolver un pago confirmado');
       }
-      if (!locked.providerReference) {
+      // El efectivo se devuelve en mano: no hay proveedor que llamar ni referencia.
+      // Solo se exige referencia a los pagos online (tarjeta).
+      if (locked.provider !== PAYMENT_PROVIDER.CASH && !locked.providerReference) {
         throw ApiError.unprocessable('El pago no tiene referencia del proveedor');
       }
 
@@ -251,21 +253,26 @@ export const paymentsService = {
       return { payment: locked, refund: created };
     });
 
-    const provider = getPaymentProvider();
-
     let result: { succeeded: boolean; providerReference?: string | null };
-    try {
-      result = await provider.refund({
-        providerReference: payment.providerReference as string,
-        amount,
-        reason,
-      });
-    } catch (error) {
-      // Sin esto la fila quedaba PENDING para siempre y bloqueaba el importe restante.
-      refund.status = REFUND_STATUS.FAILED;
-      await refund.save();
-      logger.error(`Fallo el reembolso del pago ${payment.id}`, error);
-      throw ApiError.unprocessable('El proveedor rechazo el reembolso. Intentalo de nuevo.');
+    if (payment.provider === PAYMENT_PROVIDER.CASH) {
+      // Reembolso en efectivo: no hay proveedor. La fila Refund es el asiento contable
+      // de que se devolvio el dinero en mano; el desenlace se marca abajo.
+      result = { succeeded: true, providerReference: null };
+    } else {
+      const provider = getPaymentProvider();
+      try {
+        result = await provider.refund({
+          providerReference: payment.providerReference as string,
+          amount,
+          reason,
+        });
+      } catch (error) {
+        // Sin esto la fila quedaba PENDING para siempre y bloqueaba el importe restante.
+        refund.status = REFUND_STATUS.FAILED;
+        await refund.save();
+        logger.error(`Fallo el reembolso del pago ${payment.id}`, error);
+        throw ApiError.unprocessable('El proveedor rechazo el reembolso. Intentalo de nuevo.');
+      }
     }
 
     await sequelize.transaction(async (transaction) => {

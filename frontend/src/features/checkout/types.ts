@@ -26,6 +26,8 @@ export interface CheckoutInput {
   couponCode?: string;
   /** Gastar el saldo del plan en este pedido. */
   useWallet?: boolean;
+  /** ONLINE = tarjeta; CASH = pago contra entrega (efectivo al recibir). */
+  paymentMethod?: 'ONLINE' | 'CASH';
   contactName?: string;
   contactPhone?: string;
   notes?: string;

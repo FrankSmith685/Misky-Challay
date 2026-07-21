@@ -134,6 +134,18 @@ const OrderDetailPage = () => {
                   <span>{formatCurrency(order.taxTotal)}</span>
                 </div>
               )}
+              {data.payment?.provider === 'cash' && (
+                <div className="flex justify-between border-t border-line pt-2 text-sm">
+                  <span className="text-ink-muted">Pago contra entrega</span>
+                  {data.payment.status === 'SUCCEEDED' ? (
+                    <span className="font-medium text-brand-700">Cobrado</span>
+                  ) : data.payment.status === 'FAILED' ? (
+                    <span className="font-medium text-ink-muted">Anulado</span>
+                  ) : (
+                    <span className="font-medium text-accent-600">Pagas al recibir</span>
+                  )}
+                </div>
+              )}
             </dl>
           </Card>
 

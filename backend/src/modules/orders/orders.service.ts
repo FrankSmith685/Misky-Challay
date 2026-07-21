@@ -17,6 +17,8 @@ import { PAYABLE_TYPE } from '@database/models/payment.model';
 import {
   ORDER_STATUS,
   ORDER_STATUS_FLOW,
+  PAYMENT_PROVIDER,
+  PAYMENT_STATUS,
   WALLET_TX_TYPE,
   type OrderStatus,
 } from '@config/constants';
@@ -56,6 +58,33 @@ export interface StatusChangeContext {
   transaction?: Transaction;
 }
 
+/**
+ * Cierra el pago en efectivo pendiente de un pedido.
+ * Al entregar se cobra (SUCCEEDED); al cancelar se anula (FAILED). Solo actua sobre
+ * el pago `cash` que sigue PENDING, asi que es seguro llamarlo en cualquier transicion.
+ */
+const settleCashPayment = async (
+  orderId: number,
+  status: (typeof PAYMENT_STATUS)['SUCCEEDED'] | (typeof PAYMENT_STATUS)['FAILED'],
+  transaction: Transaction,
+): Promise<void> => {
+  const cash = await Payment.findOne({
+    where: {
+      payableType: PAYABLE_TYPE.ORDER,
+      payableId: orderId,
+      provider: PAYMENT_PROVIDER.CASH,
+      status: PAYMENT_STATUS.PENDING,
+    },
+    transaction,
+  });
+  if (!cash) return;
+
+  cash.status = status;
+  if (status === PAYMENT_STATUS.SUCCEEDED) cash.capturedAt = new Date();
+  else cash.failedAt = new Date();
+  await cash.save({ transaction });
+};
+
 export const ordersService = {
   /**
    * Cambia el estado respetando las transiciones validas (figura 3 del analisis)
@@ -74,8 +103,16 @@ export const ordersService = {
     const apply = async (transaction: Transaction) => {
       order.status = next;
       if (next === ORDER_STATUS.CONFIRMED) order.confirmedAt = new Date();
-      if (next === ORDER_STATUS.DELIVERED) order.deliveredAt = new Date();
-      if (next === ORDER_STATUS.CANCELLED) order.cancelledAt = new Date();
+      if (next === ORDER_STATUS.DELIVERED) {
+        order.deliveredAt = new Date();
+        // Pago contra entrega: el efectivo se cobra al entregar.
+        await settleCashPayment(order.id, PAYMENT_STATUS.SUCCEEDED, transaction);
+      }
+      if (next === ORDER_STATUS.CANCELLED) {
+        order.cancelledAt = new Date();
+        // Un pedido en efectivo que se cancela nunca se cobra: el pago pendiente se anula.
+        await settleCashPayment(order.id, PAYMENT_STATUS.FAILED, transaction);
+      }
 
       await order.save({ transaction });
 

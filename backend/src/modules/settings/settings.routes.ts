@@ -20,6 +20,11 @@ router.get(
     ok(res, {
       business: businessInfo,
       igvRate: env.IGV_RATE,
+      // Pago contra entrega: el checkout lo ofrece solo si esta activo y bajo el tope.
+      cod: {
+        enabled: env.COD_ENABLED,
+        maxAmount: env.COD_MAX_AMOUNT,
+      },
     }),
   ),
 );

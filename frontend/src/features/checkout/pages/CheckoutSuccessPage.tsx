@@ -24,6 +24,7 @@ const CheckoutSuccessPage = () => {
   const orderNumber = params.get('pedido');
 
   const [order, setOrder] = useState<OrderDetail | null>(null);
+  const [isCash, setIsCash] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const cartCleared = useRef(false);
 
@@ -36,10 +37,11 @@ const CheckoutSuccessPage = () => {
 
     const poll = async () => {
       try {
-        const { order: fetched } = await checkoutApi.getOrder(orderNumber);
+        const { order: fetched, payment } = await checkoutApi.getOrder(orderNumber);
         if (cancelled) return;
 
         setOrder(fetched);
+        setIsCash(payment?.provider === 'cash');
         setIsLoading(false);
 
         if (fetched.status === 'CONFIRMED' && !cartCleared.current) {
@@ -76,8 +78,11 @@ const CheckoutSuccessPage = () => {
 
   if (isLoading) return <PageLoader />;
 
-  const isConfirmed = order?.status === 'CONFIRMED';
-  const isCancelled = order?.status === 'CANCELLED';
+  // Solo PENDING_PAYMENT sigue "esperando"; el resto ya avanzo. Un pedido en efectivo
+  // nace CONFIRMED y puede estar ya en PREPARING/READY/etc. cuando se reabre esta URL.
+  const isCancelled = order?.status === 'CANCELLED' || order?.status === 'REFUNDED';
+  const isWaiting = order?.status === 'PENDING_PAYMENT';
+  const isConfirmed = order != null && !isCancelled && !isWaiting;
 
   return (
     <div className="mx-auto max-w-lg px-4 py-16">
@@ -90,17 +95,25 @@ const CheckoutSuccessPage = () => {
 
         <CardTitle className="mt-4 text-xl">
           {isConfirmed && 'Pedido confirmado'}
-          {isCancelled && 'El pago no se completo'}
-          {!isConfirmed && !isCancelled && 'Confirmando tu pago...'}
+          {isCancelled && (order?.status === 'REFUNDED' ? 'Pedido reembolsado' : 'El pago no se completo')}
+          {isWaiting && 'Confirmando tu pago...'}
         </CardTitle>
 
         <CardDescription className="mt-2">
           {isConfirmed && 'Ya lo estamos preparando. Te avisaremos cuando salga.'}
           {isCancelled && (order?.cancelReason ?? 'Puedes intentarlo de nuevo desde tu carrito.')}
-          {!isConfirmed &&
-            !isCancelled &&
-            'Estamos esperando la confirmacion del banco. No cierres esta pagina.'}
+          {isWaiting &&
+            (isCash
+              ? 'Estamos confirmando tu pedido. No cierres esta pagina.'
+              : 'Estamos esperando la confirmacion del banco. No cierres esta pagina.')}
         </CardDescription>
+
+        {isConfirmed && isCash && order && (
+          <p className="mx-auto mt-4 max-w-sm rounded-xl border border-brand-100 bg-brand-50/70 px-4 py-2.5 text-sm text-brand-800">
+            Pago contra entrega: ten listos <strong>{formatCurrency(order.grandTotal)}</strong> en
+            efectivo para pagar al recibir tu pedido.
+          </p>
+        )}
 
         {order && (
           <dl className="mt-6 space-y-1.5 border-t border-line pt-4 text-left text-sm">

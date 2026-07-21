@@ -26,10 +26,13 @@ import type { AddressSnapshot } from '@database/models/order.model';
 import {
   DELIVERY_TYPE,
   ORDER_STATUS,
+  PAYMENT_METHOD,
+  PAYMENT_PROVIDER,
   PAYMENT_STATUS,
   SERVICE_MODE,
   WALLET_TX_TYPE,
   type DeliveryType,
+  type PaymentMethod,
   type ServiceMode,
 } from '@config/constants';
 import { env } from '@config/env';
@@ -66,6 +69,8 @@ export interface CheckoutInput {
   couponCode?: string | null;
   /** El cliente decide si gasta el saldo de su plan en este pedido. */
   useWallet?: boolean;
+  /** ONLINE = pasarela; CASH = pago contra entrega. Por defecto ONLINE. */
+  paymentMethod?: PaymentMethod;
   contactName?: string | null;
   contactPhone?: string | null;
   notes?: string | null;
@@ -263,6 +268,19 @@ export const checkoutService = {
       throw ApiError.unprocessable(
         `El pedido minimo para tu zona es S/ ${quote.minimumOrder.toFixed(2)}`,
       );
+    }
+
+    // Guardas del pago contra entrega ANTES de crear nada: si se rechazan despues de
+    // la transaccion, el pedido queda huerfano y el saldo del plan ya debitado.
+    if (input.paymentMethod === PAYMENT_METHOD.CASH && quote.grandTotal > 0) {
+      if (!env.COD_ENABLED) {
+        throw ApiError.unprocessable('El pago contra entrega no esta disponible por ahora');
+      }
+      if (quote.grandTotal > env.COD_MAX_AMOUNT) {
+        throw ApiError.unprocessable(
+          `El pago contra entrega admite hasta S/ ${env.COD_MAX_AMOUNT.toFixed(2)}. Para montos mayores usa pago con tarjeta.`,
+        );
+      }
     }
 
     if (input.serviceMode === SERVICE_MODE.SCHEDULED && !input.deliverySlotId) {
@@ -482,7 +500,36 @@ export const checkoutService = {
       return { order, payment: walletPayment, checkoutUrl: null, reused: false };
     }
 
-    // --- Caso 2: queda un importe por cobrar -> Stripe ---
+    // --- Caso 2: pago contra entrega ---
+    // No hay cobro online: el pedido se acepta de una vez (entra a cocina) y el
+    // efectivo se cobra al entregar. El pago queda PENDING hasta ese momento.
+    // El tope y el interruptor ya se validaron antes de crear el pedido.
+    if (input.paymentMethod === PAYMENT_METHOD.CASH) {
+      const cashPayment = await Payment.create({
+        payableType: PAYABLE_TYPE.ORDER,
+        payableId: order.id,
+        userId: input.userId ?? null,
+        provider: PAYMENT_PROVIDER.CASH,
+        method: PAYMENT_PROVIDER.CASH,
+        amount: round2(quote.grandTotal),
+        currency: quote.currency,
+        status: PAYMENT_STATUS.PENDING,
+        idempotencyKey,
+      });
+
+      await sequelize.transaction(async (transaction) => {
+        await confirmPaidOrder(
+          order,
+          transaction,
+          'CUSTOMER',
+          `Pago contra entrega: cobrar S/ ${quote.grandTotal.toFixed(2)} al recibir`,
+        );
+      });
+
+      return { order, payment: cashPayment, checkoutUrl: null, reused: false };
+    }
+
+    // --- Caso 3: queda un importe por cobrar -> Stripe ---
     const provider = getPaymentProvider();
 
     const payment = await Payment.create({

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
+  Banknote,
   CalendarClock,
   CheckCircle2,
   Clock3,
@@ -13,7 +14,7 @@ import {
   Tag,
   Wallet,
 } from 'lucide-react';
-import toast from 'react-hot-toast';
+import toast from '@components/mui/MuiToast';
 import { SectionHeading } from '@components/common/SectionHeading';
 import { Button } from '@components/ui/Button';
 import { Input } from '@components/ui/Input';
@@ -32,6 +33,7 @@ import { geoApi } from '@features/geo/services/geo.service';
 import type { Address, DeliverySlot } from '@features/geo/types';
 import { accountApi } from '@features/account/services/account.service';
 import { trackUxEvent } from '@services/analytics';
+import { useCodSettings } from '@services/businessInfo';
 import { checkoutApi } from '../services/checkout.service';
 import type { CheckoutInput, OrderQuote } from '../types';
 
@@ -48,10 +50,13 @@ const CheckoutPage = () => {
   const { items } = useAppSelector((state) => state.cart);
   const user = useAppSelector((state) => state.auth.user);
   const { address, branchId, deliveryType, setDeliveryType, setAddress, setBranch, openLocationModal } = useAppState();
+  const cod = useCodSettings();
 
   const [couponInput, setCouponInput] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
   const [useWallet, setUseWallet] = useState(true);
+  // Como paga: online (tarjeta) o en efectivo al recibir.
+  const [paymentMethod, setPaymentMethod] = useState<'ONLINE' | 'CASH'>('ONLINE');
   const [serviceMode, setServiceMode] = useState<'ASAP' | 'SCHEDULED'>('ASAP');
   const [slotId, setSlotId] = useState<number | null>(null);
   const [slots, setSlots] = useState<DeliverySlot[]>([]);
@@ -208,6 +213,7 @@ const CheckoutPage = () => {
       contactName: contactName || undefined,
       contactPhone: contactPhone || undefined,
       notes: notes || undefined,
+      paymentMethod,
     };
   };
 
@@ -250,6 +256,14 @@ const CheckoutPage = () => {
       cancelled = true;
     };
   }, [quoteInput]);
+
+  // El efectivo se ofrece si esta activo y el total a cobrar no supera el tope.
+  const codAvailable =
+    cod.enabled && quote != null && quote.grandTotal > 0 && quote.grandTotal <= cod.maxAmount;
+  // Si el efectivo deja de estar disponible (cambio de total), se vuelve a tarjeta.
+  useEffect(() => {
+    if (paymentMethod === 'CASH' && !codAvailable) setPaymentMethod('ONLINE');
+  }, [codAvailable, paymentMethod]);
 
   if (items.length === 0) {
     return (
@@ -319,6 +333,7 @@ const CheckoutPage = () => {
 
   const missingDestination =
     (deliveryType === 'DELIVERY' && !address) || (deliveryType === 'PICKUP' && !branchId);
+  const payingCash = paymentMethod === 'CASH' && codAvailable;
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-12 pb-32 lg:pb-12">
@@ -586,12 +601,51 @@ const CheckoutPage = () => {
               </p>
             )}
 
+            {/* Metodo de pago: solo cuando queda algo por cobrar (si el saldo cubre
+                todo, no hay eleccion que hacer). El efectivo se oculta si esta
+                desactivado o el total supera el tope. */}
+            {quote && quote.grandTotal > 0 && (
+              <div className="mt-5">
+                <p className="mb-2 text-sm font-medium text-ink">¿Cómo quieres pagar?</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('ONLINE')}
+                    aria-pressed={paymentMethod === 'ONLINE'}
+                    className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm transition-colors ${
+                      paymentMethod === 'ONLINE'
+                        ? 'border-brand-600 bg-brand-50 text-brand-800'
+                        : 'border-line text-ink-muted hover:border-brand-300'
+                    }`}
+                  >
+                    <CreditCard className="size-4" /> Tarjeta
+                  </button>
+                  {codAvailable && (
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('CASH')}
+                      aria-pressed={paymentMethod === 'CASH'}
+                      className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm transition-colors ${
+                        paymentMethod === 'CASH'
+                          ? 'border-brand-600 bg-brand-50 text-brand-800'
+                          : 'border-line text-ink-muted hover:border-brand-300'
+                      }`}
+                    >
+                      <Banknote className="size-4" /> Efectivo al recibir
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
             <Button
-              className="mt-5 w-full"
+              className="mt-4 w-full"
               size="lg"
               leftIcon={
                 quote?.grandTotal === 0 ? (
                   <Wallet className="size-4" />
+                ) : payingCash ? (
+                  <Banknote className="size-4" />
                 ) : (
                   <CreditCard className="size-4" />
                 )
@@ -602,13 +656,17 @@ const CheckoutPage = () => {
             >
               {quote?.grandTotal === 0
                 ? 'Pagar con mi saldo'
-                : `Pagar ${quote ? formatCurrency(quote.grandTotal) : ''}`}
+                : payingCash
+                  ? `Confirmar pedido · ${quote ? formatCurrency(quote.grandTotal) : ''} al recibir`
+                  : `Pagar ${quote ? formatCurrency(quote.grandTotal) : ''}`}
             </Button>
 
             <CardDescription className="mt-3 text-center text-xs">
               {quote?.grandTotal === 0
                 ? 'Tu saldo cubre todo el pedido: no se cobrara nada a tu tarjeta.'
-                : 'El pago se procesa fuera de esta web. Nunca guardamos datos de tu tarjeta.'}
+                : payingCash
+                  ? 'Confirmamos tu pedido de una vez y pagas en efectivo cuando lo recibas.'
+                  : 'El pago se procesa fuera de esta web. Nunca guardamos datos de tu tarjeta.'}
             </CardDescription>
           </Card>
         </aside>
