@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "986357379111",
+    "project_id": "verde-bowl",
+    "storage_bucket": "verde-bowl.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:986357379111:android:1be8ece11f5350bc0ede02",
+        "android_client_info": {
+          "package_name": "com.verdebowl.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCNeEpfxxTya4qjxJUAGK4GTWGpPyjR7Kg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

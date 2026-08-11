@@ -1,0 +1,36 @@
+export const ENDPOINTS = {
+  health: '/health',
+  auth: {
+    login: '/auth/login',
+    register: '/auth/register',
+    refresh: '/auth/refresh',
+    logout: '/auth/logout',
+    me: '/auth/me',
+    forgotPassword: '/auth/forgot-password',
+  },
+  settings: { public: '/settings/public' },
+  locations: {
+    branches: '/locations/branches', departments: '/locations/departments',
+    provinces: '/locations/provinces', districts: '/locations/geographic-districts',
+    suggestions: '/locations/address-suggestions', reverse: '/locations/reverse-address', coverage: '/locations/coverage', slots: '/locations/slots',
+  },
+  catalog: {
+    categories: '/catalog/categories',
+    products: '/catalog/products',
+    product: (slug: string) => `/catalog/products/${encodeURIComponent(slug)}`,
+  },
+  orders: { root: '/orders', detail: (orderNumber: string) => `/orders/${encodeURIComponent(orderNumber)}`, cancel: (orderNumber: string) => `/orders/${encodeURIComponent(orderNumber)}/cancel` },
+  account: { addresses: '/account/addresses', address: (id: number) => `/account/addresses/${id}`, mobileDevices: '/account/mobile-devices' },
+  customizations: { config: (productId: number) => `/customizations/${productId}`, quote: '/customizations/quote' },
+  checkout: { quote: '/checkout/quote', place: '/checkout/place' },
+  plans: { root: '/plans', purchase: '/plans/purchase', wallet: '/plans/wallet', transactions: '/plans/wallet/transactions' },
+  dining: { table: (token: string) => `/operations/dining/qr/${encodeURIComponent(token)}`, order: (token: string) => `/operations/dining/qr/${encodeURIComponent(token)}/orders` },
+  engagement: {
+    events: '/engagement/events', recommendations: '/engagement/recommendations', favorites: '/engagement/favorites',
+    favorite: (productId: number) => `/engagement/favorites/${productId}`,
+    reviews: (productId: number) => `/engagement/products/${productId}/reviews`,
+    pendingReviews: '/engagement/reviews/pending', createReview: '/engagement/reviews',
+    newsletter: '/engagement/newsletter',
+  },
+  complaints: { root: '/complaints', track: '/complaints/track' },
+} as const;
