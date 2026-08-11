@@ -1,50 +1,1272 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Alert,
+  Linking,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams, type Href } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
+import { EmptyState } from '../../src/components/EmptyState';
 import { PrimaryButton } from '../../src/components/PrimaryButton';
-import { ErrorState, LoadingState } from '../../src/components/ScreenState';
-import { useCart } from '../../src/providers/CartProvider';
-import { catalogApi } from '../../src/services/api/catalog.service';
+import { ScreenScaffold } from '../../src/components/ScreenScaffold';
+import { Skeleton } from '../../src/components/Skeleton';
+import { resolvePublicAssetUrl } from '../../src/config/env';
+import { invalidateResource, useResource } from '../../src/hooks/useResource';
+import { useReorder } from '../../src/hooks/useReorder';
+import {
+  buildOrderProgress,
+  CANCELLABLE_STATUSES,
+  TERMINAL_STATUSES,
+} from '../../src/lib/orderProgress';
+import { useToast } from '../../src/providers/ToastProvider';
+import { ApiRequestError } from '../../src/services/api/client';
 import { ordersApi } from '../../src/services/api/orders.service';
-import { colors, radius, spacing } from '../../src/theme/tokens';
-import type { OrderStatus, OrderWithPayment } from '../../src/types/domain';
+import { colors, layout, radius, shadow, spacing, type } from '../../src/theme/tokens';
+import type {
+  OrderDelivery,
+  OrderItemDetail,
+  OrderStatus,
+  OrderWithPayment,
+} from '../../src/types/domain';
 
-const STATUS: Record<OrderStatus, { label: string; icon: keyof typeof MaterialCommunityIcons.glyphMap; color: string }> = {
-  PENDING_PAYMENT: { label: 'Pago pendiente', icon: 'credit-card-clock-outline', color: colors.warning }, CONFIRMED: { label: 'Confirmado', icon: 'check-decagram-outline', color: colors.brand600 }, PREPARING: { label: 'En preparación', icon: 'chef-hat', color: colors.accent500 }, READY: { label: 'Listo', icon: 'food-outline', color: colors.success }, OUT_FOR_DELIVERY: { label: 'En camino', icon: 'bike-fast', color: '#3474ad' }, DELIVERED: { label: 'Entregado', icon: 'home-outline', color: colors.success }, CANCELLED: { label: 'Cancelado', icon: 'close-circle-outline', color: colors.danger }, REFUNDED: { label: 'Reembolsado', icon: 'cash-refund', color: '#725594' },
+/**
+ * Seguimiento del pedido.
+ *
+ * Hasta ahora esta pantalla se leía una sola vez: quien esperaba su comida veía
+ * «En preparación» congelado hasta que se le ocurría tirar hacia abajo. Ahora
+ * sondea igual que la web (15 s), y el sondeo se detiene solo cuando el pedido
+ * llega a un estado terminal o cuando la app pasa a segundo plano.
+ */
+const POLL_MS = 15_000;
+
+/* ------------------------------------------------------------------ */
+/* Reparto                                                             */
+/* ------------------------------------------------------------------ */
+
+const DELIVERY_LABEL: Record<OrderDelivery['status'], string> = {
+  PENDING: 'Buscando repartidor',
+  ASSIGNED: 'Repartidor asignado',
+  PICKED_UP: 'Recogido del local',
+  ON_ROUTE: 'En ruta hacia ti',
+  DELIVERED: 'Entregado',
+  FAILED: 'Entrega con incidencia',
 };
-const CANCELLABLE: OrderStatus[] = ['PENDING_PAYMENT', 'CONFIRMED'];
-export default function OrderDetailScreen() {
-  const insets = useSafeAreaInsets(); const { orderNumber = '' } = useLocalSearchParams<{ orderNumber: string }>(); const { addItem } = useCart();
-  const [data, setData] = useState<OrderWithPayment | null>(null); const [loading, setLoading] = useState(true); const [refreshing, setRefreshing] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
-  const load = useCallback(async (refresh = false) => { refresh ? setRefreshing(true) : setLoading(true); setError(''); try { setData(await ordersApi.detail(orderNumber)); } catch (caught) { setError(caught instanceof Error ? caught.message : 'No pudimos cargar el pedido.'); } finally { setLoading(false); setRefreshing(false); } }, [orderNumber]); useEffect(() => { void load(); }, [load]);
-  const status = data ? STATUS[data.order.status] ?? STATUS.CONFIRMED : STATUS.CONFIRMED;
-  const history = useMemo(() => data?.order.statusHistory ?? [], [data]);
-  const cancel = () => data && Alert.alert('Cancelar pedido', 'Solo se puede cancelar antes de que cocina empiece. Si hubo cobro, la devolución seguirá el medio de pago.', [{ text: 'Conservar pedido' }, { text: 'Cancelar pedido', style: 'destructive', onPress: async () => { setBusy(true); try { await ordersApi.cancel(data.order.orderNumber, 'Cancelado desde la aplicación móvil'); await load(); } catch (caught) { Alert.alert('No se pudo cancelar', caught instanceof Error ? caught.message : 'Inténtalo nuevamente.'); } finally { setBusy(false); } } }]);
-  const reorder = async () => { if (!data || busy) return; setBusy(true); try { const catalog = await catalogApi.products({ branchId: data.order.branch?.id }); const published = new Set(catalog.filter((product) => product.isAvailable).map((product) => product.id)); let skipped = 0; data.order.items.forEach((item) => { if (!item.productId || !item.variantId || !published.has(item.productId)) { skipped += 1; return; } const selections = (item.customizations ?? []).flatMap((row) => row.optionId ? [{ optionId: row.optionId, quantity: row.quantity, groupName: row.groupNameSnapshot, optionName: row.optionNameSnapshot }] : []); addItem({ productId: item.productId, variantId: item.variantId, productName: item.productNameSnapshot, variantName: item.variantNameSnapshot || 'Presentación', imageUrl: null, quantity: item.quantity, unitPrice: Number(item.unitPrice), lineTotal: Number(item.lineTotal), description: item.descriptionSnapshot || item.productNameSnapshot, selections }); }); if (skipped) Alert.alert('Carrito actualizado', `${skipped} producto(s) ya no están disponibles y no se agregaron.`); if (skipped < data.order.items.length) router.push('/(tabs)/cart'); else Alert.alert('Pedido no disponible', 'Los productos de este pedido ya no están publicados en el local.'); } catch (caught) { Alert.alert('No pudimos repetirlo', caught instanceof Error ? caught.message : 'Revisa tu conexión e inténtalo nuevamente.'); } finally { setBusy(false); } };
-  if (loading && !data) return <View style={[styles.page, { paddingTop: insets.top }]}><LoadingState label="Buscando tu pedido…" /></View>;
-  if (!data) return <View style={[styles.page, { paddingTop: insets.top }]}><Pressable style={styles.backFloating} onPress={() => router.back()}><MaterialCommunityIcons name="arrow-left" size={22} color={colors.ink} /></Pressable><ErrorState message={error || 'Pedido no encontrado.'} onRetry={() => void load()} /></View>;
-  const order = data.order;
-  const contactSupport = async () => {
-    const digits = (order.branch?.phone ?? '').replace(/\D/g, '');
-    if (!digits) { router.push('/support' as Href); return; }
-    const text = encodeURIComponent(`Hola Verde Bowl, necesito ayuda con el pedido ${order.orderNumber}.`);
-    await Linking.openURL(`https://wa.me/${digits}?text=${text}`);
-  };
-  return <ScrollView style={styles.page} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} tintColor={colors.brand600} />} contentContainerStyle={{ paddingBottom: spacing.xl }}>
-    <View style={[styles.hero, { paddingTop: insets.top + 12 }]}><Pressable style={styles.back} onPress={() => router.back()}><MaterialCommunityIcons name="arrow-left" size={22} color={colors.surface} /></Pressable><View style={styles.statusIcon}><MaterialCommunityIcons name={status.icon} size={34} color={colors.surface} /></View><Text style={styles.eyebrow}>PEDIDO {order.orderNumber}</Text><Text style={styles.title}>{status.label}</Text><Text style={styles.heroCopy}>{order.status === 'PREPARING' ? 'La cocina está preparando tus productos.' : order.status === 'OUT_FOR_DELIVERY' ? 'Tu pedido salió del local y va hacia ti.' : order.status === 'READY' ? (order.deliveryType === 'PICKUP' ? 'Ya puedes acercarte a recogerlo.' : 'Está listo para salir.') : 'Actualiza esta pantalla para consultar cualquier cambio.'}</Text></View>
-    <View style={styles.body}><View style={styles.quick}><View><Text style={styles.quickLabel}>TOTAL</Text><Text style={styles.quickValue}>S/ {Number(order.grandTotal).toFixed(2)}</Text></View><View><Text style={styles.quickLabel}>MODALIDAD</Text><Text style={styles.quickText}>{order.deliveryType === 'DELIVERY' ? 'Delivery' : order.deliveryType === 'PICKUP' ? 'Recojo' : 'En salón'}</Text></View><View><Text style={styles.quickLabel}>{order.serviceMode === 'SCHEDULED' ? 'PROGRAMADO' : 'FECHA'}</Text><Text style={styles.quickText}>{order.serviceMode === 'SCHEDULED' && order.scheduledAt ? new Date(order.scheduledAt).toLocaleString('es-PE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : new Date(order.placedAt).toLocaleDateString('es-PE', { day: '2-digit', month: 'short' })}</Text></View></View>
-      {order.status === 'PENDING_PAYMENT' && data.payment?.checkoutUrl && <View style={styles.payment}><MaterialCommunityIcons name="credit-card-outline" size={26} color={colors.warning} /><View style={{ flex: 1 }}><Text style={styles.paymentTitle}>El pago todavía está pendiente</Text><Text style={styles.paymentCopy}>Cocina esperará la confirmación de la pasarela.</Text></View><Pressable onPress={() => void Linking.openURL(data.payment?.checkoutUrl ?? '')}><Text style={styles.paymentLink}>Pagar</Text></Pressable></View>}
-      {order.status === 'PENDING_PAYMENT' && (data.payment?.provider === 'yape' || data.payment?.provider === 'plin') && <View style={styles.payment}><MaterialCommunityIcons name="cellphone-check" size={26} color="#6941a5" /><View style={{ flex: 1 }}><Text style={[styles.paymentTitle, { color: '#53317e' }]}>Validando {data.payment.provider.toUpperCase()}</Text><Text style={[styles.paymentCopy, { color: '#755b91' }]}>Operación {data.payment.mobileClaim?.operationCode ?? data.payment.providerReference}. Caja debe encontrar el movimiento antes de enviarlo a cocina.</Text></View><MaterialCommunityIcons name="clock-check-outline" size={22} color="#6941a5" /></View>}
-      <Text style={styles.sectionTitle}>Seguimiento</Text><View style={styles.timeline}>{history.length ? history.map((row, index) => { const view = STATUS[row.toStatus] ?? STATUS.CONFIRMED; return <View key={`${row.toStatus}-${row.createdAt}-${index}`} style={styles.timelineRow}><View style={styles.timelineRail}><View style={[styles.dot, { backgroundColor: view.color }]} />{index < history.length - 1 && <View style={styles.rail} />}</View><View style={styles.timelineCopy}><Text style={styles.timelineTitle}>{view.label}</Text><Text style={styles.timelineDate}>{new Date(row.createdAt).toLocaleString('es-PE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</Text>{row.comment && <Text style={styles.timelineComment}>{row.comment}</Text>}</View></View>; }) : <Text style={styles.muted}>El primer evento aparecerá pronto.</Text>}</View>
-      <Text style={styles.sectionTitle}>Productos</Text><View style={styles.card}>{order.items.map((item) => <View key={item.id} style={styles.item}><View style={styles.itemQty}><Text style={styles.itemQtyText}>{item.quantity}×</Text></View><View style={{ flex: 1 }}><Text style={styles.itemName}>{item.productNameSnapshot}</Text><Text style={styles.itemVariant}>{item.variantNameSnapshot}</Text>{item.customizations?.length ? <Text style={styles.itemOptions}>{item.customizations.map((row) => `${row.optionNameSnapshot}${row.quantity > 1 ? ` ×${row.quantity}` : ''}`).join(' · ')}</Text> : null}</View><Text style={styles.itemTotal}>S/ {Number(item.lineTotal).toFixed(2)}</Text></View>)}</View>
-      <Text style={styles.sectionTitle}>{order.deliveryType === 'DELIVERY' ? 'Entrega' : 'Local'}</Text><View style={styles.card}><View style={styles.infoRow}><MaterialCommunityIcons name={order.deliveryType === 'DELIVERY' ? 'map-marker-outline' : 'storefront-outline'} size={22} color={colors.brand700} /><View style={{ flex: 1 }}><Text style={styles.infoTitle}>{order.deliveryType === 'DELIVERY' ? order.addressSnapshotJson?.line1 : order.branch?.name}</Text><Text style={styles.infoCopy}>{order.deliveryType === 'DELIVERY' ? [order.addressSnapshotJson?.districtName, order.addressSnapshotJson?.reference].filter(Boolean).join(' · ') : order.branch?.addressLine}</Text></View></View></View>
-      <View style={styles.totals}><View style={styles.totalRow}><Text style={styles.muted}>Subtotal</Text><Text style={styles.totalValue}>S/ {Number(order.subtotal).toFixed(2)}</Text></View><View style={styles.totalRow}><Text style={styles.muted}>Delivery</Text><Text style={styles.totalValue}>S/ {Number(order.deliveryFee).toFixed(2)}</Text></View><View style={styles.totalRow}><Text style={styles.muted}>Descuentos</Text><Text style={styles.totalValue}>− S/ {Number(order.discountTotal).toFixed(2)}</Text></View><View style={styles.totalDivider} /><View style={styles.totalRow}><Text style={styles.grandLabel}>Total</Text><Text style={styles.grand}>S/ {Number(order.grandTotal).toFixed(2)}</Text></View><Text style={styles.tax}>Incluye IGV S/ {Number(order.taxTotal).toFixed(2)} · {order.documentType === 'FACTURA' ? 'Factura' : 'Boleta'}{order.invoiceStatus === 'ISSUED' && order.invoiceSeries && order.invoiceNumber ? ` emitida ${order.invoiceSeries}-${order.invoiceNumber}` : ' pendiente de emisión'}</Text></View>
-      {order.invoiceStatus === 'ISSUED' && order.invoicePdfUrl && <PrimaryButton label="Abrir comprobante PDF" variant="secondary" onPress={() => void Linking.openURL(order.invoicePdfUrl ?? '')} style={styles.secondary} />}
-      {order.status === 'DELIVERED' && <PrimaryButton label="Calificar productos" variant="secondary" onPress={() => router.push('/reviews' as Href)} style={styles.action} />}
-      <PrimaryButton label="Volver a pedir" loading={busy} onPress={() => void reorder()} style={order.status === 'DELIVERED' ? styles.secondary : styles.action} />{CANCELLABLE.includes(order.status) && <PrimaryButton label="Cancelar pedido" loading={busy} variant="secondary" onPress={cancel} style={styles.secondary} />}
-      <PrimaryButton label="Ayuda por WhatsApp" variant="secondary" onPress={() => void contactSupport()} style={styles.secondary} />
-    </View></ScrollView>;
+
+/* ------------------------------------------------------------------ */
+/* Pantalla                                                            */
+/* ------------------------------------------------------------------ */
+
+interface StatusView {
+  label: string;
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  color: string;
+  copy: string;
 }
-const styles = StyleSheet.create({ page: { flex: 1, backgroundColor: colors.surfaceMuted }, hero: { minHeight: 285, backgroundColor: colors.brand900, paddingHorizontal: spacing.lg, paddingBottom: spacing.xl, alignItems: 'center' }, back: { position: 'absolute', left: 16, top: 14, width: 42, height: 42, borderRadius: 14, backgroundColor: 'rgba(255,255,255,.12)', alignItems: 'center', justifyContent: 'center' }, backFloating: { position: 'absolute', zIndex: 2, top: 20, left: 16, width: 42, height: 42, borderRadius: 14, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }, statusIcon: { width: 72, height: 72, borderRadius: 25, backgroundColor: colors.brand600, alignItems: 'center', justifyContent: 'center', marginTop: 35 }, eyebrow: { color: '#99c8ae', fontSize: 9, fontWeight: '900', letterSpacing: 1.1, marginTop: 15 }, title: { color: colors.surface, fontSize: 29, fontWeight: '900', marginTop: 4 }, heroCopy: { color: '#bfd7ca', fontSize: 11, lineHeight: 17, textAlign: 'center', marginTop: 7 }, body: { padding: spacing.md }, quick: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, marginTop: -38, elevation: 4 }, quickLabel: { color: colors.inkMuted, fontSize: 8, fontWeight: '900' }, quickValue: { color: colors.brand700, fontSize: 18, fontWeight: '900', marginTop: 4 }, quickText: { color: colors.ink, fontSize: 11, fontWeight: '800', marginTop: 6 }, payment: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#fff7e5', borderRadius: radius.md, padding: 13, marginTop: spacing.md }, paymentTitle: { color: '#775000', fontSize: 11, fontWeight: '900' }, paymentCopy: { color: '#876d3d', fontSize: 9, marginTop: 3 }, paymentLink: { color: colors.brand700, fontSize: 11, fontWeight: '900' }, sectionTitle: { color: colors.ink, fontSize: 17, fontWeight: '900', marginTop: spacing.lg, marginBottom: 10 }, timeline: { backgroundColor: colors.surface, borderRadius: radius.md, padding: 14 }, timelineRow: { flexDirection: 'row', gap: 10 }, timelineRail: { width: 16, alignItems: 'center' }, dot: { width: 12, height: 12, borderRadius: 6 }, rail: { width: 2, flex: 1, minHeight: 38, backgroundColor: colors.line }, timelineCopy: { flex: 1, paddingBottom: 15 }, timelineTitle: { color: colors.ink, fontSize: 12, fontWeight: '900' }, timelineDate: { color: colors.inkMuted, fontSize: 9, marginTop: 2 }, timelineComment: { color: colors.inkMuted, fontSize: 9, lineHeight: 14, marginTop: 4 }, card: { backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, padding: 13 }, item: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 9 }, itemQty: { width: 31, height: 31, borderRadius: 10, backgroundColor: colors.brand50, alignItems: 'center', justifyContent: 'center' }, itemQtyText: { color: colors.brand700, fontSize: 10, fontWeight: '900' }, itemName: { color: colors.ink, fontSize: 12, fontWeight: '900' }, itemVariant: { color: colors.brand700, fontSize: 9, marginTop: 2 }, itemOptions: { color: colors.inkMuted, fontSize: 8, lineHeight: 12, marginTop: 4 }, itemTotal: { color: colors.ink, fontSize: 11, fontWeight: '900' }, infoRow: { flexDirection: 'row', gap: 10 }, infoTitle: { color: colors.ink, fontSize: 11, fontWeight: '900' }, infoCopy: { color: colors.inkMuted, fontSize: 9, lineHeight: 14, marginTop: 4 }, totals: { backgroundColor: colors.brand900, borderRadius: radius.lg, padding: spacing.lg, marginTop: spacing.lg }, totalRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }, muted: { color: colors.inkMuted, fontSize: 10 }, totalValue: { color: '#c8ddd2', fontSize: 10, fontWeight: '800' }, totalDivider: { height: 1, backgroundColor: 'rgba(255,255,255,.15)', marginVertical: 8 }, grandLabel: { color: colors.surface, fontSize: 14, fontWeight: '900' }, grand: { color: colors.surface, fontSize: 22, fontWeight: '900' }, tax: { color: '#98beaa', fontSize: 8, textAlign: 'right' }, action: { marginTop: spacing.lg }, secondary: { marginTop: 9 } });
+
+const STATUS: Record<OrderStatus, StatusView> = {
+  PENDING_PAYMENT: {
+    label: 'Pago pendiente',
+    icon: 'credit-card-clock-outline',
+    color: colors.accent500,
+    copy: 'Tu pedido está reservado. Cocina lo recibe apenas se confirme el pago.',
+  },
+  CONFIRMED: {
+    label: 'Confirmado',
+    icon: 'check-decagram-outline',
+    color: colors.brand600,
+    copy: 'Cocina ya tiene tu pedido en cola.',
+  },
+  PREPARING: {
+    label: 'En preparación',
+    icon: 'chef-hat',
+    color: colors.accent500,
+    copy: 'La cocina está preparando tus productos.',
+  },
+  READY: {
+    label: 'Listo',
+    icon: 'package-variant-closed',
+    color: colors.brand600,
+    copy: 'Tu pedido ya está listo.',
+  },
+  OUT_FOR_DELIVERY: {
+    label: 'En camino',
+    icon: 'moped-outline',
+    color: '#3a86c8',
+    copy: 'Tu pedido salió del local y va hacia ti.',
+  },
+  DELIVERED: {
+    label: 'Entregado',
+    icon: 'silverware-fork-knife',
+    color: colors.success,
+    copy: 'Tu pedido fue entregado. ¡Que lo disfrutes!',
+  },
+  CANCELLED: {
+    label: 'Cancelado',
+    icon: 'close-circle-outline',
+    color: colors.danger,
+    copy: 'Este pedido se canceló. Si ya habías pagado, la devolución va a tu medio de pago.',
+  },
+  REFUNDED: {
+    label: 'Reembolsado',
+    icon: 'cash-refund',
+    color: '#8264ac',
+    copy: 'Te devolvimos el importe a tu medio de pago.',
+  },
+};
+
+const money = (value: number | string): string => `S/ ${Number(value).toFixed(2)}`;
+
+const dateTime = (value: string): string =>
+  new Date(value).toLocaleString('es-PE', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+const dateShort = (value: string): string =>
+  new Date(value).toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' });
+
+/** Solo se abre lo que sea http(s); un comprobante con otro esquema no se toca. */
+const openableUrl = (value?: string | null): string | null => {
+  const resolved = resolvePublicAssetUrl(value);
+  return resolved && /^https?:\/\//i.test(resolved) ? resolved : null;
+};
+
+/**
+ * Rutas que las tipadas de expo-router (`.expo/types`) aún no recogen: el fichero
+ * generado está desfasado y solo se regenera al arrancar el servidor. El resto de
+ * la app resuelve estos dos casos igual; no hay `any` de por medio, solo el tipo
+ * `Href` que la propia librería expone.
+ */
+const SUPPORT_ROUTE = '/support' as Href;
+const REVIEWS_ROUTE = '/reviews' as Href;
+
+export default function OrderDetailScreen() {
+  const params = useLocalSearchParams<{ orderNumber?: string }>();
+  const orderNumber = typeof params.orderNumber === 'string' ? params.orderNumber : '';
+
+  const toast = useToast();
+  const { reorder, reorderingNumber } = useReorder();
+  const [cancelling, setCancelling] = useState(false);
+
+  const [terminal, setTerminal] = useState(false);
+  const resource = useResource<OrderWithPayment>({
+    key: orderNumber ? `orders:detail:${orderNumber}` : null,
+    fetcher: () => ordersApi.detail(orderNumber),
+    // El estado de un pedido caduca en segundos: al volver a la pantalla se relee.
+    cacheMs: 0,
+    pollIntervalMs: terminal ? 0 : POLL_MS,
+  });
+
+  const order = resource.data?.order ?? null;
+  const payment = resource.data?.payment ?? null;
+  const status = order?.status ?? null;
+
+  useEffect(() => {
+    if (status === null) return;
+    setTerminal(TERMINAL_STATUSES.includes(status));
+  }, [status]);
+
+  /*
+   * El sondeo cambia el estado sin que nadie lo pida. Anunciarlo es media razón de
+   * ser de esta pantalla: quien la deja abierta encima de la mesa se entera de que
+   * su pedido salió sin tener que mirarla.
+   */
+  const previousStatus = useRef<OrderStatus | null>(null);
+  /** El cambio que provoca el propio cliente ya tiene su aviso: no se anuncia dos veces. */
+  const skipAnnounce = useRef(false);
+
+  useEffect(() => {
+    if (status === null) return;
+    const before = previousStatus.current;
+    previousStatus.current = status;
+    if (before === null || before === status) return;
+
+    if (skipAnnounce.current) {
+      skipAnnounce.current = false;
+      return;
+    }
+
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    toast.show({ tone: 'success', message: `Tu pedido ahora está: ${STATUS[status].label}.` });
+  }, [status, toast]);
+
+  const progress = useMemo(
+    () => (order ? buildOrderProgress(order) : null),
+    [order],
+  );
+  // `delivery` solo viene en pedidos a domicilio: en recojo y salón es null.
+  const delivery = useMemo<OrderDelivery | null>(() => order?.delivery ?? null, [order]);
+
+  const cancel = useCallback(() => {
+    if (!order) return;
+    Alert.alert(
+      'Cancelar este pedido',
+      'Solo se puede cancelar antes de que la cocina empiece. Si hubo cobro, la devolución seguirá tu medio de pago.',
+      [
+        { text: 'Conservar pedido', style: 'cancel' },
+        {
+          text: 'Sí, cancelar',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              setCancelling(true);
+              try {
+                await ordersApi.cancel(order.orderNumber, 'Cancelado desde la aplicación móvil');
+                void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                toast.show({ tone: 'success', message: 'Cancelamos tu pedido.' });
+                skipAnnounce.current = true;
+                // El historial y este detalle dejan de valer en el mismo instante.
+                invalidateResource('orders:', { prefix: true });
+                await resource.refetch();
+              } catch (caught) {
+                toast.show({
+                  tone: 'error',
+                  message:
+                    caught instanceof Error ? caught.message : 'No pudimos cancelar tu pedido.',
+                });
+              } finally {
+                setCancelling(false);
+              }
+            })();
+          },
+        },
+      ],
+    );
+  }, [order, resource, toast]);
+
+  const contactSupport = useCallback(async () => {
+    const digits = (order?.branch?.phone ?? '').replace(/\D/g, '');
+    if (!digits) {
+      router.push(SUPPORT_ROUTE);
+      return;
+    }
+    const text = encodeURIComponent(
+      `Hola Verde Bowl, necesito ayuda con el pedido ${orderNumber}.`,
+    );
+    const url = `https://wa.me/${digits}?text=${text}`;
+    const supported = await Linking.canOpenURL(url).catch(() => false);
+    if (!supported) {
+      router.push(SUPPORT_ROUTE);
+      return;
+    }
+    await Linking.openURL(url);
+  }, [order?.branch?.phone, orderNumber]);
+
+  const goBack = useCallback(() => {
+    // Se llega aquí desde una notificación con la pila vacía: sin esto no habría salida.
+    if (router.canGoBack()) router.back();
+    else router.replace('/(tabs)/orders');
+  }, []);
+
+  if (!orderNumber) {
+    return (
+      <ScreenScaffold tone="dark" showBack onBack={goBack}>
+        <EmptyState
+          tone="dark"
+          icon="receipt-text-outline"
+          title="No encontramos ese pedido"
+          message="El enlace no trae un número de pedido válido."
+          actionLabel="Ver mis pedidos"
+          onAction={() => router.replace('/(tabs)/orders')}
+        />
+      </ScreenScaffold>
+    );
+  }
+
+  // Un 404 o un 403 no se arreglan reintentando: ese pedido no es de esta cuenta.
+  const missing =
+    resource.error instanceof ApiRequestError &&
+    (resource.error.status === 404 || resource.error.status === 403);
+
+  if (!order) {
+    if (resource.loading) {
+      return (
+        <ScreenScaffold tone="dark" showBack onBack={goBack}>
+          <DetailSkeleton />
+        </ScreenScaffold>
+      );
+    }
+
+    return (
+      <ScreenScaffold tone="dark" showBack onBack={goBack}>
+        <EmptyState
+          tone="dark"
+          icon={missing ? 'package-variant-closed-remove' : 'cloud-alert-outline'}
+          title={missing ? 'No encontramos ese pedido' : 'No pudimos cargar tu pedido'}
+          message={
+            missing
+              ? `El número ${orderNumber} no corresponde a ningún pedido de tu cuenta.`
+              : `${resource.error?.message ?? 'Revisa tu conexión.'} Tu pedido ${orderNumber} sigue registrado.`
+          }
+          actionLabel={missing ? 'Ver mis pedidos' : 'Reintentar'}
+          onAction={
+            missing ? () => router.replace('/(tabs)/orders') : () => void resource.refetch()
+          }
+          secondaryLabel={missing ? undefined : 'Ver mis pedidos'}
+          onSecondary={missing ? undefined : () => router.replace('/(tabs)/orders')}
+        />
+      </ScreenScaffold>
+    );
+  }
+
+  const view = STATUS[order.status];
+  const isPickup = order.deliveryType !== 'DELIVERY';
+  const tracking = progress !== null && !progress.isTerminal;
+  /** Hay contenido pero el último refresco falló: no se puede seguir prometiendo seguimiento. */
+  const stale = resource.error !== null;
+  const etaMinutes =
+    typeof delivery?.etaMinutes === 'number' && delivery.etaMinutes > 0 ? delivery.etaMinutes : null;
+
+  const heroCopy =
+    order.status === 'READY' && isPickup ? 'Ya puedes acercarte a recogerlo.' : view.copy;
+
+  const isMobilePayment = payment?.provider === 'yape' || payment?.provider === 'plin';
+  const isCash = payment?.provider === 'cash';
+  const invoicePdf = openableUrl(order.invoicePdfUrl);
+  const invoiceXml = openableUrl(order.invoiceXmlUrl);
+  const discountTotal = Number(order.discountTotal);
+  const deliveryFee = Number(order.deliveryFee);
+
+  return (
+    <ScreenScaffold tone="dark" showBack onBack={goBack}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={resource.refreshing}
+            onRefresh={() => void resource.refresh()}
+            tintColor={colors.onDark}
+            colors={[colors.brand600]}
+          />
+        }
+      >
+        <View style={styles.hero}>
+          <View style={[styles.heroIcon, { backgroundColor: view.color }]}>
+            <MaterialCommunityIcons name={view.icon} size={36} color={colors.onDark} />
+          </View>
+
+          <Text style={styles.heroEyebrow}>PEDIDO {order.orderNumber}</Text>
+          <Text style={styles.heroTitle}>{view.label}</Text>
+          <Text style={styles.heroCopy}>{heroCopy}</Text>
+
+          {etaMinutes !== null && !progress?.isTerminal ? (
+            <View style={styles.etaPill}>
+              <MaterialCommunityIcons name="timer-sand" size={17} color={colors.onDark} />
+              <Text style={styles.etaText}>Llega en unos {etaMinutes} min</Text>
+            </View>
+          ) : null}
+
+          {tracking ? (
+            stale ? (
+              <View style={styles.staleRow}>
+                <MaterialCommunityIcons name="wifi-off" size={18} color={colors.accent500} />
+                <Text style={styles.staleText}>
+                  No estamos pudiendo actualizar el estado; lo que ves puede estar desfasado.
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Actualizar ahora"
+                  hitSlop={layout.iconHitSlop}
+                  onPress={() => void resource.refetch()}
+                  style={({ pressed }) => [styles.staleButton, pressed && styles.pressed]}
+                >
+                  <Text style={styles.staleButtonText}>Actualizar</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View accessibilityLiveRegion="polite" style={styles.liveRow}>
+                <View style={styles.liveDot} />
+                <Text style={styles.liveText}>
+                  Seguimiento activo · esta pantalla se actualiza sola cada 15 segundos
+                </Text>
+              </View>
+            )
+          ) : null}
+        </View>
+
+        <View style={styles.body}>
+          <View style={styles.quickCard}>
+            <View style={styles.quickCell}>
+              <Text style={styles.quickLabel}>TOTAL</Text>
+              <Text style={styles.quickTotal}>{money(order.grandTotal)}</Text>
+            </View>
+
+            <View style={styles.quickDivider} />
+
+            <View style={styles.quickCell}>
+              <Text style={styles.quickLabel}>MODALIDAD</Text>
+              <Text style={styles.quickValue}>
+                {order.deliveryType === 'DELIVERY'
+                  ? 'Delivery'
+                  : order.deliveryType === 'PICKUP'
+                    ? 'Recojo'
+                    : 'En salón'}
+              </Text>
+            </View>
+
+            <View style={styles.quickDivider} />
+
+            <View style={styles.quickCell}>
+              <Text style={styles.quickLabel}>
+                {order.serviceMode === 'SCHEDULED' ? 'PROGRAMADO' : 'FECHA'}
+              </Text>
+              <Text style={styles.quickValue}>
+                {order.serviceMode === 'SCHEDULED' && order.scheduledAt
+                  ? dateTime(order.scheduledAt)
+                  : dateShort(order.placedAt)}
+              </Text>
+            </View>
+          </View>
+
+          {progress ? (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Avance</Text>
+
+              <View
+                accessibilityRole="progressbar"
+                accessibilityLabel={`Paso ${progress.reached} de ${progress.steps.length}: ${view.label}`}
+                style={styles.bar}
+              >
+                {progress.steps.map((step) => (
+                  <View
+                    key={step.status}
+                    style={[
+                      styles.barSegment,
+                      step.done && styles.barSegmentDone,
+                      step.current && !progress.isCancelled && styles.barSegmentCurrent,
+                      progress.isCancelled && step.done && styles.barSegmentCancelled,
+                    ]}
+                  />
+                ))}
+              </View>
+
+              <View style={styles.barLegend}>
+                <Text style={styles.barStep}>
+                  Paso {progress.reached} de {progress.steps.length}
+                </Text>
+                {progress.nextLabel ? (
+                  <Text style={styles.barNext}>Sigue: {progress.nextLabel}</Text>
+                ) : null}
+              </View>
+
+              {order.statusHistory?.length ? (
+                <View style={styles.timeline}>
+                  {order.statusHistory.map((row, index) => (
+                    <View key={`${row.toStatus}-${row.createdAt}-${index}`} style={styles.timelineRow}>
+                      <View style={styles.timelineRail}>
+                        <View
+                          style={[
+                            styles.timelineDot,
+                            { backgroundColor: STATUS[row.toStatus]?.color ?? colors.brand600 },
+                          ]}
+                        />
+                        {index < (order.statusHistory?.length ?? 0) - 1 ? (
+                          <View style={styles.timelineLine} />
+                        ) : null}
+                      </View>
+
+                      <View style={styles.timelineCopy}>
+                        <Text style={styles.timelineTitle}>
+                          {STATUS[row.toStatus]?.label ?? row.toStatus}
+                        </Text>
+                        <Text style={styles.timelineDate}>{dateTime(row.createdAt)}</Text>
+                        {row.comment ? (
+                          <Text style={styles.timelineComment}>{row.comment}</Text>
+                        ) : null}
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <Text style={styles.muted}>El primer evento aparecerá en cuanto cocina lo tome.</Text>
+              )}
+            </View>
+          ) : null}
+
+          {delivery ? (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Reparto</Text>
+
+              <View style={styles.deliveryRow}>
+                <View style={styles.deliveryIcon}>
+                  <MaterialCommunityIcons
+                    name={delivery.status === 'FAILED' ? 'alert-outline' : 'moped-outline'}
+                    size={22}
+                    color={delivery.status === 'FAILED' ? colors.danger : colors.brand700}
+                  />
+                </View>
+
+                <View style={styles.deliveryCopy}>
+                  <Text style={styles.deliveryStatus}>{DELIVERY_LABEL[delivery.status]}</Text>
+                  <Text style={styles.deliveryMeta}>
+                    {delivery.driver
+                      ? `${delivery.driver.fullName}${delivery.driver.vehicle ? ` · ${delivery.driver.vehicle}` : ''}`
+                      : 'Te asignaremos un repartidor en cuanto el pedido salga de cocina.'}
+                  </Text>
+                  {/* Sin ETA del servidor no se inventa un tiempo: se calla. */}
+                  {etaMinutes !== null ? (
+                    <Text style={styles.deliveryEta}>Tiempo estimado: {etaMinutes} min</Text>
+                  ) : null}
+                  {delivery.pickedUpAt ? (
+                    <Text style={styles.deliveryMeta}>
+                      Salió del local a las {dateTime(delivery.pickedUpAt)}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+            </View>
+          ) : null}
+
+          {order.status === 'PENDING_PAYMENT' && !isMobilePayment && !isCash ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Retomar el pago de este pedido"
+              onPress={() =>
+                router.push({ pathname: '/checkout/result', params: { orderNumber } })
+              }
+              style={({ pressed }) => [styles.noticeWarn, pressed && styles.pressed]}
+            >
+              <MaterialCommunityIcons
+                name="credit-card-clock-outline"
+                size={24}
+                color={colors.warning}
+              />
+              <View style={styles.noticeCopy}>
+                <Text style={styles.noticeTitle}>El pago sigue pendiente</Text>
+                <Text style={styles.noticeText}>
+                  Cocina espera la confirmación de la pasarela. Toca para retomarlo de forma segura.
+                </Text>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={22} color={colors.warning} />
+            </Pressable>
+          ) : null}
+
+          {order.status === 'PENDING_PAYMENT' && isMobilePayment && payment ? (
+            <View style={styles.noticeInfo}>
+              <MaterialCommunityIcons name="cellphone-check" size={24} color="#6941a5" />
+              <View style={styles.noticeCopy}>
+                <Text style={[styles.noticeTitle, styles.noticeTitlePurple]}>
+                  Validando {payment.provider.toUpperCase()}
+                </Text>
+                <Text style={[styles.noticeText, styles.noticeTextPurple]}>
+                  Operación {payment.mobileClaim?.operationCode ?? payment.providerReference ?? '—'}.
+                  Caja debe encontrar el movimiento en la cuenta real antes de mandarlo a cocina.
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
+          {payment?.mobileClaim?.status === 'REJECTED' ? (
+            <View style={styles.noticeDanger}>
+              <MaterialCommunityIcons name="alert-circle-outline" size={24} color={colors.danger} />
+              <View style={styles.noticeCopy}>
+                <Text style={[styles.noticeTitle, styles.noticeTitleDanger]}>
+                  Caja no encontró ese movimiento
+                </Text>
+                <Text style={[styles.noticeText, styles.noticeTextDanger]}>
+                  {payment.mobileClaim.rejectionReason ??
+                    'Escríbenos desde soporte con tu constancia de pago.'}
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
+          {isCash ? (
+            <View style={styles.noticeSoft}>
+              <MaterialCommunityIcons name="cash" size={24} color={colors.brand700} />
+              <View style={styles.noticeCopy}>
+                <Text style={styles.noticeTitleBrand}>
+                  {payment?.status === 'SUCCEEDED'
+                    ? 'Pago en efectivo cobrado'
+                    : payment?.status === 'FAILED'
+                      ? 'Pago en efectivo anulado'
+                      : 'Pagas al recibir'}
+                </Text>
+                <Text style={styles.noticeTextBrand}>
+                  {payment?.status === 'SUCCEEDED'
+                    ? 'Ya registramos el cobro de este pedido.'
+                    : `Ten listos ${money(order.grandTotal)} en efectivo cuando llegue tu pedido.`}
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
+          {order.cancelReason ? (
+            <View style={styles.noticeDanger}>
+              <MaterialCommunityIcons name="information-outline" size={24} color={colors.danger} />
+              <View style={styles.noticeCopy}>
+                <Text style={[styles.noticeTitle, styles.noticeTitleDanger]}>
+                  Motivo de la cancelación
+                </Text>
+                <Text style={[styles.noticeText, styles.noticeTextDanger]}>
+                  {order.cancelReason}
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>
+              {order.items.length} {order.items.length === 1 ? 'producto' : 'productos'}
+            </Text>
+
+            {/* Una comanda tiene un techo natural (las líneas de un carrito), así que
+                aquí no hace falta virtualizar: no es una colección que crezca sola. */}
+            {order.items.map((item) => (
+              <View key={item.id} style={styles.item}>
+                <View style={styles.itemQuantity}>
+                  <Text style={styles.itemQuantityText}>{item.quantity}×</Text>
+                </View>
+
+                <View style={styles.itemCopy}>
+                  <Text style={styles.itemName}>{item.productNameSnapshot}</Text>
+                  {item.variantNameSnapshot ? (
+                    <Text style={styles.itemVariant}>{item.variantNameSnapshot}</Text>
+                  ) : null}
+                  {item.customizations?.length ? (
+                    <Text style={styles.itemOptions}>
+                      {item.customizations
+                        .map(
+                          (row) =>
+                            `${row.optionNameSnapshot}${row.quantity > 1 ? ` ×${row.quantity}` : ''}`,
+                        )
+                        .join(' · ')}
+                    </Text>
+                  ) : null}
+                </View>
+
+                <Text style={styles.itemTotal}>{money(item.lineTotal)}</Text>
+              </View>
+            ))}
+          </View>
+
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>{isPickup ? 'Local' : 'Entrega'}</Text>
+
+            <View style={styles.placeRow}>
+              <MaterialCommunityIcons
+                name={isPickup ? 'storefront-outline' : 'map-marker-outline'}
+                size={22}
+                color={colors.brand700}
+              />
+              <View style={styles.placeCopy}>
+                <Text style={styles.placeTitle}>
+                  {isPickup
+                    ? (order.branch?.name ?? 'Verde Bowl')
+                    : (order.addressSnapshotJson?.line1 ?? 'Dirección de entrega')}
+                </Text>
+                <Text style={styles.placeText}>
+                  {isPickup
+                    ? (order.branch?.addressLine ?? '')
+                    : [order.addressSnapshotJson?.districtName, order.addressSnapshotJson?.reference]
+                        .filter(Boolean)
+                        .join(' · ')}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Bloque de totales sobre fondo de marca: usa la paleta `onDark`. Antes se
+              pintaba con el gris pensado para fondo blanco y daba 1.9:1 de contraste,
+              justo donde el cliente comprueba cuánto le cobraron. */}
+          <View style={styles.totals}>
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Subtotal</Text>
+              <Text style={styles.totalValue}>{money(order.subtotal)}</Text>
+            </View>
+
+            {deliveryFee > 0 ? (
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>Envío</Text>
+                <Text style={styles.totalValue}>{money(deliveryFee)}</Text>
+              </View>
+            ) : null}
+
+            {discountTotal > 0 ? (
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>Descuentos</Text>
+                <Text style={styles.totalDiscount}>− {money(discountTotal)}</Text>
+              </View>
+            ) : null}
+
+            {order.discounts?.map((discount, index) => (
+              <Text key={`${discount.code ?? 'promo'}-${index}`} style={styles.discountNote}>
+                {discount.description}
+                {discount.code ? ` (${discount.code})` : ''}
+              </Text>
+            ))}
+
+            <View style={styles.totalsDivider} />
+
+            <View style={styles.totalRow}>
+              <Text style={styles.grandLabel}>Total</Text>
+              <Text style={styles.grandValue}>{money(order.grandTotal)}</Text>
+            </View>
+
+            <Text style={styles.taxNote}>
+              Incluye IGV {money(order.taxTotal)} ·{' '}
+              {order.documentType === 'FACTURA' ? 'Factura' : 'Boleta'}
+              {order.invoiceStatus === 'ISSUED' && order.invoiceSeries && order.invoiceNumber
+                ? ` ${order.invoiceSeries}-${order.invoiceNumber}`
+                : ' pendiente de emisión'}
+            </Text>
+          </View>
+
+          {invoicePdf ? (
+            <PrimaryButton
+              label="Abrir comprobante en PDF"
+              variant="secondary"
+              onPress={() => void Linking.openURL(invoicePdf)}
+              style={styles.action}
+            />
+          ) : null}
+
+          {invoiceXml ? (
+            <PrimaryButton
+              label="Descargar XML del comprobante"
+              variant="ghost"
+              onPress={() => void Linking.openURL(invoiceXml)}
+              style={styles.actionTight}
+            />
+          ) : null}
+
+          <PrimaryButton
+            label="Volver a pedir"
+            loading={reorderingNumber === order.orderNumber}
+            onPress={() => void reorder(order.orderNumber)}
+            style={styles.action}
+          />
+
+          {order.status === 'DELIVERED' ? (
+            <PrimaryButton
+              label="Calificar lo que pediste"
+              variant="secondary"
+              onPress={() => router.push(REVIEWS_ROUTE)}
+              style={styles.actionTight}
+            />
+          ) : null}
+
+          {CANCELLABLE_STATUSES.includes(order.status) ? (
+            <PrimaryButton
+              label="Cancelar pedido"
+              variant="secondary"
+              loading={cancelling}
+              onPress={cancel}
+              style={styles.actionTight}
+            />
+          ) : null}
+
+          <PrimaryButton
+            label="Ayuda por WhatsApp"
+            variant="ghost"
+            onPress={() => void contactSupport()}
+            style={styles.actionTight}
+          />
+        </View>
+      </ScrollView>
+    </ScreenScaffold>
+  );
+}
+
+/** Silueta de la primera carga: la misma forma que tendrá el seguimiento. */
+function DetailSkeleton() {
+  return (
+    <View style={styles.skeleton}>
+      <Skeleton width={84} height={84} rounded="lg" style={styles.skeletonCenter} />
+      <Skeleton width="55%" height={16} rounded="sm" style={styles.skeletonCenter} />
+      <Skeleton width="80%" height={26} rounded="sm" style={styles.skeletonCenter} />
+      <Skeleton height={96} rounded="lg" style={styles.skeletonBlock} />
+      <Skeleton height={150} rounded="lg" style={styles.skeletonBlock} />
+      <Skeleton height={190} rounded="lg" style={styles.skeletonBlock} />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  scroll: {
+    flexGrow: 1,
+  },
+  hero: {
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xl,
+  },
+  heroIcon: {
+    width: 78,
+    height: 78,
+    borderRadius: radius.lg + 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroEyebrow: {
+    ...type.label,
+    color: colors.onDarkMuted,
+    marginTop: spacing.md,
+  },
+  heroTitle: {
+    ...type.display,
+    color: colors.onDark,
+    textAlign: 'center',
+    marginTop: spacing.xs,
+  },
+  heroCopy: {
+    ...type.body,
+    color: colors.onDarkMuted,
+    textAlign: 'center',
+    marginTop: spacing.sm,
+  },
+  etaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.brand600,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginTop: spacing.md,
+  },
+  etaText: {
+    ...type.bodySm,
+    fontWeight: '800',
+    color: colors.onDark,
+  },
+  liveRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceDarkRaised,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + spacing.xs,
+    marginTop: spacing.md,
+  },
+  liveDot: {
+    width: 9,
+    height: 9,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent500,
+  },
+  liveText: {
+    ...type.caption,
+    flex: 1,
+    color: colors.onDarkMuted,
+    lineHeight: 18,
+  },
+  staleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceDarkRaised,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginTop: spacing.md,
+  },
+  staleText: {
+    ...type.caption,
+    flex: 1,
+    color: colors.onDark,
+    lineHeight: 18,
+  },
+  staleButton: {
+    minHeight: 36,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.sm + spacing.xs,
+    borderRadius: radius.sm,
+    backgroundColor: colors.brand600,
+  },
+  staleButtonText: {
+    ...type.label,
+    color: colors.onDark,
+  },
+  body: {
+    flexGrow: 1,
+    backgroundColor: colors.surfaceMuted,
+    borderTopLeftRadius: radius.lg + 4,
+    borderTopRightRadius: radius.lg + 4,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xxl,
+  },
+  quickCard: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    ...shadow.md,
+  },
+  quickCell: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  quickDivider: {
+    width: 1,
+    backgroundColor: colors.lineSoft,
+    marginHorizontal: spacing.sm,
+  },
+  quickLabel: {
+    ...type.label,
+    color: colors.inkMuted,
+  },
+  quickTotal: {
+    ...type.heading,
+    color: colors.brand700,
+    marginTop: spacing.xs,
+  },
+  quickValue: {
+    ...type.bodySm,
+    fontWeight: '800',
+    color: colors.ink,
+    marginTop: spacing.xs,
+  },
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.lineSoft,
+    padding: spacing.md,
+    marginTop: spacing.md,
+  },
+  cardTitle: {
+    ...type.heading,
+    color: colors.ink,
+    marginBottom: spacing.sm + spacing.xs,
+  },
+  bar: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  barSegment: {
+    flex: 1,
+    height: 8,
+    borderRadius: radius.pill,
+    backgroundColor: colors.line,
+  },
+  barSegmentDone: {
+    backgroundColor: colors.brand600,
+  },
+  barSegmentCurrent: {
+    backgroundColor: colors.brand700,
+  },
+  barSegmentCancelled: {
+    backgroundColor: colors.danger,
+  },
+  barLegend: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  barStep: {
+    ...type.bodySm,
+    fontWeight: '800',
+    color: colors.ink,
+  },
+  barNext: {
+    ...type.bodySm,
+    color: colors.inkMuted,
+  },
+  timeline: {
+    marginTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.lineSoft,
+    paddingTop: spacing.md,
+  },
+  timelineRow: {
+    flexDirection: 'row',
+    gap: spacing.sm + spacing.xs,
+  },
+  timelineRail: {
+    width: 14,
+    alignItems: 'center',
+  },
+  timelineDot: {
+    width: 12,
+    height: 12,
+    borderRadius: radius.pill,
+    marginTop: 4,
+  },
+  timelineLine: {
+    width: 2,
+    flex: 1,
+    minHeight: 26,
+    backgroundColor: colors.line,
+  },
+  timelineCopy: {
+    flex: 1,
+    paddingBottom: spacing.md,
+  },
+  timelineTitle: {
+    ...type.bodySm,
+    fontWeight: '800',
+    color: colors.ink,
+  },
+  timelineDate: {
+    ...type.caption,
+    color: colors.inkMuted,
+    marginTop: 2,
+  },
+  timelineComment: {
+    ...type.caption,
+    color: colors.inkMuted,
+    lineHeight: 18,
+    marginTop: spacing.xs,
+  },
+  muted: {
+    ...type.bodySm,
+    color: colors.inkMuted,
+  },
+  deliveryRow: {
+    flexDirection: 'row',
+    gap: spacing.sm + spacing.xs,
+  },
+  deliveryIcon: {
+    width: layout.minTouch,
+    height: layout.minTouch,
+    borderRadius: radius.sm + 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.brand50,
+  },
+  deliveryCopy: {
+    flex: 1,
+    gap: 3,
+  },
+  deliveryStatus: {
+    ...type.body,
+    fontWeight: '800',
+    color: colors.ink,
+  },
+  deliveryMeta: {
+    ...type.bodySm,
+    color: colors.inkMuted,
+  },
+  deliveryEta: {
+    ...type.bodySm,
+    fontWeight: '800',
+    color: colors.brand700,
+  },
+  noticeWarn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm + spacing.xs,
+    backgroundColor: '#fff6e3',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: '#f2dcb0',
+    padding: spacing.md,
+    marginTop: spacing.md,
+  },
+  noticeInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm + spacing.xs,
+    backgroundColor: '#f5eeff',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: '#e0d0f5',
+    padding: spacing.md,
+    marginTop: spacing.md,
+  },
+  noticeDanger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm + spacing.xs,
+    backgroundColor: '#fff1f1',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: '#f5d3d3',
+    padding: spacing.md,
+    marginTop: spacing.md,
+  },
+  noticeSoft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm + spacing.xs,
+    backgroundColor: colors.brand50,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.brand100,
+    padding: spacing.md,
+    marginTop: spacing.md,
+  },
+  noticeCopy: {
+    flex: 1,
+    gap: 3,
+  },
+  noticeTitle: {
+    ...type.bodySm,
+    fontWeight: '800',
+    color: '#6b4700',
+  },
+  noticeTitlePurple: {
+    color: '#4c2c76',
+  },
+  noticeTitleDanger: {
+    color: '#8f2b2b',
+  },
+  noticeTitleBrand: {
+    ...type.bodySm,
+    fontWeight: '800',
+    color: colors.brand700,
+  },
+  noticeText: {
+    ...type.caption,
+    color: '#7b5c1d',
+    lineHeight: 18,
+  },
+  noticeTextPurple: {
+    color: '#61457f',
+  },
+  noticeTextDanger: {
+    color: '#9c4646',
+  },
+  noticeTextBrand: {
+    ...type.caption,
+    color: colors.brand800,
+    lineHeight: 18,
+  },
+  item: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm + spacing.xs,
+    paddingVertical: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.lineSoft,
+  },
+  itemQuantity: {
+    minWidth: 34,
+    height: 34,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xs,
+    backgroundColor: colors.brand50,
+  },
+  itemQuantityText: {
+    ...type.label,
+    color: colors.brand700,
+  },
+  itemCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  itemName: {
+    ...type.body,
+    fontWeight: '800',
+    color: colors.ink,
+  },
+  itemVariant: {
+    ...type.bodySm,
+    color: colors.brand700,
+  },
+  itemOptions: {
+    ...type.caption,
+    color: colors.inkMuted,
+    lineHeight: 17,
+  },
+  itemTotal: {
+    ...type.body,
+    fontWeight: '800',
+    color: colors.ink,
+  },
+  placeRow: {
+    flexDirection: 'row',
+    gap: spacing.sm + spacing.xs,
+  },
+  placeCopy: {
+    flex: 1,
+    gap: 3,
+  },
+  placeTitle: {
+    ...type.body,
+    fontWeight: '800',
+    color: colors.ink,
+  },
+  placeText: {
+    ...type.bodySm,
+    color: colors.inkMuted,
+  },
+  totals: {
+    backgroundColor: colors.surfaceDark,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    marginTop: spacing.md,
+  },
+  totalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  totalLabel: {
+    ...type.body,
+    color: colors.onDarkMuted,
+  },
+  totalValue: {
+    ...type.body,
+    fontWeight: '700',
+    color: colors.onDark,
+  },
+  totalDiscount: {
+    ...type.body,
+    fontWeight: '800',
+    color: '#8fe3b6',
+  },
+  discountNote: {
+    ...type.caption,
+    color: colors.onDarkMuted,
+    marginBottom: spacing.sm,
+  },
+  totalsDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    marginBottom: spacing.md,
+  },
+  grandLabel: {
+    ...type.heading,
+    color: colors.onDark,
+  },
+  grandValue: {
+    ...type.title,
+    color: colors.onDark,
+  },
+  taxNote: {
+    ...type.caption,
+    color: colors.onDarkMuted,
+    textAlign: 'right',
+  },
+  action: {
+    marginTop: spacing.md,
+  },
+  actionTight: {
+    marginTop: spacing.sm,
+  },
+  skeleton: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+  },
+  skeletonCenter: {
+    alignSelf: 'center',
+    marginTop: spacing.md,
+  },
+  skeletonBlock: {
+    marginTop: spacing.md,
+  },
+  pressed: {
+    opacity: 0.75,
+  },
+});

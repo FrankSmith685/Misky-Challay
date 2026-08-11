@@ -43,7 +43,7 @@ const styles = StyleSheet.create({
   back: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.line },
   backSpacer: { width: 42 },
   intro: { paddingHorizontal: spacing.sm, paddingTop: 42, paddingBottom: spacing.lg },
-  eyebrow: { color: colors.brand600, fontSize: 11, fontWeight: '900', letterSpacing: 1.3, textTransform: 'uppercase' },
+  eyebrow: { color: colors.brand600, fontSize: 12, lineHeight: 16, fontWeight: '900', letterSpacing: 1.3, textTransform: 'uppercase' },
   title: { color: colors.brand900, fontSize: 34, lineHeight: 39, fontWeight: '900', letterSpacing: -1, marginTop: 8 },
   description: { color: colors.inkMuted, fontSize: 15, lineHeight: 23, marginTop: 10 },
   card: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, padding: spacing.lg, shadowColor: colors.brand900, shadowOpacity: 0.08, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 4 },

@@ -1,76 +1,816 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, type Href } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Chip } from '../../src/components/Chip';
+import { EmptyState } from '../../src/components/EmptyState';
 import { PrimaryButton } from '../../src/components/PrimaryButton';
-import { ErrorState, LoadingState } from '../../src/components/ScreenState';
+import { ScreenScaffold } from '../../src/components/ScreenScaffold';
+import { Skeleton } from '../../src/components/Skeleton';
+import { useResource } from '../../src/hooks/useResource';
 import { useSession } from '../../src/providers/SessionProvider';
 import { plansApi } from '../../src/services/api/plans.service';
-import { colors, radius, spacing } from '../../src/theme/tokens';
+import { colors, layout, radius, shadow, spacing, type } from '../../src/theme/tokens';
 import type { WalletSummary, WalletTransaction } from '../../src/types/domain';
 
 type Filter = 'ALL' | 'IN' | 'OUT';
-const money = (value: number) => `S/ ${Number(value).toFixed(2)}`;
-const date = (value: string | null) => value ? new Date(value).toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Sin vencimiento';
-const CREDIT = new Set<WalletTransaction['type']>(['CREDIT', 'REFUND']);
+
+const PAGE_SIZE = 20;
+
+/** Los movimientos que SUMAN saldo. El resto lo consume. */
+const CREDIT_TYPES = new Set<WalletTransaction['type']>(['CREDIT', 'REFUND']);
+
+const money = (value: number): string => `S/ ${Number(value).toFixed(2)}`;
+
+const shortDate = (value: string | null): string =>
+  value
+    ? new Date(value).toLocaleDateString('es-PE', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      })
+    : 'Sin vencimiento';
+
+const movementDate = (value: string): string =>
+  new Date(value).toLocaleString('es-PE', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+const RULES: ReadonlyArray<{
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  title: string;
+  copy: string;
+}> = [
+  {
+    icon: 'numeric-1-circle',
+    title: 'Vigencias separadas',
+    copy: 'Cada compra y cada bono conserva su propia fecha.',
+  },
+  {
+    icon: 'numeric-2-circle',
+    title: 'Primero el que vence',
+    copy: 'El servidor consume antes el lote con menor vigencia.',
+  },
+  {
+    icon: 'numeric-3-circle',
+    title: 'Sin cargos automáticos',
+    copy: 'Comprar un plan no crea pagos recurrentes.',
+  },
+];
 
 export default function WalletScreen() {
-  const insets = useSafeAreaInsets();
   const { status } = useSession();
-  const [wallet, setWallet] = useState<WalletSummary | null>(null);
-  const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
-  const [filter, setFilter] = useState<Filter>('ALL');
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState('');
+  const authenticated = status === 'authenticated';
 
-  const load = useCallback(async (refresh = false) => {
-    if (status !== 'authenticated') return;
-    refresh ? setRefreshing(true) : setLoading(true);
-    setError('');
-    try {
-      const [summary, movements] = await Promise.all([plansApi.wallet(), plansApi.transactions()]);
-      setWallet(summary);
-      setTransactions(movements);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'No pudimos cargar tu saldo.');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [status]);
+  const wallet = useResource<WalletSummary>({
+    key: authenticated ? 'plans:wallet' : null,
+    fetcher: () => plansApi.wallet(),
+  });
+
+  const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
+  const [loadedPages, setLoadedPages] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<Filter>('ALL');
+
+  /** Corta las llamadas que dispara `onEndReached` mientras ya hay una en vuelo. */
+  const busy = useRef(false);
+
+  const loadPage = useCallback(
+    async (page: number) => {
+      if (!authenticated || busy.current) return;
+
+      busy.current = true;
+      setLoadingHistory(true);
+      setHistoryError(null);
+      try {
+        const rows = await plansApi.transactions(page, PAGE_SIZE);
+        setTransactions((current) => (page === 1 ? rows : [...current, ...rows]));
+        setLoadedPages(page);
+        // El servicio entrega solo la lista: una página incompleta significa
+        // que ya no queda historial por detrás.
+        setHasMore(rows.length === PAGE_SIZE);
+      } catch (caught) {
+        setHistoryError(
+          caught instanceof Error ? caught.message : 'No pudimos cargar tus movimientos.',
+        );
+      } finally {
+        busy.current = false;
+        setLoadingHistory(false);
+      }
+    },
+    [authenticated],
+  );
 
   useEffect(() => {
-    if (status === 'anonymous') router.replace({ pathname: '/(auth)/login', params: { returnTo: '/wallet' } });
-    else if (status === 'authenticated') void load();
-  }, [load, status]);
+    if (status === 'anonymous') {
+      router.replace({ pathname: '/(auth)/login', params: { returnTo: '/wallet' } });
+      return;
+    }
+    if (authenticated) void loadPage(1);
+  }, [authenticated, loadPage, status]);
 
-  const visible = useMemo(() => transactions.filter((row) => filter === 'ALL' || (filter === 'IN' ? CREDIT.has(row.type) : !CREDIT.has(row.type))), [filter, transactions]);
+  const refresh = useCallback(() => {
+    void wallet.refresh();
+    void loadPage(1);
+  }, [loadPage, wallet]);
 
-  if (loading || status === 'bootstrapping') return <View style={[styles.page, { paddingTop: insets.top }]}><LoadingState label="Calculando tu saldo…" /></View>;
-  if (!wallet) return <View style={[styles.page, { paddingTop: insets.top }]}><Pressable style={styles.backFloating} onPress={() => router.back()}><MaterialCommunityIcons name="arrow-left" size={22} color={colors.ink} /></Pressable><ErrorState message={error || 'No pudimos consultar tu billetera.'} onRetry={() => void load()} /></View>;
+  const loadMore = useCallback(() => {
+    if (!hasMore || loadingHistory || historyError !== null) return;
+    void loadPage(loadedPages + 1);
+  }, [hasMore, historyError, loadedPages, loadPage, loadingHistory]);
 
-  const paidShare = wallet.balance > 0 ? Math.min(100, Math.max(0, wallet.paidBalance / wallet.balance * 100)) : 0;
-  return <ScrollView style={styles.page} contentContainerStyle={[styles.content, { paddingTop: insets.top + 12 }]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} tintColor={colors.brand600} />}>
-    <View style={styles.top}><Pressable style={styles.back} onPress={() => router.back()}><MaterialCommunityIcons name="arrow-left" size={22} color={colors.ink} /></Pressable><View><Text style={styles.eyebrow}>ACTIVIDAD</Text><Text style={styles.title}>Mi saldo</Text></View><Pressable style={styles.plansLink} onPress={() => router.push('/plans' as Href)}><MaterialCommunityIcons name="star-four-points-outline" size={18} color={colors.brand700} /></Pressable></View>
-    <View style={styles.balance}><View style={styles.balanceIcon}><MaterialCommunityIcons name="wallet-outline" size={27} color={colors.surface} /></View><Text style={styles.balanceLabel}>SALDO DISPONIBLE</Text><Text style={styles.balanceAmount}>{money(wallet.balance)}</Text><Text style={styles.balanceCopy}>Puedes aplicarlo en uno o varios pedidos desde el checkout.</Text><View style={styles.expiry}><MaterialCommunityIcons name="calendar-clock" size={17} color={colors.brand100} /><Text style={styles.expiryText}>Próximo vencimiento: {date(wallet.nextExpiry)}</Text></View></View>
-    <View style={styles.composition}><View style={styles.compositionCard}><MaterialCommunityIcons name="cash-check" size={22} color={colors.brand700} /><Text style={styles.compositionLabel}>Pagado y devuelto</Text><Text style={styles.compositionAmount}>{money(wallet.paidBalance)}</Text></View><View style={[styles.compositionCard, styles.bonusCard]}><MaterialCommunityIcons name="gift-outline" size={22} color={colors.accent500} /><Text style={styles.compositionLabel}>Bonos</Text><Text style={styles.compositionAmount}>{money(wallet.bonusBalance)}</Text></View></View>
-    {wallet.balance > 0 && <View style={styles.share}><View style={styles.shareLabels}><Text style={styles.shareText}>{Math.round(paidShare)}% pagado</Text><Text style={styles.shareText}>{Math.round(100 - paidShare)}% bono</Text></View><View style={styles.shareBar}><View style={[styles.paidBar, { width: `${paidShare}%` }]} /></View></View>}
-    <PrimaryButton label="Usar mi saldo en un pedido" onPress={() => router.push('/(tabs)/menu')} style={styles.useButton} />
+  const visible = useMemo(
+    () =>
+      transactions.filter((row) => {
+        if (filter === 'ALL') return true;
+        return filter === 'IN' ? CREDIT_TYPES.has(row.type) : !CREDIT_TYPES.has(row.type);
+      }),
+    [filter, transactions],
+  );
 
-    <View style={styles.rules}><Text style={styles.rulesTitle}>Cómo funciona</Text>{[['numeric-1-circle', 'Vigencias separadas', 'Cada compra y bono conserva su propia fecha.'], ['numeric-2-circle', 'Primero el que vence', 'El backend consume antes el lote con menor vigencia.'], ['numeric-3-circle', 'Sin cargos automáticos', 'Comprar un plan no crea pagos recurrentes.']].map(([icon, title, copy]) => <View key={title} style={styles.rule}><MaterialCommunityIcons name={icon as keyof typeof MaterialCommunityIcons.glyphMap} size={22} color={colors.brand600} /><View style={{ flex: 1 }}><Text style={styles.ruleTitle}>{title}</Text><Text style={styles.ruleCopy}>{copy}</Text></View></View>)}</View>
+  const summary = wallet.data;
 
-    <View style={styles.sectionTop}><View><Text style={styles.sectionEyebrow}>BENEFICIOS VIGENTES</Text><Text style={styles.sectionTitle}>Planes activos</Text></View><Text style={styles.count}>{wallet.activePlans.length}</Text></View>
-    {wallet.activePlans.length ? <View style={styles.stack}>{wallet.activePlans.map((plan) => <View key={plan.id} style={styles.activePlan}><View style={styles.activeHead}><View><Text style={styles.activeName}>{plan.name}</Text><Text style={styles.activeExpiry}>Hasta {date(plan.expiresAt)}</Text></View><MaterialCommunityIcons name="shield-check" size={25} color={colors.success} /></View><View style={styles.planAmounts}><Text style={styles.planAmount}>Pagado {money(plan.paidRemaining)}</Text><Text style={styles.planAmount}>Bono {money(plan.bonusRemaining)}</Text></View>{plan.benefits.map((benefit) => <View key={benefit.type} style={styles.planBenefit}><MaterialCommunityIcons name="check-circle-outline" size={16} color={colors.brand600} /><Text style={styles.planBenefitText}>{benefit.description}</Text></View>)}</View>)}</View> : <View style={styles.empty}><Text style={styles.emptyTitle}>No tienes beneficios activos</Text><Text style={styles.emptyCopy}>Tu saldo pagado vigente puede seguir utilizándose.</Text><PrimaryButton label="Comparar planes" variant="secondary" onPress={() => router.push('/plans' as Href)} style={styles.emptyButton} /></View>}
+  if (status === 'bootstrapping' || (wallet.loading && !summary)) {
+    return (
+      <ScreenScaffold title="Mi saldo" padded>
+        <Skeleton height={188} rounded="lg" style={styles.skeletonTop} />
 
-    {wallet.lots.length > 0 && <><View style={styles.sectionTop}><View><Text style={styles.sectionEyebrow}>ORDEN DE CONSUMO</Text><Text style={styles.sectionTitle}>Vigencia de cada saldo</Text></View></View><View style={styles.lots}>{wallet.lots.map((lot, index) => <View key={lot.id} style={[styles.lot, index > 0 && styles.divided]}><View style={[styles.lotIcon, lot.kind === 'BONUS' && styles.lotBonus]}><MaterialCommunityIcons name={lot.kind === 'BONUS' ? 'gift-outline' : 'cash-clock'} size={20} color={lot.kind === 'BONUS' ? colors.accent500 : colors.brand700} /></View><View style={{ flex: 1 }}><Text style={styles.lotName}>{lot.planName || (lot.kind === 'REFUND' ? 'Devolución' : 'Saldo Verde Bowl')}</Text><Text style={styles.lotDate}>{index === 0 ? 'Se usará primero · ' : ''}{date(lot.expiresAt)}</Text></View><Text style={styles.lotAmount}>{money(lot.remainingAmount)}</Text></View>)}</View></>}
+        <Skeleton height={72} rounded="md" count={4} gap={spacing.sm + spacing.xs} />
+      </ScreenScaffold>
+    );
+  }
 
-    <View style={styles.sectionTop}><View><Text style={styles.sectionEyebrow}>HISTORIAL VERIFICABLE</Text><Text style={styles.sectionTitle}>Movimientos</Text></View></View><View style={styles.filters}>{([['ALL', 'Todos'], ['IN', 'Ingresos'], ['OUT', 'Usos']] as const).map(([value, label]) => <Pressable key={value} onPress={() => setFilter(value)} style={[styles.filter, filter === value && styles.filterActive]}><Text style={[styles.filterText, filter === value && styles.filterTextActive]}>{label}</Text></Pressable>)}</View>
-    {visible.length ? <View style={styles.stack}>{visible.map((movement) => { const credit = CREDIT.has(movement.type); return <View key={movement.id} style={styles.movement}><View style={[styles.movementIcon, credit && styles.movementCredit]}><MaterialCommunityIcons name={credit ? 'arrow-down-left' : 'arrow-up-right'} size={20} color={credit ? colors.success : colors.inkMuted} /></View><View style={{ flex: 1 }}><Text style={styles.movementName}>{movement.description}</Text><Text style={styles.movementDate}>{new Date(movement.createdAt).toLocaleString('es-PE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</Text></View><View style={{ alignItems: 'flex-end' }}><Text style={[styles.movementAmount, credit && styles.creditAmount]}>{credit ? '+' : '−'}{money(movement.amount)}</Text><Text style={styles.after}>Saldo {money(movement.balanceAfter)}</Text></View></View>; })}</View> : <View style={styles.empty}><Text style={styles.emptyTitle}>No hay movimientos en esta categoría</Text></View>}
-  </ScrollView>;
+  if (!summary) {
+    return (
+      <ScreenScaffold title="Mi saldo">
+        <EmptyState
+          icon="cloud-alert-outline"
+          title="No pudimos consultar tu billetera"
+          message={wallet.error?.message ?? 'Vuelve a intentarlo en unos segundos.'}
+          actionLabel="Reintentar"
+          onAction={() => void wallet.refetch()}
+        />
+      </ScreenScaffold>
+    );
+  }
+
+  const paidShare =
+    summary.balance > 0
+      ? Math.min(100, Math.max(0, (summary.paidBalance / summary.balance) * 100))
+      : 0;
+
+  const header = (
+    <View>
+      <View style={styles.balance}>
+        <View style={styles.balanceIcon}>
+          <MaterialCommunityIcons name="wallet-outline" size={26} color={colors.surface} />
+        </View>
+
+        <Text style={styles.balanceLabel}>SALDO DISPONIBLE</Text>
+
+        <Text style={styles.balanceAmount}>{money(summary.balance)}</Text>
+
+        <Text style={styles.balanceCopy}>
+          Puedes aplicarlo en uno o varios pedidos desde el checkout.
+        </Text>
+
+        <View style={styles.expiry}>
+          <MaterialCommunityIcons name="calendar-clock" size={17} color={colors.brand100} />
+
+          <Text style={styles.expiryText}>Próximo vencimiento: {shortDate(summary.nextExpiry)}</Text>
+        </View>
+      </View>
+
+      <View style={styles.composition}>
+        <View style={[styles.compositionCard, shadow.sm]}>
+          <MaterialCommunityIcons name="cash-check" size={22} color={colors.brand700} />
+
+          <Text style={styles.compositionLabel}>Pagado y devuelto</Text>
+
+          <Text style={styles.compositionAmount}>{money(summary.paidBalance)}</Text>
+        </View>
+
+        <View style={[styles.compositionCard, styles.bonusCard, shadow.sm]}>
+          <MaterialCommunityIcons name="gift-outline" size={22} color={colors.accent500} />
+
+          <Text style={styles.compositionLabel}>Bonos</Text>
+
+          <Text style={styles.compositionAmount}>{money(summary.bonusBalance)}</Text>
+        </View>
+      </View>
+
+      {summary.balance > 0 ? (
+        <View style={styles.share}>
+          <View style={styles.shareLabels}>
+            <Text style={styles.shareText}>{Math.round(paidShare)}% pagado</Text>
+
+            <Text style={styles.shareText}>{Math.round(100 - paidShare)}% bono</Text>
+          </View>
+
+          <View style={styles.shareBar}>
+            <View style={[styles.sharePaid, { width: `${paidShare}%` }]} />
+          </View>
+        </View>
+      ) : null}
+
+      <PrimaryButton
+        label="Usar mi saldo en un pedido"
+        onPress={() => router.push('/(tabs)/menu')}
+        style={styles.useButton}
+      />
+
+      <View style={styles.rules}>
+        <Text style={styles.rulesTitle}>Cómo funciona</Text>
+
+        {RULES.map((rule) => (
+          <View key={rule.title} style={styles.rule}>
+            <MaterialCommunityIcons name={rule.icon} size={22} color={colors.brand600} />
+
+            <View style={styles.ruleText}>
+              <Text style={styles.ruleTitle}>{rule.title}</Text>
+
+              <Text style={styles.ruleCopy}>{rule.copy}</Text>
+            </View>
+          </View>
+        ))}
+      </View>
+
+      <View style={styles.sectionTop}>
+        <View style={styles.sectionText}>
+          <Text style={styles.sectionEyebrow}>BENEFICIOS VIGENTES</Text>
+
+          <Text style={styles.sectionTitle}>Planes activos</Text>
+        </View>
+
+        <Text style={styles.sectionCount}>{summary.activePlans.length}</Text>
+      </View>
+
+      {summary.activePlans.length > 0 ? (
+        summary.activePlans.map((plan) => (
+          <View key={plan.id} style={[styles.card, shadow.sm]}>
+            <View style={styles.planHead}>
+              <View style={styles.planText}>
+                <Text style={styles.planName}>{plan.name}</Text>
+
+                <Text style={styles.planExpiry}>Hasta {shortDate(plan.expiresAt)}</Text>
+              </View>
+
+              <MaterialCommunityIcons name="shield-check" size={24} color={colors.success} />
+            </View>
+
+            <View style={styles.planAmounts}>
+              <Text style={styles.planAmount}>Pagado {money(plan.paidRemaining)}</Text>
+
+              <Text style={styles.planAmount}>Bono {money(plan.bonusRemaining)}</Text>
+            </View>
+
+            {plan.benefits.map((benefit) => (
+              <View key={benefit.type} style={styles.planBenefit}>
+                <MaterialCommunityIcons
+                  name="check-circle-outline"
+                  size={16}
+                  color={colors.brand600}
+                />
+
+                <Text style={styles.planBenefitText}>{benefit.description}</Text>
+              </View>
+            ))}
+          </View>
+        ))
+      ) : (
+        <View style={[styles.card, styles.centered]}>
+          <Text style={styles.cardTitle}>No tienes beneficios activos</Text>
+
+          <Text style={styles.cardCopy}>Tu saldo pagado vigente puede seguir utilizándose.</Text>
+
+          <PrimaryButton
+            label="Comparar planes"
+            variant="secondary"
+            onPress={() => router.push('/plans' as Href)}
+            style={styles.cardButton}
+          />
+        </View>
+      )}
+
+      {summary.lots.length > 0 ? (
+        <>
+          <View style={styles.sectionTop}>
+            <View style={styles.sectionText}>
+              <Text style={styles.sectionEyebrow}>ORDEN DE CONSUMO</Text>
+
+              <Text style={styles.sectionTitle}>Vigencia de cada saldo</Text>
+            </View>
+          </View>
+
+          <View style={[styles.lots, shadow.sm]}>
+            {summary.lots.map((lot, index) => (
+              <View key={lot.id} style={[styles.lot, index > 0 && styles.lotDivided]}>
+                <View style={[styles.lotIcon, lot.kind === 'BONUS' && styles.lotIconBonus]}>
+                  <MaterialCommunityIcons
+                    name={lot.kind === 'BONUS' ? 'gift-outline' : 'cash-clock'}
+                    size={20}
+                    color={lot.kind === 'BONUS' ? colors.accent500 : colors.brand700}
+                  />
+                </View>
+
+                <View style={styles.lotText}>
+                  <Text style={styles.lotName}>
+                    {lot.planName || (lot.kind === 'REFUND' ? 'Devolución' : 'Saldo Verde Bowl')}
+                  </Text>
+
+                  <Text style={styles.lotDate}>
+                    {index === 0 ? 'Se usará primero · ' : ''}
+                    {shortDate(lot.expiresAt)}
+                  </Text>
+                </View>
+
+                <Text style={styles.lotAmount}>{money(lot.remainingAmount)}</Text>
+              </View>
+            ))}
+          </View>
+        </>
+      ) : null}
+
+      <View style={styles.sectionTop}>
+        <View style={styles.sectionText}>
+          <Text style={styles.sectionEyebrow}>HISTORIAL VERIFICABLE</Text>
+
+          <Text style={styles.sectionTitle}>Movimientos</Text>
+        </View>
+      </View>
+
+      <View style={styles.filters}>
+        <Chip label="Todos" selected={filter === 'ALL'} onPress={() => setFilter('ALL')} />
+
+        <Chip label="Ingresos" selected={filter === 'IN'} onPress={() => setFilter('IN')} />
+
+        <Chip label="Usos" selected={filter === 'OUT'} onPress={() => setFilter('OUT')} />
+      </View>
+    </View>
+  );
+
+  return (
+    <ScreenScaffold
+      title="Mi saldo"
+      subtitle="Movimientos y beneficios"
+      headerRight={
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Ver los planes"
+          onPress={() => router.push('/plans' as Href)}
+          style={({ pressed }) => [styles.plansLink, pressed && styles.pressed]}
+        >
+          <MaterialCommunityIcons
+            name="star-four-points-outline"
+            size={20}
+            color={colors.brand700}
+          />
+        </Pressable>
+      }
+    >
+      <FlatList
+        data={visible}
+        keyExtractor={(item) => String(item.id)}
+        contentContainerStyle={styles.content}
+        ListHeaderComponent={header}
+        onEndReachedThreshold={0.4}
+        onEndReached={loadMore}
+        refreshControl={
+          <RefreshControl
+            refreshing={wallet.refreshing}
+            onRefresh={refresh}
+            tintColor={colors.brand600}
+          />
+        }
+        renderItem={({ item }) => {
+          const credit = CREDIT_TYPES.has(item.type);
+
+          return (
+            <View style={[styles.movement, shadow.sm]}>
+              <View style={[styles.movementIcon, credit && styles.movementIconCredit]}>
+                <MaterialCommunityIcons
+                  name={credit ? 'arrow-down-left' : 'arrow-up-right'}
+                  size={20}
+                  color={credit ? colors.success : colors.inkMuted}
+                />
+              </View>
+
+              <View style={styles.movementText}>
+                <Text style={styles.movementName}>{item.description}</Text>
+
+                <Text style={styles.movementDate}>{movementDate(item.createdAt)}</Text>
+              </View>
+
+              <View style={styles.movementAmounts}>
+                <Text style={[styles.movementAmount, credit && styles.movementCredit]}>
+                  {credit ? '+' : '−'}
+                  {money(item.amount)}
+                </Text>
+
+                <Text style={styles.movementAfter}>Saldo {money(item.balanceAfter)}</Text>
+              </View>
+            </View>
+          );
+        }}
+        ListEmptyComponent={
+          loadingHistory ? null : (
+            <View style={[styles.card, styles.centered]}>
+              <Text style={styles.cardTitle}>
+                {filter === 'ALL'
+                  ? 'Todavía no tienes movimientos'
+                  : 'No hay movimientos de este tipo'}
+              </Text>
+
+              <Text style={styles.cardCopy}>
+                Aquí aparecerá cada recarga y cada uso de tu saldo.
+              </Text>
+            </View>
+          )
+        }
+        ListFooterComponent={
+          <View style={styles.historyFooter}>
+            {loadingHistory ? (
+              <Skeleton height={68} rounded="md" count={2} gap={spacing.sm} />
+            ) : historyError !== null ? (
+              <View style={[styles.card, styles.centered]}>
+                <Text style={styles.cardTitle}>No pudimos traer más movimientos</Text>
+
+                <Text style={styles.cardCopy}>{historyError}</Text>
+
+                <PrimaryButton
+                  label="Reintentar"
+                  variant="secondary"
+                  onPress={() => void loadPage(loadedPages === 0 ? 1 : loadedPages + 1)}
+                  style={styles.cardButton}
+                />
+              </View>
+            ) : hasMore && transactions.length > 0 ? (
+              <PrimaryButton label="Ver más movimientos" variant="secondary" onPress={loadMore} />
+            ) : transactions.length > 0 ? (
+              <Text style={styles.historyEnd}>Ese es todo tu historial.</Text>
+            ) : null}
+          </View>
+        }
+      />
+    </ScreenScaffold>
+  );
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: colors.surfaceMuted }, content: { paddingHorizontal: spacing.md, paddingBottom: spacing.xl }, top: { flexDirection: 'row', alignItems: 'center', gap: 12 }, back: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center' }, backFloating: { position: 'absolute', zIndex: 2, top: 20, left: 16, width: 42, height: 42, borderRadius: 14, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }, eyebrow: { color: colors.brand600, fontSize: 9, fontWeight: '900', letterSpacing: 1.1 }, title: { color: colors.ink, fontSize: 25, fontWeight: '900' }, plansLink: { marginLeft: 'auto', width: 42, height: 42, borderRadius: 14, backgroundColor: colors.brand50, alignItems: 'center', justifyContent: 'center' }, balance: { backgroundColor: colors.brand900, borderRadius: radius.lg, padding: spacing.lg, marginTop: spacing.lg }, balanceIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.brand600, alignItems: 'center', justifyContent: 'center' }, balanceLabel: { color: colors.brand100, fontSize: 9, fontWeight: '900', letterSpacing: 1, marginTop: 15 }, balanceAmount: { color: colors.surface, fontSize: 38, fontWeight: '900', marginTop: 3 }, balanceCopy: { color: '#bfd7ca', fontSize: 11, lineHeight: 17, marginTop: 4 }, expiry: { flexDirection: 'row', alignItems: 'center', gap: 7, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,.12)', paddingTop: 13, marginTop: 15 }, expiryText: { color: colors.brand100, fontSize: 9, fontWeight: '700' }, composition: { flexDirection: 'row', gap: 9, marginTop: 10 }, compositionCard: { flex: 1, backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, padding: 13 }, bonusCard: { backgroundColor: '#fffaf0' }, compositionLabel: { color: colors.inkMuted, fontSize: 8, marginTop: 8 }, compositionAmount: { color: colors.ink, fontSize: 17, fontWeight: '900', marginTop: 2 }, share: { backgroundColor: colors.surface, borderRadius: radius.md, padding: 12, marginTop: 9 }, shareLabels: { flexDirection: 'row', justifyContent: 'space-between' }, shareText: { color: colors.inkMuted, fontSize: 8, fontWeight: '700' }, shareBar: { height: 7, backgroundColor: '#f2c66f', borderRadius: 4, overflow: 'hidden', marginTop: 7 }, paidBar: { height: '100%', backgroundColor: colors.brand600 }, useButton: { marginTop: 10 }, rules: { backgroundColor: colors.brand50, borderRadius: radius.md, padding: 14, marginTop: spacing.lg }, rulesTitle: { color: colors.brand900, fontSize: 14, fontWeight: '900', marginBottom: 9 }, rule: { flexDirection: 'row', gap: 9, alignItems: 'flex-start', marginTop: 8 }, ruleTitle: { color: colors.ink, fontSize: 10, fontWeight: '900' }, ruleCopy: { color: colors.inkMuted, fontSize: 9, lineHeight: 14, marginTop: 2 }, sectionTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: spacing.xl, marginBottom: 10 }, sectionEyebrow: { color: colors.brand600, fontSize: 8, fontWeight: '900', letterSpacing: 1 }, sectionTitle: { color: colors.ink, fontSize: 19, fontWeight: '900', marginTop: 3 }, count: { color: colors.brand700, fontSize: 16, fontWeight: '900' }, stack: { gap: 9 }, activePlan: { backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, padding: 14 }, activeHead: { flexDirection: 'row', justifyContent: 'space-between' }, activeName: { color: colors.ink, fontSize: 14, fontWeight: '900' }, activeExpiry: { color: colors.inkMuted, fontSize: 9, marginTop: 3 }, planAmounts: { flexDirection: 'row', gap: 12, borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 10, marginTop: 10 }, planAmount: { color: colors.brand700, fontSize: 10, fontWeight: '800' }, planBenefit: { flexDirection: 'row', gap: 6, marginTop: 8 }, planBenefitText: { flex: 1, color: colors.ink, fontSize: 9, lineHeight: 14 }, empty: { backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, padding: spacing.lg, alignItems: 'center' }, emptyTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' }, emptyCopy: { color: colors.inkMuted, fontSize: 10, marginTop: 4, textAlign: 'center' }, emptyButton: { marginTop: 12 }, lots: { backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, overflow: 'hidden' }, lot: { minHeight: 66, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12 }, divided: { borderTopWidth: 1, borderTopColor: colors.line }, lotIcon: { width: 39, height: 39, borderRadius: 13, backgroundColor: colors.brand50, alignItems: 'center', justifyContent: 'center' }, lotBonus: { backgroundColor: '#fff7e5' }, lotName: { color: colors.ink, fontSize: 11, fontWeight: '900' }, lotDate: { color: colors.inkMuted, fontSize: 8, marginTop: 3 }, lotAmount: { color: colors.brand700, fontSize: 12, fontWeight: '900' }, filters: { flexDirection: 'row', gap: 6, marginBottom: 10 }, filter: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: radius.pill, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line }, filterActive: { backgroundColor: colors.brand700, borderColor: colors.brand700 }, filterText: { color: colors.inkMuted, fontSize: 9, fontWeight: '900' }, filterTextActive: { color: colors.surface }, movement: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, padding: 12 }, movementIcon: { width: 39, height: 39, borderRadius: 13, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' }, movementCredit: { backgroundColor: colors.brand50 }, movementName: { color: colors.ink, fontSize: 10, fontWeight: '900' }, movementDate: { color: colors.inkMuted, fontSize: 8, marginTop: 3 }, movementAmount: { color: colors.ink, fontSize: 10, fontWeight: '900' }, creditAmount: { color: colors.success }, after: { color: colors.inkMuted, fontSize: 7, marginTop: 3 },
+  skeletonTop: {
+    marginBottom: spacing.md,
+  },
+  content: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.xl,
+    flexGrow: 1,
+  },
+  plansLink: {
+    width: layout.minTouch,
+    height: layout.minTouch,
+    borderRadius: radius.sm + 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.brand50,
+  },
+  balance: {
+    backgroundColor: colors.surfaceDark,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+  },
+  balanceIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.brand600,
+  },
+  balanceLabel: {
+    ...type.label,
+    color: colors.brand100,
+    marginTop: spacing.md,
+  },
+  balanceAmount: {
+    ...type.display,
+    fontSize: 38,
+    lineHeight: 44,
+    color: colors.onDark,
+    marginTop: 3,
+  },
+  balanceCopy: {
+    ...type.bodySm,
+    color: colors.onDarkMuted,
+    marginTop: spacing.xs,
+  },
+  expiry: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.14)',
+    paddingTop: spacing.sm + spacing.xs,
+    marginTop: spacing.md,
+  },
+  expiryText: {
+    ...type.caption,
+    color: colors.brand100,
+  },
+  composition: {
+    flexDirection: 'row',
+    gap: spacing.sm + spacing.xs,
+    marginTop: spacing.sm + spacing.xs,
+  },
+  compositionCard: {
+    flex: 1,
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.lineSoft,
+    padding: spacing.sm + spacing.xs,
+  },
+  bonusCard: {
+    backgroundColor: '#fffaf0',
+  },
+  compositionLabel: {
+    ...type.caption,
+    color: colors.inkMuted,
+    marginTop: spacing.sm,
+  },
+  compositionAmount: {
+    ...type.heading,
+    color: colors.ink,
+    marginTop: 2,
+  },
+  share: {
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.lineSoft,
+    padding: spacing.sm + spacing.xs,
+    marginTop: spacing.sm + spacing.xs,
+  },
+  shareLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  shareText: {
+    ...type.caption,
+    color: colors.inkMuted,
+  },
+  shareBar: {
+    height: 8,
+    backgroundColor: '#f2c66f',
+    borderRadius: radius.pill,
+    overflow: 'hidden',
+    marginTop: spacing.sm,
+  },
+  sharePaid: {
+    height: '100%',
+    backgroundColor: colors.brand600,
+  },
+  useButton: {
+    marginTop: spacing.sm + spacing.xs,
+  },
+  rules: {
+    backgroundColor: colors.brand50,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginTop: spacing.lg,
+  },
+  rulesTitle: {
+    ...type.heading,
+    color: colors.brand900,
+    marginBottom: spacing.xs,
+  },
+  rule: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm + spacing.xs,
+    marginTop: spacing.sm + spacing.xs,
+  },
+  ruleText: {
+    flex: 1,
+  },
+  ruleTitle: {
+    ...type.body,
+    fontWeight: '800',
+    color: colors.ink,
+  },
+  ruleCopy: {
+    ...type.bodySm,
+    color: colors.inkMuted,
+    marginTop: 2,
+  },
+  sectionTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    marginTop: spacing.xl,
+    marginBottom: spacing.sm + spacing.xs,
+  },
+  sectionText: {
+    flex: 1,
+  },
+  sectionEyebrow: {
+    ...type.label,
+    color: colors.brand600,
+  },
+  sectionTitle: {
+    ...type.heading,
+    color: colors.ink,
+    marginTop: 3,
+  },
+  sectionCount: {
+    ...type.heading,
+    color: colors.brand700,
+  },
+  card: {
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.lineSoft,
+    padding: spacing.md,
+    marginBottom: spacing.sm + spacing.xs,
+  },
+  centered: {
+    alignItems: 'center',
+  },
+  cardTitle: {
+    ...type.body,
+    fontWeight: '800',
+    color: colors.ink,
+    textAlign: 'center',
+  },
+  cardCopy: {
+    ...type.bodySm,
+    color: colors.inkMuted,
+    textAlign: 'center',
+    marginTop: spacing.xs,
+  },
+  cardButton: {
+    marginTop: spacing.sm + spacing.xs,
+    minWidth: 200,
+  },
+  planHead: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  planText: {
+    flex: 1,
+  },
+  planName: {
+    ...type.heading,
+    color: colors.ink,
+  },
+  planExpiry: {
+    ...type.bodySm,
+    color: colors.inkMuted,
+    marginTop: 2,
+  },
+  planAmounts: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+    paddingTop: spacing.sm + spacing.xs,
+    marginTop: spacing.sm + spacing.xs,
+  },
+  planAmount: {
+    ...type.bodySm,
+    fontWeight: '800',
+    color: colors.brand700,
+  },
+  planBenefit: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.xs + 2,
+    marginTop: spacing.sm,
+  },
+  planBenefitText: {
+    ...type.bodySm,
+    flex: 1,
+    color: colors.ink,
+  },
+  lots: {
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.lineSoft,
+    overflow: 'hidden',
+  },
+  lot: {
+    minHeight: 68,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm + spacing.xs,
+    padding: spacing.sm + spacing.xs,
+  },
+  lotDivided: {
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+  },
+  lotIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.sm + 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.brand50,
+  },
+  lotIconBonus: {
+    backgroundColor: '#fff7e5',
+  },
+  lotText: {
+    flex: 1,
+  },
+  lotName: {
+    ...type.body,
+    fontWeight: '800',
+    color: colors.ink,
+  },
+  lotDate: {
+    ...type.caption,
+    color: colors.inkMuted,
+    marginTop: 2,
+  },
+  lotAmount: {
+    ...type.body,
+    fontWeight: '800',
+    color: colors.brand700,
+  },
+  filters: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.sm + spacing.xs,
+  },
+  movement: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm + spacing.xs,
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.lineSoft,
+    padding: spacing.sm + spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  movementIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.sm + 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceMuted,
+  },
+  movementIconCredit: {
+    backgroundColor: colors.brand50,
+  },
+  movementText: {
+    flex: 1,
+  },
+  movementName: {
+    ...type.bodySm,
+    fontWeight: '800',
+    color: colors.ink,
+  },
+  movementDate: {
+    ...type.caption,
+    color: colors.inkMuted,
+    marginTop: 2,
+  },
+  movementAmounts: {
+    alignItems: 'flex-end',
+  },
+  movementAmount: {
+    ...type.body,
+    fontWeight: '800',
+    color: colors.ink,
+  },
+  movementCredit: {
+    color: colors.success,
+  },
+  movementAfter: {
+    ...type.caption,
+    color: colors.inkMuted,
+    marginTop: 2,
+  },
+  historyFooter: {
+    marginTop: spacing.xs,
+  },
+  historyEnd: {
+    ...type.caption,
+    color: colors.inkMuted,
+    textAlign: 'center',
+    paddingVertical: spacing.md,
+  },
+  pressed: {
+    opacity: 0.75,
+  },
 });

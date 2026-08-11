@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
-import { colors, radius } from '../theme/tokens';
+import { colors, radius, type } from '../theme/tokens';
 
 interface FormFieldProps extends TextInputProps {
   label: string;
@@ -36,10 +36,12 @@ export function FormField({ label, error, hint, icon, secureTextEntry, style, ..
 
 const styles = StyleSheet.create({
   wrapper: { gap: 7 },
-  label: { color: colors.ink, fontSize: 13, fontWeight: '800' },
+  label: { ...type.bodySm, color: colors.ink, fontWeight: '800' },
   field: { minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface, borderRadius: radius.md, paddingHorizontal: 15 },
   fieldError: { borderColor: colors.danger, backgroundColor: '#fffafa' },
-  input: { flex: 1, color: colors.ink, fontSize: 15, paddingVertical: 13 },
-  helper: { minHeight: 16, color: colors.inkMuted, fontSize: 11, lineHeight: 15 },
-  error: { color: colors.danger, fontWeight: '600' },
+  input: { ...type.body, flex: 1, color: colors.ink, paddingVertical: 13 },
+  // El texto de ayuda y el de error son justo los que hay que poder leer: van a
+  // 12 px como mínimo, nunca por debajo.
+  helper: { ...type.caption, minHeight: 16, color: colors.inkMuted },
+  error: { color: colors.danger, fontWeight: '700' },
 });

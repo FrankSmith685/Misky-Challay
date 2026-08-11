@@ -1,13 +1,12 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, type Href } from 'expo-router';
 import { useState } from 'react';
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { AuthScaffold } from '../../src/components/AuthScaffold';
 import { FormField } from '../../src/components/FormField';
 import { PrimaryButton } from '../../src/components/PrimaryButton';
-import { env } from '../../src/config/env';
 import { useSession } from '../../src/providers/SessionProvider';
-import { colors, radius, spacing } from '../../src/theme/tokens';
+import { colors, radius, spacing, type } from '../../src/theme/tokens';
 
 type Fields = { firstName: string; lastName: string; email: string; phone: string; password: string; confirmation: string };
 type Errors = Partial<Record<keyof Fields | 'terms' | 'submit', string>>;
@@ -62,7 +61,20 @@ export default function RegisterScreen() {
 
       <Pressable style={styles.terms} onPress={() => setAcceptedTerms((value) => !value)}>
         <View style={[styles.checkbox, acceptedTerms && styles.checkboxChecked]}>{acceptedTerms && <MaterialCommunityIcons name="check" size={16} color={colors.surface} />}</View>
-        <Text style={styles.termsCopy}>Acepto los <Text style={styles.link} onPress={() => Linking.openURL(`${env.webUrl}/terminos`)}>Términos</Text> y la <Text style={styles.link} onPress={() => Linking.openURL(`${env.webUrl}/privacidad`)}>Política de Privacidad</Text>.</Text>
+        {/* Los dos documentos viven dentro de la app: abrir el navegador sacaba
+            al cliente del formulario a medio llenar y, sin EXPO_PUBLIC_WEB_URL,
+            el enlace acababa en el host del API. */}
+        <Text style={styles.termsCopy}>
+          Acepto los{' '}
+          <Text style={styles.link} onPress={() => router.push('/legal/terminos' as Href)}>
+            Términos
+          </Text>{' '}
+          y la{' '}
+          <Text style={styles.link} onPress={() => router.push('/legal/privacidad' as Href)}>
+            Política de Privacidad
+          </Text>
+          .
+        </Text>
       </Pressable>
       {errors.terms && <Text style={styles.termsError}>{errors.terms}</Text>}
 
@@ -76,15 +88,15 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 10 },
   half: { flex: 1 },
   alert: { backgroundColor: '#fff2f2', borderLeftWidth: 3, borderLeftColor: colors.danger, borderRadius: 10, padding: 12, marginBottom: spacing.md },
-  alertTitle: { color: colors.danger, fontSize: 13, fontWeight: '900' },
-  alertCopy: { color: colors.inkMuted, fontSize: 12, marginTop: 3 },
-  terms: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: colors.brand50, borderRadius: radius.md, padding: 12 },
+  alertTitle: { ...type.bodySm, color: colors.danger, fontWeight: '900' },
+  alertCopy: { ...type.caption, color: colors.inkMuted, marginTop: 3 },
+  terms: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, minHeight: 52, backgroundColor: colors.brand50, borderRadius: radius.md, padding: 12 },
   checkbox: { width: 23, height: 23, borderRadius: 7, borderWidth: 2, borderColor: '#8ab89f', alignItems: 'center', justifyContent: 'center' },
   checkboxChecked: { backgroundColor: colors.brand600, borderColor: colors.brand600 },
-  termsCopy: { flex: 1, color: colors.inkMuted, fontSize: 12, lineHeight: 19 },
+  termsCopy: { ...type.bodySm, flex: 1, color: colors.inkMuted },
   link: { color: colors.brand700, fontWeight: '900' },
-  termsError: { color: colors.danger, fontSize: 11, marginTop: 6 },
+  termsError: { ...type.caption, color: colors.danger, marginTop: 6 },
   submit: { marginTop: spacing.lg },
   footer: { alignItems: 'center', gap: 7, marginTop: spacing.lg },
-  footerCopy: { color: colors.inkMuted, fontSize: 13 },
+  footerCopy: { ...type.bodySm, color: colors.inkMuted },
 });

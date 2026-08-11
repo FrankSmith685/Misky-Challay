@@ -2,7 +2,25 @@ import type { NewsletterStatus, PendingReview, Product, ProductReviews, Recommen
 import { apiRequest } from './client';
 import { ENDPOINTS } from './endpoints';
 
-export type MobileUxEvent = 'APP_OPEN' | 'MENU_VIEW' | 'PRODUCT_VIEW' | 'FAVORITE_ADD' | 'FAVORITE_REMOVE' | 'CART_ADD' | 'CHECKOUT_START' | 'CHECKOUT_STEP' | 'ORDER_COMPLETED' | 'REVIEW_SUBMITTED' | 'RECOMMENDATION_OPEN';
+/**
+ * Eventos de uso que acepta el backend (backend/src/database/models/uxEvent.model.ts).
+ * `CHECKOUT_ERROR` y `PAYMENT_REDIRECT` los emite tambien la web: mandarlos como
+ * un CHECKOUT_STEP disfrazado ensuciaba el embudo.
+ */
+export type MobileUxEvent =
+  | 'APP_OPEN'
+  | 'MENU_VIEW'
+  | 'PRODUCT_VIEW'
+  | 'FAVORITE_ADD'
+  | 'FAVORITE_REMOVE'
+  | 'CART_ADD'
+  | 'CHECKOUT_START'
+  | 'CHECKOUT_STEP'
+  | 'CHECKOUT_ERROR'
+  | 'PAYMENT_REDIRECT'
+  | 'ORDER_COMPLETED'
+  | 'REVIEW_SUBMITTED'
+  | 'RECOMMENDATION_OPEN';
 
 export const engagementApi = {
   favorites: (branchId?: number | null) => apiRequest<Product[]>(ENDPOINTS.engagement.favorites, { auth: true, query: { branchId } }),

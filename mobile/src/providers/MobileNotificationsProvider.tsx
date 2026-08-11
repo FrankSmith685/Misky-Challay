@@ -54,6 +54,46 @@ const deviceId = async () =>
 const requiresFirebaseConfiguration = (message: string) =>
   /firebase messaging|googleServicesFile|FirebaseApp/i.test(message);
 
+/**
+ * Canales de Android. Los identificadores son los mismos que manda el backend
+ * (PUSH_CHANNEL en config/constants.ts): sin declararlos aquí, Android agrupa
+ * todo en su canal de respaldo y el cliente no puede silenciar los avisos de
+ * disponibilidad sin perder también el estado de su pedido.
+ */
+const ANDROID_CHANNELS = [
+  { id: 'order-updates', name: 'Estado de pedidos', high: true },
+  { id: 'plan-updates', name: 'Planes y saldo', high: true },
+  // Es el único prescindible: interesa, pero no interrumpe.
+  { id: 'availability-alerts', name: 'Disponibilidad de platos', high: false },
+  { id: 'support-updates', name: 'Reclamos y soporte', high: true },
+] as const;
+
+/**
+ * A qué pantalla lleva tocar un aviso.
+ *
+ * El backend manda rutas propias suyas (`/order/VB-1234`, `/wallet`,
+ * `/product/pollo-teriyaki`, `/support`) y aquí se traducen a las de
+ * expo-router. La lista es cerrada y cada patrón se valida: el destino viaja en
+ * el propio aviso, así que jamás se navega a lo que llegue sin comprobarlo.
+ */
+const routeForActionUrl = (actionUrl: string): Href | null => {
+  const order = /^\/order\/([A-Za-z0-9-]+)$/.exec(actionUrl);
+  if (order) {
+    return { pathname: '/order/[orderNumber]', params: { orderNumber: order[1] } } as Href;
+  }
+
+  // El backend usa `/menu/:slug` y `/product/:slug` para lo mismo: la ficha.
+  const product = /^\/(?:product|menu)\/([A-Za-z0-9-]+)$/.exec(actionUrl);
+  if (product) {
+    return { pathname: '/product/[slug]', params: { slug: product[1] } } as Href;
+  }
+
+  if (actionUrl === '/wallet') return '/wallet' as Href;
+  if (actionUrl === '/support') return '/support' as Href;
+
+  return null;
+};
+
 export function MobileNotificationsProvider({ children }: { children: ReactNode }) {
   const { status: sessionStatus } = useSession();
   const [status, setStatus] = useState<PushStatus>(isExpoGo ? 'unsupported' : 'disabled');
@@ -75,25 +115,31 @@ export function MobileNotificationsProvider({ children }: { children: ReactNode 
           }),
         });
         if (Platform.OS === 'android') {
-          void Notifications.setNotificationChannelAsync('order-updates', {
-            name: 'Estado de pedidos',
-            importance: Notifications.AndroidImportance.HIGH,
-            vibrationPattern: [0, 250, 180, 250],
-            lightColor: '#237c52',
-          });
+          for (const channel of ANDROID_CHANNELS) {
+            void Notifications.setNotificationChannelAsync(channel.id, {
+              name: channel.name,
+              importance: channel.high
+                ? Notifications.AndroidImportance.HIGH
+                : Notifications.AndroidImportance.DEFAULT,
+              vibrationPattern: [0, 250, 180, 250],
+              lightColor: '#237c52',
+            });
+          }
         }
         const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
           const actionUrl = response.notification.request.content.data?.actionUrl;
-          if (typeof actionUrl !== 'string' || !/^\/order\/[A-Za-z0-9-]+$/.test(actionUrl)) return;
-          const orderNumber = actionUrl.split('/').pop()!;
-          router.push({ pathname: '/order/[orderNumber]', params: { orderNumber } } as Href);
+          if (typeof actionUrl !== 'string') return;
+          const target = routeForActionUrl(actionUrl);
+          // Un destino que no reconocemos abre la app y la deja donde estaba: es
+          // mejor que llevar al cliente a una ruta inventada.
+          if (target) router.push(target);
         });
         removeListener = () => subscription.remove();
       })
       .catch(() => {
         if (active) {
           setStatus('unsupported');
-          setError('Este cliente no incluye el módulo nativo de notificaciones.');
+          setError('Los avisos necesitan la app instalada desde la tienda.');
         }
       });
 
@@ -129,9 +175,14 @@ export function MobileNotificationsProvider({ children }: { children: ReactNode 
 
   const enable = useCallback(async () => {
     setError('');
+    /*
+     * Los mensajes de aquí abajo los lee el cliente en «Mi cuenta»: hablan de lo
+     * que puede hacer, no de la infraestructura que falta. Lo técnico (projectId
+     * de EAS, development build, módulo nativo) es problema nuestro.
+     */
     if (isExpoGo) {
       setStatus('unsupported');
-      setError('Instala el development build para activar notificaciones remotas.');
+      setError('Instala Verde Bowl en tu teléfono para recibir avisos.');
       return;
     }
     if (!Device.isDevice) {
@@ -140,14 +191,16 @@ export function MobileNotificationsProvider({ children }: { children: ReactNode 
       return;
     }
     if (!projectId || projectId === 'REPLACE_WITH_EAS_PROJECT_ID') {
-      setError('Falta el projectId de EAS para registrar este dispositivo.');
+      setError('No pudimos activar los avisos en esta versión de la app.');
       return;
     }
 
     setStatus('busy');
     try {
       const Notifications = await loadNotifications();
-      if (!Notifications) throw new Error('Las notificaciones requieren el development build.');
+      if (!Notifications) {
+        throw new Error('Instala Verde Bowl en tu teléfono para recibir avisos.');
+      }
       const current = await Notifications.getPermissionsAsync();
       const permission = current.granted ? current : await Notifications.requestPermissionsAsync();
       if (!permission.granted) {

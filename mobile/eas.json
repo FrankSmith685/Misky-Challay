@@ -24,7 +24,13 @@
       }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "",
+        "EXPO_PUBLIC_WEB_URL": "",
+        "EXPO_PUBLIC_EAS_PROJECT_ID": "e9dfb1e1-60ae-45d3-9c07-3c853323c907",
+        "EXPO_PUBLIC_ALLOW_HTTP": "false"
+      }
     }
   },
   "submit": {

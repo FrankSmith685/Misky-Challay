@@ -1,50 +1,1059 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router as expoRouter, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router, useLocalSearchParams } from 'expo-router';
+import * as Haptics from 'expo-haptics';
+import { AppImage } from '../../src/components/AppImage';
+import { BottomSheet } from '../../src/components/BottomSheet';
+import { EmptyState } from '../../src/components/EmptyState';
 import { PrimaryButton } from '../../src/components/PrimaryButton';
-import { ErrorState, LoadingState } from '../../src/components/ScreenState';
-import { resolvePublicAssetUrl } from '../../src/config/env';
+import { QuantityStepper } from '../../src/components/QuantityStepper';
+import { ScreenScaffold } from '../../src/components/ScreenScaffold';
+import { Skeleton } from '../../src/components/Skeleton';
+import { useResource } from '../../src/hooks/useResource';
 import { useCart } from '../../src/providers/CartProvider';
+import { useFavorites } from '../../src/providers/FavoritesProvider';
 import { usePurchase } from '../../src/providers/PurchaseProvider';
 import { useSession } from '../../src/providers/SessionProvider';
-import { useFavorites } from '../../src/providers/FavoritesProvider';
+import { useToast } from '../../src/providers/ToastProvider';
+import { mobileAnalytics } from '../../src/services/analytics';
+import { accountApi } from '../../src/services/api/account.service';
 import { catalogApi } from '../../src/services/api/catalog.service';
 import { customizationApi } from '../../src/services/api/customization.service';
 import { engagementApi } from '../../src/services/api/engagement.service';
-import { mobileAnalytics } from '../../src/services/analytics';
-import { colors, radius, spacing } from '../../src/theme/tokens';
-import type { ProductDetail, ProductReviews } from '../../src/types/domain';
+import { colors, layout, radius, shadow, spacing, type } from '../../src/theme/tokens';
+import type { AvailabilityAlert, ProductDetail, ProductReviews } from '../../src/types/domain';
 
-const router = expoRouter as { back(): void; push(href: string | object): void };
+const money = (value: number): string => `S/ ${value.toFixed(2)}`;
 
 export default function ProductDetailScreen() {
-  const insets = useSafeAreaInsets();
-  const { slug } = useLocalSearchParams<{ slug: string }>();
-  const { branch } = usePurchase(); const { addItem } = useCart(); const { status } = useSession(); const favorites = useFavorites();
-  const [product, setProduct] = useState<ProductDetail | null>(null); const [variantId, setVariantId] = useState<number | null>(null);
-  const [reviews, setReviews] = useState<ProductReviews>({ summary: { average: 0, count: 0 }, reviews: [] });
-  const [loading, setLoading] = useState(true); const [adding, setAdding] = useState(false); const [error, setError] = useState(''); const [brokenImage, setBrokenImage] = useState(false);
-  const load = useCallback(async () => { if (!slug) return; setLoading(true); setError(''); try { const row = await catalogApi.product(slug, branch?.id); setProduct(row); setVariantId(row.variants.find((item) => item.isDefault)?.id ?? row.variants[0]?.id ?? null); setReviews(await engagementApi.reviews(row.id).catch(() => ({ summary: { average: 0, count: 0 }, reviews: [] }))); void mobileAnalytics.track('PRODUCT_VIEW', { productId: row.id }, branch?.id); } catch (caught) { setError(caught instanceof Error ? caught.message : 'No pudimos cargar el producto.'); } finally { setLoading(false); } }, [branch?.id, slug]);
-  useEffect(() => { void load(); }, [load]);
-  if (loading) return <View style={[styles.page, { paddingTop: insets.top }]}><LoadingState label="Preparando la ficha…" /></View>;
-  if (!product) return <View style={[styles.page, { paddingTop: insets.top }]}><Pressable style={styles.back} onPress={() => router.back()}><MaterialCommunityIcons name="arrow-left" size={23} color={colors.ink} /></Pressable><ErrorState message={error || 'Producto no encontrado.'} onRetry={() => void load()} /></View>;
-  const image = resolvePublicAssetUrl(product.imageUrl); const selected = product.variants.find((item) => item.id === variantId) ?? product.variants[0];
-  const addFixed = async () => { if (!selected) return; setAdding(true); setError(''); try { const quote = await customizationApi.quote({ productId: product.id, variantId: selected.id, quantity: 1, branchId: branch?.id, selections: [] }); addItem({ productId: product.id, variantId: selected.id, productName: product.name, variantName: selected.name, imageUrl: product.imageUrl, quantity: 1, unitPrice: quote.unitPrice, lineTotal: quote.lineTotal, description: quote.description || product.description || product.name, selections: [] }); void mobileAnalytics.track('CART_ADD', { productId: product.id, quantity: 1 }, branch?.id); router.push('/(tabs)/cart'); } catch (caught) { setError(caught instanceof Error ? caught.message : 'No pudimos agregar este producto.'); } finally { setAdding(false); } };
-  const toggleFavorite = () => { if (status !== 'authenticated') { router.push({ pathname: '/(auth)/login', params: { returnTo: `/product/${product.slug}` } }); return; } void favorites.toggle(product.id).catch((caught) => Alert.alert('Favoritos', caught instanceof Error ? caught.message : 'No pudimos actualizar el favorito.')); };
-  return <ScrollView style={styles.page} contentContainerStyle={styles.content}>
-    <View style={styles.media}>{image && !brokenImage ? <Image source={{ uri: image }} style={styles.image} onError={() => setBrokenImage(true)} /> : <View style={styles.fallback}><MaterialCommunityIcons name="bowl-mix-outline" size={70} color="#75af91" /></View>}<Pressable style={[styles.back, { top: insets.top + 10 }]} onPress={() => router.back()}><MaterialCommunityIcons name="arrow-left" size={23} color={colors.ink} /></Pressable><Pressable accessibilityRole="button" accessibilityLabel={favorites.ids.has(product.id) ? 'Quitar de favoritos' : 'Guardar en favoritos'} style={[styles.favorite, { top: insets.top + 10 }]} onPress={toggleFavorite}><MaterialCommunityIcons name={favorites.ids.has(product.id) ? 'heart' : 'heart-outline'} size={23} color={favorites.ids.has(product.id) ? colors.danger : colors.brand700} /></Pressable><View style={[styles.badge, product.isAvailable ? styles.available : styles.unavailable]}><Text style={[styles.badgeText, !product.isAvailable && { color: colors.surface }]}>{product.isAvailable ? 'Disponible' : 'Agotado'}</Text></View></View>
-    <View style={styles.body}><Text style={styles.type}>{product.type === 'CUSTOMIZABLE' ? 'PERSONALIZABLE' : 'RECETA VERDE BOWL'}</Text><Text style={styles.title}>{product.name}</Text><Text style={styles.description}>{product.description || 'Preparado fresco con ingredientes seleccionados.'}</Text>
-      <Text style={styles.sectionTitle}>Elige tu tamaño</Text><View style={styles.variants}>{product.variants.map((variant) => <Pressable key={variant.id} onPress={() => setVariantId(variant.id)} style={[styles.variant, variant.id === selected?.id && styles.selected]}><View><Text style={styles.variantName}>{variant.name}</Text>{variant.isDefault && <Text style={styles.defaultLabel}>Más elegido</Text>}</View><View style={styles.variantRight}><Text style={styles.price}>S/ {variant.basePrice.toFixed(2)}</Text><MaterialCommunityIcons name={variant.id === selected?.id ? 'radiobox-marked' : 'radiobox-blank'} size={20} color={variant.id === selected?.id ? colors.brand600 : '#aab4af'} /></View></Pressable>)}</View>
-      {selected?.nutrition && <><Text style={styles.sectionTitle}>Información nutricional</Text><View style={styles.nutrition}>{[['Calorías', selected.nutrition.calories, 'kcal'], ['Proteína', selected.nutrition.protein, 'g'], ['Carbos', selected.nutrition.carbs, 'g'], ['Grasas', selected.nutrition.fat, 'g']].map(([label, value, unit]) => <View key={String(label)} style={styles.nutritionItem}><Text style={styles.nutritionValue}>{Math.round(Number(value))}<Text style={styles.unit}> {unit}</Text></Text><Text style={styles.nutritionLabel}>{label}</Text></View>)}</View></>}
-      {product.allergens.length > 0 && <View style={styles.alert}><MaterialCommunityIcons name="alert-circle-outline" size={21} color={colors.warning} /><Text style={styles.alertText}>Contiene: {product.allergens.map((item) => item.name).join(' · ')}</Text></View>}
-      <View style={styles.reviewHeader}><View><Text style={styles.sectionTitle}>Opiniones verificadas</Text><Text style={styles.reviewCount}>{reviews.summary.count ? `${reviews.summary.average.toFixed(1)} de 5 · ${reviews.summary.count} reseña${reviews.summary.count === 1 ? '' : 's'}` : 'Aún no hay reseñas'}</Text></View>{reviews.summary.count > 0 && <View style={styles.rating}><MaterialCommunityIcons name="star" size={20} color={colors.accent500} /><Text style={styles.ratingText}>{reviews.summary.average.toFixed(1)}</Text></View>}</View>
-      {reviews.reviews.slice(0, 3).map((review) => <View key={review.id} style={styles.review}><View style={styles.reviewTop}><Text style={styles.reviewAuthor}>{review.authorName}</Text><View style={styles.stars}>{[1,2,3,4,5].map((star) => <MaterialCommunityIcons key={star} name={star <= review.rating ? 'star' : 'star-outline'} size={14} color={colors.accent500} />)}</View></View><Text style={styles.verifiedReview}>Compra verificada</Text>{review.comment ? <Text style={styles.reviewComment}>{review.comment}</Text> : null}</View>)}
-      {error ? <View style={styles.errorBox}><Text style={styles.errorText}>{error}</Text></View> : null}
-      <PrimaryButton disabled={!product.isAvailable} loading={adding} label={product.type === 'CUSTOMIZABLE' ? 'Construir mi bowl' : `Agregar · S/ ${(selected?.basePrice ?? 0).toFixed(2)}`} onPress={() => product.type === 'CUSTOMIZABLE' ? router.push({ pathname: '/builder/[productId]', params: { productId: String(product.id) } }) : void addFixed()} style={styles.action} />
-    </View>
-  </ScrollView>;
+  const { slug, alerta } = useLocalSearchParams<{ slug: string; alerta?: string }>();
+  const { branch } = usePurchase();
+  const { addItem } = useCart();
+  const { status, user } = useSession();
+  const favorites = useFavorites();
+  const toast = useToast();
+
+  const branchId = branch?.id ?? null;
+
+  const [variantId, setVariantId] = useState<number | null>(null);
+  const [quantity, setQuantity] = useState(1);
+  const [adding, setAdding] = useState(false);
+  const [alertOpen, setAlertOpen] = useState(false);
+
+  const detail = useResource<ProductDetail>({
+    key: slug ? `catalog:product:${slug}:${branchId ?? 'sin-sede'}` : null,
+    fetcher: () => catalogApi.product(slug, branchId),
+  });
+
+  const product = detail.data;
+  const productId = product?.id ?? null;
+
+  const reviews = useResource<ProductReviews>({
+    key: productId === null ? null : `engagement:reviews:${productId}`,
+    fetcher: () => engagementApi.reviews(productId ?? 0),
+  });
+
+  // La variante por defecto manda; si el backend cambia la carta, se recalcula.
+  useEffect(() => {
+    if (!product) return;
+    const preferred = product.variants.find((variant) => variant.isDefault) ?? product.variants[0];
+    setVariantId(preferred?.id ?? null);
+  }, [product]);
+
+  useEffect(() => {
+    if (productId === null) return;
+    void mobileAnalytics.track('PRODUCT_VIEW', { productId }, branchId);
+  }, [branchId, productId]);
+
+  const selected =
+    product?.variants.find((variant) => variant.id === variantId) ?? product?.variants[0] ?? null;
+
+  const isFavorite = productId !== null && favorites.ids.has(productId);
+  const isBuilder = product?.type === 'CUSTOMIZABLE';
+
+  const toggleFavorite = () => {
+    if (!product) return;
+    if (status !== 'authenticated') {
+      router.push({ pathname: '/(auth)/login', params: { returnTo: `/product/${product.slug}` } });
+      return;
+    }
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void favorites.toggle(product.id).catch((caught: unknown) => {
+      toast.show({
+        message: caught instanceof Error ? caught.message : 'No pudimos actualizar el favorito.',
+        tone: 'error',
+      });
+    });
+  };
+
+  const addToCart = async () => {
+    if (!product || !selected) return;
+
+    setAdding(true);
+    try {
+      // Precio, descripción y total salen del backend: aquí no se multiplica nada.
+      const quote = await customizationApi.quote({
+        productId: product.id,
+        variantId: selected.id,
+        quantity,
+        branchId,
+        selections: [],
+      });
+
+      addItem({
+        productId: product.id,
+        variantId: selected.id,
+        productName: product.name,
+        variantName: selected.name,
+        imageUrl: product.imageUrl,
+        quantity,
+        unitPrice: quote.unitPrice,
+        lineTotal: quote.lineTotal,
+        description: quote.description || product.description || product.name,
+        selections: [],
+      });
+
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      void mobileAnalytics.track('CART_ADD', { productId: product.id, quantity }, branchId);
+
+      toast.show({
+        message:
+          quantity === 1
+            ? `${product.name} está en tu carrito`
+            : `${quantity} × ${product.name} en tu carrito`,
+        tone: 'success',
+        action: { label: 'Ver carrito', onPress: () => router.push('/(tabs)/cart') },
+      });
+      setQuantity(1);
+    } catch (caught) {
+      toast.show({
+        message: caught instanceof Error ? caught.message : 'No pudimos agregar este plato.',
+        tone: 'error',
+      });
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  /**
+   * El aviso necesita saber en qué cocina debe volver el plato y a quién avisar:
+   * sin sede o sin sesión, se resuelve eso primero en vez de morir en silencio.
+   */
+  const requestAlert = useCallback(() => {
+    if (!product) return;
+
+    if (branchId === null) {
+      toast.show({
+        message: 'Elige primero tu local o dirección para saber dónde debe volver el plato.',
+        tone: 'warning',
+        action: { label: 'Elegir', onPress: () => router.push('/location') },
+      });
+      return;
+    }
+
+    if (status !== 'authenticated') {
+      router.push({ pathname: '/(auth)/login', params: { returnTo: `/product/${product.slug}` } });
+      return;
+    }
+
+    setAlertOpen(true);
+  }, [branchId, product, status, toast]);
+
+  // Llegada desde el menú con «avísame» ya pulsado: la hoja se abre sola una vez.
+  const autoOpened = useRef(false);
+  useEffect(() => {
+    if (autoOpened.current || alerta !== '1' || !product || product.isAvailable) return;
+    autoOpened.current = true;
+    requestAlert();
+  }, [alerta, product, requestAlert]);
+
+  const heart = (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: isFavorite }}
+      accessibilityLabel={isFavorite ? 'Quitar de favoritos' : 'Guardar en favoritos'}
+      disabled={!product}
+      hitSlop={layout.iconHitSlop}
+      onPress={toggleFavorite}
+      style={({ pressed }) => [styles.heart, pressed && styles.pressed]}
+    >
+      <MaterialCommunityIcons
+        name={isFavorite ? 'heart' : 'heart-outline'}
+        size={23}
+        color={isFavorite ? colors.danger : colors.brand700}
+      />
+    </Pressable>
+  );
+
+  if (detail.loading && !product) {
+    return (
+      <ScreenScaffold title="Ficha del plato">
+        <View style={styles.skeleton}>
+          <Skeleton height={240} rounded="lg" />
+          <Skeleton width="60%" height={26} rounded="sm" style={styles.skeletonLine} />
+          <Skeleton width="90%" height={15} rounded="sm" style={styles.skeletonLine} />
+          <Skeleton height={64} rounded="md" count={2} gap={spacing.sm} style={styles.skeletonBlock} />
+        </View>
+      </ScreenScaffold>
+    );
+  }
+
+  if (!product) {
+    return (
+      <ScreenScaffold title="Ficha del plato">
+        <EmptyState
+          icon="cloud-alert-outline"
+          title="No pudimos abrir este plato"
+          message={detail.error?.message ?? 'Puede que ya no esté en la carta.'}
+          actionLabel="Reintentar"
+          onAction={() => void detail.refetch()}
+          secondaryLabel="Volver al menú"
+          onSecondary={() => router.push('/(tabs)/menu')}
+        />
+      </ScreenScaffold>
+    );
+  }
+
+  const summary = reviews.data?.summary ?? { average: 0, count: 0 };
+
+  return (
+    <ScreenScaffold
+      title={isBuilder ? 'Arma tu bowl' : 'Ficha del plato'}
+      headerRight={heart}
+      footer={
+        <View style={styles.footer}>
+          <View style={styles.footerTop}>
+            <Text numberOfLines={1} style={styles.footerVariant}>
+              {selected ? selected.name : 'Sin variantes disponibles'}
+            </Text>
+            {selected && (
+              <Text style={styles.footerPrice}>
+                {money(selected.basePrice)}
+                {!isBuilder && quantity > 1 ? <Text style={styles.perUnit}> c/u</Text> : null}
+              </Text>
+            )}
+          </View>
+
+          {!product.isAvailable ? (
+            <PrimaryButton
+              variant="secondary"
+              label="Avísame cuando vuelva"
+              onPress={requestAlert}
+            />
+          ) : isBuilder ? (
+            <PrimaryButton
+              label="Personalizar mi bowl"
+              onPress={() =>
+                router.push({
+                  pathname: '/builder/[productId]',
+                  params: { productId: String(product.id) },
+                })
+              }
+            />
+          ) : (
+            <View style={styles.footerActions}>
+              <QuantityStepper
+                value={quantity}
+                onChange={setQuantity}
+                max={20}
+                label={product.name}
+                disabled={adding}
+              />
+              <PrimaryButton
+                label="Agregar al carrito"
+                loading={adding}
+                disabled={!selected}
+                onPress={() => void addToCart()}
+                style={styles.addButton}
+              />
+            </View>
+          )}
+        </View>
+      }
+    >
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.hero}>
+          <AppImage
+            uri={product.imageUrl}
+            style={styles.image}
+            priority="high"
+            fallbackIconSize={64}
+            accessibilityLabel={product.name}
+          />
+          <View style={[styles.badge, product.isAvailable ? styles.available : styles.soldOut]}>
+            <MaterialCommunityIcons
+              name={product.isAvailable ? 'check-circle-outline' : 'clock-alert-outline'}
+              size={15}
+              color={product.isAvailable ? colors.brand700 : colors.onDark}
+            />
+            <Text style={[styles.badgeText, !product.isAvailable && styles.badgeTextDark]}>
+              {product.isAvailable ? 'Disponible' : 'Agotado por ahora'}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.body}>
+          <Text style={styles.eyebrow}>
+            {isBuilder ? 'PERSONALIZABLE' : 'RECETA VERDE BOWL'}
+          </Text>
+          <Text style={styles.title}>{product.name}</Text>
+          <Text style={styles.description}>
+            {product.description || 'Preparado fresco con ingredientes seleccionados.'}
+          </Text>
+
+          {product.dietaryTags.length > 0 && (
+            <View style={styles.tags}>
+              {product.dietaryTags.map((tag) => (
+                <View key={tag.code} style={styles.tag}>
+                  <MaterialCommunityIcons name="leaf" size={14} color={colors.brand700} />
+                  <Text style={styles.tagText}>{tag.name}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {!product.isAvailable && (
+            <View style={styles.soldOutNotice}>
+              <MaterialCommunityIcons name="bell-ring-outline" size={21} color={colors.brand700} />
+              <View style={styles.soldOutCopy}>
+                <Text style={styles.soldOutTitle}>Se acabó en esta cocina</Text>
+                <Text style={styles.soldOutText}>
+                  Te escribimos una sola vez, en cuanto vuelva
+                  {branch ? ` a ${branch.name}` : ''}.
+                </Text>
+              </View>
+            </View>
+          )}
+
+          <Text style={styles.sectionTitle}>Elige tu tamaño</Text>
+          <View style={styles.variants}>
+            {product.variants.map((variant) => {
+              const isSelected = variant.id === selected?.id;
+              return (
+                <Pressable
+                  key={variant.id}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: isSelected }}
+                  accessibilityLabel={`${variant.name}, ${money(variant.basePrice)}`}
+                  onPress={() => {
+                    void Haptics.selectionAsync();
+                    setVariantId(variant.id);
+                  }}
+                  style={({ pressed }) => [
+                    styles.variant,
+                    isSelected && styles.variantSelected,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <View style={styles.variantCopy}>
+                    <Text style={styles.variantName}>{variant.name}</Text>
+                    {variant.isDefault && <Text style={styles.variantHint}>El más elegido</Text>}
+                  </View>
+                  <View style={styles.variantRight}>
+                    <Text style={styles.variantPrice}>{money(variant.basePrice)}</Text>
+                    <MaterialCommunityIcons
+                      name={isSelected ? 'radiobox-marked' : 'radiobox-blank'}
+                      size={22}
+                      color={isSelected ? colors.brand600 : '#a3aea8'}
+                    />
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {selected?.nutrition && (
+            <>
+              <Text style={styles.sectionTitle}>Información nutricional</Text>
+              <View style={styles.nutrition}>
+                {[
+                  { label: 'Calorías', value: selected.nutrition.calories, unit: 'kcal' },
+                  { label: 'Proteína', value: selected.nutrition.protein, unit: 'g' },
+                  { label: 'Carbos', value: selected.nutrition.carbs, unit: 'g' },
+                  { label: 'Grasas', value: selected.nutrition.fat, unit: 'g' },
+                ].map((item) => (
+                  <View key={item.label} style={styles.nutritionItem}>
+                    <Text style={styles.nutritionValue}>
+                      {Math.round(item.value)}
+                      <Text style={styles.nutritionUnit}> {item.unit}</Text>
+                    </Text>
+                    <Text style={styles.nutritionLabel}>{item.label}</Text>
+                  </View>
+                ))}
+              </View>
+            </>
+          )}
+
+          {product.allergens.length > 0 && (
+            <View style={styles.allergens}>
+              <MaterialCommunityIcons name="alert-circle-outline" size={22} color={colors.warning} />
+              <View style={styles.allergensCopy}>
+                <Text style={styles.allergensTitle}>
+                  Contiene {product.allergens.map((item) => item.name).join(' · ')}
+                </Text>
+                <Text style={styles.allergensText}>
+                  Preparamos todo en la misma cocina, así que no podemos descartar trazas.
+                </Text>
+              </View>
+            </View>
+          )}
+
+          <View style={styles.reviewHeader}>
+            <View style={styles.reviewHeaderCopy}>
+              <Text style={styles.sectionTitleFlush}>Opiniones verificadas</Text>
+              <Text style={styles.reviewCount}>
+                {summary.count > 0
+                  ? `${summary.average.toFixed(1)} de 5 · ${summary.count} ${
+                      summary.count === 1 ? 'reseña' : 'reseñas'
+                    }`
+                  : 'Aún no hay reseñas de este plato'}
+              </Text>
+            </View>
+            {summary.count > 0 && (
+              <View style={styles.rating}>
+                <MaterialCommunityIcons name="star" size={21} color={colors.accent500} />
+                <Text style={styles.ratingText}>{summary.average.toFixed(1)}</Text>
+              </View>
+            )}
+          </View>
+
+          {(reviews.data?.reviews ?? []).slice(0, 3).map((review) => (
+            <View key={review.id} style={styles.review}>
+              <View style={styles.reviewTop}>
+                <Text style={styles.reviewAuthor}>{review.authorName}</Text>
+                <View style={styles.stars}>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <MaterialCommunityIcons
+                      key={star}
+                      name={star <= review.rating ? 'star' : 'star-outline'}
+                      size={15}
+                      color={colors.accent500}
+                    />
+                  ))}
+                </View>
+              </View>
+              {review.verifiedPurchase && (
+                <Text style={styles.reviewVerified}>Compra verificada</Text>
+              )}
+              {review.comment ? (
+                <Text style={styles.reviewComment}>{review.comment}</Text>
+              ) : null}
+            </View>
+          ))}
+        </View>
+      </ScrollView>
+
+      <AvailabilityAlertSheet
+        visible={alertOpen}
+        onClose={() => setAlertOpen(false)}
+        productId={product.id}
+        productName={product.name}
+        branchId={branchId}
+        branchName={branch?.name ?? null}
+        canEmail={Boolean(user?.email)}
+      />
+    </ScreenScaffold>
+  );
 }
 
-const styles = StyleSheet.create({ page: { flex: 1, backgroundColor: colors.surfaceMuted }, content: { paddingBottom: spacing.xl }, media: { height: 320, backgroundColor: colors.brand50 }, image: { width: '100%', height: '100%' }, fallback: { flex: 1, alignItems: 'center', justifyContent: 'center' }, back: { position: 'absolute', zIndex: 3, top: 14, left: 14, width: 44, height: 44, borderRadius: 15, backgroundColor: 'rgba(255,255,255,.95)', alignItems: 'center', justifyContent: 'center', elevation: 4 }, favorite: { position: 'absolute', zIndex: 3, right: 14, width: 44, height: 44, borderRadius: 15, backgroundColor: 'rgba(255,255,255,.95)', alignItems: 'center', justifyContent: 'center', elevation: 4 }, badge: { position: 'absolute', right: 14, bottom: 14, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 7 }, available: { backgroundColor: '#e3f6eb' }, unavailable: { backgroundColor: '#26332d' }, badgeText: { color: colors.brand700, fontSize: 10, fontWeight: '900' }, body: { padding: spacing.lg }, type: { color: colors.brand600, fontSize: 10, fontWeight: '900', letterSpacing: 1.2 }, title: { color: colors.ink, fontSize: 32, fontWeight: '900', letterSpacing: -1, marginTop: 6 }, description: { color: colors.inkMuted, fontSize: 14, lineHeight: 22, marginTop: 10 }, sectionTitle: { color: colors.ink, fontSize: 18, fontWeight: '900', marginTop: spacing.xl, marginBottom: 10 }, variants: { gap: 8 }, variant: { minHeight: 64, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface, paddingHorizontal: 15 }, selected: { borderColor: '#8dc2a6', backgroundColor: colors.brand50 }, variantName: { color: colors.ink, fontSize: 13, fontWeight: '900' }, defaultLabel: { color: colors.brand600, fontSize: 9, fontWeight: '800', marginTop: 3 }, variantRight: { flexDirection: 'row', alignItems: 'center', gap: 10 }, price: { color: colors.brand700, fontSize: 15, fontWeight: '900' }, nutrition: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, paddingVertical: 15 }, nutritionItem: { flex: 1, alignItems: 'center' }, nutritionValue: { color: colors.ink, fontSize: 14, fontWeight: '900' }, unit: { color: colors.inkMuted, fontSize: 8 }, nutritionLabel: { color: colors.inkMuted, fontSize: 8, marginTop: 4 }, alert: { flexDirection: 'row', gap: 9, backgroundColor: '#fff7e5', borderRadius: radius.md, padding: 14, marginTop: spacing.lg }, alertText: { flex: 1, color: '#805000', fontSize: 11, lineHeight: 17 }, reviewHeader: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }, reviewCount: { color: colors.inkMuted, fontSize: 10, marginTop: -5, marginBottom: 10 }, rating: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 10 }, ratingText: { color: colors.ink, fontSize: 16, fontWeight: '900' }, review: { backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, padding: 13, marginTop: 8 }, reviewTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, reviewAuthor: { color: colors.ink, fontSize: 11, fontWeight: '900' }, stars: { flexDirection: 'row' }, verifiedReview: { color: colors.success, fontSize: 8, fontWeight: '800', marginTop: 3 }, reviewComment: { color: colors.inkMuted, fontSize: 10, lineHeight: 16, marginTop: 8 }, errorBox: { backgroundColor: '#fff0f0', borderRadius: radius.md, padding: 12, marginTop: spacing.lg }, errorText: { color: colors.danger, fontSize: 11, fontWeight: '700' }, action: { marginTop: spacing.lg } });
+interface AvailabilityAlertSheetProps {
+  visible: boolean;
+  onClose: () => void;
+  productId: number;
+  productName: string;
+  branchId: number | null;
+  branchName: string | null;
+  /** Sin correo en la cuenta, el backend rechaza el canal de email. */
+  canEmail: boolean;
+}
+
+/** Alta, edición y baja del aviso de vuelta a stock, con sus dos canales. */
+function AvailabilityAlertSheet({
+  visible,
+  onClose,
+  productId,
+  productName,
+  branchId,
+  branchName,
+  canEmail,
+}: AvailabilityAlertSheetProps) {
+  const toast = useToast();
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [alert, setAlert] = useState<AvailabilityAlert | null>(null);
+  const [notifyInApp, setNotifyInApp] = useState(true);
+  const [notifyEmail, setNotifyEmail] = useState(canEmail);
+
+  useEffect(() => {
+    if (!visible || branchId === null) return;
+
+    let active = true;
+    setLoading(true);
+    accountApi
+      .availabilityAlert(productId, branchId)
+      .then((row) => {
+        if (!active) return;
+        setAlert(row);
+        if (row && row.status === 'WAITING') {
+          setNotifyInApp(row.notifyInApp);
+          setNotifyEmail(row.notifyEmail && canEmail);
+        }
+      })
+      .catch(() => {
+        // Que no se pueda leer el estado previo no impide crear uno nuevo.
+        if (active) setAlert(null);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [branchId, canEmail, productId, visible]);
+
+  const waiting = alert?.status === 'WAITING';
+
+  const save = async () => {
+    if (branchId === null) return;
+    if (!notifyEmail && !notifyInApp) {
+      toast.show({ message: 'Elige al menos un canal para avisarte.', tone: 'warning' });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const saved = await accountApi.subscribeAvailabilityAlert({
+        productId,
+        branchId,
+        notifyEmail,
+        notifyInApp,
+      });
+      setAlert(saved);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      toast.show({
+        message: `Listo. Te avisamos cuando vuelva ${productName}.`,
+        tone: 'success',
+      });
+      onClose();
+    } catch (caught) {
+      toast.show({
+        message: caught instanceof Error ? caught.message : 'No pudimos crear el aviso.',
+        tone: 'error',
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const cancel = async () => {
+    if (branchId === null) return;
+
+    setSaving(true);
+    try {
+      await accountApi.cancelAvailabilityAlert(productId, branchId);
+      setAlert(null);
+      toast.show({ message: 'Aviso cancelado.', tone: 'info' });
+      onClose();
+    } catch (caught) {
+      toast.show({
+        message: caught instanceof Error ? caught.message : 'No pudimos cancelar el aviso.',
+        tone: 'error',
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <BottomSheet
+      visible={visible}
+      onClose={onClose}
+      title={waiting ? 'Tu aviso está activo' : 'Avísame cuando vuelva'}
+      subtitle={
+        waiting
+          ? 'Puedes cambiar los canales o cancelarlo cuando quieras.'
+          : `Te escribimos una sola vez, en cuanto ${productName} vuelva a la carta.`
+      }
+    >
+      <View style={styles.sheetBranch}>
+        <MaterialCommunityIcons name="storefront-outline" size={21} color={colors.brand700} />
+        <View style={styles.sheetBranchCopy}>
+          <Text style={styles.sheetBranchLabel}>Disponibilidad en</Text>
+          <Text numberOfLines={1} style={styles.sheetBranchName}>
+            {branchName ?? 'la cocina que te atiende'}
+          </Text>
+        </View>
+      </View>
+
+      {loading ? (
+        <Skeleton height={54} rounded="md" count={2} gap={spacing.sm} style={styles.sheetBlock} />
+      ) : (
+        <View style={styles.sheetChannels}>
+          <ChannelRow
+            icon="bell-outline"
+            label="Notificación en la app"
+            checked={notifyInApp}
+            onToggle={() => setNotifyInApp((value) => !value)}
+          />
+          <ChannelRow
+            icon="email-outline"
+            label="Correo electrónico"
+            hint={canEmail ? undefined : 'Agrega un correo a tu cuenta para usar este canal'}
+            disabled={!canEmail}
+            checked={notifyEmail && canEmail}
+            onToggle={() => setNotifyEmail((value) => !value)}
+          />
+        </View>
+      )}
+
+      <View style={styles.sheetActions}>
+        {waiting && (
+          <PrimaryButton
+            variant="secondary"
+            label="Cancelar aviso"
+            disabled={saving}
+            onPress={() => void cancel()}
+            style={styles.sheetSecondary}
+          />
+        )}
+        <PrimaryButton
+          label={waiting ? 'Guardar canales' : 'Crear aviso'}
+          loading={saving}
+          disabled={loading}
+          onPress={() => void save()}
+          style={styles.sheetPrimary}
+        />
+      </View>
+    </BottomSheet>
+  );
+}
+
+function ChannelRow({
+  icon,
+  label,
+  hint,
+  checked,
+  disabled = false,
+  onToggle,
+}: {
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  label: string;
+  hint?: string;
+  checked: boolean;
+  disabled?: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked, disabled }}
+      accessibilityLabel={label}
+      disabled={disabled}
+      onPress={() => {
+        void Haptics.selectionAsync();
+        onToggle();
+      }}
+      style={({ pressed }) => [
+        styles.channel,
+        checked && styles.channelChecked,
+        disabled && styles.channelDisabled,
+        pressed && styles.pressed,
+      ]}
+    >
+      <MaterialCommunityIcons name={icon} size={21} color={colors.brand700} />
+      <View style={styles.channelCopy}>
+        <Text style={styles.channelLabel}>{label}</Text>
+        {hint ? <Text style={styles.channelHint}>{hint}</Text> : null}
+      </View>
+      <MaterialCommunityIcons
+        name={checked ? 'checkbox-marked' : 'checkbox-blank-outline'}
+        size={24}
+        color={checked ? colors.brand600 : '#a3aea8'}
+      />
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  content: {
+    paddingBottom: spacing.xl,
+  },
+  skeleton: {
+    padding: spacing.md,
+  },
+  skeletonLine: {
+    marginTop: spacing.md,
+  },
+  skeletonBlock: {
+    marginTop: spacing.lg,
+  },
+  hero: {
+    marginHorizontal: spacing.md,
+  },
+  image: {
+    height: 250,
+    borderRadius: radius.lg,
+  },
+  badge: {
+    position: 'absolute',
+    left: spacing.sm + spacing.xs,
+    bottom: spacing.sm + spacing.xs,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs + 2,
+    borderRadius: radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  available: {
+    backgroundColor: 'rgba(255,255,255,0.94)',
+  },
+  soldOut: {
+    backgroundColor: 'rgba(18,61,43,0.92)',
+  },
+  badgeText: {
+    ...type.label,
+    color: colors.brand700,
+  },
+  badgeTextDark: {
+    color: colors.onDark,
+  },
+  body: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.lg,
+  },
+  eyebrow: {
+    ...type.label,
+    color: colors.brand600,
+    letterSpacing: 1.2,
+  },
+  title: {
+    ...type.display,
+    color: colors.ink,
+    marginTop: 5,
+  },
+  description: {
+    ...type.body,
+    color: colors.inkMuted,
+    marginTop: spacing.sm,
+  },
+  tags: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  tag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: radius.pill,
+    backgroundColor: colors.brand50,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+  },
+  tagText: {
+    ...type.caption,
+    color: colors.brand700,
+  },
+  soldOutNotice: {
+    flexDirection: 'row',
+    gap: spacing.sm + spacing.xs,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.brand100,
+    backgroundColor: colors.brand50,
+    padding: spacing.sm + spacing.xs,
+    marginTop: spacing.md,
+  },
+  soldOutCopy: {
+    flex: 1,
+  },
+  soldOutTitle: {
+    ...type.body,
+    color: colors.ink,
+    fontWeight: '800',
+  },
+  soldOutText: {
+    ...type.bodySm,
+    color: colors.inkMuted,
+    marginTop: 2,
+  },
+  sectionTitle: {
+    ...type.heading,
+    color: colors.ink,
+    marginTop: spacing.xl,
+    marginBottom: spacing.sm + spacing.xs,
+  },
+  sectionTitleFlush: {
+    ...type.heading,
+    color: colors.ink,
+  },
+  variants: {
+    gap: spacing.sm,
+  },
+  variant: {
+    minHeight: 66,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+  },
+  variantSelected: {
+    borderColor: '#8dc2a6',
+    backgroundColor: colors.brand50,
+  },
+  variantCopy: {
+    flex: 1,
+  },
+  variantName: {
+    ...type.body,
+    color: colors.ink,
+    fontWeight: '800',
+  },
+  variantHint: {
+    ...type.caption,
+    color: colors.brand600,
+    marginTop: 3,
+  },
+  variantRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm + spacing.xs,
+  },
+  variantPrice: {
+    ...type.heading,
+    color: colors.brand700,
+  },
+  nutrition: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.line,
+    paddingVertical: spacing.md,
+  },
+  nutritionItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  nutritionValue: {
+    ...type.heading,
+    color: colors.ink,
+  },
+  nutritionUnit: {
+    ...type.caption,
+    color: colors.inkMuted,
+  },
+  nutritionLabel: {
+    ...type.bodySm,
+    color: colors.inkMuted,
+    marginTop: 4,
+  },
+  allergens: {
+    flexDirection: 'row',
+    gap: spacing.sm + spacing.xs,
+    backgroundColor: '#fff7e5',
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginTop: spacing.lg,
+  },
+  allergensCopy: {
+    flex: 1,
+  },
+  allergensTitle: {
+    ...type.body,
+    color: '#7a4d00',
+    fontWeight: '800',
+  },
+  allergensText: {
+    ...type.bodySm,
+    color: '#8a5b12',
+    marginTop: 3,
+  },
+  reviewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginTop: spacing.xl,
+    marginBottom: spacing.sm + spacing.xs,
+  },
+  reviewHeaderCopy: {
+    flex: 1,
+  },
+  reviewCount: {
+    ...type.bodySm,
+    color: colors.inkMuted,
+    marginTop: 3,
+  },
+  rating: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  ratingText: {
+    ...type.heading,
+    color: colors.ink,
+  },
+  review: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.line,
+    padding: spacing.sm + spacing.xs,
+    marginTop: spacing.sm,
+  },
+  reviewTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  reviewAuthor: {
+    ...type.body,
+    color: colors.ink,
+    fontWeight: '800',
+  },
+  stars: {
+    flexDirection: 'row',
+  },
+  reviewVerified: {
+    ...type.caption,
+    color: colors.success,
+    marginTop: 3,
+  },
+  reviewComment: {
+    ...type.bodySm,
+    color: colors.inkMuted,
+    marginTop: spacing.sm,
+  },
+  heart: {
+    width: layout.minTouch,
+    height: layout.minTouch,
+    borderRadius: radius.sm + 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  footer: {
+    paddingBottom: spacing.sm,
+  },
+  footerTop: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  footerVariant: {
+    ...type.bodySm,
+    flex: 1,
+    color: colors.inkMuted,
+  },
+  footerPrice: {
+    ...type.heading,
+    color: colors.brand700,
+  },
+  perUnit: {
+    ...type.caption,
+    color: colors.inkMuted,
+  },
+  footerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm + spacing.xs,
+  },
+  addButton: {
+    flex: 1,
+  },
+  sheetBranch: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm + spacing.xs,
+    borderRadius: radius.md,
+    backgroundColor: colors.brand50,
+    padding: spacing.sm + spacing.xs,
+    ...shadow.sm,
+  },
+  sheetBranchCopy: {
+    flex: 1,
+  },
+  sheetBranchLabel: {
+    ...type.caption,
+    color: colors.inkMuted,
+  },
+  sheetBranchName: {
+    ...type.body,
+    color: colors.ink,
+    fontWeight: '800',
+  },
+  sheetBlock: {
+    marginTop: spacing.md,
+  },
+  sheetChannels: {
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  channel: {
+    minHeight: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm + spacing.xs,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+  },
+  channelChecked: {
+    borderColor: '#8dc2a6',
+    backgroundColor: colors.brand50,
+  },
+  channelDisabled: {
+    opacity: 0.6,
+  },
+  channelCopy: {
+    flex: 1,
+  },
+  channelLabel: {
+    ...type.body,
+    color: colors.ink,
+    fontWeight: '700',
+  },
+  channelHint: {
+    ...type.caption,
+    color: colors.inkMuted,
+    marginTop: 2,
+  },
+  sheetActions: {
+    flexDirection: 'row',
+    gap: spacing.sm + spacing.xs,
+    marginTop: spacing.lg,
+  },
+  sheetSecondary: {
+    flex: 1,
+  },
+  sheetPrimary: {
+    flex: 1,
+  },
+  pressed: {
+    opacity: 0.85,
+  },
+});

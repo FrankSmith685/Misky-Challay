@@ -1,34 +1,531 @@
+import { useCallback, useMemo } from 'react';
+import {
+  Alert,
+  FlatList,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type ListRenderItemInfo,
+} from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router, type Href } from 'expo-router';
-import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router, useFocusEffect } from 'expo-router';
+import * as Haptics from 'expo-haptics';
+import { AppImage } from '../../src/components/AppImage';
+import { EmptyState } from '../../src/components/EmptyState';
 import { PrimaryButton } from '../../src/components/PrimaryButton';
-import { resolvePublicAssetUrl } from '../../src/config/env';
-import { useCart } from '../../src/providers/CartProvider';
+import { QuantityStepper } from '../../src/components/QuantityStepper';
+import { ScreenScaffold } from '../../src/components/ScreenScaffold';
+import { useResource } from '../../src/hooks/useResource';
+import { useCart, type RemovedCartLine } from '../../src/providers/CartProvider';
 import { usePurchase } from '../../src/providers/PurchaseProvider';
-import { colors, radius, spacing } from '../../src/theme/tokens';
+import { useSession } from '../../src/providers/SessionProvider';
+import { useToast } from '../../src/providers/ToastProvider';
+import { plansApi } from '../../src/services/api/plans.service';
+import { colors, layout, radius, shadow, spacing, type } from '../../src/theme/tokens';
+import type { CartItem, WalletSummary } from '../../src/types/domain';
+
+const money = (value: number) => `S/ ${value.toFixed(2)}`;
+
+interface CartLineProps {
+  item: CartItem;
+  onQuantity: (quantity: number) => void;
+  onRemove: () => void;
+  onEdit: () => void;
+}
+
+/**
+ * Una línea del carrito. El bowl armado se puede reeditar sin borrarlo: hasta
+ * ahora había que quitarlo y rehacerlo entero desde cero.
+ */
+function CartLine({ item, onQuantity, onRemove, onEdit }: CartLineProps) {
+  const isCustom = item.selections.length > 0;
+
+  return (
+    <View style={styles.line}>
+      <View style={styles.lineTop}>
+        <AppImage
+          uri={item.imageUrl}
+          style={styles.image}
+          accessibilityLabel={item.productName}
+          fallbackIconSize={28}
+        />
+
+        <View style={styles.lineCopy}>
+          <Text numberOfLines={2} style={styles.name}>
+            {item.productName}
+          </Text>
+
+          {item.variantName ? <Text style={styles.variant}>{item.variantName}</Text> : null}
+
+          {item.description ? (
+            <Text numberOfLines={2} style={styles.description}>
+              {item.description}
+            </Text>
+          ) : null}
+        </View>
+
+        <View style={styles.priceBox}>
+          <Text style={styles.lineTotal}>{money(item.lineTotal)}</Text>
+          <Text style={styles.unitPrice}>{money(item.unitPrice)} c/u</Text>
+        </View>
+      </View>
+
+      <View style={styles.lineActions}>
+        <QuantityStepper
+          value={item.quantity}
+          onChange={onQuantity}
+          size="sm"
+          minBehavior="remove"
+          onRemove={onRemove}
+          label={item.productName}
+        />
+
+        {isCustom ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Editar ${item.productName}`}
+            hitSlop={layout.iconHitSlop}
+            onPress={onEdit}
+            style={({ pressed }) => [styles.editButton, pressed && styles.pressed]}
+          >
+            <MaterialCommunityIcons name="pencil-outline" size={17} color={colors.brand700} />
+            <Text style={styles.editLabel}>Editar</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    </View>
+  );
+}
 
 export default function CartScreen() {
-  const insets = useSafeAreaInsets();
-  const { items, units, subtotal, setQuantity, removeItem, clear } = useCart();
-  const { serviceMode } = usePurchase();
-  const proceed = () => serviceMode === 'DINE_IN' ? router.push('/scan-table' as Href) : router.push('/checkout' as Href);
-  return <ScrollView style={styles.page} contentContainerStyle={[styles.content, { paddingTop: insets.top + 18 }]}>
-    <View style={styles.header}><View><Text style={styles.eyebrow}>TU PEDIDO</Text><Text style={styles.title}>Carrito</Text></View>{items.length > 0 && <Pressable onPress={() => Alert.alert('Vaciar carrito', '¿Retirar todos los productos?', [{ text: 'Cancelar' }, { text: 'Vaciar', style: 'destructive', onPress: () => void clear() }])}><Text style={styles.clear}>Vaciar</Text></Pressable>}</View>
-    {items.length === 0 ? <View style={styles.empty}><View style={styles.emptyIcon}><MaterialCommunityIcons name="shopping-outline" size={43} color={colors.brand700} /></View><Text style={styles.emptyTitle}>Tu carrito está esperando</Text><Text style={styles.emptyCopy}>Explora la carta y agrega una receta o construye un bowl a tu gusto.</Text><PrimaryButton label="Explorar el menú" onPress={() => router.push('/(tabs)/menu')} style={styles.emptyButton} /></View> : <>
-      <View style={styles.lines}>{items.map((item) => { const uri = resolvePublicAssetUrl(item.imageUrl); return <View key={item.id} style={styles.line}>
-        {uri ? <Image source={{ uri }} style={styles.image} /> : <View style={styles.imageFallback}><MaterialCommunityIcons name="bowl-mix-outline" size={26} color={colors.brand600} /></View>}
-        <View style={styles.lineCopy}><Text style={styles.name}>{item.productName}</Text><Text style={styles.variant}>{item.variantName}</Text><Text numberOfLines={2} style={styles.description}>{item.description}</Text><View style={styles.controls}><Pressable style={styles.qty} onPress={() => setQuantity(item.id, item.quantity - 1)}><MaterialCommunityIcons name="minus" size={17} color={colors.brand700} /></Pressable><Text style={styles.count}>{item.quantity}</Text><Pressable style={styles.qty} onPress={() => setQuantity(item.id, item.quantity + 1)}><MaterialCommunityIcons name="plus" size={17} color={colors.brand700} /></Pressable><Pressable style={styles.trash} onPress={() => removeItem(item.id)}><MaterialCommunityIcons name="trash-can-outline" size={19} color={colors.danger} /></Pressable></View></View>
-        <Text style={styles.lineTotal}>S/ {item.lineTotal.toFixed(2)}</Text>
-      </View>; })}</View>
-      <View style={styles.summary}><View style={styles.summaryRow}><Text style={styles.summaryLabel}>{units} {units === 1 ? 'producto' : 'productos'}</Text><Text style={styles.summaryValue}>S/ {subtotal.toFixed(2)}</Text></View><Text style={styles.hint}>Delivery, descuentos e IGV se recalculan antes de confirmar.</Text><PrimaryButton label={serviceMode === 'DINE_IN' ? 'Escanear QR de mi mesa' : 'Continuar al checkout'} onPress={proceed} style={styles.checkout} /></View>
-    </>}
-  </ScrollView>;
+  const { items, units, subtotal, hydrated, setQuantity, removeItem, restoreItem, beginEdit, cancelEdit, clear } =
+    useCart();
+  const { serviceMode, branch } = usePurchase();
+  const { status } = useSession();
+  const toast = useToast();
+
+  /*
+   * Llegar aquí significa que la edición que empezó en esta pantalla no acabó en
+   * el constructor: la línea original sigue intacta, así que el próximo bowl que
+   * se agregue tiene que ser uno nuevo y no un reemplazo.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      cancelEdit();
+    }, [cancelEdit]),
+  );
+
+  const wallet = useResource<WalletSummary>({
+    key: status === 'authenticated' && items.length > 0 ? 'plans:wallet' : null,
+    fetcher: () => plansApi.wallet(),
+  });
+  const walletBalance = wallet.data && wallet.data.balance > 0 ? wallet.data.balance : null;
+
+  const handleRemove = useCallback(
+    (item: CartItem) => {
+      const removed: RemovedCartLine | null = removeItem(item.id);
+      if (!removed) return;
+
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      /*
+       * Quitar era la única acción destructiva muda del recorrido. No se pregunta
+       * antes —sería un peaje en la acción más repetida del carrito—: se avisa y
+       * se puede revertir sin perder el sitio que ocupaba la línea.
+       */
+      toast.show({
+        message: `Quitamos ${item.productName} del carrito`,
+        tone: 'info',
+        action: { label: 'Deshacer', onPress: () => restoreItem(removed) },
+      });
+    },
+    [removeItem, restoreItem, toast],
+  );
+
+  const handleEdit = useCallback(
+    (item: CartItem) => {
+      const editing = beginEdit(item.id);
+      if (!editing) return;
+      void Haptics.selectionAsync();
+      // El constructor recibe el id para precargar la receta; el reemplazo en su
+      // sitio lo resuelve CartProvider cuando vuelva el mismo producto.
+      router.push({
+        pathname: '/builder/[productId]',
+        params: { productId: String(item.productId), editItemId: item.id },
+      });
+    },
+    [beginEdit],
+  );
+
+  const confirmClear = useCallback(() => {
+    Alert.alert(
+      '¿Vaciar todo el carrito?',
+      `Se quitarán ${units} ${units === 1 ? 'producto' : 'productos'} por ${money(subtotal)}. Esto no se puede deshacer.`,
+      [
+        { text: 'Conservar', style: 'cancel' },
+        {
+          text: 'Vaciar',
+          style: 'destructive',
+          onPress: () => {
+            void clear();
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          },
+        },
+      ],
+    );
+  }, [clear, subtotal, units]);
+
+  const proceed = useCallback(() => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    if (serviceMode === 'DINE_IN') {
+      router.push('/scan-table');
+      return;
+    }
+
+    /*
+     * El checkout exige sesión. Se avisa AQUÍ, antes de dar el paso: llegar al
+     * checkout y ser rebotado a la pantalla de acceso se lee como un error de la
+     * tienda, no como un requisito.
+     */
+    if (status !== 'authenticated') {
+      router.push({ pathname: '/(auth)/login', params: { returnTo: '/checkout' } });
+      return;
+    }
+
+    router.push('/checkout');
+  }, [serviceMode, status]);
+
+  const ctaLabel = useMemo(() => {
+    if (serviceMode === 'DINE_IN') return 'Escanear el QR de mi mesa';
+    if (status !== 'authenticated') return 'Inicia sesión para continuar';
+    return 'Continuar al checkout';
+  }, [serviceMode, status]);
+
+  const renderLine = useCallback(
+    ({ item }: ListRenderItemInfo<CartItem>) => (
+      <CartLine
+        item={item}
+        onQuantity={(quantity) => setQuantity(item.id, quantity)}
+        onRemove={() => handleRemove(item)}
+        onEdit={() => handleEdit(item)}
+      />
+    ),
+    [handleEdit, handleRemove, setQuantity],
+  );
+
+  const destination =
+    serviceMode === 'PICKUP'
+      ? {
+          icon: 'storefront-outline' as const,
+          title: branch ? `Recoges en ${branch.name}` : 'Falta elegir el local de recojo',
+          copy: branch?.addressLine ?? 'Elige desde dónde quieres recoger tu pedido.',
+          ok: Boolean(branch),
+        }
+      : serviceMode === 'DINE_IN'
+        ? {
+            icon: 'qrcode-scan' as const,
+            title: 'Pedido en el local',
+            copy: 'Escanea el QR de tu mesa para enviar el pedido a cocina.',
+            ok: true,
+          }
+        : {
+            icon: 'map-marker-outline' as const,
+            title: 'Entrega a domicilio',
+            copy: 'Confirmarás la dirección y la cobertura en el siguiente paso.',
+            ok: true,
+          };
+
+  const header = (
+    <View style={styles.header}>
+      <View style={[styles.destination, !destination.ok && styles.destinationWarning]}>
+        <View style={[styles.destinationIcon, !destination.ok && styles.destinationIconWarning]}>
+          <MaterialCommunityIcons
+            name={destination.icon}
+            size={22}
+            color={destination.ok ? colors.brand700 : colors.warning}
+          />
+        </View>
+
+        <View style={styles.destinationCopy}>
+          <Text style={styles.destinationTitle}>{destination.title}</Text>
+          <Text style={styles.destinationText}>{destination.copy}</Text>
+        </View>
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Cambiar dónde recibes el pedido"
+          hitSlop={layout.iconHitSlop}
+          onPress={() => router.push('/location')}
+          style={({ pressed }) => [styles.destinationChange, pressed && styles.pressed]}
+        >
+          <Text style={styles.destinationChangeLabel}>Cambiar</Text>
+        </Pressable>
+      </View>
+
+      {walletBalance !== null ? (
+        <View style={styles.walletNotice}>
+          <MaterialCommunityIcons name="wallet-outline" size={19} color={colors.brand700} />
+          <Text style={styles.walletText}>
+            Tienes {money(walletBalance)} de saldo. Podrás aplicarlo en el checkout.
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+
+  const footer =
+    items.length > 0 ? (
+      <View style={styles.summary}>
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>
+            {units} {units === 1 ? 'producto' : 'productos'} · {items.length}{' '}
+            {items.length === 1 ? 'preparación' : 'preparaciones'}
+          </Text>
+          <Text style={styles.summaryValue}>{money(subtotal)}</Text>
+        </View>
+
+        <Text style={styles.summaryHint}>
+          Delivery, descuentos, saldo e IGV los calcula el servidor antes de confirmar.
+        </Text>
+
+        <PrimaryButton label={ctaLabel} onPress={proceed} style={styles.cta} />
+      </View>
+    ) : undefined;
+
+  return (
+    <ScreenScaffold
+      tone="light"
+      title="Carrito"
+      subtitle={
+        items.length > 0
+          ? `${units} ${units === 1 ? 'producto listo' : 'productos listos'} para continuar`
+          : 'Tu próxima elección empieza aquí'
+      }
+      showBack={false}
+      headerRight={
+        items.length > 0 ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Vaciar el carrito"
+            hitSlop={layout.iconHitSlop}
+            onPress={confirmClear}
+            style={({ pressed }) => [styles.clearButton, pressed && styles.pressed]}
+          >
+            <MaterialCommunityIcons name="trash-can-outline" size={20} color={colors.danger} />
+          </Pressable>
+        ) : undefined
+      }
+      edges={['top', 'left', 'right']}
+      footer={footer}
+    >
+      <FlatList
+        data={items}
+        keyExtractor={(item) => item.id}
+        renderItem={renderLine}
+        ListHeaderComponent={items.length > 0 ? header : null}
+        ListEmptyComponent={
+          hydrated ? (
+            <EmptyState
+              icon="shopping-outline"
+              title="Tu carrito está esperando"
+              message="Explora la carta y agrega una receta, o arma un bowl a tu gusto: lo que agregues se conserva mientras sigues mirando."
+              actionLabel="Explorar el menú"
+              onAction={() => router.push('/(tabs)/menu')}
+            />
+          ) : null
+        }
+        contentContainerStyle={[
+          styles.content,
+          items.length === 0 && styles.contentEmpty,
+        ]}
+        showsVerticalScrollIndicator={false}
+      />
+    </ScreenScaffold>
+  );
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: colors.surfaceMuted }, content: { paddingHorizontal: spacing.md, paddingBottom: 110 }, header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, eyebrow: { color: colors.brand600, fontSize: 10, fontWeight: '900', letterSpacing: 1.2 }, title: { color: colors.ink, fontSize: 30, fontWeight: '900', marginTop: 3 }, clear: { color: colors.danger, fontWeight: '800', fontSize: 12 },
-  empty: { alignItems: 'center', backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, padding: spacing.xl, marginTop: spacing.xl }, emptyIcon: { width: 82, height: 82, borderRadius: 27, backgroundColor: colors.brand50, alignItems: 'center', justifyContent: 'center' }, emptyTitle: { color: colors.ink, fontSize: 20, fontWeight: '900', marginTop: 17 }, emptyCopy: { color: colors.inkMuted, fontSize: 13, lineHeight: 20, textAlign: 'center', marginTop: 8 }, emptyButton: { width: '100%', marginTop: spacing.lg },
-  lines: { gap: 10, marginTop: spacing.lg }, line: { flexDirection: 'row', gap: 12, backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, padding: 12 }, image: { width: 72, height: 72, borderRadius: 13 }, imageFallback: { width: 72, height: 72, borderRadius: 13, backgroundColor: colors.brand50, alignItems: 'center', justifyContent: 'center' }, lineCopy: { flex: 1 }, name: { color: colors.ink, fontSize: 14, fontWeight: '900' }, variant: { color: colors.brand700, fontSize: 10, fontWeight: '800', marginTop: 2 }, description: { color: colors.inkMuted, fontSize: 9, lineHeight: 13, marginTop: 4 }, lineTotal: { color: colors.brand800, fontSize: 13, fontWeight: '900' }, controls: { flexDirection: 'row', alignItems: 'center', marginTop: 9 }, qty: { width: 28, height: 28, borderRadius: 9, backgroundColor: colors.brand50, alignItems: 'center', justifyContent: 'center' }, count: { minWidth: 30, textAlign: 'center', color: colors.ink, fontWeight: '900' }, trash: { marginLeft: 12, padding: 4 },
-  summary: { backgroundColor: colors.brand900, borderRadius: radius.lg, padding: spacing.lg, marginTop: spacing.lg }, summaryRow: { flexDirection: 'row', justifyContent: 'space-between' }, summaryLabel: { color: '#c8ddd2', fontSize: 13 }, summaryValue: { color: colors.surface, fontSize: 22, fontWeight: '900' }, hint: { color: '#9fc2b1', fontSize: 10, lineHeight: 15, marginTop: 8 }, checkout: { marginTop: spacing.md, backgroundColor: colors.accent500, borderColor: colors.accent500 },
+  content: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.lg,
+    gap: spacing.sm + spacing.xs,
+  },
+  contentEmpty: {
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
+  header: {
+    gap: spacing.sm + spacing.xs,
+    paddingBottom: spacing.xs,
+  },
+  destination: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm + spacing.xs,
+    backgroundColor: colors.brand50,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.brand100,
+    padding: spacing.sm + spacing.xs,
+  },
+  destinationWarning: {
+    backgroundColor: '#fff8e8',
+    borderColor: '#f0dcb4',
+  },
+  destinationIcon: {
+    width: layout.minTouch,
+    height: layout.minTouch,
+    borderRadius: radius.sm + 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  destinationIconWarning: {
+    backgroundColor: colors.surface,
+  },
+  destinationCopy: {
+    flex: 1,
+  },
+  destinationTitle: {
+    ...type.bodySm,
+    fontWeight: '800',
+    color: colors.ink,
+  },
+  destinationText: {
+    ...type.caption,
+    color: colors.inkMuted,
+    marginTop: 2,
+  },
+  destinationChange: {
+    minHeight: layout.minTouch,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.sm,
+  },
+  destinationChangeLabel: {
+    ...type.label,
+    color: colors.brand700,
+  },
+  walletNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.lineSoft,
+    padding: spacing.sm + spacing.xs,
+  },
+  walletText: {
+    ...type.bodySm,
+    flex: 1,
+    color: colors.brand800,
+  },
+  line: {
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.lineSoft,
+    padding: spacing.sm + spacing.xs,
+    ...shadow.sm,
+  },
+  lineTop: {
+    flexDirection: 'row',
+    gap: spacing.sm + spacing.xs,
+  },
+  image: {
+    width: 76,
+    height: 76,
+    borderRadius: radius.sm + 2,
+  },
+  lineCopy: {
+    flex: 1,
+  },
+  name: {
+    ...type.body,
+    fontWeight: '800',
+    color: colors.ink,
+  },
+  variant: {
+    ...type.label,
+    color: colors.brand700,
+    marginTop: 2,
+  },
+  description: {
+    ...type.bodySm,
+    color: colors.inkMuted,
+    marginTop: spacing.xs,
+  },
+  priceBox: {
+    alignItems: 'flex-end',
+  },
+  lineTotal: {
+    ...type.body,
+    fontWeight: '900',
+    color: colors.brand800,
+  },
+  unitPrice: {
+    ...type.caption,
+    color: colors.inkMuted,
+    marginTop: 2,
+  },
+  lineActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginTop: spacing.sm + spacing.xs,
+  },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs + 2,
+    minHeight: layout.minTouch,
+    paddingHorizontal: spacing.sm + spacing.xs,
+    borderRadius: radius.pill,
+    backgroundColor: colors.brand50,
+  },
+  editLabel: {
+    ...type.label,
+    color: colors.brand700,
+  },
+  clearButton: {
+    width: layout.minTouch,
+    height: layout.minTouch,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.sm + 4,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  summary: {
+    paddingBottom: spacing.sm,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  summaryLabel: {
+    ...type.bodySm,
+    flex: 1,
+    color: colors.inkMuted,
+  },
+  summaryValue: {
+    ...type.title,
+    color: colors.brand700,
+  },
+  summaryHint: {
+    ...type.caption,
+    color: colors.inkMuted,
+    marginTop: spacing.xs,
+  },
+  cta: {
+    marginTop: spacing.sm + spacing.xs,
+  },
+  pressed: {
+    opacity: 0.7,
+  },
 });

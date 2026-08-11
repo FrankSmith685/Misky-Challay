@@ -2,7 +2,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { usePurchase } from '../providers/PurchaseProvider';
-import { colors, radius } from '../theme/tokens';
+import { colors, radius, type } from '../theme/tokens';
 
 const MODE = {
   DELIVERY: { icon: 'bike-fast' as const, label: 'Delivery', empty: 'Configura tu dirección' },
@@ -11,11 +11,20 @@ const MODE = {
 };
 
 export function LocationBar({ inverse = false }: { inverse?: boolean }) {
-  const { serviceMode, branch } = usePurchase();
+  const { serviceMode, branch, address } = usePurchase();
   const mode = MODE[serviceMode];
-  const detail = serviceMode === 'DELIVERY'
-    ? 'La sede se asigna por cobertura'
-    : branch?.name ?? mode.empty;
+
+  /*
+   * En delivery lo que importa es a DÓNDE llevamos; la cocina que sale de la
+   * cobertura queda de respaldo mientras no haya dirección. Antes aquí ponía «La
+   * sede se asigna por cobertura», que describía el funcionamiento interno y
+   * dejaba al cliente sin saber ni el destino ni el local.
+   */
+  const detail =
+    serviceMode === 'DELIVERY'
+      ? (address?.line1 ?? branch?.name ?? mode.empty)
+      : (branch?.name ?? mode.empty);
+
   return (
     <Pressable
       onPress={() => router.push('/location')}
@@ -41,8 +50,8 @@ const styles = StyleSheet.create({
   icon: { width: 38, height: 38, borderRadius: 12, backgroundColor: colors.brand50, alignItems: 'center', justifyContent: 'center' },
   iconInverse: { backgroundColor: 'rgba(255,255,255,0.12)' },
   copy: { flex: 1 },
-  label: { color: colors.brand700, fontSize: 11, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.8 },
+  label: { ...type.label, color: colors.brand700, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.8 },
   labelInverse: { color: colors.brand100 },
-  detail: { color: colors.ink, fontSize: 13, fontWeight: '700', marginTop: 2 },
+  detail: { ...type.bodySm, color: colors.ink, fontWeight: '700', marginTop: 2 },
   detailInverse: { color: colors.surface },
 });

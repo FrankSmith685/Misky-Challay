@@ -1,32 +1,613 @@
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
+import {
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router as expoRouter, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router, useLocalSearchParams } from 'expo-router';
+import * as Haptics from 'expo-haptics';
+import { AppImage } from '../../src/components/AppImage';
+import { EmptyState } from '../../src/components/EmptyState';
 import { FormField } from '../../src/components/FormField';
 import { PrimaryButton } from '../../src/components/PrimaryButton';
-import { ErrorState, LoadingState } from '../../src/components/ScreenState';
-import { resolvePublicAssetUrl } from '../../src/config/env';
-import { diningApi } from '../../src/services/api/dining.service';
-import { colors, radius, spacing } from '../../src/theme/tokens';
+import { QuantityStepper } from '../../src/components/QuantityStepper';
+import { ScreenScaffold } from '../../src/components/ScreenScaffold';
+import { Skeleton } from '../../src/components/Skeleton';
+import { useResource } from '../../src/hooks/useResource';
+import { useToast } from '../../src/providers/ToastProvider';
+import { diningApi, type DiningOrderInput } from '../../src/services/api/dining.service';
+import { colors, layout, radius, shadow, spacing, type } from '../../src/theme/tokens';
 import type { DiningProduct, PublicDiningTable } from '../../src/types/domain';
 
-const router = expoRouter as { replace(href: string | object): void };
+const MAX_UNITS_PER_DISH = 20;
+
+const money = (value: number): string => `S/ ${value.toFixed(2)}`;
+
+type DiningOrderItem = DiningOrderInput['items'][number];
+
+/**
+ * Una comanda reenviada NO es una comanda nueva.
+ *
+ * El backend añade los platos a la comanda abierta de la mesa, así que con el
+ * wifi del local saturado el comensal que reintenta acaba con todo por
+ * duplicado en cocina. La clave nace con la selección y solo cambia cuando
+ * cambia lo pedido: reintentar manda exactamente la misma clave, y editar el
+ * pedido antes de reintentar manda una nueva porque ya es otra comanda.
+ */
+const buildKey = (token: string): string =>
+  `mesa-${token}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
+interface DishRowProps {
+  row: DiningProduct;
+  quantity: number;
+  onAdd: (row: DiningProduct) => void;
+  onChange: (row: DiningProduct, next: number) => void;
+}
+
+function DishRowView({ row, quantity, onAdd, onChange }: DishRowProps) {
+  const chosen = quantity > 0;
+
+  return (
+    <View style={[styles.dish, shadow.sm, chosen && styles.dishChosen]}>
+      <AppImage
+        uri={row.imageUrl}
+        style={styles.dishImage}
+        accessibilityLabel={row.name}
+        fallbackIcon="chef-hat"
+        fallbackIconSize={30}
+      />
+
+      <View style={styles.dishBody}>
+        {row.offering ? (
+          <View style={styles.menuBadge}>
+            <MaterialCommunityIcons name="silverware-clean" size={13} color="#8a5b00" />
+
+            <Text style={styles.menuBadgeText}>
+              Menú del día
+              {row.offering.remaining !== null ? ` · quedan ${row.offering.remaining}` : ''}
+            </Text>
+          </View>
+        ) : null}
+
+        <Text numberOfLines={2} style={styles.dishName}>
+          {row.name}
+        </Text>
+
+        {row.variantName ? (
+          <Text numberOfLines={1} style={styles.dishVariant}>
+            {row.variantName}
+          </Text>
+        ) : null}
+
+        <View style={styles.dishFooter}>
+          <Text style={styles.dishPrice}>{money(row.price)}</Text>
+
+          {chosen ? (
+            <QuantityStepper
+              size="sm"
+              min={0}
+              max={MAX_UNITS_PER_DISH}
+              value={quantity}
+              label={row.name}
+              onChange={(next) => onChange(row, next)}
+            />
+          ) : (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={
+                row.isAvailable ? `Agregar ${row.name} a la comanda` : `${row.name} está agotado`
+              }
+              accessibilityState={{ disabled: !row.isAvailable }}
+              disabled={!row.isAvailable}
+              onPress={() => onAdd(row)}
+              style={({ pressed }) => [
+                styles.add,
+                !row.isAvailable && styles.addDisabled,
+                pressed && row.isAvailable && styles.pressed,
+              ]}
+            >
+              <MaterialCommunityIcons
+                name={row.isAvailable ? 'plus' : 'close'}
+                size={18}
+                color={row.isAvailable ? colors.surface : colors.inkMuted}
+              />
+
+              <Text style={[styles.addText, !row.isAvailable && styles.addTextDisabled]}>
+                {row.isAvailable ? 'Agregar' : 'Agotado'}
+              </Text>
+            </Pressable>
+          )}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const DishRow = memo(DishRowView);
 
 export default function DiningTableScreen() {
-  const insets = useSafeAreaInsets(); const { token = '' } = useLocalSearchParams<{ token: string }>();
-  const [data, setData] = useState<PublicDiningTable | null>(null); const [quantities, setQuantities] = useState<Record<number, number>>({}); const [guestName, setGuestName] = useState(''); const [notes, setNotes] = useState(''); const [loading, setLoading] = useState(true); const [sending, setSending] = useState(false); const [error, setError] = useState(''); const [sent, setSent] = useState('');
-  const load = useCallback(async () => { setLoading(true); setError(''); try { setData(await diningApi.table(token)); } catch (caught) { setError(caught instanceof Error ? caught.message : 'No pudimos abrir esta mesa.'); } finally { setLoading(false); } }, [token]); useEffect(() => { void load(); }, [load]);
-  const selected = useMemo(() => data?.catalog.filter((row) => (quantities[row.variantId] ?? 0) > 0) ?? [], [data, quantities]); const units = selected.reduce((sum, row) => sum + (quantities[row.variantId] ?? 0), 0); const total = selected.reduce((sum, row) => sum + row.price * (quantities[row.variantId] ?? 0), 0);
-  const change = (row: DiningProduct, delta: number) => setQuantities((current) => ({ ...current, [row.variantId]: Math.max(0, Math.min(20, (current[row.variantId] ?? 0) + delta)) }));
-  const send = async () => { if (!selected.length) return; setSending(true); setError(''); try { const result = await diningApi.order(token, { guestName: guestName.trim() || undefined, notes: notes.trim() || undefined, items: selected.map((row) => ({ productId: row.productId, variantId: row.variantId, offeringId: row.offering?.id, quantity: quantities[row.variantId] })) }); setSent(result.orderNumber); setQuantities({}); setNotes(''); await load(); } catch (caught) { setError(caught instanceof Error ? caught.message : 'No pudimos enviar la comanda.'); } finally { setSending(false); } };
-  if (loading && !data) return <View style={[styles.page, { paddingTop: insets.top }]}><LoadingState label="Abriendo la carta de tu mesa…" /></View>;
-  if (!data) return <View style={[styles.page, { paddingTop: insets.top }]}><ErrorState message={error || 'Mesa no disponible.'} onRetry={() => void load()} /></View>;
-  return <ScrollView keyboardShouldPersistTaps="handled" style={styles.page} contentContainerStyle={{ paddingBottom: 130 }}><View style={[styles.hero, { paddingTop: insets.top + 12 }]}><Pressable style={styles.back} onPress={() => router.replace('/(tabs)')}><MaterialCommunityIcons name="close" size={22} color={colors.surface} /></Pressable><View style={styles.heroTop}><View><Text style={styles.eyebrow}>PEDIDO EN EL RESTAURANTE</Text><Text style={styles.table}>{data.table.code}</Text><Text style={styles.branch}><MaterialCommunityIcons name="map-marker" size={13} /> {data.branch.name} · {data.table.area}</Text></View><View style={styles.tableIcon}><MaterialCommunityIcons name="silverware-fork-knife" size={30} color={colors.surface} /></View></View>{data.command && <View style={styles.command}><View><Text style={styles.commandLabel}>Comanda abierta</Text><Text style={styles.commandNumber}>{data.command.orderNumber}</Text></View><View style={{ alignItems: 'flex-end' }}><Text style={styles.commandStatus}>{data.command.status === 'READY' ? 'LISTA PARA SERVIR' : 'EN COCINA'}</Text><Text style={styles.commandTotal}>S/ {data.command.total.toFixed(2)}</Text></View></View>}</View>
-    <View style={styles.body}>{sent && <View style={styles.sent}><MaterialCommunityIcons name="check-circle" size={25} color={colors.success} /><View><Text style={styles.sentTitle}>Tu pedido llegó a cocina</Text><Text style={styles.sentCopy}>Comanda {sent}. La pantalla de cocina recibió la actualización.</Text></View></View>}
-      <Text style={styles.sectionEyebrow}>CARTA DISPONIBLE AHORA</Text><Text style={styles.title}>¿Qué deseas pedir?</Text>
-      <View style={styles.catalog}>{data.catalog.map((row) => { const quantity = quantities[row.variantId] ?? 0; const image = resolvePublicAssetUrl(row.imageUrl); return <View key={row.variantId} style={[styles.product, quantity > 0 && styles.productActive]}>{image ? <Image source={{ uri: image }} style={styles.image} /> : <View style={styles.imageFallback}><MaterialCommunityIcons name="chef-hat" size={31} color={colors.brand600} /></View>}<View style={styles.productBody}>{row.offering && <View style={styles.menuBadge}><Text style={styles.menuText}>MENÚ DEL DÍA{row.offering.remaining != null ? ` · ${row.offering.remaining}` : ''}</Text></View>}<Text style={styles.productName}>{row.name}</Text><Text style={styles.variant}>{row.variantName}</Text><View style={styles.productBottom}><Text style={styles.price}>S/ {row.price.toFixed(2)}</Text>{quantity > 0 ? <View style={styles.quantity}><Pressable onPress={() => change(row, -1)}><MaterialCommunityIcons name="minus-circle" size={29} color={colors.brand600} /></Pressable><Text style={styles.quantityText}>{quantity}</Text><Pressable onPress={() => change(row, 1)}><MaterialCommunityIcons name="plus-circle" size={29} color={colors.brand600} /></Pressable></View> : <Pressable disabled={!row.isAvailable} onPress={() => change(row, 1)} style={[styles.add, !row.isAvailable && { opacity: .45 }]}><Text style={styles.addText}>{row.isAvailable ? 'Agregar' : 'Agotado'}</Text></Pressable>}</View></View></View>; })}</View>
-      <View style={styles.order}><View style={styles.orderTop}><View><Text style={styles.orderEyebrow}>TU PEDIDO</Text><Text style={styles.orderTitle}>{units} {units === 1 ? 'producto' : 'productos'}</Text></View><Text style={styles.orderTotal}>S/ {total.toFixed(2)}</Text></View>{!data.command && <FormField label="Tu nombre (opcional)" value={guestName} onChangeText={setGuestName} placeholder="¿Cómo te llamamos?" />}<FormField label="Indicación para cocina" value={notes} onChangeText={setNotes} placeholder="Ej. sin ají" icon="message-text-outline" />{error ? <Text style={styles.error}>{error}</Text> : null}<PrimaryButton loading={sending} disabled={!selected.length} label={data.command ? 'Agregar a mi mesa' : 'Enviar a cocina'} onPress={() => void send()} /><Text style={styles.payNote}>El pago y el comprobante se gestionan con el personal al terminar.</Text></View>
-    </View></ScrollView>;
+  const { token = '' } = useLocalSearchParams<{ token: string }>();
+  const toast = useToast();
+
+  const table = useResource<PublicDiningTable>({
+    key: token ? `dining:table:${token}` : null,
+    fetcher: () => diningApi.table(token),
+    // La carta del salón cambia con el turno (menús que se agotan): poco caché.
+    cacheMs: 20_000,
+  });
+
+  const [quantities, setQuantities] = useState<Record<number, number>>({});
+  const [guestName, setGuestName] = useState('');
+  const [notes, setNotes] = useState('');
+  const [sending, setSending] = useState(false);
+  const [lastSent, setLastSent] = useState<string | null>(null);
+
+  /** Clave de idempotencia viva, junto a la selección que la originó. */
+  const attempt = useRef<{ signature: string; key: string } | null>(null);
+
+  const data = table.data;
+  const catalog = useMemo(() => data?.catalog ?? [], [data]);
+
+  const selection = useMemo(
+    () => catalog.filter((row) => (quantities[row.variantId] ?? 0) > 0),
+    [catalog, quantities],
+  );
+
+  const units = selection.reduce((sum, row) => sum + (quantities[row.variantId] ?? 0), 0);
+  // Anticipo de lo que se está pidiendo. El importe que se cobra lo calcula el
+  // backend al abrir o ampliar la comanda; esto es solo una referencia en pantalla.
+  const preview = selection.reduce(
+    (sum, row) => sum + row.price * (quantities[row.variantId] ?? 0),
+    0,
+  );
+
+  const changeQuantity = useCallback((row: DiningProduct, next: number) => {
+    setQuantities((current) => {
+      const value = Math.max(0, Math.min(MAX_UNITS_PER_DISH, next));
+      const updated = { ...current };
+      if (value === 0) delete updated[row.variantId];
+      else updated[row.variantId] = value;
+      return updated;
+    });
+  }, []);
+
+  const addDish = useCallback(
+    (row: DiningProduct) => {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      changeQuantity(row, 1);
+    },
+    [changeQuantity],
+  );
+
+  const send = async () => {
+    // Doble guardia: el estado apaga el botón y esta línea corta el doble toque
+    // que llega antes de que React vuelva a pintar.
+    if (sending || selection.length === 0) return;
+
+    const items: DiningOrderItem[] = selection.map((row) => ({
+      productId: row.productId,
+      variantId: row.variantId,
+      offeringId: row.offering?.id,
+      quantity: quantities[row.variantId] ?? 0,
+    }));
+
+    const signature = JSON.stringify({ items, notes: notes.trim(), guestName: guestName.trim() });
+    if (attempt.current?.signature !== signature) {
+      attempt.current = { signature, key: buildKey(token) };
+    }
+
+    const body: DiningOrderInput = {
+      guestName: guestName.trim() || undefined,
+      notes: notes.trim() || undefined,
+      items,
+      idempotencyKey: attempt.current.key,
+    };
+
+    setSending(true);
+    try {
+      const result = await diningApi.order(token, body);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+      setLastSent(result.orderNumber);
+      setQuantities({});
+      setNotes('');
+      attempt.current = null;
+      toast.show({ message: `Comanda ${result.orderNumber} enviada a cocina`, tone: 'success' });
+      await table.refetch();
+    } catch (caught) {
+      // Un fallo de red no dice si cocina llegó a recibir la comanda: volvemos a
+      // preguntar por la mesa para que la tarjeta de arriba muestre la verdad
+      // antes de que el comensal vuelva a pulsar.
+      void table.refetch();
+      toast.show({
+        message:
+          caught instanceof Error
+            ? `${caught.message} Revisa arriba el estado de tu mesa antes de reintentar.`
+            : 'No pudimos enviar tu comanda. Revisa el estado de tu mesa.',
+        tone: 'error',
+        placement: 'top',
+      });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const goHome = useCallback(() => router.replace('/(tabs)'), []);
+
+  const openCommand = data?.command ?? null;
+
+  const footer = data ? (
+    <View style={styles.bar}>
+      <View style={styles.barText}>
+        <Text style={styles.barUnits}>
+          {units} {units === 1 ? 'producto' : 'productos'}
+        </Text>
+
+        <Text style={styles.barTotal}>{money(preview)}</Text>
+
+        <Text style={styles.barNote}>Referencial · el importe final lo calcula el local</Text>
+      </View>
+
+      <PrimaryButton
+        label={openCommand ? 'Agregar a mi mesa' : 'Enviar a cocina'}
+        loading={sending}
+        disabled={selection.length === 0 || sending}
+        onPress={() => void send()}
+        style={styles.barButton}
+      />
+    </View>
+  ) : undefined;
+
+  return (
+    <ScreenScaffold
+      tone="dark"
+      title={data ? data.table.code : 'Tu mesa'}
+      subtitle={data ? `${data.branch.name} · ${data.table.area}` : 'Pedido en el local'}
+      showBack
+      onBack={goHome}
+      contentStyle={styles.sheet}
+      footer={footer}
+    >
+      {table.loading ? (
+        <View style={styles.skeleton}>
+          <Skeleton height={132} rounded="md" count={4} gap={spacing.sm + spacing.xs} />
+        </View>
+      ) : !data ? (
+        <EmptyState
+          icon="qrcode-remove"
+          title="No pudimos abrir tu mesa"
+          message={table.error?.message ?? 'Este QR ya no está activo. Pídele ayuda al personal.'}
+          actionLabel="Reintentar"
+          onAction={() => void table.refetch()}
+          secondaryLabel="Ir al inicio"
+          onSecondary={goHome}
+        />
+      ) : (
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.fill}
+        >
+          <FlatList
+            data={catalog}
+            keyExtractor={(item) => String(item.variantId)}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.list}
+            refreshControl={
+              <RefreshControl
+                refreshing={table.refreshing}
+                onRefresh={() => void table.refresh()}
+                tintColor={colors.brand600}
+              />
+            }
+            ListHeaderComponent={
+              <View>
+                {openCommand ? (
+                  <View style={styles.command}>
+                    <MaterialCommunityIcons
+                      name={openCommand.status === 'READY' ? 'silverware-clean' : 'chef-hat'}
+                      size={24}
+                      color={colors.brand700}
+                    />
+
+                    <View style={styles.commandText}>
+                      <Text style={styles.commandTitle}>
+                        {openCommand.status === 'READY'
+                          ? 'Tu comanda está lista para servir'
+                          : 'Tienes una comanda en cocina'}
+                      </Text>
+
+                      <Text style={styles.commandCopy}>
+                        {openCommand.orderNumber} · {money(openCommand.total)} acumulados. Lo que
+                        agregues ahora se suma a esta misma cuenta.
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
+
+                {lastSent ? (
+                  <View style={styles.sent}>
+                    <MaterialCommunityIcons
+                      name="check-decagram-outline"
+                      size={22}
+                      color={colors.success}
+                    />
+
+                    <Text style={styles.sentText}>
+                      Cocina recibió la comanda {lastSent}. Te avisamos con el personal cuando salga.
+                    </Text>
+                  </View>
+                ) : null}
+
+                <Text style={styles.eyebrow}>CARTA DISPONIBLE AHORA</Text>
+
+                <Text style={styles.title}>¿Qué te provoca?</Text>
+              </View>
+            }
+            renderItem={({ item }) => (
+              <DishRow
+                row={item}
+                quantity={quantities[item.variantId] ?? 0}
+                onAdd={addDish}
+                onChange={changeQuantity}
+              />
+            )}
+            ListEmptyComponent={
+              <EmptyState
+                icon="silverware-fork-knife"
+                title="La carta no está disponible"
+                message="Este local todavía no publicó platos para pedir desde la mesa."
+                actionLabel="Reintentar"
+                onAction={() => void table.refetch()}
+              />
+            }
+            ListFooterComponent={
+              <View style={styles.form}>
+                {openCommand ? null : (
+                  <FormField
+                    label="Tu nombre (opcional)"
+                    value={guestName}
+                    onChangeText={setGuestName}
+                    placeholder="¿Cómo te llamamos?"
+                    icon="account-outline"
+                    returnKeyType="done"
+                    maxLength={120}
+                  />
+                )}
+
+                <FormField
+                  label="Indicación para cocina"
+                  value={notes}
+                  onChangeText={setNotes}
+                  placeholder="Ej. sin ají, sin cebolla"
+                  icon="note-text-outline"
+                  returnKeyType="done"
+                  maxLength={500}
+                />
+
+                <View style={styles.payNote}>
+                  <MaterialCommunityIcons
+                    name="receipt-text-outline"
+                    size={19}
+                    color={colors.brand700}
+                  />
+
+                  <Text style={styles.payNoteText}>
+                    El pago y el comprobante se gestionan con el personal al terminar. El total
+                    definitivo lo confirma la comanda de tu mesa.
+                  </Text>
+                </View>
+              </View>
+            }
+          />
+        </KeyboardAvoidingView>
+      )}
+    </ScreenScaffold>
+  );
 }
-const styles = StyleSheet.create({ page: { flex: 1, backgroundColor: colors.surfaceMuted }, hero: { backgroundColor: colors.brand900, paddingHorizontal: spacing.md, paddingBottom: spacing.lg }, back: { width: 42, height: 42, borderRadius: 14, backgroundColor: 'rgba(255,255,255,.12)', alignItems: 'center', justifyContent: 'center' }, heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing.lg }, eyebrow: { color: '#9bc7af', fontSize: 9, fontWeight: '900', letterSpacing: 1.1 }, table: { color: colors.surface, fontSize: 34, fontWeight: '900', marginTop: 4 }, branch: { color: '#c3dacd', fontSize: 11, marginTop: 4 }, tableIcon: { width: 62, height: 62, borderRadius: 21, backgroundColor: 'rgba(255,255,255,.13)', alignItems: 'center', justifyContent: 'center' }, command: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: 'rgba(255,255,255,.1)', borderRadius: radius.md, padding: 13, marginTop: spacing.lg }, commandLabel: { color: '#a8cbb9', fontSize: 9 }, commandNumber: { color: colors.surface, fontSize: 12, fontWeight: '900', marginTop: 3 }, commandStatus: { color: '#ffcd78', fontSize: 8, fontWeight: '900' }, commandTotal: { color: colors.surface, fontSize: 13, fontWeight: '900', marginTop: 4 }, body: { padding: spacing.md }, sent: { flexDirection: 'row', gap: 10, backgroundColor: colors.brand50, borderRadius: radius.md, padding: 14 }, sentTitle: { color: colors.brand800, fontSize: 12, fontWeight: '900' }, sentCopy: { color: colors.brand700, fontSize: 9, marginTop: 4 }, sectionEyebrow: { color: colors.brand600, fontSize: 9, fontWeight: '900', letterSpacing: 1.1, marginTop: spacing.lg }, title: { color: colors.ink, fontSize: 25, fontWeight: '900', marginTop: 3, marginBottom: spacing.md }, catalog: { gap: 10 }, product: { overflow: 'hidden', flexDirection: 'row', backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line }, productActive: { borderColor: '#83b99c' }, image: { width: 115, minHeight: 130 }, imageFallback: { width: 115, minHeight: 130, backgroundColor: colors.brand50, alignItems: 'center', justifyContent: 'center' }, productBody: { flex: 1, padding: 12 }, menuBadge: { alignSelf: 'flex-start', backgroundColor: '#fff0cf', borderRadius: radius.pill, paddingHorizontal: 7, paddingVertical: 4, marginBottom: 6 }, menuText: { color: '#8a5b00', fontSize: 7, fontWeight: '900' }, productName: { color: colors.ink, fontSize: 13, fontWeight: '900' }, variant: { color: colors.inkMuted, fontSize: 9, marginTop: 4 }, productBottom: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto' }, price: { color: colors.brand700, fontSize: 16, fontWeight: '900' }, add: { backgroundColor: colors.brand600, borderRadius: 11, paddingHorizontal: 12, paddingVertical: 8 }, addText: { color: colors.surface, fontSize: 9, fontWeight: '900' }, quantity: { flexDirection: 'row', alignItems: 'center', gap: 5 }, quantityText: { minWidth: 17, textAlign: 'center', fontWeight: '900' }, order: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, padding: spacing.lg, marginTop: spacing.lg }, orderTop: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.md }, orderEyebrow: { color: colors.brand600, fontSize: 9, fontWeight: '900' }, orderTitle: { color: colors.ink, fontSize: 18, fontWeight: '900', marginTop: 3 }, orderTotal: { color: colors.brand700, fontSize: 23, fontWeight: '900' }, error: { color: colors.danger, fontSize: 10, marginBottom: 10 }, payNote: { color: colors.inkMuted, fontSize: 9, lineHeight: 14, textAlign: 'center', marginTop: 10 } });
+
+const styles = StyleSheet.create({
+  fill: {
+    flex: 1,
+  },
+  /** El contenido es una lámina clara sobre la cabecera oscura de la mesa. */
+  sheet: {
+    backgroundColor: colors.surfaceMuted,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    overflow: 'hidden',
+  },
+  skeleton: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+  },
+  list: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
+    flexGrow: 1,
+  },
+  command: {
+    flexDirection: 'row',
+    gap: spacing.sm + spacing.xs,
+    backgroundColor: colors.brand50,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.brand100,
+    padding: spacing.md,
+  },
+  commandText: {
+    flex: 1,
+  },
+  commandTitle: {
+    ...type.body,
+    fontWeight: '800',
+    color: colors.brand900,
+  },
+  commandCopy: {
+    ...type.bodySm,
+    color: colors.brand700,
+    marginTop: 3,
+  },
+  sent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm + spacing.xs,
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.lineSoft,
+    padding: spacing.md,
+    marginTop: spacing.sm + spacing.xs,
+  },
+  sentText: {
+    ...type.bodySm,
+    flex: 1,
+    color: colors.ink,
+  },
+  eyebrow: {
+    ...type.label,
+    color: colors.brand600,
+    marginTop: spacing.lg,
+  },
+  title: {
+    ...type.title,
+    color: colors.ink,
+    marginTop: 3,
+    marginBottom: spacing.md,
+  },
+  dish: {
+    flexDirection: 'row',
+    overflow: 'hidden',
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.lineSoft,
+    marginBottom: spacing.sm + spacing.xs,
+  },
+  dishChosen: {
+    borderColor: colors.brand600,
+  },
+  dishImage: {
+    width: 112,
+    alignSelf: 'stretch',
+    minHeight: 132,
+  },
+  dishBody: {
+    flex: 1,
+    padding: spacing.sm + spacing.xs,
+  },
+  menuBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: spacing.xs,
+    backgroundColor: '#fff0cf',
+    borderRadius: radius.pill,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    marginBottom: spacing.xs + 2,
+  },
+  menuBadgeText: {
+    ...type.caption,
+    color: '#8a5b00',
+  },
+  dishName: {
+    ...type.heading,
+    color: colors.ink,
+  },
+  dishVariant: {
+    ...type.bodySm,
+    color: colors.inkMuted,
+    marginTop: 2,
+  },
+  dishFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginTop: 'auto',
+    paddingTop: spacing.sm,
+  },
+  dishPrice: {
+    ...type.heading,
+    color: colors.brand700,
+  },
+  add: {
+    minHeight: layout.minTouch,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs + 2,
+    borderRadius: radius.sm + 2,
+    backgroundColor: colors.brand600,
+    paddingHorizontal: 14,
+  },
+  addDisabled: {
+    backgroundColor: colors.surfaceMuted,
+  },
+  addText: {
+    ...type.label,
+    color: colors.surface,
+  },
+  addTextDisabled: {
+    color: colors.inkMuted,
+  },
+  form: {
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.lineSoft,
+    padding: spacing.md,
+    marginTop: spacing.md,
+  },
+  payNote: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    backgroundColor: colors.brand50,
+    borderRadius: radius.md,
+    padding: spacing.sm + spacing.xs,
+    marginTop: spacing.xs,
+  },
+  payNoteText: {
+    ...type.bodySm,
+    flex: 1,
+    color: colors.brand700,
+  },
+  bar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  barText: {
+    minWidth: 96,
+  },
+  // La barra vive sobre el fondo oscuro del andamio: sus textos son los de fondo
+  // oscuro, no los de tarjeta clara.
+  barUnits: {
+    ...type.caption,
+    color: colors.onDarkMuted,
+  },
+  barTotal: {
+    ...type.heading,
+    color: colors.onDark,
+    marginTop: 2,
+  },
+  barNote: {
+    ...type.caption,
+    color: colors.onDarkMuted,
+    marginTop: 2,
+  },
+  barButton: {
+    flex: 1,
+  },
+  pressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.98 }],
+  },
+});

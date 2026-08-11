@@ -82,6 +82,40 @@ export interface ProductDetail {
   allergens: Array<{ code: string; name: string; warning: string | null }>;
 }
 
+/** GET /catalog/allergens — RN-009: informamos, no garantizamos ausencia de trazas. */
+export interface Allergen {
+  id: number;
+  code: string;
+  name: string;
+  warning: string | null;
+}
+
+/** GET /catalog/dietary-tags — vegano, sin gluten, alto en proteina... */
+export interface DietaryTag {
+  id: number;
+  code: string;
+  name: string;
+  color: string | null;
+}
+
+/**
+ * Filtros de GET /catalog/products, tal cual los declara
+ * backend/src/modules/catalog/catalog.validation.ts.
+ * `dietaryTags` y `excludeAllergens` viajan como lista separada por comas.
+ */
+export interface ProductFilters {
+  branchId?: number | null;
+  categoryId?: number | null;
+  search?: string;
+  /** Codigos de etiqueta dietetica: el producto debe tenerlas TODAS. */
+  dietaryTags?: string[];
+  /** Codigos de alergeno: el producto no debe tener NINGUNO. */
+  excludeAllergens?: string[];
+  maxCalories?: number;
+  minProtein?: number;
+  featured?: boolean;
+}
+
 export interface ProductReview {
   id: number;
   rating: number;
@@ -135,9 +169,38 @@ export interface PublicSettings {
     plinEnabled: boolean; plinPhone: string; plinRecipient: string; plinQrImageUrl: string;
     instructions: string;
   };
+  /** Pago con tarjeta. En false el backend rechazaria el cobro: no lo ofrezcas. */
+  payments: { onlineEnabled: boolean };
+  /**
+   * Compuerta de la app. `minSupportedVersion` bloquea, `latestVersion` solo
+   * avisa y `maintenance` corta el servicio con un mensaje propio.
+   * `maintenance` va en castellano porque asi lo publica el servidor.
+   */
+  mobile: {
+    minSupportedVersion: string;
+    latestVersion: string;
+    updateUrl: string;
+    maintenance: { activo: boolean; mensaje: string };
+  };
 }
 
 export type OrderStatus = 'PENDING_PAYMENT' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'CANCELLED' | 'REFUNDED';
+
+/**
+ * Reparto de un pedido a domicilio. Llega en GET /orders/:orderNumber y es lo
+ * que permite pintar el seguimiento con repartidor y ETA. Es `null` en recojo y
+ * en consumo en local. El telefono del repartidor NO viaja a proposito: es un
+ * dato personal suyo.
+ */
+export interface OrderDelivery {
+  id: number;
+  status: 'PENDING' | 'ASSIGNED' | 'PICKED_UP' | 'ON_ROUTE' | 'DELIVERED' | 'FAILED';
+  etaMinutes: number | null;
+  assignedAt: string | null;
+  pickedUpAt: string | null;
+  deliveredAt: string | null;
+  driver: { id: number; fullName: string; vehicle: string | null } | null;
+}
 
 export interface OrderSummary {
   id: number;
@@ -149,6 +212,13 @@ export interface OrderSummary {
   placedAt: string;
   branch?: { id: number; name: string; addressLine: string; phone: string | null } | null;
   items?: Array<{ id: number; productNameSnapshot?: string; quantity: number }>;
+  /* Las filas del historial ya traen estos campos; el detalle los declara sin
+   * `?` mas abajo. Aqui son opcionales porque el listado puede recortarlos. */
+  serviceMode?: 'ASAP' | 'SCHEDULED';
+  scheduledAt?: string | null;
+  cancelReason?: string | null;
+  addressSnapshotJson?: { line1?: string; districtName?: string | null } | null;
+  discounts?: Array<{ code: string | null; description: string; amount: number | string }>;
 }
 
 export interface OrderItemDetail {
@@ -190,6 +260,7 @@ export interface OrderDetail extends OrderSummary {
   items: OrderItemDetail[];
   discounts: Array<{ code: string | null; description: string; amount: number | string }>;
   statusHistory?: Array<{ id?: number; toStatus: OrderStatus; source: string; comment?: string | null; createdAt: string }>;
+  delivery?: OrderDelivery | null;
 }
 
 export interface OrderWithPayment {
@@ -197,6 +268,13 @@ export interface OrderWithPayment {
   payment: null | {
     id: number; status: string; provider: string; providerReference?: string | null;
     checkoutUrl: string | null; amount: number | string; currency?: string; failureReason?: string | null;
+    /**
+     * Si el enlace de pago guardado todavia sirve para cobrar. En false, y con el
+     * pedido en PENDING_PAYMENT, hay que pedir uno nuevo con
+     * `ordersApi.retryPayment` antes de abrir nada: abrir el viejo lleva a una
+     * sesion caducada y el cliente se queda sin poder pagar.
+     */
+    checkoutUrlIsLive?: boolean;
     mobileClaim?: null | { status: 'PENDING' | 'APPROVED' | 'REJECTED'; operationCode: string; submittedAt: string; reviewedAt: string | null; rejectionReason: string | null };
   };
 }
@@ -297,10 +375,23 @@ export interface AddressSuggestion {
 export interface CoverageResult {
   covered: boolean;
   reason?: string;
-  zone?: { id: number; name: string; deliveryFee: number; minimumOrder: number; estimatedMinutes: number };
+  /**
+   * `polygon` es la zona de reparto dibujable sobre el mapa (el equivalente
+   * movil del `coveragePolygon` de la web). El backend lo devuelve en
+   * `{ lat, lng }`, no en `{ latitude, longitude }`: conviertelo antes de
+   * pasarselo a <Polygon> de react-native-maps.
+   */
+  zone?: {
+    id: number; name: string; deliveryFee: number; minimumOrder: number; estimatedMinutes: number;
+    polygon?: Array<{ lat: number; lng: number }> | null;
+  };
   branch?: { id: number; name: string; addressLine: string; prepMinutes: number; isOpenNow: boolean };
   etaMinutes?: number;
+  demandLevel?: 'LOW' | 'MEDIUM' | 'HIGH';
+  etaSource?: 'LIVE_ROUTE' | 'ESTIMATE';
   routeDistanceKm?: number;
+  /** Local mas cercano cuando el punto queda fuera de reparto: «recoge aqui». */
+  nearestPickup?: { id: number; name: string; addressLine: string; distanceKm: number; isOpenNow: boolean };
 }
 
 export interface CheckoutInput {
@@ -394,4 +485,157 @@ export interface PublicDiningTable {
   branch: { id: number; name: string };
   command: { orderNumber: string; status: string; total: number } | null;
   catalog: DiningProduct[];
+}
+
+/* ------------------------------------------------------------------ */
+/* Cuenta del cliente (modulo account del backend)                     */
+/* ------------------------------------------------------------------ */
+
+/** GET|PATCH /account/profile. El correo no se edita desde aqui. */
+export interface Profile {
+  id: number;
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  phone: string | null;
+  emailVerifiedAt: string | null;
+  createdAt: string;
+}
+
+export interface ProfileInput {
+  firstName?: string;
+  lastName?: string;
+  /** Cadena vacia borra el telefono guardado. */
+  phone?: string;
+}
+
+/**
+ * GET|PUT /account/food-preferences.
+ * Cuando el cliente nunca las guardo, el backend devuelve el mismo objeto con
+ * las listas vacias y los objetivos en null (no un 404).
+ */
+export interface FoodPreferences {
+  allergens: string[];
+  dietaryTags: string[];
+  dislikedOptionIds: number[];
+  calorieTarget: number | null;
+  proteinTarget: number | null;
+}
+
+export interface SavedBowlSelection {
+  optionId: number;
+  quantity: number;
+}
+
+/**
+ * GET /account/saved-bowls. `product` y `variant` solo vienen en el listado:
+ * al crear o editar, el backend responde con la fila desnuda.
+ * Los precios llegan como DECIMAL, es decir cadena: normalizalos con Number().
+ */
+export interface SavedBowl {
+  id: number;
+  name: string;
+  productId: number;
+  variantId: number;
+  selections: SavedBowlSelection[];
+  product?: { id: number; name: string; slug: string; imageUrl: string | null } | null;
+  variant?: { id: number; name: string; basePrice: number | string } | null;
+  updatedAt: string;
+}
+
+export interface SavedBowlInput {
+  name: string;
+  productId: number;
+  variantId: number;
+  selections: SavedBowlSelection[];
+}
+
+/**
+ * Aviso de vuelta a stock (GET|POST|DELETE /account/availability-alerts).
+ * Se da de alta por producto Y sede: el mismo plato puede faltar en una cocina
+ * y estar en otra, asi que sin `branchId` el aviso no se puede crear.
+ */
+export interface AvailabilityAlert {
+  id: number;
+  productId: number;
+  branchId: number;
+  notifyEmail: boolean;
+  notifyInApp: boolean;
+  status: 'WAITING' | 'NOTIFIED' | 'CANCELLED';
+  notifiedAt: string | null;
+  createdAt: string;
+}
+
+export interface AvailabilityAlertInput {
+  productId: number;
+  branchId: number;
+  notifyEmail: boolean;
+  notifyInApp: boolean;
+}
+
+/** Lo que devuelve DELETE /account: que se llevo la baja y que se queda. */
+export interface DeleteAccountSummary {
+  deletedAt: string;
+  /** Pedidos y comprobantes que se conservan por obligacion tributaria (SUNAT). */
+  keptOrders: number;
+  /** Saldo de billetera que se pierde al cerrar la cuenta. */
+  forfeitedWalletBalance: number;
+  removed: {
+    addresses: number;
+    savedBowls: number;
+    favorites: number;
+    availabilityAlerts: number;
+    devices: number;
+  };
+}
+
+export type NotificationStatus = 'SENT' | 'FAILED';
+
+/** GET /account/notifications — la campana. Devuelve como mucho 50, las mas nuevas primero. */
+export interface AccountNotification {
+  id: number;
+  subject: string;
+  template: string;
+  channel: string;
+  status: NotificationStatus;
+  /** Destino al pulsar el aviso (por ejemplo la ficha del plato que volvio a haber). */
+  actionUrl: string | null;
+  sentAt: string | null;
+  readAt: string | null;
+  createdAt: string;
+  order?: { orderNumber: string; status: OrderStatus } | null;
+}
+
+/**
+ * El backend no publica un contador de no leidos: se deriva de la propia lista
+ * (readAt === null). El servicio lo calcula una vez y lo entrega ya resuelto
+ * para que la campana no lo recuente en cada render.
+ */
+export interface AccountNotificationsFeed {
+  items: AccountNotification[];
+  unreadCount: number;
+}
+
+/**
+ * GET /account/purchase-context — donde entregamos, para rehidratar la app en un
+ * dispositivo nuevo. `source` distingue lo que el cliente eligio de lo que
+ * estamos suponiendo:
+ *   SAVED           su ultima seleccion real
+ *   DEFAULT_ADDRESS no hay seleccion; proponemos su direccion principal
+ *   EMPTY           no hay nada que proponer, hay que preguntarle
+ * Nunca trae cobertura: hay que volver a consultarla antes de dar la direccion por buena.
+ */
+export interface PurchaseContext {
+  source: 'SAVED' | 'DEFAULT_ADDRESS' | 'EMPTY';
+  deliveryType: 'DELIVERY' | 'PICKUP';
+  cityId: number | null;
+  branch: { id: number; name: string; addressLine: string } | null;
+  address: Address | null;
+}
+
+export interface PurchaseContextInput {
+  deliveryType: 'DELIVERY' | 'PICKUP';
+  cityId?: number | null;
+  branchId?: number | null;
+  addressId?: number | null;
 }

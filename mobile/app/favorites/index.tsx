@@ -1,19 +1,164 @@
+import { useCallback, useEffect } from 'react';
+import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useEffect } from 'react';
-import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
+import { EmptyState } from '../../src/components/EmptyState';
 import { ProductCard } from '../../src/components/ProductCard';
-import { LoadingState } from '../../src/components/ScreenState';
+import { ScreenScaffold } from '../../src/components/ScreenScaffold';
+import { Skeleton } from '../../src/components/Skeleton';
 import { useFavorites } from '../../src/providers/FavoritesProvider';
 import { useSession } from '../../src/providers/SessionProvider';
-import { colors, spacing } from '../../src/theme/tokens';
+import { useToast } from '../../src/providers/ToastProvider';
+import { colors, radius, spacing, type } from '../../src/theme/tokens';
+import type { Product } from '../../src/types/domain';
 
 export default function FavoritesScreen() {
-  const insets = useSafeAreaInsets(); const { status } = useSession(); const favorites = useFavorites();
-  useEffect(() => { if (status === 'anonymous') router.replace({ pathname: '/(auth)/login', params: { returnTo: '/favorites' } }); }, [status]);
-  if (status === 'bootstrapping' || favorites.loading) return <View style={[styles.page, { paddingTop: insets.top }]}><LoadingState label="Sincronizando tus favoritos…" /></View>;
-  return <FlatList style={styles.page} contentContainerStyle={[styles.content, { paddingTop: insets.top + 12 }]} data={favorites.products} keyExtractor={(item) => String(item.id)} refreshControl={<RefreshControl refreshing={favorites.loading} onRefresh={() => void favorites.reload()} tintColor={colors.brand600} />} ListHeaderComponent={<View style={styles.header}><Pressable style={styles.back} onPress={() => router.back()}><MaterialCommunityIcons name="arrow-left" size={22} color={colors.ink} /></Pressable><View><Text style={styles.eyebrow}>TU COLECCIÓN</Text><Text style={styles.title}>Mis favoritos</Text><Text style={styles.copy}>Se guardan en tu cuenta y aparecen en todos tus dispositivos.</Text></View></View>} renderItem={({ item }) => <View style={styles.card}><ProductCard compact product={item} isFavorite onToggleFavorite={() => void favorites.toggle(item)} onPress={() => router.push({ pathname: '/product/[slug]', params: { slug: item.slug } })} /></View>} ListEmptyComponent={<View style={styles.empty}><MaterialCommunityIcons name="heart-plus-outline" size={48} color={colors.brand600} /><Text style={styles.emptyTitle}>Aún no guardaste platos</Text><Text style={styles.emptyCopy}>Toca el corazón del menú para armar una lista que viaje contigo.</Text><Pressable style={styles.explore} onPress={() => router.replace('/(tabs)/menu')}><Text style={styles.exploreText}>Explorar el menú</Text></Pressable></View>} />;
+  const { status } = useSession();
+  const favorites = useFavorites();
+  const toast = useToast();
+
+  useEffect(() => {
+    if (status === 'anonymous') {
+      router.replace({ pathname: '/(auth)/login', params: { returnTo: '/favorites' } });
+    }
+  }, [status]);
+
+  const openProduct = useCallback((product: Product) => {
+    router.push({ pathname: '/product/[slug]', params: { slug: product.slug } });
+  }, []);
+
+  const removeFavorite = useCallback(
+    async (product: Product) => {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      try {
+        await favorites.toggle(product);
+        toast.show({
+          message: `${product.name} salió de tus favoritos`,
+          action: {
+            label: 'Deshacer',
+            onPress: () => {
+              void favorites.toggle(product).catch(() => {
+                toast.show({ message: 'No pudimos devolverlo a la lista.', tone: 'error' });
+              });
+            },
+          },
+        });
+      } catch (caught) {
+        toast.show({
+          message: caught instanceof Error ? caught.message : 'No pudimos actualizar tus favoritos.',
+          tone: 'error',
+        });
+      }
+    },
+    [favorites, toast],
+  );
+
+  const toggleFavorite = useCallback(
+    (product: Product) => {
+      void removeFavorite(product);
+    },
+    [removeFavorite],
+  );
+
+  const retry = useCallback(() => {
+    void favorites.reload();
+  }, [favorites]);
+
+  const firstLoad = status === 'bootstrapping' || (favorites.loading && favorites.products.length === 0);
+
+  return (
+    <ScreenScaffold
+      title="Mis favoritos"
+      subtitle="Se guardan en tu cuenta y viajan contigo"
+      headerRight={
+        favorites.products.length > 0 ? (
+          <View style={styles.counter}>
+            <MaterialCommunityIcons name="heart" size={15} color={colors.danger} />
+
+            <Text style={styles.counterText}>{favorites.products.length}</Text>
+          </View>
+        ) : null
+      }
+    >
+      {firstLoad ? (
+        <View style={styles.skeleton}>
+          <Skeleton height={118} rounded="md" count={4} gap={spacing.sm + spacing.xs} />
+        </View>
+      ) : (
+        <FlatList
+          data={favorites.products}
+          keyExtractor={(item) => String(item.id)}
+          contentContainerStyle={styles.content}
+          refreshControl={
+            <RefreshControl
+              refreshing={favorites.refreshing}
+              onRefresh={retry}
+              tintColor={colors.brand600}
+            />
+          }
+          renderItem={({ item }) => (
+            <View style={styles.card}>
+              <ProductCard
+                compact
+                isFavorite
+                product={item}
+                onPress={openProduct}
+                onToggleFavorite={toggleFavorite}
+              />
+            </View>
+          )}
+          ListEmptyComponent={
+            favorites.error ? (
+              <EmptyState
+                icon="cloud-alert-outline"
+                title="No pudimos cargar tus favoritos"
+                message={`${favorites.error} Tu lista sigue guardada en la cuenta.`}
+                actionLabel="Reintentar"
+                onAction={retry}
+              />
+            ) : (
+              <EmptyState
+                icon="heart-plus-outline"
+                title="Aún no guardaste platos"
+                message="Toca el corazón del menú para armar una lista que viaje contigo."
+                actionLabel="Explorar el menú"
+                onAction={() => router.replace('/(tabs)/menu')}
+              />
+            )
+          }
+        />
+      )}
+    </ScreenScaffold>
+  );
 }
 
-const styles = StyleSheet.create({ page: { flex: 1, backgroundColor: colors.surfaceMuted }, content: { paddingBottom: spacing.xl }, header: { flexDirection: 'row', gap: 12, paddingHorizontal: spacing.md, paddingBottom: spacing.md }, back: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center' }, eyebrow: { color: colors.brand600, fontSize: 9, fontWeight: '900', letterSpacing: 1.1 }, title: { color: colors.ink, fontSize: 27, fontWeight: '900', marginTop: 2 }, copy: { color: colors.inkMuted, fontSize: 10, lineHeight: 15, marginTop: 4, paddingRight: 60 }, card: { paddingHorizontal: spacing.md, paddingTop: 10 }, empty: { alignItems: 'center', paddingHorizontal: spacing.xl, paddingTop: 80 }, emptyTitle: { color: colors.ink, fontSize: 18, fontWeight: '900', marginTop: 14 }, emptyCopy: { color: colors.inkMuted, fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 6 }, explore: { backgroundColor: colors.brand700, borderRadius: 16, paddingHorizontal: 20, paddingVertical: 13, marginTop: 18 }, exploreText: { color: colors.surface, fontSize: 12, fontWeight: '900' } });
+const styles = StyleSheet.create({
+  counter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs + 2,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  counterText: {
+    ...type.label,
+    color: colors.ink,
+  },
+  skeleton: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+  },
+  content: {
+    paddingBottom: spacing.xl,
+    flexGrow: 1,
+  },
+  card: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm + spacing.xs,
+  },
+});

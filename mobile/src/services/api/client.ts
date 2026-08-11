@@ -2,10 +2,20 @@ import { env } from '../../config/env';
 import { secureSession, type StoredSession } from '../session/secureSession';
 import { ENDPOINTS } from './endpoints';
 
+/** Sobre de paginacion del backend (shared/http/ApiResponse.ts). */
+export interface PaginationMeta {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+}
+
 export interface ApiSuccess<T> {
   success: true;
   message: string;
   data: T;
+  /** Solo viaja en las listas paginadas (hoy: el historial de pedidos). */
+  meta?: PaginationMeta;
 }
 
 interface ApiFailure {
@@ -69,18 +79,67 @@ const perform = async (
       throw new ApiRequestError('El servidor tardó demasiado en responder.');
     }
     // El mensaje al usuario es genérico a propósito, pero el motivo real (DNS,
-    // cleartext bloqueado, host inalcanzable) solo lo trae el error original,
-    // así que queda en logcat incluso en builds internas.
-    console.warn(`[api] falló ${buildUrl(path, options.query)}:`, error);
+    // cleartext bloqueado, host inalcanzable) solo lo trae el error original.
+    // En una build de tienda no se registra: la URL del API y el fallo exacto
+    // son ruido para el usuario y pista para quien lea el log del dispositivo.
+    if (__DEV__) {
+      console.warn(`[api] falló ${buildUrl(path, options.query)}:`, error);
+    }
     throw new ApiRequestError('No pudimos conectar con el servidor. Revisa tu conexión.');
   } finally {
     clearTimeout(timeout);
   }
 };
 
+/**
+ * Generación de sesión. Cada cierre de sesión (o borrado de cuenta) la
+ * incrementa, y toda renovación en vuelo que termine después queda invalidada.
+ *
+ * Sin esto pasaba lo siguiente: el usuario pulsa «Cerrar sesión» mientras una
+ * petición 401 está renovando el token; la renovación termina más tarde y
+ * escribe tokens válidos sobre el almacén ya vaciado, así que en el siguiente
+ * arranque la app volvía a entrar sin pedir contraseña.
+ */
+let sessionGeneration = 0;
+
+/** La llama SessionProvider al cerrar sesión, antes o después de limpiar el almacén. */
+export const invalidateSession = (): void => {
+  sessionGeneration += 1;
+  refreshing = null;
+};
+
+type SessionExpiredListener = () => void;
+
+const expiredListeners = new Set<SessionExpiredListener>();
+
+/**
+ * CIERRE DE SESIÓN GLOBAL.
+ *
+ * Cuando la renovación del refresh deja de servir, aquí se borran los tokens. Si
+ * eso ocurriera en silencio, la interfaz seguiría mostrando al cliente conectado
+ * y todas las pantallas devolverían errores genéricos hasta que reiniciara la
+ * app. El aviso vive en esta capa, y no en el proveedor de React, porque quien
+ * descubre la caducidad es la red: así no hay ciclo de importación ni hace falta
+ * que nadie vaya sondeando el almacén seguro en cada navegación.
+ *
+ * Devuelve la función para darse de baja.
+ */
+export const onSessionExpired = (listener: SessionExpiredListener): (() => void) => {
+  expiredListeners.add(listener);
+  return () => {
+    expiredListeners.delete(listener);
+  };
+};
+
+/** Lo puede llamar cualquiera que descubra que la sesión ya no vale. */
+export const notifySessionExpired = (): void => {
+  expiredListeners.forEach((listener) => listener());
+};
+
 let refreshing: Promise<StoredSession | null> | null = null;
 
 const refreshTokens = async (): Promise<StoredSession | null> => {
+  const generation = sessionGeneration;
   const current = await secureSession.read();
   if (!current?.refreshToken) return null;
 
@@ -93,8 +152,15 @@ const refreshTokens = async (): Promise<StoredSession | null> => {
     | ApiFailure
     | null;
 
+  // La sesión cambió mientras renovábamos: no tocamos el almacén ni para
+  // escribir ni para limpiar, porque puede haber ya otra sesión legítima dentro.
+  if (generation !== sessionGeneration) return null;
+
   if (!response.ok || !payload || payload.success !== true) {
     await secureSession.clear();
+    // El refresh caducó de verdad: la interfaz tiene que enterarse ahora, no en
+    // el próximo arranque de la app.
+    notifySessionExpired();
     return null;
   }
 
@@ -123,7 +189,11 @@ const parseResponse = async <T>(response: Response): Promise<ApiSuccess<T>> => {
   return payload;
 };
 
-export async function apiCall<T>(path: string, options: ApiRequestOptions = {}): Promise<ApiSuccess<T>> {
+/** Devuelve el sobre completo: úsalo cuando necesites `meta` además de `data`. */
+export async function apiCall<T>(
+  path: string,
+  options: ApiRequestOptions = {},
+): Promise<ApiSuccess<T>> {
   const session = options.auth ? await secureSession.read() : null;
   let response = await perform(path, options, session?.accessToken);
 
@@ -145,4 +215,31 @@ export async function apiCall<T>(path: string, options: ApiRequestOptions = {}):
 
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   return (await apiCall<T>(path, options)).data;
+}
+
+export interface PagedResult<T> {
+  items: T[];
+  meta: PaginationMeta;
+}
+
+/**
+ * Lista paginada. Antes las pantallas usaban `apiRequest`, que descarta el sobre,
+ * y el historial se quedaba mudo en los 20 primeros pedidos sin manera de saber
+ * que había más. Si el endpoint no devuelve `meta`, se asume una única página.
+ */
+export async function apiPaged<T>(
+  path: string,
+  options: ApiRequestOptions = {},
+): Promise<PagedResult<T>> {
+  const envelope = await apiCall<T[]>(path, options);
+  const items = envelope.data ?? [];
+  return {
+    items,
+    meta: envelope.meta ?? {
+      page: 1,
+      pageSize: items.length,
+      total: items.length,
+      totalPages: 1,
+    },
+  };
 }
