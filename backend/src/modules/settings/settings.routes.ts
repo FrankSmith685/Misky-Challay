@@ -1,36 +1,275 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import { ok } from '@shared/http/ApiResponse';
 import { asyncHandler } from '@shared/utils/asyncHandler';
-import { businessInfo } from '@config/business';
-import { env } from '@config/env';
+import { audit } from '@shared/utils/audit';
+import { isValidRuc } from '@shared/utils/peruDocs';
+import { authenticate } from '@middlewares/auth.middleware';
+import { requireSuperAdmin } from '@middlewares/rbac.middleware';
+import { validate } from '@middlewares/validate.middleware';
+import { env, isProduction } from '@config/env';
+import { getMailProvider } from '@integrations/mail';
+import { ApiError } from '@shared/errors/ApiError';
+import { logger } from '@config/logger';
+import { settingsService, type MobilePlatform } from './settings.service';
 
-/**
- * Modulo SETTINGS - configuracion publica del sitio.
- * Prefijo: /api/v1/settings
- *
- * Sirve los datos del proveedor que por ley deben estar a la vista (footer, paginas
- * legales, Libro de Reclamaciones). Una sola fuente para el frontend, en vez de
- * repetir la razon social y el RUC en el codigo del cliente.
- */
 const router = Router();
 
+const businessBody = z.object({
+  legalName: z.string().trim().min(3).max(180),
+  commercialName: z.string().trim().min(2).max(100),
+  ruc: z.string().trim().refine(isValidRuc, 'Ingresa un RUC peruano válido'),
+  address: z.string().trim().min(8).max(255),
+  phone: z.string().trim().min(6).max(30),
+  email: z.string().trim().email().max(160),
+  supportEmail: z.string().trim().email().max(160),
+  complaintResponseDays: z.coerce.number().int().min(1).max(30),
+});
+
+const communicationBody = z.object({
+  emailNotificationsEnabled: z.boolean(),
+  inAppNotificationsEnabled: z.boolean(),
+  orderUpdatesEnabled: z.boolean(),
+  planUpdatesEnabled: z.boolean(),
+  staffAccessEnabled: z.boolean(),
+  availabilityAlertsEnabled: z.boolean(),
+  availabilityEmailSubject: z.string().trim().min(3).max(200),
+  availabilityEmailBody: z.string().trim().min(10).max(2000),
+  smtpHost: z.string().trim().max(180),
+  smtpPort: z.coerce.number().int().min(1).max(65535),
+  smtpSecure: z.boolean(),
+  smtpUser: z.string().trim().max(180),
+  smtpPassword: z.string().max(500).optional(),
+  clearSmtpPassword: z.boolean().optional(),
+  fromEmail: z.string().trim().email().max(160),
+  fromName: z.string().trim().min(2).max(100),
+  replyToEmail: z.union([z.string().trim().email().max(160), z.literal('')]),
+}).superRefine((value, context) => {
+  if (isProduction && !value.smtpHost) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['smtpHost'], message: 'SMTP es obligatorio en producción' });
+  }
+});
+
+const localPaymentsBody = z.object({
+  yapeEnabled: z.boolean(),
+  yapePhone: z.string().trim().max(30),
+  yapeRecipient: z.string().trim().max(120),
+  yapeQrImageUrl: z.union([z.string().trim().url().max(500), z.literal('')]),
+  plinEnabled: z.boolean(),
+  plinPhone: z.string().trim().max(30),
+  plinRecipient: z.string().trim().max(120),
+  plinQrImageUrl: z.union([z.string().trim().url().max(500), z.literal('')]),
+  instructions: z.string().trim().min(10).max(500),
+}).superRefine((value, context) => {
+  for (const provider of ['yape', 'plin'] as const) {
+    if (!value[`${provider}Enabled`]) continue;
+    if (!/^\+?\d[\d\s-]{7,18}$/.test(value[`${provider}Phone`])) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: [`${provider}Phone`], message: 'Configura un telefono valido' });
+    }
+    if (value[`${provider}Recipient`].length < 3) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: [`${provider}Recipient`], message: 'Indica el titular que vera el cliente' });
+    }
+  }
+});
+
+const receiptBody = z.object({
+  mode: z.enum(['INTERNAL_ONLY', 'EXTERNAL_MANUAL', 'INTEGRATED']),
+  autoPrintKitchenTicket: z.boolean(),
+  autoPrintCustomerTicket: z.boolean(),
+  paperWidth: z.union([z.literal(58), z.literal(80)]),
+});
+
+/**
+ * De dónde sale el enlace de actualización. Un valor desconocido no es un error:
+ * este endpoint también lo consume la web, que no tiene tienda a la que ir.
+ */
+const requestedPlatform = (value: unknown): MobilePlatform | null =>
+  value === 'android' || value === 'ios' ? value : null;
+
+/** Configuración pública consumida por footer, checkout, documentos legales y la app móvil. */
 router.get(
   '/public',
-  asyncHandler(async (_req, res) =>
-    ok(res, {
-      business: businessInfo,
+  asyncHandler(async (req, res) => {
+    const [business, localPayments, receipts] = await Promise.all([
+      settingsService.getBusinessInfo(),
+      settingsService.getLocalPaymentSettings(),
+      settingsService.getReceiptSettings(),
+    ]);
+    return ok(res, {
+      business,
       igvRate: env.IGV_RATE,
-      // Pago contra entrega: el checkout lo ofrece solo si esta activo y bajo el tope.
-      cod: {
-        enabled: env.COD_ENABLED,
-        maxAmount: env.COD_MAX_AMOUNT,
+      cod: { enabled: env.COD_ENABLED, maxAmount: env.COD_MAX_AMOUNT },
+      invoicing: { boletaDniThreshold: env.BOLETA_DNI_THRESHOLD },
+      localPayments,
+      receipts,
+      /*
+       * Interruptor explícito del pago con tarjeta. Hasta ahora se publicaban COD
+       * y los pagos locales pero nada de ONLINE, así que la única condición
+       * posible en el cliente era «hay importe que cobrar»: un negocio sin
+       * pasarela configurada seguía ofreciendo un medio que el backend rechazaría
+       * al confirmar. Fuera de producción vale el simulador local, que cumple el
+       * mismo ciclo y su webhook.
+       */
+      payments: { onlineEnabled: Boolean(env.STRIPE_SECRET_KEY) || !isProduction },
+      // La app compara su propia versión con esto al arrancar: es la unica forma de
+      // forzar una actualización en instalaciones que ya están en la calle.
+      mobile: settingsService.getMobileAppSettings(requestedPlatform(req.query.platform)),
+    });
+  }),
+);
+
+router.use(authenticate, requireSuperAdmin);
+
+router.get(
+  '/business',
+  asyncHandler(async (_req, res) => ok(res, await settingsService.getBusinessInfoForAdmin())),
+);
+
+router.put(
+  '/business',
+  validate(z.object({ body: businessBody })),
+  asyncHandler(async (req, res) => {
+    const result = await settingsService.updateBusinessInfo(req.body, req.user!.sub);
+    await audit(req, {
+      action: 'settings.business.update',
+      entity: 'business_settings',
+      entityId: 1,
+      before: { ...result.before },
+      after: { ...result.business },
+    });
+    return ok(
+      res,
+      { business: result.business, source: 'database', isConfigured: true, updatedAt: result.updatedAt },
+      'Datos legales actualizados',
+    );
+  }),
+);
+
+router.get(
+  '/local-payments',
+  asyncHandler(async (_req, res) => ok(res, await settingsService.getLocalPaymentSettingsForAdmin())),
+);
+
+router.put(
+  '/local-payments',
+  validate(z.object({ body: localPaymentsBody })),
+  asyncHandler(async (req, res) => {
+    const result = await settingsService.updateLocalPaymentSettings(req.body, req.user!.sub);
+    await audit(req, {
+      action: 'settings.local_payments.update',
+      entity: 'local_payment_settings',
+      entityId: 1,
+      before: { ...result.before },
+      after: { ...result.localPayments },
+    });
+    return ok(res, {
+      localPayments: result.localPayments,
+      isConfigured: true,
+      updatedAt: result.updatedAt,
+    }, 'Yape y Plin actualizados');
+  }),
+);
+
+router.get(
+  '/receipts',
+  asyncHandler(async (_req, res) => ok(res, await settingsService.getReceiptSettingsForAdmin())),
+);
+
+router.put(
+  '/receipts',
+  validate(z.object({ body: receiptBody })),
+  asyncHandler(async (req, res) => {
+    const result = await settingsService.updateReceiptSettings(req.body, req.user!.sub);
+    await audit(req, {
+      action: 'settings.receipts.update',
+      entity: 'receipt_settings',
+      entityId: 1,
+      before: { ...result.before },
+      after: { ...result.receipts },
+    });
+    return ok(res, {
+      receipts: result.receipts,
+      isConfigured: true,
+      updatedAt: result.updatedAt,
+    }, 'Configuracion de tickets actualizada');
+  }),
+);
+
+router.get(
+  '/communication',
+  asyncHandler(async (_req, res) => ok(res, await settingsService.getCommunicationSettingsForAdmin())),
+);
+
+router.put(
+  '/communication',
+  validate(z.object({ body: communicationBody })),
+  asyncHandler(async (req, res) => {
+    const result = await settingsService.updateCommunicationSettings(req.body, req.user!.sub);
+    await audit(req, {
+      action: 'settings.communication.update',
+      entity: 'communication_settings',
+      entityId: 1,
+      before: result.before,
+      after: result.communication,
+    });
+    return ok(
+      res,
+      {
+        communication: result.communication,
+        source: 'database',
+        isConfigured: true,
+        updatedAt: result.updatedAt,
       },
-      // A partir de este importe la boleta pide el DNI del comprador (regla SUNAT).
-      invoicing: {
-        boletaDniThreshold: env.BOLETA_DNI_THRESHOLD,
-      },
-    }),
-  ),
+      'Correo y notificaciones actualizados',
+    );
+  }),
+);
+
+router.get(
+  '/notification-history',
+  asyncHandler(async (_req, res) => ok(res, await settingsService.getNotificationOverview())),
+);
+
+router.post(
+  '/communication/test',
+  validate(z.object({ body: z.object({ recipient: z.string().trim().email().max(160) }) })),
+  asyncHandler(async (req, res) => {
+    const settings = await settingsService.getCommunicationSettings();
+    try {
+      const provider = getMailProvider({
+        host: settings.smtpHost,
+        port: settings.smtpPort,
+        secure: settings.smtpSecure,
+        user: settings.smtpUser || undefined,
+        password: settings.smtpPassword,
+        fromEmail: settings.fromEmail,
+        fromName: settings.fromName,
+        replyToEmail: settings.replyToEmail || undefined,
+      });
+      const result = await provider.send({
+        to: req.body.recipient,
+        subject: 'Prueba de correo de Verde Bowl',
+        text: 'La configuracion de correo funciona correctamente.',
+        html: '<div style="font-family:Arial,sans-serif"><h2>Configuracion correcta</h2><p>Verde Bowl puede enviar correos con esta cuenta.</p></div>',
+      });
+      await audit(req, {
+        action: 'settings.communication.test',
+        entity: 'communication_settings',
+        entityId: 1,
+        after: { recipient: req.body.recipient, provider: provider.name },
+      });
+      return ok(res, { provider: provider.name, messageId: result.messageId }, 'Correo de prueba enviado');
+    } catch (error) {
+      logger.error('Fallo la prueba de configuracion SMTP', error);
+      const detail = error instanceof Error ? error.message : '';
+      const message = /535|EAUTH|Username and Password not accepted/i.test(detail)
+        ? 'Gmail rechazo las credenciales. Usa una contrasena de aplicacion de 16 caracteres, no la clave normal de la cuenta.'
+        : /from|sender|alias/i.test(detail)
+          ? 'Gmail rechazo el remitente. Usa el mismo correo autenticado o configura el alias en Gmail.'
+          : 'No se pudo conectar con SMTP. Revisa servidor, puerto, usuario, contrasena y conexion segura.';
+      throw ApiError.badRequest(message);
+    }
+  }),
 );
 
 export default router;

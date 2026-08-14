@@ -25,6 +25,12 @@ export interface AdminPlanBenefit {
   value: number;
   maxAmountPerOrder: number | null;
   description: string;
+  /**
+   * Los beneficios se leen EN VIVO (a diferencia de precio, saldo y vigencia, que
+   * se congelan al comprar): apagar uno se lo quita en el acto a todos los planes
+   * vigentes. Por eso el borrado pasa a ser logico, y el estado tiene que viajar.
+   */
+  isActive?: boolean;
 }
 
 export interface AdminPlan {
@@ -39,6 +45,8 @@ export interface AdminPlan {
   isFeatured: boolean;
   isActive: boolean;
   benefits: AdminPlanBenefit[];
+  /** Suscriptores con el plan vigente: lo que hay que decir antes de tocar un beneficio. */
+  activeSubscribers?: number;
 }
 
 export interface AdminSchedule {
@@ -201,6 +209,12 @@ export const commercialApi = {
     return data.data;
   },
 
+  /**
+   * `validUntil` (ISO) y `usageLimit` los acepta el backend desde el principio y el
+   * motor de cupones los respeta; el formulario no los exponia, asi que todo cupon
+   * creado desde el panel nacia eterno e ilimitado mientras la tabla prometia
+   * "Usos x/y" y "Vence".
+   */
   async createCoupon(input: {
     code: string;
     description: string;
@@ -208,9 +222,31 @@ export const commercialApi = {
     value: number;
     minOrderAmount: number;
     maxDiscountAmount?: number | null;
+    validUntil?: string | null;
+    usageLimit?: number | null;
     usageLimitPerUser: number;
   }): Promise<void> {
     await api.post(`${BASE}/coupons`, input);
+  },
+
+  /**
+   * Edicion del cupon. `value`, `minOrderAmount`, `maxDiscountAmount` y `usageLimit`
+   * necesitan que el paquete H los admita tambien en el esquema del PATCH; hoy el
+   * servidor solo acepta `isActive`, `description` y `validUntil`.
+   */
+  async updateCoupon(
+    couponId: number,
+    input: {
+      isActive?: boolean;
+      description?: string;
+      validUntil?: string | null;
+      value?: number;
+      minOrderAmount?: number;
+      maxDiscountAmount?: number | null;
+      usageLimit?: number | null;
+    },
+  ): Promise<void> {
+    await api.patch(`${BASE}/coupons/${couponId}`, input);
   },
 
   async toggleCoupon(couponId: number, isActive: boolean): Promise<void> {
@@ -299,8 +335,8 @@ export const commercialApi = {
     return data.data;
   },
 
-  async assignZoneToBranch(zoneId: number, branchId: number): Promise<void> {
-    await api.post(`${BASE}/coverage/zones/${zoneId}/branches`, { branchId, priority: 1 });
+  async assignZoneToBranch(zoneId: number, branchId: number, priority = 1): Promise<void> {
+    await api.post(`${BASE}/coverage/zones/${zoneId}/branches`, { branchId, priority });
   },
 
   async updateBranch(

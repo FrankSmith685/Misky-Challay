@@ -41,6 +41,20 @@ export const accountApi = {
   updateProfile: (input: ProfileInput) =>
     apiRequest<Profile>(ENDPOINTS.account.profile, { method: 'PATCH', body: input, auth: true }),
 
+  updateAvatar: (input: {
+    fileName: string;
+    mimeType: 'image/webp' | 'image/jpeg' | 'image/png';
+    dataUrl: string;
+  }) =>
+    apiRequest<Profile>(ENDPOINTS.account.profileAvatar, {
+      method: 'POST',
+      body: input,
+      auth: true,
+    }),
+
+  removeAvatar: () =>
+    apiRequest<Profile>(ENDPOINTS.account.profileAvatar, { method: 'DELETE', auth: true }),
+
   changePassword: (input: ChangePasswordInput) =>
     apiRequest<null>(ENDPOINTS.account.password, { method: 'PATCH', body: input, auth: true }),
 

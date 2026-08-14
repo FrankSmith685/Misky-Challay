@@ -1,8 +1,21 @@
 import { z } from 'zod';
+import { coordinatePairIssue, hasCoordinatePair } from '@shared/utils/coordinates';
 
 export const districtsSchema = z.object({
   query: z.object({
     cityId: z.coerce.number().int().positive(),
+  }),
+});
+
+export const provincesSchema = z.object({
+  query: z.object({
+    departmentCode: z.string().regex(/^\d{2}$/),
+  }),
+});
+
+export const geographicDistrictsSchema = z.object({
+  query: z.object({
+    provinceCode: z.string().regex(/^\d{4}$/),
   }),
 });
 
@@ -22,6 +35,10 @@ export const coverageSchema = z.object({
       longitude: z.coerce.number().min(-180).max(180).optional(),
     })
     .refine(
+      hasCoordinatePair,
+      coordinatePairIssue,
+    )
+    .refine(
       (value) =>
         value.districtId !== undefined ||
         (value.latitude !== undefined && value.longitude !== undefined),
@@ -38,17 +55,23 @@ export const slotsSchema = z.object({
 
 export const addressSuggestionsSchema = z.object({
   query: z.object({
-    q: z.string().trim().min(3).max(160),
-    cityId: z.coerce.number().int().positive(),
+    q: z.string().trim().min(2).max(160),
+    cityId: z.coerce.number().int().positive().optional(),
     districtId: z.coerce.number().int().positive().optional(),
+    department: z.string().trim().min(2).max(80).optional(),
+    province: z.string().trim().min(2).max(80).optional(),
+    district: z.string().trim().min(2).max(80).optional(),
   }),
 });
 
 export const resolveAddressSchema = z.object({
   body: z.object({
-    query: z.string().trim().min(5).max(240),
-    cityId: z.coerce.number().int().positive(),
+    query: z.string().trim().min(2).max(240),
+    cityId: z.coerce.number().int().positive().optional(),
     districtId: z.coerce.number().int().positive().optional(),
+    department: z.string().trim().min(2).max(80).optional(),
+    province: z.string().trim().min(2).max(80).optional(),
+    district: z.string().trim().min(2).max(80).optional(),
   }),
 });
 
@@ -56,7 +79,7 @@ export const reverseAddressSchema = z.object({
   body: z.object({
     latitude: z.coerce.number().min(-90).max(90),
     longitude: z.coerce.number().min(-180).max(180),
-    cityId: z.coerce.number().int().positive(),
+    cityId: z.coerce.number().int().positive().optional(),
   }),
 });
 

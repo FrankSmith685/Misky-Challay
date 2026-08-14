@@ -10,19 +10,30 @@ interface AlertProps {
   title?: string;
   children?: ReactNode;
   className?: string;
+  action?: ReactNode;
+  onClose?: () => void;
 }
 
 /** Mensaje contextual (informacion, exito, advertencia o error) con icono. */
-export const Alert = ({ variant = 'info', title, children, className }: AlertProps) => {
+export const Alert = ({
+  variant = 'info',
+  title,
+  children,
+  className,
+  action,
+  onClose,
+}: AlertProps) => {
   return (
     <MuiAlert
       severity={variant === 'danger' ? 'error' : variant}
-      variant="outlined"
+      variant="standard"
       className={cn(className)}
-      role="status"
-      sx={{ bgcolor: 'background.paper', '& .MuiAlert-message': { width: '100%' } }}
+      role={variant === 'danger' || variant === 'warning' ? 'alert' : 'status'}
+      action={action}
+      onClose={onClose}
+      sx={{ '& .MuiAlert-message': { width: '100%' } }}
     >
-      {title && <AlertTitle sx={{ mb: children ? .25 : 0, fontWeight: 750 }}>{title}</AlertTitle>}
+      {title && <AlertTitle sx={{ mb: children ? .35 : 0, fontWeight: 800, lineHeight: 1.35 }}>{title}</AlertTitle>}
       {children}
     </MuiAlert>
   );

@@ -66,7 +66,7 @@ OrderItem.init(
 
     productNameSnapshot: { type: DataTypes.STRING(150), allowNull: false },
     variantNameSnapshot: { type: DataTypes.STRING(120), allowNull: true },
-    descriptionSnapshot: { type: DataTypes.STRING(500), allowNull: true },
+    descriptionSnapshot: { type: DataTypes.TEXT, allowNull: true },
 
     quantity: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
     unitPrice: { type: DataTypes.DECIMAL(12, 2), allowNull: false },

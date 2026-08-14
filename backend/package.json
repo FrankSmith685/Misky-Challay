@@ -23,6 +23,7 @@
     "verify:builder-data": "node scripts/verify-builder-data.cjs"
   },
   "dependencies": {
+    "@types/web-push": "^3.6.4",
     "bcryptjs": "^2.4.3",
     "compression": "^1.7.5",
     "cookie-parser": "^1.4.7",
@@ -39,6 +40,7 @@
     "stripe": "^22.3.1",
     "umzug": "^3.8.3",
     "uuid": "^11.0.5",
+    "web-push": "^3.6.7",
     "zod": "^3.24.1"
   },
   "devDependencies": {

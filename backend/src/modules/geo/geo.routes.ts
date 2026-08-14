@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { validate } from '@middlewares/validate.middleware';
 import { geoController } from './geo.controller';
-import { addressSuggestionsSchema, branchesSchema, coverageSchema, districtsSchema, resolveAddressSchema, reverseAddressSchema, slotsSchema } from './geo.validation';
+import { addressSuggestionsSchema, branchesSchema, coverageSchema, districtsSchema, geographicDistrictsSchema, provincesSchema, resolveAddressSchema, reverseAddressSchema, slotsSchema } from './geo.validation';
 
 /**
  * Modulo GEO - Cobertura y sucursales (M03).
@@ -10,6 +10,9 @@ import { addressSuggestionsSchema, branchesSchema, coverageSchema, districtsSche
 const router = Router();
 
 router.get('/cities', geoController.cities);
+router.get('/departments', geoController.departments);
+router.get('/provinces', validate(provincesSchema), geoController.provinces);
+router.get('/geographic-districts', validate(geographicDistrictsSchema), geoController.geographicDistricts);
 router.get('/address-suggestions', validate(addressSuggestionsSchema), geoController.addressSuggestions);
 router.post('/resolve-address', validate(resolveAddressSchema), geoController.resolveAddress);
 router.post('/reverse-address', validate(reverseAddressSchema), geoController.reverseAddress);

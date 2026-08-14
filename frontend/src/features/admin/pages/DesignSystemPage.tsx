@@ -1,28 +1,14 @@
 import { useEffect, useState, type FC, type MouseEvent } from 'react';
 import {
-  Alert,
-  AlertTitle,
   Autocomplete,
   Avatar,
   AvatarGroup,
-  Badge,
   Box,
   Breadcrumbs,
   Button,
   ButtonGroup,
-  Card,
-  CardActions,
-  CardContent,
-  Checkbox,
-  Chip,
   CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogContentText,
-  DialogTitle,
   Divider,
-  Drawer,
   Fab,
   FormControl,
   FormControlLabel,
@@ -34,28 +20,18 @@ import {
   Link as MuiLink,
   Menu,
   MenuItem,
-  Pagination,
   Paper,
   Radio,
-  RadioGroup,
+  RadioGroup as MuiRadioGroup,
   Rating,
   Skeleton,
   Slider,
-  Snackbar,
   Step,
   StepLabel,
   Stepper,
-  Switch,
   Tab,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   Tabs,
   TextField,
-  Tooltip,
   Typography,
   Accordion,
   AccordionDetails,
@@ -77,14 +53,48 @@ import {
   Search,
   Sparkles,
 } from 'lucide-react';
-import toast from 'react-hot-toast';
+import toast from '@components/mui/MuiToast';
 import { CodeBlock } from '@components/common/CodeBlock';
+import {
+  Alert as AppAlert,
+  Badge as AppBadge,
+  BUTTON_HEIGHT,
+  Button as AppButton,
+  Callout,
+  Card as AppCard,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Chip as AppChip,
+  Checkbox as AppCheckbox,
+  Drawer as AppDrawer,
+  FormActions,
+  FormGrid,
+  FormSection,
+  FormStack,
+  Input as AppInput,
+  Modal as AppModal,
+  Pagination as AppPagination,
+  RadioGroup as AppRadioGroup,
+  Select as AppSelect,
+  SelectOption,
+  Switch as AppSwitch,
+  Table as AppTable,
+  Tbody,
+  Td,
+  Textarea as AppTextarea,
+  Th,
+  Thead,
+  Tooltip as AppTooltip,
+  Tr,
+} from '@components/ui';
 import { cn } from '@lib/cn';
+import { PageHeader } from '@components/common/PageHeader';
 import { ComponentDoc, Label, SectionHeader } from '../designSystem/DocParts';
 import { ThemeEditor } from '../components/ThemeEditor';
 import { useThemeSettings } from '@/theme/ThemeSettingsProvider';
-import { rampFromHex, tint, type ColorRamp } from '@/theme/colorUtils';
-import { DEFAULT_BRAND_RAMP, DEFAULT_TOKENS } from '@/theme/tokens';
+import { type ColorRamp } from '@/theme/colorUtils';
+import { rampsFromTokens } from '@/theme/tokens';
 import { getDoc } from '../designSystem/componentDocs';
 
 /* ==========================================================================
@@ -105,32 +115,32 @@ const IntroSection: FC = () => (
     />
     <div className="grid gap-4 sm:grid-cols-2">
       {PRINCIPLES.map(({ icon: Icon, title, text }) => (
-        <Card key={title} variant="outlined">
-          <CardContent>
-            <Icon className="mb-2 size-6 text-brand-600" />
-            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-              {title}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              {text}
-            </Typography>
-          </CardContent>
-        </Card>
+        <AppCard key={title}>
+          <Icon className="mb-2 size-6 text-brand-600" />
+          <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+            {title}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            {text}
+          </Typography>
+        </AppCard>
       ))}
     </div>
 
     <h3 className="mb-2 mt-8 text-base font-semibold text-ink">Como leer esta documentacion</h3>
     <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
       Cada componente muestra: sobre que esta construido, para que sirve, cuando usarlo, una vista previa
-      en vivo, el codigo para copiar y una tabla con sus props principales.
+      en vivo, el codigo para copiar y una tabla con sus props principales. Fijate en la etiqueta de
+      importacion: <strong>@components/ui</strong> es el componente propio de Verde Bowl (API del proyecto)
+      y <strong>@mui/material</strong> es el de Material UI sin envolver. Si existe la version propia,
+      usala: es la que respeta el tema, la escala de alturas y los estados del producto.
     </Typography>
-    <CodeBlock code={`import { Button, Chip } from '@mui/material';\n\n<Button variant="contained">Guardar</Button>\n<Chip label="Activo" color="success" />`} />
+    <CodeBlock code={`import { Badge, Button } from '@components/ui';\n\n<Button variant="danger" isLoading>Cancelar pedido</Button>\n<Badge variant="success">Activo</Badge>`} />
 
-    <Alert severity="info" className="mt-8">
-      <AlertTitle>Seccion gestionable</AlertTitle>
+    <AppAlert variant="info" title="Seccion gestionable" className="mt-8">
       Esta documentacion se controla con el permiso <strong>settings.manage</strong>. Desde Roles y
       permisos decides que roles la ven; el superadmin siempre entra.
-    </Alert>
+    </AppAlert>
   </div>
 );
 
@@ -178,7 +188,7 @@ const Swatch = ({ token, hex }: { token: string; hex: string }) => {
   return (
     <button type="button" onClick={copy} className="group w-full text-left" title={`Copiar ${hex}`}>
       <div
-        className="relative h-16 w-full overflow-hidden rounded-xl border border-line transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:shadow-md"
+        className="relative h-16 w-full overflow-hidden rounded-card border border-line transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:shadow-e2"
         style={{ backgroundColor: hex }}
       >
         <span className="absolute right-1 top-1 rounded bg-surface/80 p-1 text-ink opacity-0 transition-opacity group-hover:opacity-100">
@@ -193,12 +203,13 @@ const Swatch = ({ token, hex }: { token: string; hex: string }) => {
 
 const ColorsSection: FC = () => {
   const { tokens } = useThemeSettings();
-  const brand = tokens.primary === DEFAULT_TOKENS.primary ? DEFAULT_BRAND_RAMP : rampFromHex(tokens.primary);
-  const tertiary = rampFromHex(tokens.tertiary);
-  const accent = [
-    { token: 'accent-400', hex: tint(tokens.secondary, 0.18) },
-    { token: 'accent-500', hex: tokens.secondary },
-  ];
+  /* Misma fuente que alimenta las variables CSS de Tailwind (applyCssVars) y las
+   * paletas de MUI (buildTheme). La rampa de acento se construia aqui a mano con
+   * DOS paradas dentro de una rejilla dimensionada para diez, y el hex que
+   * publicaba (#eca73a) no existe en el producto: el accent-400 real es #f5a524.
+   * Como el Swatch copia al portapapeles, el color inventado se propagaba a quien
+   * lo pegara. */
+  const ramps = rampsFromTokens(tokens);
 
   return (
     <div>
@@ -206,11 +217,11 @@ const ColorsSection: FC = () => {
         title="Colores"
         description="Reflejan el tema actual: marca (primary), acento (secondary) y el tercer color (tertiary). Cambia en Tema y esto se actualiza. Toca un color para copiar su hex."
       />
-      <div className="space-y-6">
+      <div className="grid gap-6">
         <div>
           <Label>Marca (brand / primary)</Label>
           <div className="grid grid-cols-5 gap-3 sm:grid-cols-10">
-            {rampToSwatches('brand', brand).map((color) => (
+            {rampToSwatches('brand', ramps.brand).map((color) => (
               <Swatch key={color.token} {...color} />
             ))}
           </div>
@@ -218,7 +229,7 @@ const ColorsSection: FC = () => {
         <div>
           <Label>Acento (accent / secondary)</Label>
           <div className="grid grid-cols-5 gap-3 sm:grid-cols-10">
-            {accent.map((color) => (
+            {rampToSwatches('accent', ramps.accent).map((color) => (
               <Swatch key={color.token} {...color} />
             ))}
           </div>
@@ -226,7 +237,19 @@ const ColorsSection: FC = () => {
         <div>
           <Label>Tercer color (tertiary)</Label>
           <div className="grid grid-cols-5 gap-3 sm:grid-cols-10">
-            {rampToSwatches('tertiary', tertiary).map((color) => (
+            {rampToSwatches('tertiary', ramps.tertiary).map((color) => (
+              <Swatch key={color.token} {...color} />
+            ))}
+          </div>
+        </div>
+        <div>
+          <Label>Peligro (error)</Label>
+          <p className="-mt-1 mb-2 text-xs text-ink-muted">
+            Colorea todos los avisos y badges destructivos. No es gestionable: el rojo de alerta no debe
+            moverse con la marca.
+          </p>
+          <div className="grid grid-cols-5 gap-3 sm:grid-cols-10">
+            {rampToSwatches('error', ramps.error).map((color) => (
               <Swatch key={color.token} {...color} />
             ))}
           </div>
@@ -276,29 +299,32 @@ const ButtonsSection: FC = () => {
   return (
     <div>
       <SectionHeader title="Botones y menus" description="Acciones primarias, secundarias y menus." />
-      <div className="space-y-8">
+      <div className="grid gap-8">
+        {/* La demo renderiza el Button DEL PROYECTO. Antes pintaba el de MUI con
+            `variant="contained"`, una API que no existe en el producto, en un
+            archivo que ya importaba `Button as AppButton`. */}
         <ComponentDoc
           docId="button"
-          code={`<Button variant="contained">Guardar</Button>\n<Button variant="outlined" color="secondary">Cancelar</Button>\n<Button variant="contained" color="tertiary">Destacar</Button>`}
+          code={`import { Button } from '@components/ui';\n\n<Button>Guardar</Button>\n<Button variant="outline" size="lg">Cancelar</Button>\n<Button variant="danger" isLoading>Cancelando…</Button>\n<Button variant="ghost" leftIcon={<Plus className="size-4" />}>Añadir</Button>`}
         >
-          <Button variant="contained">Contained</Button>
-          <Button variant="outlined">Outlined</Button>
-          <Button variant="text">Text</Button>
-          <Button variant="contained" color="secondary">
-            Secundario
-          </Button>
-          <Button variant="contained" color="tertiary">
-            Terciario
-          </Button>
-          <Button variant="contained" color="error">
-            Error
-          </Button>
-          <Button variant="contained" startIcon={<Sparkles className="size-4" />}>
-            Con icono
-          </Button>
-          <Button variant="contained" disabled startIcon={<CircularProgress size={16} color="inherit" />}>
-            Cargando
-          </Button>
+          <AppButton>Primary</AppButton>
+          <AppButton variant="secondary">Secondary</AppButton>
+          <AppButton variant="outline">Outline</AppButton>
+          <AppButton variant="ghost">Ghost</AppButton>
+          <AppButton variant="danger">Danger</AppButton>
+          <AppButton leftIcon={<Sparkles className="size-4" />}>Con icono</AppButton>
+          <AppButton isLoading>Cargando</AppButton>
+          <AppButton disabled>Deshabilitado</AppButton>
+          <div className="flex w-full flex-wrap items-center gap-3 border-t border-line pt-4">
+            <span className="text-xs font-medium uppercase tracking-wide text-ink-muted">
+              BUTTON_HEIGHT · escala unica de alturas
+            </span>
+            {(['sm', 'md', 'lg'] as const).map((size) => (
+              <AppButton key={size} size={size} variant="outline">
+                {size} · {BUTTON_HEIGHT[size]} px
+              </AppButton>
+            ))}
+          </div>
         </ComponentDoc>
 
         <ComponentDoc docId="iconbutton">
@@ -360,67 +386,103 @@ const ButtonsSection: FC = () => {
 /* ==========================================================================
  * FORMULARIOS
  * ========================================================================== */
-const FormsSection: FC = () => (
-  <div>
-    <SectionHeader title="Formularios" description="Campos de Material con etiqueta flotante y estados." />
-    <div className="space-y-8">
-      <ComponentDoc
-        docId="textfield"
-        canvasClassName="items-stretch"
-        code={`<TextField label="Email" />\n<TextField label="Clave" error helperText="Invalido" />`}
-      >
-        <div className="grid w-full gap-4 sm:grid-cols-2">
-          <TextField label="Nombre" placeholder="Escribe aqui" />
-          <TextField label="Email" error defaultValue="valor" helperText="Ingresa un email valido" />
-          <TextField label="Clave" type="password" helperText="Minimo 8 caracteres" />
-          <TextField label="Deshabilitado" value="No editable" disabled />
-        </div>
-      </ComponentDoc>
+const FormsSection: FC = () => {
+  const [delivery, setDelivery] = useState('delivery');
+  const [notifications, setNotifications] = useState(true);
 
-      <ComponentDoc docId="textarea" canvasClassName="items-stretch">
-        <TextField label="Notas" multiline minRows={3} fullWidth placeholder="Referencias del pedido..." />
-      </ComponentDoc>
+  return (
+    <div>
+      <SectionHeader
+        title="Formularios"
+        description="Componentes de producto sobre MUI, con una escala de espacio consistente y estados accesibles."
+      />
+      <AppAlert variant="info" title="Ritmo de formulario" className="mb-8">
+        Usa <strong>FormStack</strong> para separar filas, <strong>FormGrid</strong> para campos relacionados
+        y <strong>FormSection</strong> cuando el formulario tenga varios bloques.
+      </AppAlert>
+      <div className="grid gap-8">
+        <ComponentDoc
+          docId="textfield"
+          name="Input"
+          tag="@components/ui"
+          description="Campo personalizado de Verde Bowl construido sobre TextField de MUI."
+          canvasClassName="items-stretch"
+          code={`import { FormGrid, Input } from '@components/ui';\n\n<FormGrid>\n  <Input label="Nombre" hint="Como aparecerá en el sistema" />\n  <Input label="Correo" error="Ingresa un correo válido" />\n</FormGrid>`}
+        >
+          <FormGrid className="w-full">
+            <AppInput label="Nombre" placeholder="Escribe aqui" hint="Como aparecera en el sistema" />
+            <AppInput label="Email" error="Ingresa un email valido" defaultValue="valor" />
+            <AppInput label="Clave" type="password" hint="Minimo 8 caracteres" />
+            <AppInput label="Deshabilitado" value="No editable" disabled readOnly />
+          </FormGrid>
+        </ComponentDoc>
 
-      <ComponentDoc docId="select" canvasClassName="items-stretch">
-        <TextField select label="Sucursal" defaultValue="" sx={{ width: { xs: '100%', sm: 280 } }}>
-          <MenuItem value="" disabled>
-            Selecciona...
-          </MenuItem>
-          <MenuItem value="mira">Verde Bowl Miraflores</MenuItem>
-          <MenuItem value="isi">Verde Bowl San Isidro</MenuItem>
-        </TextField>
-      </ComponentDoc>
+        <ComponentDoc
+          docId="textarea"
+          name="Textarea"
+          tag="@components/ui"
+          description="Area multilinea personalizada, ahora sobre TextField de MUI."
+          canvasClassName="items-stretch"
+        >
+          <AppTextarea
+            label="Notas"
+            rows={4}
+            hint="Incluye referencias que ayuden a completar la operacion."
+            placeholder="Referencias del pedido..."
+          />
+        </ComponentDoc>
 
-      <ComponentDoc docId="checkbox">
-        <FormGroup>
-          <FormControlLabel control={<Checkbox defaultChecked />} label="Acepto los terminos" />
-          <FormControlLabel control={<Checkbox />} label="Recibir novedades" />
-          <FormControlLabel control={<Checkbox color="tertiary" defaultChecked />} label="Con color tertiary" />
-        </FormGroup>
-      </ComponentDoc>
+        <ComponentDoc
+          docId="select"
+          name="Select"
+          tag="@components/ui"
+          description="Selector compartido con altura, etiqueta, menu y errores consistentes."
+          canvasClassName="items-stretch"
+        >
+          <AppSelect label="Sucursal" defaultValue="" sx={{ width: { xs: '100%', sm: 320 } }}>
+            <SelectOption value="" disabled>Selecciona...</SelectOption>
+            <SelectOption value="mira">Verde Bowl Miraflores</SelectOption>
+            <SelectOption value="isi">Verde Bowl San Isidro</SelectOption>
+          </AppSelect>
+        </ComponentDoc>
 
-      <ComponentDoc docId="radio">
-        <FormControl>
-          <FormLabel>Entrega</FormLabel>
-          <RadioGroup defaultValue="delivery">
-            <FormControlLabel value="delivery" control={<Radio />} label="Delivery" />
-            <FormControlLabel value="pickup" control={<Radio />} label="Recojo" />
-          </RadioGroup>
-        </FormControl>
-      </ComponentDoc>
+        <ComponentDoc docId="checkbox" name="Checkbox" tag="@components/ui">
+          <FormGroup sx={{ gap: 1 }}>
+            <AppCheckbox defaultChecked label="Acepto los terminos" />
+            <AppCheckbox label="Recibir novedades" />
+          </FormGroup>
+        </ComponentDoc>
 
-      <ComponentDoc docId="switch">
-        <FormControlLabel control={<Switch defaultChecked />} label="Notificaciones" />
-        <FormControlLabel control={<Switch color="secondary" />} label="Modo oscuro" />
-      </ComponentDoc>
+        <ComponentDoc docId="radio" name="RadioGroup" tag="@components/ui" canvasClassName="items-stretch">
+          <AppRadioGroup
+            name="delivery-demo"
+            label="Como deseas recibirlo?"
+            value={delivery}
+            onChange={setDelivery}
+            options={[
+              { value: 'delivery', label: 'Delivery', description: 'Lo llevamos a tu direccion.' },
+              { value: 'pickup', label: 'Recojo', description: 'Recogelo en la cocina elegida.' },
+            ]}
+            row
+          />
+        </ComponentDoc>
+
+        <ComponentDoc docId="switch" name="Switch" tag="@components/ui" canvasClassName="items-stretch">
+          <AppSwitch
+            checked={notifications}
+            onChange={setNotifications}
+            label="Notificaciones de pedidos"
+            description="Recibe cambios de estado y avisos importantes."
+          />
+        </ComponentDoc>
 
       <ComponentDoc docId="formcontrol" description="Envoltura que agrupa etiqueta, control y texto de ayuda de un campo.">
         <FormControl>
           <FormLabel>Preferencia de contacto</FormLabel>
-          <RadioGroup row defaultValue="email">
+          <MuiRadioGroup row defaultValue="email">
             <FormControlLabel value="email" control={<Radio />} label="Email" />
             <FormControlLabel value="sms" control={<Radio />} label="SMS" />
-          </RadioGroup>
+          </MuiRadioGroup>
         </FormControl>
       </ComponentDoc>
 
@@ -434,16 +496,43 @@ const FormsSection: FC = () => (
         <Rating defaultValue={4} />
       </ComponentDoc>
 
-      <ComponentDoc docId="autocomplete" canvasClassName="items-stretch">
-        <Autocomplete
-          options={['Miraflores', 'San Isidro', 'Barranco', 'Surco']}
-          sx={{ width: { xs: '100%', sm: 280 } }}
-          renderInput={(params) => <TextField {...params} label="Distrito" />}
-        />
-      </ComponentDoc>
+        <ComponentDoc docId="autocomplete" canvasClassName="items-stretch">
+          <Autocomplete
+            options={['Miraflores', 'San Isidro', 'Barranco', 'Surco']}
+            sx={{ width: { xs: '100%', sm: 320 } }}
+            renderInput={(params) => <TextField {...params} label="Distrito" />}
+          />
+        </ComponentDoc>
+
+        <ComponentDoc
+          name="Patron de formulario"
+          tag="@components/ui"
+          description="Ejemplo completo con jerarquia, espacio entre campos y acciones claramente separadas."
+          canvasClassName="items-stretch"
+          code={`<FormSection title="Datos de contacto">\n  <FormStack>\n    <FormGrid>...</FormGrid>\n    <Textarea ... />\n  </FormStack>\n  <FormActions>...</FormActions>\n</FormSection>`}
+        >
+          <FormSection
+            title="Datos de contacto"
+            description="Todos los campos relacionados viven dentro del mismo bloque."
+            className="w-full"
+          >
+            <FormStack>
+              <FormGrid>
+                <AppInput label="Nombre completo" placeholder="Andrea Torres" />
+                <AppInput label="Telefono" type="tel" placeholder="+51 999 999 999" />
+              </FormGrid>
+              <AppTextarea label="Indicaciones" rows={3} placeholder="Piso, referencia o persona de contacto" />
+            </FormStack>
+            <FormActions>
+              <AppButton variant="ghost">Cancelar</AppButton>
+              <AppButton>Guardar cambios</AppButton>
+            </FormActions>
+          </FormSection>
+        </ComponentDoc>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 /* ==========================================================================
  * DATOS
@@ -451,48 +540,43 @@ const FormsSection: FC = () => (
 const DataSection: FC = () => (
   <div>
     <SectionHeader title="Datos" description="Tablas, etiquetas, avatares e indicadores." />
-    <div className="space-y-8">
+    <div className="grid gap-8">
       <ComponentDoc
         docId="table"
         canvasClassName="items-stretch bg-surface"
-        code={`<Table>\n  <TableHead>...<TableCell>Usuario</TableCell></TableHead>\n  <TableBody>...</TableBody>\n</Table>`}
+        code={`import { Table, Tbody, Td, Th, Thead, Tr } from '@components/ui';\n\n<Table caption="Personal del turno">\n  <Thead><Tr><Th>Usuario</Th><Th>Rol</Th></Tr></Thead>\n  <Tbody><Tr><Td>Ana Torres</Td><Td>Cocina</Td></Tr></Tbody>\n</Table>`}
       >
-        <TableContainer component={Paper} variant="outlined">
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Usuario</TableCell>
-                <TableCell>Rol</TableCell>
-                <TableCell>Estado</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              <TableRow>
-                <TableCell>Ana Torres</TableCell>
-                <TableCell>Cocina</TableCell>
-                <TableCell>
-                  <Chip label="Activo" color="success" size="small" />
-                </TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell>Bruno Diaz</TableCell>
-                <TableCell>Repartidor</TableCell>
-                <TableCell>
-                  <Chip label="Bloqueado" color="error" size="small" variant="outlined" />
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        </TableContainer>
+        <AppTable caption="Personal del turno">
+          <Thead>
+            <Tr>
+              <Th>Usuario</Th>
+              <Th>Rol</Th>
+              <Th>Estado</Th>
+            </Tr>
+          </Thead>
+          <Tbody>
+            <Tr>
+              <Td>Ana Torres</Td>
+              <Td>Cocina</Td>
+              <Td><AppBadge variant="success">Activo</AppBadge></Td>
+            </Tr>
+            <Tr>
+              <Td>Bruno Diaz</Td>
+              <Td>Repartidor</Td>
+              <Td><AppBadge variant="danger">Bloqueado</AppBadge></Td>
+            </Tr>
+          </Tbody>
+        </AppTable>
       </ComponentDoc>
 
-      <ComponentDoc docId="chip">
-        <Chip label="Marca" color="primary" />
-        <Chip label="Acento" color="secondary" />
-        <Chip label="Terciario" color="tertiary" />
-        <Chip label="Activo" color="success" />
-        <Chip label="Bloqueado" color="error" variant="outlined" />
-        <Chip label="Removible" onDelete={() => toast('Quitado')} />
+      <ComponentDoc
+        docId="chip"
+        code={`import { Chip } from '@components/ui';\n\n<Chip active onClick={() => setFilter('hoy')}>Hoy</Chip>\n<Chip onRemove={() => quitar('sin gluten')}>Sin gluten</Chip>`}
+      >
+        <AppChip>Neutro</AppChip>
+        <AppChip active>Seleccionado</AppChip>
+        <AppChip onClick={() => toast('Filtro aplicado')}>Pulsable</AppChip>
+        <AppChip onRemove={() => toast('Quitado')}>Removible</AppChip>
       </ComponentDoc>
 
       <ComponentDoc docId="avatar">
@@ -510,16 +594,20 @@ const DataSection: FC = () => (
         </AvatarGroup>
       </ComponentDoc>
 
-      <ComponentDoc docId="badge">
-        <Badge color="secondary" badgeContent={4}>
-          <ShoppingBag className="size-6 text-ink-muted" />
-        </Badge>
-        <Badge color="tertiary" badgeContent={12} sx={{ ml: 3 }}>
-          <ShoppingBag className="size-6 text-ink-muted" />
-        </Badge>
-        <Badge color="error" variant="dot" sx={{ ml: 3 }}>
-          <ShoppingBag className="size-6 text-ink-muted" />
-        </Badge>
+      <ComponentDoc
+        docId="badge"
+        code={`import { Badge } from '@components/ui';\n\n<Badge variant="success">Entregado</Badge>\n<Badge variant="danger">Cancelado</Badge>\n<Badge variant="accent">Con retraso</Badge>`}
+      >
+        <AppBadge>Marca</AppBadge>
+        <AppBadge variant="accent">Acento</AppBadge>
+        <AppBadge variant="neutral">Neutro</AppBadge>
+        <AppBadge variant="success">Exito</AppBadge>
+        <AppBadge variant="strong">Enfasis</AppBadge>
+        <AppBadge variant="solid">Solido</AppBadge>
+        <AppBadge variant="warning">Aviso</AppBadge>
+        <AppBadge variant="danger">Peligro</AppBadge>
+        <AppBadge variant="outline">Contorno</AppBadge>
+        <AppBadge variant="solid"><ShoppingBag className="size-3" /> 4 pedidos</AppBadge>
       </ComponentDoc>
     </div>
   </div>
@@ -528,32 +616,52 @@ const DataSection: FC = () => (
 /* ==========================================================================
  * RETROALIMENTACION
  * ========================================================================== */
-const FeedbackSection: FC = () => {
-  const [snack, setSnack] = useState(false);
-  return (
-    <div>
-      <SectionHeader title="Retroalimentacion" description="Alertas, avisos, progreso y carga." />
-      <div className="space-y-8">
-        <ComponentDoc docId="alert" canvasClassName="flex-col items-stretch">
-          <Alert severity="info">Un dato util para el usuario.</Alert>
-          <Alert severity="success">
-            <AlertTitle>Todo salio bien</AlertTitle>La accion se completo.
-          </Alert>
-          <Alert severity="warning">Revisa esto antes de continuar.</Alert>
-          <Alert severity="error">No se pudo completar la operacion.</Alert>
-        </ComponentDoc>
+const FeedbackSection: FC = () => (
+  <div>
+    <SectionHeader
+      title="Retroalimentacion"
+      description="Alertas contextuales y notificaciones construidas sobre Alert + Snackbar de MUI."
+    />
+    <div className="grid gap-8">
+      <ComponentDoc
+        docId="alert"
+        name="Alert"
+        tag="@components/ui"
+        canvasClassName="flex-col items-stretch gap-4"
+        code={`<Alert variant="success" title="Cambios guardados">\n  La configuracion ya esta activa.\n</Alert>`}
+      >
+        <AppAlert variant="info" title="Informacion util">Un dato que ayuda a completar la tarea.</AppAlert>
+        <AppAlert variant="success" title="Todo salio bien">La accion se completo correctamente.</AppAlert>
+        <AppAlert variant="warning" title="Revisa antes de continuar">Hay valores que necesitan tu atencion.</AppAlert>
+        <AppAlert variant="danger" title="No se pudo completar">Corrige los datos marcados e intenta nuevamente.</AppAlert>
+      </ComponentDoc>
 
-        <ComponentDoc docId="snackbar">
-          <Button variant="outlined" onClick={() => setSnack(true)}>
-            Mostrar snackbar
-          </Button>
-          <Snackbar
-            open={snack}
-            autoHideDuration={3000}
-            onClose={() => setSnack(false)}
-            message="Guardado con exito"
-          />
-        </ComponentDoc>
+      <ComponentDoc
+        name="Callout"
+        tag="@components/ui"
+        description="Aviso compacto para contexto dentro de tarjetas, formularios y pasos."
+        canvasClassName="flex-col items-stretch gap-3"
+      >
+        <Callout tone="info">Tu direccion se validara antes de confirmar el pedido.</Callout>
+        <Callout tone="warning" size="sm">Quedan pocas unidades disponibles.</Callout>
+      </ComponentDoc>
+
+      <ComponentDoc
+        docId="snackbar"
+        name="Toast"
+        tag="@components/mui/MuiToast"
+        description="La notificacion global real de la aplicacion. Es la misma que aparece al iniciar sesion."
+      >
+        <AppButton variant="outline" onClick={() => toast.success('Cambios guardados correctamente')}>
+          Probar exito
+        </AppButton>
+        <AppButton variant="outline" onClick={() => toast.warning('Revisa los campos pendientes')}>
+          Probar advertencia
+        </AppButton>
+        <AppButton variant="outline" onClick={() => toast.error('No se pudo completar la accion')}>
+          Probar error
+        </AppButton>
+      </ComponentDoc>
 
         <ComponentDoc docId="linearprogress" canvasClassName="flex-col items-stretch gap-4">
           <LinearProgress />
@@ -572,10 +680,9 @@ const FeedbackSection: FC = () => {
           <Skeleton variant="text" width="65%" />
           <Skeleton variant="rectangular" height={80} />
         </ComponentDoc>
-      </div>
     </div>
-  );
-};
+  </div>
+);
 
 /* ==========================================================================
  * NAVEGACION
@@ -586,7 +693,7 @@ const NavigationSection: FC = () => {
   return (
     <div>
       <SectionHeader title="Navegacion" description="Moverse dentro de una pantalla y entre paginas." />
-      <div className="space-y-8">
+      <div className="grid gap-8">
         <ComponentDoc docId="breadcrumbs">
           <Breadcrumbs>
             <MuiLink underline="hover" color="inherit" href="#">
@@ -619,8 +726,11 @@ const NavigationSection: FC = () => {
           </Tabs>
         </ComponentDoc>
 
-        <ComponentDoc docId="pagination">
-          <Pagination count={8} color="primary" page={page} onChange={(_, value) => setPage(value)} />
+        <ComponentDoc
+          docId="pagination"
+          code={`import { Pagination } from '@components/ui';\n\n<Pagination page={page} totalPages={meta.totalPages} onChange={setPage} />`}
+        >
+          <AppPagination page={page} totalPages={8} onChange={setPage} />
         </ComponentDoc>
 
         <ComponentDoc docId="stepper" canvasClassName="items-stretch">
@@ -646,49 +756,74 @@ const OverlaysSection: FC = () => {
   return (
     <div>
       <SectionHeader title="Sobrecapas" description="Contenido sobre la pantalla: dialogo, panel lateral y tooltip." />
-      <div className="space-y-8">
-        <ComponentDoc docId="dialog">
-          <Button variant="outlined" onClick={() => setDialog(true)}>
-            Abrir dialog
-          </Button>
-          <Dialog open={dialog} onClose={() => setDialog(false)}>
-            <DialogTitle>Confirmar accion</DialogTitle>
-            <DialogContent>
-              <DialogContentText>Seguro que deseas continuar?</DialogContentText>
-            </DialogContent>
-            <DialogActions>
-              <Button onClick={() => setDialog(false)}>Cancelar</Button>
-              <Button variant="contained" onClick={() => setDialog(false)}>
-                Confirmar
-              </Button>
-            </DialogActions>
-          </Dialog>
+      <div className="grid gap-8">
+        <ComponentDoc
+          docId="dialog"
+          name="Modal"
+          tag="@components/ui"
+          description="Dialogo de producto con encabezado, cuerpo espaciado, foco y comportamiento movil."
+        >
+          <AppButton variant="outline" onClick={() => setDialog(true)}>
+            Abrir modal
+          </AppButton>
+          <AppModal
+            isOpen={dialog}
+            onClose={() => setDialog(false)}
+            eyebrow="Nuevo registro"
+            title="Crear contacto"
+            description="Los campos mantienen el mismo ritmo visual que el resto de la aplicacion."
+            actions={
+              <>
+                <AppButton variant="ghost" onClick={() => setDialog(false)}>Cancelar</AppButton>
+                <AppButton onClick={() => { setDialog(false); toast.success('Contacto guardado'); }}>
+                  Guardar contacto
+                </AppButton>
+              </>
+            }
+          >
+            <FormStack>
+              <FormGrid>
+                <AppInput label="Nombre" placeholder="Andrea" />
+                <AppInput label="Apellido" placeholder="Torres" />
+              </FormGrid>
+              <AppInput label="Correo electronico" type="email" placeholder="andrea@correo.com" />
+              <AppTextarea label="Notas" rows={3} hint="Este campo es opcional." />
+            </FormStack>
+          </AppModal>
         </ComponentDoc>
 
-        <ComponentDoc docId="drawer">
-          <Button variant="outlined" onClick={() => setDrawer(true)}>
+        <ComponentDoc docId="drawer" name="Drawer" tag="@components/ui">
+          <AppButton variant="outline" onClick={() => setDrawer(true)}>
             Abrir panel lateral
-          </Button>
-          <Drawer anchor="right" open={drawer} onClose={() => setDrawer(false)}>
-            <div className="w-80 space-y-4 p-6">
-              <Typography variant="h6">Filtros</Typography>
-              <TextField label="Buscar" fullWidth />
-              <TextField select label="Estado" defaultValue="" fullWidth>
-                <MenuItem value="">Todos</MenuItem>
-                <MenuItem value="conf">Confirmado</MenuItem>
-                <MenuItem value="prep">En preparacion</MenuItem>
-              </TextField>
-              <Button variant="contained" fullWidth onClick={() => setDrawer(false)}>
-                Aplicar
-              </Button>
-            </div>
-          </Drawer>
+          </AppButton>
+          <AppDrawer
+            isOpen={drawer}
+            onClose={() => setDrawer(false)}
+            title="Filtros"
+            description="Acota los resultados sin perder el contexto de la pantalla."
+          >
+            <FormStack>
+              <AppInput label="Buscar" placeholder="Nombre o codigo" />
+              <AppSelect label="Estado" defaultValue="">
+                <SelectOption value="">Todos</SelectOption>
+                <SelectOption value="conf">Confirmado</SelectOption>
+                <SelectOption value="prep">En preparacion</SelectOption>
+              </AppSelect>
+              <AppButton onClick={() => setDrawer(false)}>Aplicar filtros</AppButton>
+            </FormStack>
+          </AppDrawer>
         </ComponentDoc>
 
-        <ComponentDoc docId="tooltip">
-          <Tooltip title="Soy un tooltip">
-            <Button variant="text">Pasa el cursor</Button>
-          </Tooltip>
+        <ComponentDoc
+          docId="tooltip"
+          code={`import { Tooltip } from '@components/ui';\n\n<Tooltip content="Enviar a la papelera" side="top">\n  <Button variant="ghost" aria-label="Enviar a la papelera"><Trash2 className="size-4" /></Button>\n</Tooltip>`}
+        >
+          <AppTooltip content="Aparece arriba">
+            <AppButton variant="ghost">Pasa el cursor</AppButton>
+          </AppTooltip>
+          <AppTooltip content="Aparece a la derecha" side="right">
+            <AppButton variant="outline">Enfocalo con el teclado</AppButton>
+          </AppTooltip>
         </ComponentDoc>
       </div>
     </div>
@@ -701,22 +836,22 @@ const OverlaysSection: FC = () => {
 const ContentSection: FC = () => (
   <div>
     <SectionHeader title="Contenido" description="Agrupar y ordenar informacion: tarjetas, plegables y separadores." />
-    <div className="space-y-8">
-      <ComponentDoc docId="card" canvasClassName="items-stretch">
-        <Card variant="outlined" className="w-full">
-          <CardContent>
-            <Typography variant="h6">Tarjeta</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Agrupa contenido relacionado con acciones al pie.
-            </Typography>
-          </CardContent>
-          <CardActions>
-            <Button size="small">Accion</Button>
-            <Button size="small" color="secondary">
-              Otra
-            </Button>
-          </CardActions>
-        </Card>
+    <div className="grid gap-8">
+      <ComponentDoc
+        docId="card"
+        canvasClassName="items-stretch"
+        code={`import { Card, CardDescription, CardHeader, CardTitle } from '@components/ui';\n\n<Card shadow="e2">\n  <CardHeader>\n    <CardTitle>Pedidos del turno</CardTitle>\n    <CardDescription>Resumen de la cocina seleccionada.</CardDescription>\n  </CardHeader>\n  ...\n</Card>`}
+      >
+        <AppCard className="w-full">
+          <CardHeader>
+            <CardTitle>Tarjeta</CardTitle>
+            <CardDescription>Agrupa contenido relacionado con sus acciones al pie.</CardDescription>
+          </CardHeader>
+          <div className="flex flex-wrap gap-2">
+            <AppButton size="sm">Accion</AppButton>
+            <AppButton size="sm" variant="ghost">Otra</AppButton>
+          </div>
+        </AppCard>
       </ComponentDoc>
 
       <ComponentDoc docId="paper" canvasClassName="items-stretch gap-4">
@@ -838,27 +973,22 @@ const DesignSystemPage = () => {
 
   return (
     <div className="mx-auto max-w-6xl pb-16">
-      {/* Encabezado */}
-      <div className="relative overflow-hidden rounded-card bg-gradient-to-br from-brand-600 to-brand-800 p-6 text-white sm:p-8">
-        <div className="pointer-events-none absolute -right-16 -top-20 size-56 rounded-full bg-white/10 blur-2xl" />
-        <div className="pointer-events-none absolute -bottom-24 right-20 size-52 rounded-full bg-accent-400/20 blur-3xl" />
-
-        <div className="relative">
-          <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-brand-100">
-            <Palette className="size-4" /> Sistema de diseno
-          </p>
-          <h1 className="mt-3 text-2xl font-bold sm:text-3xl">Componentes de Verde Bowl</h1>
-          <p className="mt-2 max-w-2xl text-sm text-brand-50">
-            Catálogo profesional de Material UI: cada componente tiene una entrada individual, demo en vivo,
-            documentación de props y código de referencia. El tema se gestiona desde un solo lugar.
-          </p>
-          <div className="mt-5 flex flex-wrap gap-2 text-xs">
-            <span className="rounded-full bg-white/15 px-3 py-1 font-medium">Material UI</span>
-            <span className="rounded-full bg-white/15 px-3 py-1 font-medium">Tema gestionable</span>
-            <span className="rounded-full bg-white/15 px-3 py-1 font-medium">{COMPONENT_ITEMS.length} componentes individuales</span>
-          </div>
-        </div>
-      </div>
+      {/* Encabezado: el mismo `PageHeader` que las otras dieciseis pantallas. El
+          hero artesanal que habia aqui era, junto al del Resumen, lo primero que
+          ve un administrador general, y no compartia ni tipografia ni ritmo. */}
+      <PageHeader
+        eyebrow="Sistema de diseño"
+        title="Componentes de Verde Bowl"
+        description="Cada componente tiene su entrada individual, demo en vivo, documentación de props y código de referencia. El tema se gestiona desde un solo lugar."
+        icon={Palette}
+        action={
+          <>
+            <AppBadge variant="neutral">Material UI</AppBadge>
+            <AppBadge variant="neutral">Tema gestionable</AppBadge>
+            <AppBadge variant="brand">{COMPONENT_ITEMS.length} componentes</AppBadge>
+          </>
+        }
+      />
 
       {/* Selector individual de componente (móviles) */}
       <div className="mt-6 md:hidden">
@@ -919,7 +1049,7 @@ const DesignSystemPage = () => {
               </div>
             )}
 
-            <div className="space-y-5">
+            <div className="grid gap-5">
               {filteredGroups.map((group) => (
                 <div key={group.label}>
                   <div className="mb-1 flex items-center justify-between px-3">
@@ -966,7 +1096,7 @@ const DesignSystemPage = () => {
                 flexDirection: { xs: 'column', sm: 'row' },
                 gap: 2,
                 p: 2,
-                borderRadius: 3,
+                borderRadius: 'var(--radius-card)',
                 bgcolor: 'action.hover',
               }}
             >
@@ -999,7 +1129,7 @@ const DesignSystemPage = () => {
               <button
                 type="button"
                 onClick={() => goTo(prevItem)}
-                className="flex items-center gap-3 rounded-xl border border-line px-4 py-3 text-left transition-colors hover:border-brand-300 hover:bg-surface-muted"
+                className="flex items-center gap-3 rounded-card border border-line px-4 py-3 text-left transition-colors hover:border-brand-300 hover:bg-surface-muted"
               >
                 <ArrowLeft className="size-4 shrink-0 text-ink-muted" />
                 <span className="min-w-0">
@@ -1015,7 +1145,7 @@ const DesignSystemPage = () => {
               <button
                 type="button"
                 onClick={() => goTo(nextItem)}
-                className="flex items-center justify-end gap-3 rounded-xl border border-line px-4 py-3 text-right transition-colors hover:border-brand-300 hover:bg-surface-muted"
+                className="flex items-center justify-end gap-3 rounded-card border border-line px-4 py-3 text-right transition-colors hover:border-brand-300 hover:bg-surface-muted"
               >
                 <span className="min-w-0">
                   <span className="block text-[11px] uppercase tracking-wide text-ink-muted">Siguiente</span>

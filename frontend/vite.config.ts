@@ -24,6 +24,9 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
+      // La app móvil abre imágenes y el puente de retorno de pago desde el teléfono.
+      // Escuchar solo en localhost haría que 192.168.x.x:5173 no respondiera.
+      host: '0.0.0.0',
       port: 5173,
       // No abrir el navegador solo: evita golpear el backend antes de que arranque.
       open: false,

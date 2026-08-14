@@ -7,15 +7,23 @@ export const ROUTES = {
   plans: '/planes',
   coverage: '/cobertura',
   branches: '/locales',
+  diningTable: (token = ':token') => `/mesa/${token}`,
   faq: '/preguntas-frecuentes',
   complaints: '/libro-de-reclamaciones',
   privacy: '/privacidad',
   terms: '/terminos',
+  cookies: '/cookies',
+  /**
+   * Publica a proposito: Google Play y App Store exigen una URL donde se pueda
+   * pedir la baja de la cuenta sin instalar la aplicacion.
+   */
+  deleteAccount: '/eliminar-cuenta',
 
   login: '/ingresar',
   register: '/crear-cuenta',
   forgotPassword: '/recuperar-clave',
   resetPassword: '/restablecer-clave',
+  mobileResetPassword: '/restablecer-clave/movil',
 
   cart: '/carrito',
   checkout: '/checkout',
@@ -30,11 +38,14 @@ export const ROUTES = {
   accountWallet: '/cuenta/saldo',
   accountFavorites: '/cuenta/favoritos',
   accountSavedBowls: '/cuenta/bowls-guardados',
+  accountReviews: '/cuenta/opiniones',
   accountProfile: '/cuenta/perfil',
 
   admin: '/admin',
   adminDashboard: '/admin/resumen',
   adminOrders: '/admin/pedidos',
+  adminCash: '/admin/caja',
+  adminDining: '/admin/salon',
   adminKitchen: '/admin/cocina',
   adminDelivery: '/admin/reparto',
   adminInventory: '/admin/inventario',
@@ -47,5 +58,8 @@ export const ROUTES = {
   adminUsers: '/admin/usuarios',
   adminRoles: '/admin/roles',
   adminComplaints: '/admin/reclamaciones',
+  /** Bitacora de cambios sensibles. Es la pantalla que da destino a `audit.read`. */
+  adminAudit: '/admin/bitacora',
+  adminBusiness: '/admin/configuracion-negocio',
   adminDesign: '/admin/sistema-diseno',
 } as const;

@@ -3,148 +3,156 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import {
-  Box,
-  Button,
-  CircularProgress,
-  Divider,
-  IconButton,
-  InputAdornment,
-  Link as MuiLink,
-  Stack,
-  TextField,
-  Typography,
-} from '@mui/material';
-import { Eye, EyeOff, LockKeyhole, Mail } from 'lucide-react';
+import IconButton from '@mui/material/IconButton';
+import { ArrowRight, Eye, EyeOff, LockKeyhole, Mail, Route } from 'lucide-react';
 import toast from '@components/mui/MuiToast';
+import { Alert, Button, Input } from '@components/ui';
 import { useAppDispatch, useAppSelector } from '@app/hooks';
-import { login } from '../authSlice';
 import { ROUTES } from '@constants/routes';
+import { login } from '../authSlice';
+import { readReturnTo, resolveAfterAuthPath } from '../authRedirect';
+import { AuthFormFooter } from '../components/AuthFormFooter';
 import { AuthShell } from '../components/AuthShell';
+import { resolveStaffAccess } from '../staffAccess';
 
 const loginSchema = z.object({
-  email: z.string().email('Ingresa un email valido'),
-  password: z.string().min(1, 'Ingresa tu contrasena'),
+  email: z
+    .string()
+    .trim()
+    .min(1, 'Ingresa tu correo electrónico')
+    .email('Ingresa un correo electrónico válido'),
+  password: z.string().min(1, 'Ingresa tu contraseña'),
 });
 
 type LoginForm = z.infer<typeof loginSchema>;
 
-/** Pagina de ejemplo completa: react-hook-form + zod + thunk de Redux. */
+/** Acceso único para clientes y equipo, con retorno al flujo que lo solicitó. */
 const LoginPage = () => {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const location = useLocation();
   const status = useAppSelector((state) => state.auth.status);
   const [showPassword, setShowPassword] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+
+  const from = readReturnTo(location);
 
   const {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<LoginForm>({ resolver: zodResolver(loginSchema) });
+  } = useForm<LoginForm>({
+    resolver: zodResolver(loginSchema),
+    mode: 'onSubmit',
+    reValidateMode: 'onChange',
+    defaultValues: { email: '', password: '' },
+  });
 
   const onSubmit = async (values: LoginForm) => {
+    setSubmitError('');
     const result = await dispatch(login(values));
 
     if (login.fulfilled.match(result)) {
       toast.success('Bienvenido de vuelta');
 
-      const from = (location.state as { from?: string } | null)?.from;
-      if (from) {
-        navigate(from, { replace: true });
-        return;
-      }
-
-      // Al personal lo llevamos directo al panel: no viene a comprar, viene a trabajar.
-      // (Un superadmin o un admin que ademas es cliente puede volver a la tienda cuando quiera.)
       const user = result.payload.user;
       const isStaff = user.isSuperAdmin || user.permissions.length > 0;
-
-      navigate(isStaff ? ROUTES.admin : ROUTES.home, { replace: true });
+      navigate(resolveAfterAuthPath(from, isStaff, resolveStaffAccess(user).to), { replace: true });
       return;
     }
 
-    toast.error(result.payload ?? 'No se pudo iniciar sesion');
+    setSubmitError(result.payload ?? 'No se pudo iniciar sesión');
   };
 
   return (
     <AuthShell
       eyebrow="Bienvenido de vuelta"
-      title="Inicia sesión"
-      description="Ingresa con tus datos para continuar a tu cuenta o al panel de administración."
+      title="Ingresa a tu cuenta"
+      description="Continúa con tus pedidos, direcciones, beneficios y preferencias guardadas."
     >
-      <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
-        <Stack spacing={2.5}>
-          <TextField
+      {from && (
+        <Alert variant="info">
+          <span className="flex items-start gap-2">
+            <Route className="mt-0.5 size-4 shrink-0" />
+            Después de ingresar volverás automáticamente al paso en el que estabas.
+          </span>
+        </Alert>
+      )}
+
+      {submitError && (
+        <Alert
+          variant="danger"
+          title="No pudimos iniciar sesión"
+          onClose={() => setSubmitError('')}
+        >
+          {submitError}
+        </Alert>
+      )}
+
+      <form onSubmit={handleSubmit(onSubmit)} noValidate>
+        <div className="grid gap-6">
+          <Input
             label="Correo electrónico"
             type="email"
             autoComplete="email"
             placeholder="tu@email.com"
-            fullWidth
             autoFocus
-            error={Boolean(errors.email)}
-            helperText={errors.email?.message ?? 'Usa el correo con el que creaste tu cuenta'}
-            slotProps={{
-              input: {
-                startAdornment: <InputAdornment position="start"><Mail size={19} /></InputAdornment>,
-              },
-            }}
+            error={errors.email?.message}
+            hint="Usa el correo con el que creaste tu cuenta"
+            reserveHelperSpace
+            startAdornment={<Mail className="size-[18px]" />}
             {...register('email')}
           />
 
-          <TextField
-            label="Contraseña"
-            type={showPassword ? 'text' : 'password'}
-            autoComplete="current-password"
-            fullWidth
-            error={Boolean(errors.password)}
-            helperText={errors.password?.message ?? 'Ingresa tu contraseña de acceso'}
-            slotProps={{
-              input: {
-                startAdornment: <InputAdornment position="start"><LockKeyhole size={19} /></InputAdornment>,
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                      edge="end"
-                      onClick={() => setShowPassword((visible) => !visible)}
-                    >
-                      {showPassword ? <EyeOff size={19} /> : <Eye size={19} />}
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              },
-            }}
-            {...register('password')}
-          />
-
-          <Box sx={{ textAlign: 'right', mt: -1 }}>
-            <MuiLink component={Link} to={ROUTES.forgotPassword} underline="hover" variant="body2">
-              ¿Olvidaste tu contraseña?
-            </MuiLink>
-          </Box>
+          <div>
+            <Input
+              label="Contraseña"
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="current-password"
+              error={errors.password?.message}
+              hint="La contraseña distingue mayúsculas y minúsculas"
+              reserveHelperSpace
+              startAdornment={<LockKeyhole className="size-[18px]" />}
+              endAdornment={
+                <IconButton
+                  aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                  edge="end"
+                  onClick={() => setShowPassword((visible) => !visible)}
+                >
+                  {showPassword ? <EyeOff size={19} /> : <Eye size={19} />}
+                </IconButton>
+              }
+              {...register('password')}
+            />
+            <div className="mt-2 text-right">
+              <Link
+                to={ROUTES.forgotPassword}
+                className="text-xs font-extrabold text-brand-700 underline-offset-4 hover:underline"
+              >
+                ¿Olvidaste tu contraseña?
+              </Link>
+            </div>
+          </div>
 
           <Button
             type="submit"
-            variant="contained"
-            size="large"
-            fullWidth
+            size="lg"
+            className="w-full"
             disabled={status === 'loading'}
-            startIcon={status === 'loading' ? <CircularProgress size={18} color="inherit" /> : undefined}
-            sx={{ minHeight: 48 }}
+            isLoading={status === 'loading'}
+            leftIcon={<ArrowRight className="size-4" />}
           >
             {status === 'loading' ? 'Ingresando…' : 'Ingresar a mi cuenta'}
           </Button>
-        </Stack>
-      </Box>
+        </div>
+      </form>
 
-      <Divider sx={{ my: 3 }}><Typography variant="caption" color="text.secondary">¿Primera vez aquí?</Typography></Divider>
-      <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
-        ¿Aún no tienes una cuenta?{' '}
-        <MuiLink component={Link} to={ROUTES.register} underline="hover" sx={{ fontWeight: 750 }}>
-          Créala gratis
-        </MuiLink>
-      </Typography>
+      <AuthFormFooter
+        prompt="¿Primera vez en Verde Bowl?"
+        linkLabel="Crea tu cuenta gratis"
+        to={ROUTES.register}
+        from={from}
+      />
     </AuthShell>
   );
 };

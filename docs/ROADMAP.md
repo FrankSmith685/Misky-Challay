@@ -22,7 +22,7 @@ Leyenda: `[x]` hecho · `[ ]` pendiente · **RN-xxx** = regla de negocio del an�
 - [ ] **Promociones**: ¿cupones simples o motor de reglas desde el inicio?
 - [ ] **Inventario**: ¿control por ingrediente real o solo disponibilidad manual del producto?
 - [ ] **Menú**: ¿carta fija + menú diario rotativo + bowls personalizados desde el día 1?
-- [ ] **Vigencia del saldo** (Fase 5): ¿qué pasa al vencer? ¿se renueva o transfiere?
+- [x] **Vigencia por lotes**: capital pagado por 180 días; bono y beneficios hasta el vencimiento del plan; consumo FEFO.
 - [ ] **Programación** (Fase 5): ¿un pedido a la vez o una semana completa? ¿hora límite de edición?
 - [ ] **Marca**: nombre definitivo, dominio, paleta, tipografía, fotos propias.
 
@@ -128,7 +128,8 @@ Leyenda: `[x]` hecho · `[ ]` pendiente · **RN-xxx** = regla de negocio del an�
 - [x] Delivery y pedido mínimo tomados de la zona; bloquea si no se alcanza el mínimo
 - [x] Modalidad DELIVERY / PICKUP y modo ASAP / SCHEDULED con **reserva de cupo transaccional** (**RN-004**)
 - [x] `POST /checkout/place`: crea el pedido en `PENDING_PAYMENT` con clave de idempotencia (**RN-015**)
-- [x] Checkout de **invitado** (sin cuenta) y de cliente autenticado
+- [x] Cotizar es abierto; **confirmar exige sesión**. Sin cliente no hay a quién notificar el estado, ni "Mis pedidos", ni contra quién validar el límite de usos de un cupón, el saldo o un reclamo posterior
+- [x] El **contexto de compra** (dirección o local activo) se guarda en la cuenta: entrar desde otro navegador ya no obliga a elegirlo de nuevo
 
 ### 3.3 Pedidos (M09)
 
@@ -212,7 +213,7 @@ Leyenda: `[x]` hecho · `[ ]` pendiente · **RN-xxx** = regla de negocio del an�
 ### Decisiones tomadas (14 de julio de 2026)
 
 - El plan da **saldo con bonificación + descuento por pedido + delivery gratis** (configurable por plan, en datos).
-- El saldo **se pierde al vencer** (movimiento `EXPIRATION`).
+- Solo el remanente del **lote que vence** se anula (`EXPIRATION`); otras compras permanecen intactas.
 - **Pago mixto**: si el saldo no alcanza, se aplica todo y el resto se cobra con Stripe.
 
 ### 5.1 Planes y billetera (M06)
@@ -227,7 +228,7 @@ Leyenda: `[x]` hecho · `[ ]` pendiente · **RN-xxx** = regla de negocio del an�
 - [x] Si el cliente tiene varios planes activos, se toma el mejor beneficio de cada tipo
 - [x] **Pedido 100% con saldo**: no pasa por Stripe; se registra un pago `provider: wallet` y se confirma internamente
 - [x] El saldo se **debita al crear el pedido** y se **devuelve** (`REFUND`) si el pago falla o el pedido se cancela
-- [x] **Job de vencimiento** cada hora: expira planes vencidos y anula el saldo restante
+- [x] **Job de vencimiento** cada hora: expira beneficios y únicamente los lotes que alcanzaron su fecha
 - [x] Frontend: comparador de planes, "Mi saldo" con movimientos, y casilla de "usar mi saldo" en el checkout
 - [x] Planes sembrados: Prueba (S/150→165), Semana Verde (S/300→345), Mes Completo (S/600→720)
 - [ ] Aviso por email antes de que venza el saldo
@@ -238,20 +239,40 @@ Leyenda: `[x]` hecho · `[ ]` pendiente · **RN-xxx** = regla de negocio del an�
 - [x] Reserva de cupo transaccional al crear el pedido (**RN-004**)
 - [x] El ticket de cocina usa la **hora de la franja** como hora comprometida, no "ahora + preparación"
 - [ ] Programar varios días de golpe desde un calendario semanal
-- [ ] Job que libera el pedido programado a cocina según el tiempo de preparación (hoy el ticket se crea al pagar)
+- [x] Job cada 30 segundos que libera el pedido programado a Cocina en `scheduledAt - prepMinutes`; antes conserva pago, cupo e inventario reservados sin ocupar el KDS
 
 **Estado:** el cliente compra un plan, recibe saldo con bonificación, y sus pedidos aplican solos el descuento y el delivery gratis, pagando con saldo, con tarjeta o con ambos.
 
 ---
 
-## FASE 6 — Optimización
+## FASE 6 — Optimización — **NÚCLEO MÓVIL COMPLETADO**
 
 - [ ] PWA / instalable, imágenes optimizadas y CDN
-- [ ] Favoritos, reseñas verificadas (solo con pedido entregado, **RN-020**), newsletter
+- [x] Favoritos en servidor, reseñas verificadas (solo con pedido entregado, **RN-020**) y newsletter con consentimiento independiente
 - [ ] Caché (Redis) para catálogo, cupos e idempotencia
 - [ ] SEO: metadatos, sitemap, datos estructurados, contenido indexable (evaluar SSR si hace falta)
-- [ ] Analítica de conversión y abandono por paso
-- [ ] Recomendaciones y automatizaciones
+- [x] Analítica móvil de conversión y abandono por paso, voluntaria y visible en el panel
+- [x] Recomendaciones personalizadas por favoritos, historial, sede y preferencias alimentarias
+- [ ] Automatizaciones comerciales y operativas avanzadas
+
+**Estado:** la aplicación móvil 0.6.0 incorpora fidelización, prueba social, consentimiento y recomendaciones. PWA, CDN, Redis y SEO siguen siendo trabajos de infraestructura/web y no se presentan como terminados por esta entrega móvil.
+
+---
+
+## FASE 7 — Operación para el mercado peruano — **COMPLETADA**
+
+- [x] Yape y Plin configurables por el administrador, con teléfono, titular, QR e instrucciones por negocio
+- [x] Código de operación único, estado pendiente y cola de validación manual en Caja
+- [x] Aprobación por rol/sucursal antes de confirmar el pedido, reservar la comanda y enviarla a Cocina
+- [x] Rechazo o cancelación con devolución idempotente de stock, cupo, cupón y saldo
+- [x] Boleta/factura con snapshot tributario, IGV incluido y registro auditable de serie, correlativo, PDF, XML y referencia del OSE
+- [x] Libro de Reclamaciones y soporte nativo desde la aplicación móvil
+- [x] Ayuda por WhatsApp contextualizada con el número de pedido y la sede
+- [x] Experiencia equivalente en checkout web y móvil, incluyendo el estado “validando pago”
+
+**Límite explícito:** Verde Bowl registra el CPE confirmado por un OSE o integrador, pero no suplanta a SUNAT. Para emisión automática en producción se deben contratar y configurar credenciales reales de un proveedor autorizado.
+
+**Estado:** la aplicación móvil 0.7.0 y el panel cubren el circuito peruano de cobro manual, atención, reclamos y trazabilidad tributaria sin enviar pedidos impagos a Cocina.
 
 ---
 

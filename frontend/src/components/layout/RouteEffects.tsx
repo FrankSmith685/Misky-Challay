@@ -1,13 +1,109 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import { ROUTES } from '@constants/routes';
 
-/** Restablece el scroll al cambiar de ruta; evita aterrizar a mitad de la nueva pantalla. */
+const BRAND = 'Verde Bowl';
+const HOME_TITLE = `${BRAND} | Comida saludable a tu medida`;
+
+/** Titulo por ruta exacta. Se indexa por las constantes para que no se separen del router. */
+const EXACT_TITLES: Record<string, string> = {
+  [ROUTES.menu]: 'Menú',
+  [ROUTES.builder]: 'Arma tu bowl',
+  [ROUTES.plans]: 'Planes',
+  [ROUTES.coverage]: 'Cobertura de entrega',
+  [ROUTES.cart]: 'Tu carrito',
+  [ROUTES.checkout]: 'Finalizar compra',
+  [ROUTES.checkoutSuccess]: 'Pedido confirmado',
+  [ROUTES.paymentSimulator]: 'Simulador de pago',
+  [ROUTES.login]: 'Ingresar',
+  [ROUTES.register]: 'Crear cuenta',
+  [ROUTES.forgotPassword]: 'Recuperar contraseña',
+  [ROUTES.resetPassword]: 'Restablecer contraseña',
+  [ROUTES.complaints]: 'Libro de reclamaciones',
+  [ROUTES.privacy]: 'Política de privacidad',
+  [ROUTES.terms]: 'Términos y condiciones',
+  [ROUTES.cookies]: 'Política de cookies',
+  [ROUTES.deleteAccount]: 'Eliminar mi cuenta',
+  [ROUTES.account]: 'Mi cuenta',
+  [ROUTES.accountProfile]: 'Mi perfil',
+  [ROUTES.accountOrders]: 'Mis pedidos',
+  [ROUTES.accountWallet]: 'Mi saldo',
+  [ROUTES.accountAddresses]: 'Mis direcciones',
+  [ROUTES.accountFavorites]: 'Mis favoritos',
+  [ROUTES.accountSavedBowls]: 'Bowls guardados',
+};
+
+/**
+ * Rutas con parte variable. El titulo se arma con lo que ya viaja en la URL; las
+ * paginas que conocen el dato real (nombre del plato) lo afinan despues, porque su
+ * efecto corre por debajo del de este componente.
+ */
+const PATTERN_TITLES: Array<[RegExp, (match: RegExpMatchArray) => string]> = [
+  [/^\/cuenta\/pedidos\/([^/]+)$/, (match) => `Pedido ${decodeURIComponent(match[1])}`],
+  [
+    /^\/menu\/([^/]+)$/,
+    (match) => {
+      const words = decodeURIComponent(match[1]).replace(/-/g, ' ').trim();
+      return words ? words.charAt(0).toUpperCase() + words.slice(1) : 'Menú';
+    },
+  ],
+  [/^\/admin(\/|$)/, () => 'Panel de gestión'],
+];
+
+const resolveTitle = (pathname: string): string => {
+  // Sin la barra final, "/menu/" y "/menu" no son la misma clave.
+  const path = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+  if (path === ROUTES.home) return HOME_TITLE;
+
+  const exact = EXACT_TITLES[path];
+  if (exact) return `${exact} | ${BRAND}`;
+
+  for (const [pattern, build] of PATTERN_TITLES) {
+    const match = path.match(pattern);
+    if (match) return `${build(match)} | ${BRAND}`;
+  }
+
+  return `Página no encontrada | ${BRAND}`;
+};
+
+/**
+ * Efectos al cambiar de ruta:
+ *  - Pone el titulo del navegador (pestañas, historial y lo que se comparte).
+ *  - Sube el scroll (no aterrizar a mitad de la nueva pantalla).
+ *  - Mueve el foco al contenido principal (navegación por teclado / lectores).
+ *  - Anuncia la página nueva por una región aria-live.
+ */
 export const RouteEffects = () => {
   const { pathname } = useLocation();
+  const [announcement, setAnnouncement] = useState('');
+  const isFirstRender = useRef(true);
 
   useEffect(() => {
+    document.title = resolveTitle(pathname);
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+
+    // En la carga inicial no robamos el foco del navegador.
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+
+    const main = document.querySelector('main');
+    if (main instanceof HTMLElement) {
+      main.setAttribute('tabindex', '-1');
+      main.focus({ preventScroll: true });
+    }
+
+    const timer = window.setTimeout(() => {
+      const heading = document.querySelector('main h1')?.textContent?.trim();
+      setAnnouncement(heading ? `${heading}. Página cargada.` : 'Página cargada.');
+    }, 120);
+    return () => window.clearTimeout(timer);
   }, [pathname]);
 
-  return null;
+  return (
+    <div aria-live="polite" aria-atomic="true" className="sr-only">
+      {announcement}
+    </div>
+  );
 };

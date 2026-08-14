@@ -13,8 +13,9 @@ import {
   Text,
   View,
 } from 'react-native';
-import MapView, { Marker, Polygon } from 'react-native-maps';
 import { FormField } from '../../src/components/FormField';
+import { money } from '../../src/lib/format';
+import { FreeMap } from '../../src/components/map/FreeMap';
 import { PrimaryButton } from '../../src/components/PrimaryButton';
 import { ScreenScaffold } from '../../src/components/ScreenScaffold';
 import { usePurchase } from '../../src/providers/PurchaseProvider';
@@ -32,7 +33,6 @@ interface MapPoint {
 /** Centro de Lima: punto de partida cuando aún no sabemos nada del visitante. */
 const DEFAULT_POINT: MapPoint = { latitude: -12.0464, longitude: -77.0428 };
 
-const money = (value: number): string => `S/ ${value.toFixed(2)}`;
 
 /**
  * Cobertura pública: se consulta sin cuenta, igual que en la web.
@@ -64,7 +64,7 @@ export default function CoverageScreen() {
 
   /*
    * Zona de reparto dibujada sobre el mapa, igual que la web. El backend la
-   * manda en `{ lat, lng }` y react-native-maps la pide en
+   * manda en `{ lat, lng }` y el componente compartido la recibe como
    * `{ latitude, longitude }`. Con menos de tres vértices no hay área que pintar.
    */
   const coveragePolygon = useMemo(() => {
@@ -216,29 +216,15 @@ export default function CoverageScreen() {
           keyboardDismissMode="on-drag"
         >
           <View style={styles.mapCard}>
-            <MapView
+            <FreeMap
               style={styles.map}
-              region={{ ...point, latitudeDelta: hasPoint ? 0.008 : 0.08, longitudeDelta: hasPoint ? 0.008 : 0.08 }}
-              onPress={(event) => void movePin(event.nativeEvent.coordinate)}
-            >
-              {coveragePolygon ? (
-                <Polygon
-                  coordinates={coveragePolygon}
-                  strokeColor={colors.brand700}
-                  strokeWidth={3}
-                  fillColor="rgba(76, 175, 125, 0.2)"
-                />
-              ) : null}
-
-              {hasPoint ? (
-                <Marker
-                  coordinate={point}
-                  draggable
-                  onDragEnd={(event) => void movePin(event.nativeEvent.coordinate)}
-                  pinColor={colors.brand600}
-                />
-              ) : null}
-            </MapView>
+              center={point}
+              marker={hasPoint ? point : null}
+              polygon={coveragePolygon}
+              zoom={hasPoint ? 16.5 : 11.5}
+              onPress={(coordinate) => void movePin(coordinate)}
+              onMarkerDragEnd={(coordinate) => void movePin(coordinate)}
+            />
 
             <View style={styles.mapHint}>
               {locating ? (
@@ -436,6 +422,19 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     ...shadow.sm,
   },
+  mapUnavailable: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.brand100,
+    backgroundColor: colors.brand50,
+    padding: spacing.md,
+  },
+  mapUnavailableCopy: { flex: 1 },
+  mapUnavailableTitle: { ...type.body, color: colors.brand900, fontWeight: '900' },
+  mapUnavailableText: { ...type.bodySm, color: colors.brand700, marginTop: 4 },
   map: {
     width: '100%',
     height: 300,

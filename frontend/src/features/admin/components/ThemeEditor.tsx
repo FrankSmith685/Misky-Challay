@@ -1,7 +1,7 @@
 import { useEffect, useState, type FC } from 'react';
 import { Alert, Button, Card, CardContent, Chip, Slider, TextField, Typography } from '@mui/material';
 import { RotateCcw, Save } from 'lucide-react';
-import toast from 'react-hot-toast';
+import toast from '@components/mui/MuiToast';
 import { useThemeSettings } from '@/theme/ThemeSettingsProvider';
 import { RADIUS_RANGE, type ThemeTokens } from '@/theme/tokens';
 import { isHex } from '@/theme/colorUtils';
@@ -26,8 +26,8 @@ const ColorControl: FC<{
   };
 
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-line bg-surface p-3">
-      <label className="relative size-11 shrink-0 cursor-pointer overflow-hidden rounded-lg border border-line">
+    <div className="flex items-center gap-3 rounded-card border border-line bg-surface p-3">
+      <label className="relative size-11 shrink-0 cursor-pointer overflow-hidden rounded-field border border-line">
         <span className="block size-full" style={{ backgroundColor: value }} />
         <input
           type="color"
@@ -70,7 +70,7 @@ export const ThemeEditor: FC = () => {
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       {/* Controles */}
-      <div className="space-y-3">
+      <div className="grid gap-3">
         <div className="flex items-center justify-between">
           <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">Colores del tema</p>
           <Button
@@ -97,7 +97,7 @@ export const ThemeEditor: FC = () => {
           />
         ))}
 
-        <div className="rounded-xl border border-line bg-surface p-4">
+        <div className="rounded-card border border-line bg-surface p-4">
           <div className="mb-1 flex items-center justify-between">
             <p className="text-sm font-semibold text-ink">Radio de bordes</p>
             <code className="rounded bg-surface-muted px-1.5 py-0.5 text-xs text-ink-muted">{tokens.radius}px</code>
@@ -112,17 +112,19 @@ export const ThemeEditor: FC = () => {
           />
         </div>
 
-        <Alert severity="info" icon={<Save className="size-4" />} sx={{ borderRadius: 2 }}>
+        {/* El radio sale del token, no de un 5 escrito a mano: este editor es
+            justamente el que lo mueve, y un literal aqui no reaccionaria. */}
+        <Alert severity="info" icon={<Save className="size-4" />} sx={{ borderRadius: 'var(--radius-card)' }}>
           Los cambios se aplican al instante y se guardan en este navegador. Toca{' '}
           <strong>Restablecer</strong> para volver a la marca original.
         </Alert>
       </div>
 
       {/* Vista previa en vivo */}
-      <div className="space-y-3">
+      <div className="grid gap-3">
         <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">Vista previa en vivo</p>
         <Card variant="outlined">
-          <CardContent className="space-y-4">
+          <CardContent className="grid gap-4">
             <div className="flex flex-wrap gap-2">
               <Button variant="contained">Primary</Button>
               <Button variant="contained" color="secondary">

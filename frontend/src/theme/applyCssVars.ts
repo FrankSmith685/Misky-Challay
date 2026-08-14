@@ -1,5 +1,5 @@
-import { rampFromHex, tint, type ColorRamp } from './colorUtils';
-import { DEFAULT_BRAND_RAMP, DEFAULT_TOKENS, type ThemeTokens } from './tokens';
+import { type ColorRamp } from './colorUtils';
+import { rampsFromTokens, type ThemeTokens } from './tokens';
 
 /**
  * Sincroniza los tokens del tema con las VARIABLES CSS de Tailwind v4
@@ -20,19 +20,18 @@ const setRamp = (root: CSSStyleDeclaration, name: string, ramp: ColorRamp) => {
 
 export const applyCssVars = (tokens: ThemeTokens): void => {
   const root = document.documentElement.style;
+  const ramp = rampsFromTokens(tokens);
 
-  // Marca (brand). Si el primary sigue en su valor por defecto usamos la rampa
-  // afinada a mano de index.css; si cambio, la generamos desde el color elegido.
-  const brand = tokens.primary === DEFAULT_TOKENS.primary ? DEFAULT_BRAND_RAMP : rampFromHex(tokens.primary);
-  setRamp(root, 'brand', brand);
+  // Las tres rampas se publican COMPLETAS: sobrescribir solo 400/500 dejaba las
+  // demas paradas de accent con el valor de index.css mientras el editor movia
+  // el color, y el aviso sin cobertura del carrito quedaba de otro tono.
+  setRamp(root, 'brand', ramp.brand);
+  setRamp(root, 'accent', ramp.accent);
+  setRamp(root, 'tertiary', ramp.tertiary);
 
-  // Acento (secondary) -> Tailwind solo usa accent-400/500.
-  root.setProperty('--color-accent-500', tokens.secondary);
-  root.setProperty('--color-accent-400', tint(tokens.secondary, 0.18));
-
-  // Tercer color (nuevo) -> rampa completa tertiary-*.
-  setRamp(root, 'tertiary', rampFromHex(tokens.tertiary));
-
-  // Radio de tarjeta usado por Tailwind (rounded-card).
-  root.setProperty('--radius-card', `${tokens.radius}px`);
+  // Todos los radios rectangulares respetan el límite visual de 5px.
+  const radius = `${Math.min(5, Math.max(0, tokens.radius))}px`;
+  root.setProperty('--radius-field', radius);
+  root.setProperty('--radius-card', radius);
+  root.setProperty('--radius-pill', radius);
 };

@@ -15,6 +15,28 @@ export interface District {
   coverageZoneId: number | null;
 }
 
+export interface PeruDepartment {
+  code: string;
+  name: string;
+}
+
+export interface PeruProvince {
+  code: string;
+  departmentCode: string;
+  name: string;
+}
+
+export interface PeruDistrict {
+  code: string;
+  departmentCode: string;
+  department: string;
+  provinceCode: string;
+  province: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+}
+
 export interface Branch {
   id: number;
   name: string;
@@ -71,10 +93,14 @@ export interface AddressSuggestion {
   line1: string;
   district: string | null;
   districtId: number | null;
+  ubigeoCode: string | null;
   city: string | null;
+  province?: string | null;
+  region?: string | null;
+  postcode?: string | null;
   latitude: number | null;
   longitude: number | null;
-  source: 'geoapify' | 'openstreetmap' | 'context';
+  source: 'geoapify' | 'photon' | 'openstreetmap' | 'context';
   precision?: 'exact' | 'near' | 'approximate' | 'manual';
   hasHouseNumber?: boolean;
   distanceMeters?: number | null;
@@ -86,6 +112,10 @@ export interface Address {
   line1: string;
   reference: string | null;
   districtId: number | null;
+  ubigeoCode: string | null;
+  departmentName: string | null;
+  provinceName: string | null;
+  districtName: string | null;
   latitude: number | null;
   longitude: number | null;
   isDefault: boolean;

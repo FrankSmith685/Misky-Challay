@@ -2,8 +2,11 @@ import type { Request, Response } from 'express';
 import { created, noContent, ok } from '@shared/http/ApiResponse';
 import { asyncHandler } from '@shared/utils/asyncHandler';
 import { ApiError } from '@shared/errors/ApiError';
+import { audit } from '@shared/utils/audit';
 import { accountService } from './account.service';
 import { notificationsService } from '@modules/notifications/notifications.service';
+import { availabilityAlertsService } from '@modules/catalog/availabilityAlerts.service';
+import { mobilePushService } from '@modules/notifications/mobilePush.service';
 
 const requireUserId = (req: Request): number => {
   if (!req.user) throw ApiError.unauthorized();
@@ -11,9 +14,45 @@ const requireUserId = (req: Request): number => {
 };
 
 export const accountController = {
+  registerMobileDevice: asyncHandler(async (req: Request, res: Response) =>
+    ok(res, await mobilePushService.register(requireUserId(req), req.body), 'Dispositivo registrado'),
+  ),
+  unregisterMobileDevice: asyncHandler(async (req: Request, res: Response) => {
+    await mobilePushService.unregister(requireUserId(req), req.body.expoPushToken);
+    return ok(res, null, 'Dispositivo revocado');
+  }),
+  getAvailabilityAlert: asyncHandler(async (req: Request, res: Response) =>
+    ok(
+      res,
+      await availabilityAlertsService.get(
+        requireUserId(req),
+        Number(req.query.productId),
+        Number(req.query.branchId),
+      ),
+    ),
+  ),
+  subscribeAvailabilityAlert: asyncHandler(async (req: Request, res: Response) =>
+    created(
+      res,
+      await availabilityAlertsService.subscribe({ userId: requireUserId(req), ...req.body }),
+      'Te avisaremos una sola vez cuando el plato vuelva',
+    ),
+  ),
+  cancelAvailabilityAlert: asyncHandler(async (req: Request, res: Response) => {
+    await availabilityAlertsService.cancel(
+      requireUserId(req),
+      Number(req.query.productId),
+      Number(req.query.branchId),
+    );
+    return noContent(res);
+  }),
   listNotifications: asyncHandler(async (req: Request, res: Response) =>
     ok(res, await notificationsService.listForUser(requireUserId(req))),
   ),
+  markNotificationsRead: asyncHandler(async (req: Request, res: Response) => {
+    await notificationsService.markAllRead(requireUserId(req));
+    return ok(res, null, 'Notificaciones marcadas como leidas');
+  }),
   getFoodPreferences: asyncHandler(async (req: Request, res: Response) =>
     ok(res, await accountService.getFoodPreferences(requireUserId(req))),
   ),
@@ -32,10 +71,52 @@ export const accountController = {
     return ok(res, profile, 'Perfil actualizado');
   }),
 
+  updateAvatar: asyncHandler(async (req: Request, res: Response) =>
+    ok(
+      res,
+      await accountService.updateAvatar(requireUserId(req), req.body),
+      'Foto de perfil actualizada',
+    ),
+  ),
+
+  removeAvatar: asyncHandler(async (req: Request, res: Response) =>
+    ok(res, await accountService.removeAvatar(requireUserId(req)), 'Foto de perfil eliminada'),
+  ),
+
   changePassword: asyncHandler(async (req: Request, res: Response) => {
     await accountService.changePassword(requireUserId(req), req.body);
     return ok(res, null, 'Contrasena actualizada');
   }),
+
+  deleteAccount: asyncHandler(async (req: Request, res: Response) => {
+    const userId = requireUserId(req);
+    const result = await accountService.deleteAccount(userId, req.body);
+
+    /* Queda en la bitacora porque es irreversible y porque alguien preguntara
+     * por que desaparecio ese cliente. Sin datos personales: el motivo lo
+     * escribe el titular y los identificadores ya no existen. */
+    await audit(req, {
+      action: 'account.delete',
+      entity: 'users',
+      entityId: userId,
+      after: {
+        deletedAt: result.deletedAt,
+        keptOrders: result.keptOrders,
+        forfeitedWalletBalance: result.forfeitedWalletBalance,
+        reason: typeof req.body?.reason === 'string' ? req.body.reason : null,
+      },
+    });
+
+    return ok(res, result, 'Tu cuenta fue eliminada');
+  }),
+
+  getPurchaseContext: asyncHandler(async (req: Request, res: Response) =>
+    ok(res, await accountService.getPurchaseContext(requireUserId(req))),
+  ),
+
+  updatePurchaseContext: asyncHandler(async (req: Request, res: Response) =>
+    ok(res, await accountService.savePurchaseContext(requireUserId(req), req.body)),
+  ),
 
   listAddresses: asyncHandler(async (req: Request, res: Response) => {
     const addresses = await accountService.listAddresses(requireUserId(req));

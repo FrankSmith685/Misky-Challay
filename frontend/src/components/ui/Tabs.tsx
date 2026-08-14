@@ -21,7 +21,7 @@ export const Tabs = ({ items, value, onChange, className }: TabsProps) => (
     className={className}
     variant="scrollable"
     scrollButtons="auto"
-    sx={{ minHeight: 44, borderRadius: 999, bgcolor: 'action.hover', p: .5, '& .MuiTab-root': { minHeight: 36, borderRadius: 999, px: 2 }, '& .Mui-selected': { bgcolor: 'background.paper', boxShadow: '0 2px 8px rgba(20,32,26,.08)' }, '& .MuiTabs-indicator': { display: 'none' } }}
+    sx={{ minHeight: 44, borderRadius: 'var(--radius-field)', bgcolor: 'action.hover', p: .5, '& .MuiTab-root': { minHeight: 36, borderRadius: 'var(--radius-field)', px: 2 }, '& .Mui-selected': { bgcolor: 'background.paper', boxShadow: 'var(--shadow-e1)' }, '& .MuiTabs-indicator': { display: 'none' } }}
   >
     {items.map((item) => <MuiTab key={item.value} value={item.value} label={item.label} />)}
   </MuiTabs>

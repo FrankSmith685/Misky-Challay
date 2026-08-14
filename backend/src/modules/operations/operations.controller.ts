@@ -22,12 +22,17 @@ export const operationsController = {
       ? (String(req.query.status).split(',') as TicketStatus[])
       : undefined;
 
-    const [tickets, stats] = await Promise.all([
+    const [tickets, scheduled, stats] = await Promise.all([
       operationsService.board(branchId, statuses),
+      operationsService.scheduledBoard(branchId),
       operationsService.stats(branchId),
     ]);
 
-    return ok(res, { tickets, stats }, `${tickets.length} tickets en cola`);
+    return ok(
+      res,
+      { tickets, scheduled, stats: { ...stats, scheduled: scheduled.length } },
+      `${tickets.length} comandas activas y ${scheduled.length} programadas`,
+    );
   }),
 
   advance: asyncHandler(async (req: Request, res: Response) => {

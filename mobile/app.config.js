@@ -43,6 +43,12 @@ module.exports = ({ config }) => {
       },
     ];
   });
+  if (!plugins.some((plugin) => plugin === 'expo-sharing' || (Array.isArray(plugin) && plugin[0] === 'expo-sharing'))) {
+    plugins.push('expo-sharing');
+  }
 
-  return { ...config, plugins };
+  return {
+    ...config,
+    plugins,
+  };
 };

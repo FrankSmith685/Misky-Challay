@@ -17,20 +17,14 @@
       "env": {
         "EXPO_PUBLIC_API_URL": "http://192.168.18.60:4000/api/v1",
         "EXPO_PUBLIC_WEB_URL": "http://192.168.18.60:5173",
-        "EXPO_PUBLIC_EAS_PROJECT_ID": "e9dfb1e1-60ae-45d3-9c07-3c853323c907"
+        "EXPO_PUBLIC_EAS_PROJECT_ID": "bd694d85-89e8-4e4d-bd68-a041d1bcbd26"
       },
       "android": {
         "buildType": "apk"
       }
     },
     "production": {
-      "autoIncrement": true,
-      "env": {
-        "EXPO_PUBLIC_API_URL": "",
-        "EXPO_PUBLIC_WEB_URL": "",
-        "EXPO_PUBLIC_EAS_PROJECT_ID": "e9dfb1e1-60ae-45d3-9c07-3c853323c907",
-        "EXPO_PUBLIC_ALLOW_HTTP": "false"
-      }
+      "autoIncrement": true
     }
   },
   "submit": {

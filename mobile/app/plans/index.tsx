@@ -268,6 +268,17 @@ export default function PlansScreen() {
         title="Confirma tu plan"
         subtitle={selected?.name}
         dismissible={!buying}
+        footer={
+          <View style={styles.sheetFooter}>
+            <PrimaryButton
+              label="Continuar al pago seguro"
+              loading={buying}
+              disabled={!accepted}
+              onPress={() => void confirm()}
+            />
+            <PrimaryButton label="Ahora no" variant="ghost" disabled={buying} onPress={close} />
+          </View>
+        }
       >
         <View style={styles.sheetIcon}>
           <MaterialCommunityIcons name="shield-check-outline" size={26} color={colors.brand700} />
@@ -296,21 +307,13 @@ export default function PlansScreen() {
           </Text>
         </Pressable>
 
-        <PrimaryButton
-          label="Continuar al pago seguro"
-          loading={buying}
-          disabled={!accepted}
-          onPress={() => void confirm()}
-          style={styles.confirm}
-        />
-
-        <PrimaryButton label="Ahora no" variant="ghost" disabled={buying} onPress={close} />
       </BottomSheet>
     </ScreenScaffold>
   );
 }
 
 const styles = StyleSheet.create({
+  sheetFooter: { gap: spacing.xs },
   skeletonTop: {
     marginBottom: spacing.md,
   },

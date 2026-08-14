@@ -14,12 +14,14 @@ import {
   DOCUMENT_TYPE,
   INVOICE_STATUS,
   ORDER_STATUS,
+  ORDER_SOURCE,
   SERVICE_MODE,
   type BillingDocType,
   type DeliveryType,
   type DocumentType,
   type InvoiceStatus,
   type OrderStatus,
+  type OrderSource,
   type ServiceMode,
 } from '@config/constants';
 import type { OrderItem } from './orderItem.model';
@@ -46,6 +48,9 @@ export class Order extends Model<InferAttributes<Order>, InferCreationAttributes
   declare orderNumber: string;
   declare userId: number | null;
   declare branchId: number;
+  declare diningTableId: CreationOptional<number | null>;
+  declare waiterId: CreationOptional<number | null>;
+  declare source: CreationOptional<OrderSource>;
   declare coverageZoneId: CreationOptional<number | null>;
   declare deliveryType: DeliveryType;
   declare serviceMode: CreationOptional<ServiceMode>;
@@ -83,6 +88,18 @@ export class Order extends Model<InferAttributes<Order>, InferCreationAttributes
   declare billingAddress: CreationOptional<string | null>;
   /** Estado de emision ante el OSE. Nace PENDING hasta que exista OSE configurado. */
   declare invoiceStatus: CreationOptional<InvoiceStatus>;
+  /** Identificadores devueltos por el proveedor de comprobantes/SUNAT. */
+  declare invoiceSeries: CreationOptional<string | null>;
+  declare invoiceNumber: CreationOptional<string | null>;
+  declare invoiceIssuedAt: CreationOptional<Date | null>;
+  declare invoiceProviderReference: CreationOptional<string | null>;
+  declare invoicePdfUrl: CreationOptional<string | null>;
+  declare invoiceXmlUrl: CreationOptional<string | null>;
+
+  // --- Ticket interno (documento operativo, no fiscal) ---
+  declare internalReceiptFirstPrintedAt: CreationOptional<Date | null>;
+  declare internalReceiptLastPrintedAt: CreationOptional<Date | null>;
+  declare internalReceiptPrintCount: CreationOptional<number>;
 
   declare notes: CreationOptional<string | null>;
   declare cancelReason: CreationOptional<string | null>;
@@ -107,6 +124,13 @@ Order.init(
     orderNumber: { type: DataTypes.STRING(20), allowNull: false },
     userId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
     branchId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
+    diningTableId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
+    waiterId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
+    source: {
+      type: DataTypes.ENUM(...Object.values(ORDER_SOURCE)),
+      allowNull: false,
+      defaultValue: ORDER_SOURCE.WEB,
+    },
     coverageZoneId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true },
     deliveryType: {
       type: DataTypes.ENUM(...Object.values(DELIVERY_TYPE)),
@@ -154,6 +178,15 @@ Order.init(
       allowNull: false,
       defaultValue: INVOICE_STATUS.PENDING,
     },
+    invoiceSeries: { type: DataTypes.STRING(4), allowNull: true },
+    invoiceNumber: { type: DataTypes.STRING(8), allowNull: true },
+    invoiceIssuedAt: { type: DataTypes.DATE, allowNull: true },
+    invoiceProviderReference: { type: DataTypes.STRING(100), allowNull: true },
+    invoicePdfUrl: { type: DataTypes.STRING(500), allowNull: true },
+    invoiceXmlUrl: { type: DataTypes.STRING(500), allowNull: true },
+    internalReceiptFirstPrintedAt: { type: DataTypes.DATE, allowNull: true },
+    internalReceiptLastPrintedAt: { type: DataTypes.DATE, allowNull: true },
+    internalReceiptPrintCount: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 0 },
 
     notes: { type: DataTypes.TEXT, allowNull: true },
     cancelReason: { type: DataTypes.STRING(255), allowNull: true },
@@ -181,6 +214,7 @@ Order.init(
       { name: 'uq_orders_idempotency', unique: true, fields: ['idempotency_key'] },
       { name: 'idx_orders_user', fields: ['user_id'] },
       { name: 'idx_orders_branch_status', fields: ['branch_id', 'status'] },
+      { name: 'idx_orders_dining_table_status', fields: ['dining_table_id', 'status'] },
       { name: 'idx_orders_scheduled', fields: ['scheduled_at'] },
       // El job de reservas vencidas filtra por status + placed_at cada minuto: sin este
       // indice recorre el historico completo de pedidos, para siempre.

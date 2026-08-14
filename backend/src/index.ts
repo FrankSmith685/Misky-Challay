@@ -2,6 +2,7 @@ import { createApp } from './app';
 import { env } from '@config/env';
 import { logger } from '@config/logger';
 import { closeDatabase, initDatabase, type DatabaseStartupOptions } from '@database/bootstrap';
+import { getPaymentProvider } from '@integrations/payments';
 import { startJobs, stopJobs } from './jobs';
 
 /* ==========================================================================
@@ -28,6 +29,10 @@ const DATABASE_STARTUP: DatabaseStartupOptions = {
 
 const bootstrap = async (): Promise<void> => {
   try {
+    // Inicializa y anuncia Stripe/test/simulador al arrancar, no recién al primer pago.
+    // Así una configuración antigua del .env se detecta antes de atender solicitudes.
+    getPaymentProvider();
+
     await initDatabase(DATABASE_STARTUP);
 
     const app = createApp();

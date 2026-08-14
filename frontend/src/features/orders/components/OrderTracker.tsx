@@ -1,6 +1,7 @@
 import { CheckCircle2, XCircle } from 'lucide-react';
 import { Timeline, type TimelineItem } from '@components/ui/Timeline';
 import { formatDate } from '@lib/format';
+import { cn } from '@lib/cn';
 
 /**
  * Seguimiento visual del pedido: la linea feliz de estados con la hora real de cada
@@ -8,6 +9,10 @@ import { formatDate } from '@lib/format';
  *
  * La linea se ramifica por tipo de entrega: el recojo en tienda no pasa por
  * "En camino" y su paso final es "Recogido", no "Entregado".
+ *
+ * Se dibuja de dos formas segun el ancho: barra horizontal en movil (la vertical
+ * gastaba media pantalla justo en lo que se venia a mirar) y linea de tiempo con
+ * horas en escritorio. Solo una existe a la vez, asi que no se duplica el contenido.
  */
 const DELIVERY_STEPS = [
   'PENDING_PAYMENT',
@@ -61,11 +66,20 @@ export const OrderTracker = ({ order }: { order: TrackedOrder }) => {
     -1,
   );
 
-  const items: TimelineItem[] = steps.map((status, index) => ({
-    title: label(status),
+  const progress = steps.map((status, index) => ({
+    label: label(status),
     meta: reachedAt.get(status) ? formatDate(reachedAt.get(status)!) : undefined,
     done: index <= maxReachedIndex,
   }));
+  const items: TimelineItem[] = progress.map((step) => ({
+    title: step.label,
+    meta: step.meta,
+    done: step.done,
+  }));
+
+  const reachedCount = maxReachedIndex + 1;
+  const nextStep = isTerminal ? undefined : progress[maxReachedIndex + 1]?.label;
+  const currentMeta = progress[maxReachedIndex]?.meta;
 
   return (
     <div>
@@ -75,7 +89,9 @@ export const OrderTracker = ({ order }: { order: TrackedOrder }) => {
           {order.status === 'REFUNDED' ? 'Pedido reembolsado' : 'Pedido cancelado'}
         </div>
       ) : (
-        <div className="mb-4">
+        // El sondeo cambia este texto sin que nadie lo pida: con role="status" el
+        // lector de pantalla anuncia el avance en vez de callarselo.
+        <div className="mb-4" role="status" aria-live="polite">
           <p className="flex items-center gap-1.5 text-sm font-semibold text-brand-700">
             <CheckCircle2 className="size-4" /> Ahora: {label(order.status)}
           </p>
@@ -87,7 +103,28 @@ export const OrderTracker = ({ order }: { order: TrackedOrder }) => {
         </div>
       )}
 
-      <Timeline items={items} />
+      <div className="lg:hidden">
+        <ol className="flex gap-1" aria-label="Progreso del pedido">
+          {progress.map((step) => (
+            <li key={step.label} className="min-w-0 flex-1">
+              <span
+                className={cn('block h-1.5 rounded-xs', step.done ? 'bg-brand-600' : 'bg-line')}
+              />
+              <span className="sr-only">
+                {step.label}: {step.done ? 'completado' : 'pendiente'}
+              </span>
+            </li>
+          ))}
+        </ol>
+        <p className="mt-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs text-ink-muted">
+          <span className="font-semibold text-ink">
+            Paso {Math.max(reachedCount, 1)} de {progress.length}
+          </span>
+          {nextStep ? <span>Sigue: {nextStep}</span> : currentMeta && <span>{currentMeta}</span>}
+        </p>
+      </div>
+
+      <Timeline items={items} className="hidden lg:block" />
     </div>
   );
 };

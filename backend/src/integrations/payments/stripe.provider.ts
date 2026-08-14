@@ -45,7 +45,7 @@ export class StripeProvider implements PaymentProvider {
               // Stripe trabaja en la unidad minima (centimos).
               unit_amount: Math.round(input.amount * 100),
               product_data: {
-                name: `Pedido ${input.orderNumber}`,
+                name: input.displayName ?? `Pedido ${input.orderNumber}`,
                 description: input.description.slice(0, 200),
               },
             },

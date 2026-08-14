@@ -8,6 +8,8 @@
 export const ROLE_LABELS: Record<string, string> = {
   customer: 'Cliente',
   kitchen: 'Cocina',
+  waiter: 'Mozo',
+  cashier: 'Cajero',
   dispatcher: 'Despachador',
   driver: 'Repartidor',
   support: 'Soporte',

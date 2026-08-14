@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppImage } from './AppImage';
+import { money } from '../lib/format';
 import { colors, layout, radius, shadow, spacing, type } from '../theme/tokens';
 import type { Product } from '../types/domain';
 
@@ -22,6 +23,8 @@ export interface ProductCardProps {
    */
   onPress: (product: Product) => void;
   compact?: boolean;
+  /** Tarjeta editorial de ancho completo para la lista principal del menú. */
+  fullWidth?: boolean;
   isFavorite?: boolean;
   onToggleFavorite?: (product: Product) => void;
   /** Añadir sin salir del menú. Solo aparece en platos FIJOS y disponibles. */
@@ -41,7 +44,6 @@ export interface ProductCardProps {
   alertAllergens?: readonly string[];
 }
 
-const money = (value: number): string => `S/ ${value.toFixed(2)}`;
 
 /** «alto-en-proteina» sin diccionario cargado se lee como «Alto en proteina». */
 const humanize = (code: string): string => {
@@ -55,6 +57,7 @@ function ProductCardView({
   product,
   onPress,
   compact = false,
+  fullWidth = false,
   isFavorite = false,
   onToggleFavorite,
   onQuickAdd,
@@ -88,11 +91,13 @@ function ProductCardView({
       style={({ pressed }) => [
         styles.card,
         shadow.sm,
+        isBuilder && styles.cardBuilder,
+        fullWidth && styles.cardFull,
         compact && styles.cardCompact,
         pressed && styles.pressed,
       ]}
     >
-      <View style={[styles.media, compact ? styles.mediaCompact : styles.mediaWide]}>
+      <View style={[styles.media, compact ? styles.mediaCompact : fullWidth ? styles.mediaFull : styles.mediaWide]}>
         <AppImage
           uri={product.imageUrl}
           style={styles.image}
@@ -106,12 +111,17 @@ function ProductCardView({
           </View>
         )}
 
-        {product.isFeatured && product.isAvailable && (
+        {isBuilder && product.isAvailable ? (
+          <View style={styles.builderMediaBadge}>
+            <MaterialCommunityIcons name="bowl-mix-outline" size={14} color={colors.surface} />
+            <Text style={styles.featuredText}>Crea el tuyo</Text>
+          </View>
+        ) : product.isFeatured && product.isAvailable ? (
           <View style={styles.featured}>
             <MaterialCommunityIcons name="star" size={13} color={colors.surface} />
             <Text style={styles.featuredText}>Top</Text>
           </View>
-        )}
+        ) : null}
       </View>
 
       <View style={[styles.body, compact && styles.bodyCompact]}>
@@ -201,7 +211,7 @@ function ProductCardView({
           {product.isAvailable && isBuilder ? (
             <View style={styles.builder}>
               <MaterialCommunityIcons name="tune-variant" size={17} color={colors.brand700} />
-              <Text style={styles.builderText}>Armar</Text>
+              <Text style={styles.builderText}>Personalizar</Text>
             </View>
           ) : null}
         </View>
@@ -240,30 +250,41 @@ export const ProductCard = memo(ProductCardView);
 
 const styles = StyleSheet.create({
   card: {
-    width: 276,
+    width: 286,
     overflow: 'hidden',
     backgroundColor: colors.surfaceRaised,
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     borderWidth: 1,
     borderColor: colors.lineSoft,
   },
   cardCompact: {
     width: '100%',
     flexDirection: 'row',
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
+  },
+  cardFull: {
+    width: '100%',
+  },
+  cardBuilder: {
+    borderColor: colors.accent100,
+    backgroundColor: colors.surface,
   },
   pressed: {
-    opacity: 0.86,
-    transform: [{ scale: 0.99 }],
+    opacity: 0.92,
+    transform: [{ scale: 0.985 }],
   },
   media: {
     backgroundColor: colors.brand50,
   },
   mediaWide: {
-    height: 164,
+    height: 184,
+  },
+  mediaFull: {
+    height: 226,
   },
   mediaCompact: {
-    width: 118,
+    width: 132,
+    alignSelf: 'stretch',
   },
   image: {
     flex: 1,
@@ -297,22 +318,36 @@ const styles = StyleSheet.create({
     ...type.caption,
     color: colors.surface,
   },
+  builderMediaBadge: {
+    position: 'absolute',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    top: spacing.sm,
+    left: spacing.sm,
+    borderRadius: radius.pill,
+    backgroundColor: colors.brand700,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
   body: {
     flex: 1,
-    padding: spacing.sm + spacing.xs,
+    padding: spacing.md,
   },
   /** En la fila compacta el corazón flota sobre el texto: hay que reservarle sitio. */
   bodyCompact: {
-    paddingRight: spacing.xl + spacing.sm,
+    paddingRight: spacing.xxxl,
   },
   name: {
-    ...type.heading,
+    ...type.title,
+    fontSize: 22,
+    lineHeight: 27,
     color: colors.ink,
   },
   description: {
     ...type.bodySm,
     color: colors.inkMuted,
-    marginTop: 4,
+    marginTop: 6,
   },
   tags: {
     flexDirection: 'row',
@@ -379,16 +414,17 @@ const styles = StyleSheet.create({
     color: colors.inkMuted,
   },
   price: {
-    ...type.heading,
+    ...type.title,
     color: colors.brand700,
   },
   add: {
-    width: layout.minTouch,
-    height: layout.minTouch,
-    borderRadius: radius.md,
+    width: 50,
+    height: 50,
+    borderRadius: radius.md + 2,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.brand600,
+    ...shadow.sm,
   },
   notify: {
     minHeight: layout.minTouch,
@@ -406,14 +442,14 @@ const styles = StyleSheet.create({
     color: colors.brand700,
   },
   builder: {
-    minHeight: 38,
+    minHeight: layout.minTouch,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs + 2,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: colors.brand100,
-    backgroundColor: colors.brand50,
+    borderColor: colors.accent100,
+    backgroundColor: colors.accent50,
     paddingHorizontal: 12,
   },
   builderText: {
@@ -424,13 +460,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: spacing.sm,
     right: spacing.sm,
-    width: layout.minTouch,
-    height: layout.minTouch,
-    borderRadius: radius.sm + 5,
+    width: 48,
+    height: 48,
+    borderRadius: radius.md + 2,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: 'rgba(255,255,255,0.96)',
     borderWidth: 1,
     borderColor: colors.lineSoft,
+    ...shadow.sm,
   },
 });

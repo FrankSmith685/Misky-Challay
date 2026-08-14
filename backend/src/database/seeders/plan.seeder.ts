@@ -6,7 +6,7 @@ import { BENEFIT_TYPE, type BenefitType } from '../models/planBenefit.model';
  * PLANES DE EJEMPLO
  * ---------------------------------------------------------------------------
  * Decisiones de Fase 0: el plan da SALDO CON BONIFICACION + DESCUENTO +
- * DELIVERY GRATIS, y el saldo se pierde al vencer.
+ * DELIVERY GRATIS. El bono vence con el plan; el capital pagado conserva 180 días.
  *
  * price         = lo que paga el cliente
  * grantedCredit = el saldo que recibe (la diferencia es la bonificacion)

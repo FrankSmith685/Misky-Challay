@@ -36,13 +36,23 @@ export interface ComplaintDetail extends ComplaintRow {
   response: string | null;
 }
 
+export interface ComplaintFilters {
+  status?: string;
+  search?: string;
+  /**
+   * Solo los que pasaron su plazo legal sin respuesta. El servidor ya calcula esa
+   * misma condicion para el contador de `summary`; sin el filtro hay que recorrer
+   * pagina por pagina mirando las fechas en rojo.
+   */
+  overdue?: boolean;
+  page?: number;
+  pageSize?: number;
+}
+
 export const complaintsAdminApi = {
-  async list(params: {
-    status?: string;
-    search?: string;
-    page?: number;
-    pageSize?: number;
-  } = {}): Promise<{ rows: ComplaintRow[]; meta: PaginationMeta }> {
+  async list(
+    params: ComplaintFilters = {},
+  ): Promise<{ rows: ComplaintRow[]; meta: PaginationMeta }> {
     const { data } = await api.get<ApiSuccess<ComplaintRow[]>>(ENDPOINTS.complaints.root, {
       params,
     });
@@ -67,6 +77,20 @@ export const complaintsAdminApi = {
     input: { response: string; status: 'IN_PROGRESS' | 'RESOLVED' },
   ): Promise<void> {
     await api.post(ENDPOINTS.complaints.respond(id), input);
+  },
+
+  /**
+   * Descarga en CSV lo que haya en pantalla segun los filtros.
+   *
+   * La ruta la anade el paquete J y tiene que declararse ANTES de `GET /:id`, o
+   * Express interpretara "export" como un identificador de reclamo.
+   */
+  async exportCsv(params: ComplaintFilters = {}): Promise<Blob> {
+    const { data } = await api.get<Blob>(`${ENDPOINTS.complaints.root}/export`, {
+      params,
+      responseType: 'blob',
+    });
+    return data;
   },
 
   /** Contadores globales (no de la pagina visible). */

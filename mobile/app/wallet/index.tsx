@@ -8,6 +8,7 @@ import { PrimaryButton } from '../../src/components/PrimaryButton';
 import { ScreenScaffold } from '../../src/components/ScreenScaffold';
 import { Skeleton } from '../../src/components/Skeleton';
 import { useResource } from '../../src/hooks/useResource';
+import { money } from '../../src/lib/format';
 import { useSession } from '../../src/providers/SessionProvider';
 import { plansApi } from '../../src/services/api/plans.service';
 import { colors, layout, radius, shadow, spacing, type } from '../../src/theme/tokens';
@@ -20,7 +21,6 @@ const PAGE_SIZE = 20;
 /** Los movimientos que SUMAN saldo. El resto lo consume. */
 const CREDIT_TYPES = new Set<WalletTransaction['type']>(['CREDIT', 'REFUND']);
 
-const money = (value: number): string => `S/ ${Number(value).toFixed(2)}`;
 
 const shortDate = (value: string | null): string =>
   value

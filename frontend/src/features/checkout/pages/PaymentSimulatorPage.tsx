@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CreditCard, TriangleAlert } from 'lucide-react';
-import toast from 'react-hot-toast';
+import toast from '@components/mui/MuiToast';
 import { Button } from '@components/ui/Button';
 import { Card, CardDescription, CardTitle } from '@components/ui/Card';
 import { getApiErrorMessage } from '@services/api/client';
@@ -23,12 +23,14 @@ const PaymentSimulatorPage = () => {
   const providerReference = params.get('ref') ?? '';
   const total = Number(params.get('total') ?? 0);
   const orderNumber = params.get('pedido') ?? '';
+  const returnUrl = params.get('retorno');
 
   const handle = async (outcome: 'pay' | 'fail') => {
     setIsProcessing(true);
     try {
       await checkoutApi.simulatePayment(providerReference, outcome);
-      navigate(`${ROUTES.checkoutSuccess}?pedido=${orderNumber}`);
+      if (returnUrl) window.location.assign(returnUrl);
+      else navigate(`${ROUTES.checkoutSuccess}?pedido=${orderNumber}`);
     } catch (error) {
       toast.error(getApiErrorMessage(error));
     } finally {
@@ -51,7 +53,7 @@ const PaymentSimulatorPage = () => {
         <CardDescription className="mt-1">Total a pagar</CardDescription>
         <p className="mt-1 text-3xl font-bold text-brand-700">{formatCurrency(total)}</p>
 
-        <div className="mt-6 space-y-2">
+        <div className="mt-6 grid gap-2">
           <Button
             className="w-full"
             size="lg"

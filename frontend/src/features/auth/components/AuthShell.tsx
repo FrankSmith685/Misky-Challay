@@ -1,171 +1,147 @@
 import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import {
-  Box,
-  Chip,
-  Container,
-  Paper,
-  Stack,
-  Typography,
-} from '@mui/material';
-import { CheckCircle2, Leaf, ShieldCheck, Sparkles } from 'lucide-react';
+  ArrowLeft,
+  CheckCircle2,
+  HeartHandshake,
+  MapPinCheck,
+  ShieldCheck,
+  Sparkles,
+  WalletCards,
+} from 'lucide-react';
+import { AppLogo } from '@components/common/AppLogo';
+import { ROUTES } from '@constants/routes';
+import { cn } from '@lib/cn';
 
-type AuthShellProps = {
+interface AuthShellProps {
   eyebrow: string;
   title: string;
   description: string;
   children: ReactNode;
   wide?: boolean;
-};
+}
 
-const BENEFITS = [
-  'Compra y revisa tus pedidos en un solo lugar',
-  'Guarda direcciones y preferencias de entrega',
-  'Accede a beneficios, saldo y favoritos',
+const benefits = [
+  {
+    icon: MapPinCheck,
+    title: 'Tus direcciones listas',
+    description: 'Compra más rápido en cada visita.',
+  },
+  {
+    icon: WalletCards,
+    title: 'Saldo y beneficios',
+    description: 'Todo visible desde tu cuenta.',
+  },
+  {
+    icon: HeartHandshake,
+    title: 'Una experiencia personal',
+    description: 'Favoritos, bowls y pedidos guardados.',
+  },
 ];
 
-/** Marco visual compartido por las pantallas de acceso, construido solo con MUI. */
-export const AuthShell = ({ eyebrow, title, description, children, wide = false }: AuthShellProps) => (
-  <Box
-    component="section"
-    sx={{
-      position: 'relative',
-      overflow: 'hidden',
-      display: 'grid',
-      minHeight: { xs: 'calc(100vh - 72px)', md: 'calc(100vh - 80px)' },
-      placeItems: 'center',
-      py: { xs: 4, sm: 7 },
-      background:
-        'radial-gradient(circle at 8% 15%, rgba(35,124,82,.12), transparent 28%), radial-gradient(circle at 92% 82%, rgba(232,148,15,.10), transparent 26%), #f7faf8',
-    }}
-  >
-    <Container maxWidth="lg" sx={{ position: 'relative' }}>
-      <Paper
-        elevation={0}
-        sx={{
-          mx: 'auto',
-          display: 'grid',
-          maxWidth: wide ? 1080 : 1020,
-          gridTemplateColumns: { xs: '1fr', md: wide ? '0.88fr 1.12fr' : '1fr 1fr' },
-          overflow: 'hidden',
-          border: '1px solid',
-          borderColor: 'divider',
-          borderRadius: { xs: 4, sm: 5 },
-          boxShadow: '0 28px 80px rgba(20, 60, 40, .12)',
-        }}
-      >
-        <Box
-          sx={{
-            position: 'relative',
-            display: { xs: 'none', md: 'flex' },
-            minHeight: 600,
-            flexDirection: 'column',
-            justifyContent: 'space-between',
-            overflow: 'hidden',
-            p: { md: 5, lg: 6 },
-            color: 'common.white',
-            background: 'linear-gradient(145deg, #174c35 0%, #237c52 68%, #2f9164 100%)',
-          }}
-        >
-          <Box
-            sx={{
-              position: 'absolute',
-              top: -100,
-              right: -80,
-              width: 280,
-              height: 280,
-              borderRadius: '50%',
-              bgcolor: 'rgba(255,255,255,.08)',
-            }}
-          />
-          <Box
-            sx={{
-              position: 'absolute',
-              right: -20,
-              bottom: -90,
-              width: 240,
-              height: 240,
-              border: '44px solid rgba(255,255,255,.06)',
-              borderRadius: '50%',
-            }}
-          />
+/**
+ * Marco compartido para acceso y recuperación. Mantiene una jerarquía estable
+ * en las cuatro pantallas y reduce el formulario a una sola columna en móvil.
+ */
+export const AuthShell = ({
+  eyebrow,
+  title,
+  description,
+  children,
+  wide = false,
+}: AuthShellProps) => (
+  <section className="relative isolate overflow-hidden bg-surface-muted px-4 py-8 sm:px-6 sm:py-12 lg:px-8 lg:py-16">
+    <div className="pointer-events-none absolute -left-28 top-16 size-80 rounded-full bg-brand-200/45 blur-3xl" />
+    <div className="pointer-events-none absolute -right-24 bottom-10 size-80 rounded-full bg-accent-400/15 blur-3xl" />
 
-          <Box sx={{ position: 'relative' }}>
-            <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
-              <Box
-                sx={{
-                  display: 'grid',
-                  width: 44,
-                  height: 44,
-                  placeItems: 'center',
-                  borderRadius: 3,
-                  bgcolor: 'rgba(255,255,255,.15)',
-                  border: '1px solid rgba(255,255,255,.18)',
-                }}
+    <div
+      className={cn(
+        'relative mx-auto grid overflow-hidden rounded-card border border-line bg-white shadow-e3',
+        wide
+          ? 'max-w-6xl lg:grid-cols-[minmax(340px,.82fr)_minmax(0,1.18fr)]'
+          : 'max-w-5xl lg:grid-cols-[minmax(360px,.94fr)_minmax(0,1.06fr)]',
+      )}
+    >
+      <aside className="relative hidden min-h-[650px] overflow-hidden bg-brand-900 p-10 text-white lg:flex lg:flex-col xl:p-12">
+        <div className="absolute -right-28 -top-24 size-80 rounded-full bg-white/8" />
+        <div className="absolute -bottom-28 -left-24 size-72 rounded-full border-[42px] border-white/5" />
+
+        <div className="relative">
+          <AppLogo inverse />
+
+          <span className="mt-12 inline-flex items-center gap-2 rounded-pill border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold text-brand-50">
+            <Sparkles className="size-3.5 text-accent-400" />
+            Tu cuenta, todo más simple
+          </span>
+          <p className="mt-5 max-w-md text-4xl font-black leading-[1.08] tracking-[-.04em]">
+            Come bien. Nosotros recordamos el resto.
+          </p>
+          <p className="mt-4 max-w-md text-sm leading-7 text-brand-50/72">
+            Accede a una experiencia pensada para ahorrar pasos: tus pedidos, direcciones,
+            beneficios y preferencias siempre disponibles.
+          </p>
+
+          <div className="mt-8 grid gap-3">
+            {benefits.map(({ icon: Icon, title: benefitTitle, description: benefitDescription }) => (
+              <div
+                key={benefitTitle}
+                className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/8 p-3.5 backdrop-blur-sm"
               >
-                <Leaf size={23} />
-              </Box>
-              <Typography variant="h6" sx={{ fontWeight: 850, letterSpacing: '-.02em' }}>
-                Verde Bowl
-              </Typography>
-            </Stack>
+                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white/10 text-brand-100">
+                  <Icon className="size-4.5" />
+                </span>
+                <div>
+                  <p className="text-sm font-extrabold">{benefitTitle}</p>
+                  <p className="mt-0.5 text-xs leading-5 text-brand-50/65">
+                    {benefitDescription}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
 
-            <Chip
-              icon={<Sparkles size={15} />}
-              label="Comer bien, todos los días"
-              sx={{
-                mt: 7,
-                color: 'common.white',
-                bgcolor: 'rgba(255,255,255,.13)',
-                '& .MuiChip-icon': { color: '#ffd38a' },
-              }}
-            />
-            <Typography
-              component="p"
-              sx={{ mt: 3, maxWidth: 390, fontSize: { md: 34, lg: 40 }, fontWeight: 800, lineHeight: 1.12 }}
-            >
-              Tu experiencia saludable empieza aquí.
-            </Typography>
-            <Typography sx={{ mt: 2, maxWidth: 390, color: 'rgba(255,255,255,.76)', lineHeight: 1.7 }}>
-              Una cuenta sencilla para pedir más rápido y tener todo tu historial siempre disponible.
-            </Typography>
+        <div className="relative mt-8 flex items-start gap-2.5 border-t border-white/10 pt-5">
+          <ShieldCheck className="mt-0.5 size-4.5 shrink-0 text-brand-200" />
+          <p className="text-xs leading-5 text-brand-50/65">
+            Protegemos tu sesión y nunca mostramos tu contraseña al equipo de Verde Bowl.
+          </p>
+        </div>
+      </aside>
 
-            <Stack spacing={2} sx={{ mt: 5 }}>
-              {BENEFITS.map((benefit) => (
-                <Stack key={benefit} direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
-                  <CheckCircle2 size={19} color="#bde8cc" />
-                  <Typography variant="body2" sx={{ color: 'rgba(255,255,255,.9)' }}>
-                    {benefit}
-                  </Typography>
-                </Stack>
-              ))}
-            </Stack>
-          </Box>
+      <div className="flex min-w-0 flex-col justify-center p-5 sm:p-8 md:p-10 xl:p-12">
+        <div className="mb-6 lg:hidden">
+          <Link
+            to={ROUTES.home}
+            className="inline-flex items-center gap-1.5 text-xs font-extrabold text-ink-muted transition-colors hover:text-brand-700"
+          >
+            <ArrowLeft className="size-3.5" />
+            Volver al inicio
+          </Link>
+        </div>
 
-          <Stack direction="row" spacing={1.25} sx={{ position: 'relative', alignItems: 'center' }}>
-            <ShieldCheck size={20} color="#bde8cc" />
-            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,.72)' }}>
-              Tus datos están protegidos y nunca compartimos tu contraseña.
-            </Typography>
-          </Stack>
-        </Box>
-
-        <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', p: { xs: 3, sm: 5, lg: 6 } }}>
-          <Box sx={{ display: { xs: 'flex', md: 'none' }, alignItems: 'center', gap: 1, mb: 4, color: 'primary.main' }}>
-            <Leaf size={23} />
-            <Typography sx={{ fontWeight: 850 }}>Verde Bowl</Typography>
-          </Box>
-          <Typography variant="overline" sx={{ color: 'primary.main', fontWeight: 800, letterSpacing: '.12em' }}>
+        <div className="mb-7 sm:mb-8">
+          <span className="inline-flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-[.16em] text-brand-700">
+            <CheckCircle2 className="size-3.5" />
             {eyebrow}
-          </Typography>
-          <Typography component="h1" variant="h4" sx={{ mt: 0.5, fontWeight: 850, letterSpacing: '-.035em' }}>
+          </span>
+          <h1 className="mt-2 text-3xl font-black tracking-[-.035em] text-ink sm:text-4xl">
             {title}
-          </Typography>
-          <Typography color="text.secondary" sx={{ mt: 1.25, mb: 4, maxWidth: 520, lineHeight: 1.65 }}>
+          </h1>
+          <p className="mt-3 max-w-xl text-sm leading-6 text-ink-muted sm:text-base">
             {description}
-          </Typography>
+          </p>
+        </div>
+
+        <div className="grid gap-5">
           {children}
-        </Box>
-      </Paper>
-    </Container>
-  </Box>
+        </div>
+
+        <p className="mt-7 flex items-center justify-center gap-1.5 text-center text-[11px] leading-5 text-ink-muted">
+          <ShieldCheck className="size-3.5 text-brand-600" />
+          Acceso protegido y datos cifrados.
+        </p>
+      </div>
+    </div>
+  </section>
 );

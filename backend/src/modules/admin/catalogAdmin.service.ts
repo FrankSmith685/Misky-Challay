@@ -14,6 +14,8 @@ import {
 import { PRODUCT_STATUS, type ProductStatus } from '@database/models/product.model';
 import { PRODUCT_TYPE, type ProductType } from '@config/constants';
 import { ApiError } from '@shared/errors/ApiError';
+import { availabilityAlertsService } from '@modules/catalog/availabilityAlerts.service';
+import { logger } from '@config/logger';
 
 /**
  * CATALOGO desde el panel (M04 / seccion 9.7).
@@ -368,19 +370,46 @@ export const catalogAdminService = {
   ) {
     await catalogAdminService.getProductOrFail(productId);
 
-    const [row] = await BranchProductAvailability.findOrCreate({
+    const [row, created] = await BranchProductAvailability.findOrCreate({
       where: { branchId, productId },
       defaults: { branchId, productId, isAvailable, unavailableReason: reason ?? null },
     });
 
-    const before = { isAvailable: row.isAvailable };
+    // Si la fila acaba de nacer, el estado anterior no es el que trae `row` —que
+    // ya son los valores nuevos— sino el implicito: sin fila = disponible. La
+    // bitacora registraba "de disponible a disponible" en el caso mas comun.
+    const before = created
+      ? { isAvailable: true, unavailableReason: null }
+      : { isAvailable: row.isAvailable, unavailableReason: row.unavailableReason };
 
     await row.update({ isAvailable, unavailableReason: isAvailable ? null : (reason ?? null) });
+    if (isAvailable) {
+      void availabilityAlertsService.notifyWaiting(productId, branchId).catch((error) => {
+        logger.error(`No se pudieron procesar alertas para producto ${productId} y local ${branchId}`, error);
+      });
+    }
     return { row, before };
   },
 
+  /**
+   * Estado por sucursal del producto.
+   *
+   * Proyeccion explicita (y no la fila entera) porque esto alimenta el interruptor
+   * "Disponible en <cocina>" del panel: sin fila, disponible. Las cocinas que no
+   * aparecen aqui no estan retiradas, simplemente nunca se tocaron.
+   */
   async listBranchAvailability(productId: number) {
-    return BranchProductAvailability.findAll({ where: { productId } });
+    const rows = await BranchProductAvailability.findAll({
+      where: { productId },
+      order: [['branchId', 'ASC']],
+    });
+
+    return rows.map((row) => ({
+      branchId: row.branchId,
+      isAvailable: row.isAvailable,
+      unavailableReason: row.unavailableReason,
+      updatedAt: row.updatedAt,
+    }));
   },
 
   // --- Categorias ---

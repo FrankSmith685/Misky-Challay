@@ -1,4 +1,4 @@
-import { Transaction } from 'sequelize';
+import { Op, Transaction } from 'sequelize';
 import {
   BranchInventory,
   BranchOptionAvailability,
@@ -93,7 +93,15 @@ export const calculateRequirements = async (
   return requirements;
 };
 
-/** Escribe el movimiento y deja el saldo resultante (libro inmutable). */
+/**
+ * Escribe el movimiento y deja el saldo resultante (libro inmutable).
+ *
+ * `quantity` llega con el SENTIDO ya resuelto por el tipo, salvo en ADJUSTMENT:
+ * ese es el unico movimiento que puede ir en las dos direcciones (el conteo
+ * fisico da mas o da menos que el sistema), asi que ahi el signo es el dato y se
+ * guarda tal cual. Sin el, un ajuste a la baja quedaba registrado como si hubiera
+ * sumado.
+ */
 const writeMovement = async (
   stock: BranchInventory,
   type: MovementType,
@@ -120,6 +128,16 @@ const writeMovement = async (
 /**
  * Si un insumo se queda sin stock, las opciones que lo usan se marcan agotadas en
  * esa sucursal (RN-005): dejan de ofrecerse en el constructor de inmediato.
+ *
+ * Esta fila la comparte con el bloqueo MANUAL del panel, y esta funcion se dispara
+ * en cada movimiento (reserva, liberacion, consumo, ajuste). De ahi las dos
+ * cautelas:
+ *
+ *  - Una opcion SIN consumo declarado no depende del stock. Antes `needed <= 0`
+ *    la daba por disponible en cada movimiento, asi que registrar una simple
+ *    compra reactivaba opciones que alguien acababa de agotar a mano.
+ *  - No se crea fila para decir "disponible": sin fila ya manda el estado global
+ *    de la opcion. La fila solo se crea para AGOTAR.
  */
 const syncOptionAvailability = async (
   branchId: number,
@@ -139,13 +157,24 @@ const syncOptionAvailability = async (
 
   for (const option of options) {
     const needed = Number(option.consumptionQuantity);
-    const isAvailable = needed <= 0 || stock.available >= needed;
+    if (!(needed > 0)) continue;
 
-    const [row] = await BranchOptionAvailability.findOrCreate({
+    const isAvailable = stock.available >= needed;
+
+    const row = await BranchOptionAvailability.findOne({
       where: { branchId, optionId: option.id },
-      defaults: { branchId, optionId: option.id, isAvailable, priceOverride: null },
       transaction,
     });
+
+    if (!row) {
+      if (isAvailable) continue;
+      await BranchOptionAvailability.create(
+        { branchId, optionId: option.id, isAvailable: false, priceOverride: null },
+        { transaction },
+      );
+      logger.warn(`Opcion "${option.name}" AGOTADA en la sucursal ${branchId}`);
+      continue;
+    }
 
     if (row.isAvailable !== isAvailable) {
       row.isAvailable = isAvailable;
@@ -243,6 +272,80 @@ export const inventoryService = {
   },
 
   /**
+   * Maestro de insumos con la marca de cuales ya se controlan en esta cocina.
+   *
+   * El insumo se crea UNA vez para todo el negocio, pero el stock es por sucursal.
+   * Sin esta lista, el administrador de una cocina no tenia forma de empezar a
+   * controlar un insumo creado en otra: "Nuevo insumo" chocaba contra el codigo
+   * unico y su unica salida era duplicarlo con un codigo inventado.
+   */
+  async listMasterItems(branchId: number) {
+    const [items, enabledRows] = await Promise.all([
+      InventoryItem.findAll({ where: { isActive: true }, order: [['name', 'ASC']] }),
+      BranchInventory.findAll({ where: { branchId }, attributes: ['inventoryItemId'] }),
+    ]);
+
+    const enabled = new Set(enabledRows.map((row) => row.inventoryItemId));
+
+    return items.map((item) => ({
+      inventoryItemId: item.id,
+      code: item.code,
+      name: item.name,
+      unit: item.unit,
+      minLevel: Number(item.minLevel),
+      isEnabledInBranch: enabled.has(item.id),
+    }));
+  },
+
+  /**
+   * Habilita en una cocina un insumo que ya existe en el maestro: es el mismo
+   * `findOrCreate` que `adjust` hacia de refilon, pero explicito, para que la fila
+   * aparezca en el inventario sin tener que inventarse un movimiento.
+   * Idempotente: si ya estaba habilitado no toca nada y lo dice.
+   */
+  async enableItem(input: {
+    branchId: number;
+    inventoryItemId: number;
+    initialStock: number;
+    actorId: number;
+  }) {
+    const item = await InventoryItem.findByPk(input.inventoryItemId);
+    if (!item || !item.isActive) throw ApiError.notFound('Insumo no encontrado');
+
+    return sequelize.transaction(async (transaction) => {
+      const [stock, created] = await BranchInventory.findOrCreate({
+        where: { branchId: input.branchId, inventoryItemId: input.inventoryItemId },
+        defaults: {
+          branchId: input.branchId,
+          inventoryItemId: input.inventoryItemId,
+          onHand: 0,
+          reserved: 0,
+        },
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      });
+
+      if (!created) return { stock, item, created: false };
+
+      if (input.initialStock > 0) {
+        stock.onHand = round2(input.initialStock);
+        await stock.save({ transaction });
+
+        await writeMovement(
+          stock,
+          MOVEMENT_TYPE.PURCHASE,
+          input.initialStock,
+          { actorId: input.actorId, reason: `Stock inicial al habilitar ${item.name} en la cocina` },
+          transaction,
+        );
+      }
+
+      await syncOptionAvailability(input.branchId, input.inventoryItemId, transaction);
+      return { stock, item, created: true };
+    });
+  },
+
+  /**
    * RN-016: reserva stock durante el intento de pago. En modo estricto, cualquier
    * faltante revierte toda la transaccion; una confirmacion posterior es idempotente.
    */
@@ -251,16 +354,26 @@ export const inventoryService = {
     transaction: Transaction,
     strict = false,
   ): Promise<{ shortages: Array<{ item: string; missing: number; unit: string }> }> {
-    const existingReservations = await InventoryMovement.count({
+    const existingReservations = await InventoryMovement.findAll({
       where: { orderId: order.id, type: MOVEMENT_TYPE.RESERVE },
+      attributes: ['inventoryItemId', 'quantity'],
       transaction,
     });
-    if (existingReservations > 0) return { shortages: [] };
-
     const requirements = await calculateRequirements(order.id, transaction);
+    const alreadyReserved = new Map<number, number>();
+    for (const movement of existingReservations) {
+      alreadyReserved.set(
+        movement.inventoryItemId,
+        round2((alreadyReserved.get(movement.inventoryItemId) ?? 0) + Number(movement.quantity)),
+      );
+    }
     const shortages: Array<{ item: string; missing: number; unit: string }> = [];
 
-    for (const [inventoryItemId, quantity] of requirements) {
+    for (const [inventoryItemId, totalRequired] of requirements) {
+      // Una comanda de salÃ³n puede crecer mientras cocina aÃºn no la prepara.
+      // Solo reservamos el delta: repetir la operaciÃ³n sigue siendo idempotente.
+      const quantity = round2(Math.max(0, totalRequired - (alreadyReserved.get(inventoryItemId) ?? 0)));
+      if (quantity <= 0) continue;
       const [stock] = await BranchInventory.findOrCreate({
         where: { branchId: order.branchId, inventoryItemId },
         defaults: { branchId: order.branchId, inventoryItemId, onHand: 0, reserved: 0 },
@@ -309,20 +422,29 @@ export const inventoryService = {
       transaction,
     });
 
+    const reservedByItem = new Map<number, { branchId: number; quantity: number }>();
     for (const movement of movements) {
+      const current = reservedByItem.get(movement.inventoryItemId);
+      reservedByItem.set(movement.inventoryItemId, {
+        branchId: movement.branchId,
+        quantity: round2((current?.quantity ?? 0) + Number(movement.quantity)),
+      });
+    }
+
+    for (const [inventoryItemId, reservation] of reservedByItem) {
       const released = await InventoryMovement.sum('quantity', {
         where: {
           orderId: order.id,
-          branchId: movement.branchId,
-          inventoryItemId: movement.inventoryItemId,
+          branchId: reservation.branchId,
+          inventoryItemId,
           type: MOVEMENT_TYPE.RELEASE,
         },
         transaction,
       });
-      const pendingRelease = Math.max(0, Number(movement.quantity) - Number(released ?? 0));
+      const pendingRelease = Math.max(0, reservation.quantity - Number(released ?? 0));
       if (pendingRelease <= 0) continue;
       const stock = await BranchInventory.findOne({
-        where: { branchId: movement.branchId, inventoryItemId: movement.inventoryItemId },
+        where: { branchId: reservation.branchId, inventoryItemId },
         transaction,
         lock: transaction.LOCK.UPDATE,
       });
@@ -379,7 +501,18 @@ export const inventoryService = {
     }
   },
 
-  /** Entrada de stock, merma o ajuste manual desde el panel. */
+  /**
+   * Entrada de stock, merma o ajuste manual desde el panel.
+   *
+   * EL AJUSTE LLEVA SIGNO. Antes "Ajuste" ejecutaba exactamente la misma linea que
+   * "Entrada" (`onHand + quantity`) y la cantidad venia forzada a positiva desde la
+   * ruta: cuando el conteo fisico daba MENOS que el sistema no existia la operacion
+   * correcta, la etiqueta prometia lo contrario de lo que hacia y la unica salida
+   * era anotar la diferencia como merma, ensuciando el indicador de mermas.
+   *
+   * Un ajuste a la baja no puede comerse lo RESERVADO: esos gramos ya estan
+   * comprometidos con pedidos pagados que la cocina todavia tiene que preparar.
+   */
   async adjust(input: {
     branchId: number;
     inventoryItemId: number;
@@ -388,7 +521,13 @@ export const inventoryService = {
     actorId: number;
     reason: string;
   }) {
-    if (input.quantity <= 0) throw ApiError.badRequest('La cantidad debe ser positiva');
+    if (input.type === MOVEMENT_TYPE.ADJUSTMENT) {
+      if (input.quantity === 0) {
+        throw ApiError.badRequest('El conteo coincide con el sistema: no hay nada que ajustar');
+      }
+    } else if (input.quantity <= 0) {
+      throw ApiError.badRequest('La cantidad debe ser positiva');
+    }
 
     return sequelize.transaction(async (transaction) => {
       const [stock] = await BranchInventory.findOrCreate({
@@ -405,8 +544,20 @@ export const inventoryService = {
 
       const current = Number(stock.onHand);
 
-      if (input.type === MOVEMENT_TYPE.PURCHASE || input.type === MOVEMENT_TYPE.ADJUSTMENT) {
+      if (input.type === MOVEMENT_TYPE.PURCHASE) {
         stock.onHand = round2(current + input.quantity);
+      } else if (input.type === MOVEMENT_TYPE.ADJUSTMENT) {
+        // El sentido viaja en el signo de la cantidad, ya calculado contra el
+        // conteo fisico. Se resuelve DENTRO de la transaccion y con la fila
+        // bloqueada, asi que un consumo simultaneo no puede colar un saldo mentiroso.
+        const next = round2(current + input.quantity);
+        const reserved = round2(Number(stock.reserved));
+        if (next < reserved) {
+          throw ApiError.unprocessable(
+            `No puedes dejar el stock en ${next}: hay ${reserved} reservados para pedidos ya pagados`,
+          );
+        }
+        stock.onHand = next;
       } else if (input.type === MOVEMENT_TYPE.WASTE) {
         if (input.quantity > stock.available) {
           throw ApiError.unprocessable('No puedes mermar mas de lo que hay disponible');
@@ -440,7 +591,28 @@ export const inventoryService = {
     });
 
     const itemIds = rows.map((row) => row.inventoryItemId);
-    const impacted = itemIds.length ? await CustomizationOption.findAll({ where: { inventoryItemId: itemIds } }) : [];
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const [impacted, recentConsumption] = await Promise.all([
+      itemIds.length ? CustomizationOption.findAll({ where: { inventoryItemId: itemIds } }) : [],
+      itemIds.length
+        ? InventoryMovement.findAll({
+            where: {
+              branchId,
+              inventoryItemId: itemIds,
+              type: [MOVEMENT_TYPE.CONSUME, MOVEMENT_TYPE.WASTE],
+              createdAt: { [Op.gte]: since },
+            },
+            attributes: ['inventoryItemId', 'quantity'],
+          })
+        : [],
+    ]);
+    const consumedByItem = new Map<number, number>();
+    recentConsumption.forEach((movement) => {
+      consumedByItem.set(
+        movement.inventoryItemId,
+        round2((consumedByItem.get(movement.inventoryItemId) ?? 0) + Math.abs(Number(movement.quantity))),
+      );
+    });
     const groupIds = [...new Set(impacted.map((option) => option.groupId))];
     const alternatives = groupIds.length ? await CustomizationOption.findAll({ where: { groupId: groupIds, status: 'ACTIVE' } }) : [];
 
@@ -451,15 +623,42 @@ export const inventoryService = {
       const substituteNames = [...new Set(impactedOptions.flatMap((option) => alternatives
         .filter((candidate) => candidate.groupId === option.groupId && !impactedIds.has(candidate.id))
         .map((candidate) => candidate.name)))].slice(0, 4);
+      const available = round2(row.available);
+      const minLevel = Number(item?.minLevel ?? 0);
+      const consumedLast7Days = consumedByItem.get(row.inventoryItemId) ?? 0;
+      const averageDailyUsage = round2(consumedLast7Days / 7);
+      const daysRemaining = averageDailyUsage > 0
+        ? round2(Math.max(0, available) / averageDailyUsage)
+        : null;
+      const targetLevel = round2(Math.max(
+        minLevel * 2,
+        averageDailyUsage * 7,
+        available <= 0 ? 1 : 0,
+      ));
+      const suggestedPurchase = round2(Math.max(0, targetLevel - available));
+      const stockStatus = available <= 0
+        ? 'OUT'
+        : available <= minLevel * 0.5 || (daysRemaining !== null && daysRemaining <= 1)
+          ? 'CRITICAL'
+          : available <= minLevel || (daysRemaining !== null && daysRemaining <= 3)
+            ? 'LOW'
+            : 'HEALTHY';
+
       return {
         inventoryItemId: row.inventoryItemId,
         name: item?.name ?? '',
         unit: item?.unit ?? '',
         onHand: Number(row.onHand),
         reserved: Number(row.reserved),
-        available: row.available,
-        minLevel: Number(item?.minLevel ?? 0),
-        isLow: row.available <= Number(item?.minLevel ?? 0),
+        available,
+        minLevel,
+        isLow: stockStatus !== 'HEALTHY',
+        stockStatus,
+        consumedLast7Days,
+        averageDailyUsage,
+        daysRemaining,
+        targetLevel,
+        suggestedPurchase,
         impactedOptions: impactedOptions.map((option) => option.name),
         suggestedSubstitutes: substituteNames,
       };

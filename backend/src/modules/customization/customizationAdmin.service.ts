@@ -1,4 +1,5 @@
 import {
+  Allergen,
   BranchOptionAvailability,
   Branch,
   BuilderPreset,
@@ -22,6 +23,67 @@ import { ApiError } from '@shared/errors/ApiError';
  * pueden elegir en cada paso, cuantas van incluidas, que cuesta cada extra, que
  * combinaciones se prohiben y que insumo descuenta cada opcion.
  */
+
+/**
+ * Los alergenos del ingrediente son CODIGOS del maestro, no texto libre.
+ *
+ * El motor los cruza contra las preferencias del cliente comparando cadenas: un
+ * "sesamo" con tilde o un "Mariscos" en mayuscula no cruzan con nada y el aviso
+ * de alergia deja de aparecer sin que nadie lo note. Un alergeno que no avisa es
+ * peor que no tenerlo, asi que aqui se rechaza en vez de guardarse.
+ */
+const assertKnownAllergens = async (codes: string[]): Promise<void> => {
+  const wanted = [...new Set(codes)];
+  if (wanted.length === 0) return;
+
+  const master = await Allergen.findAll({ attributes: ['code'] });
+  const known = new Set(master.map((allergen) => allergen.code));
+  const unknown = wanted.filter((code) => !known.has(code));
+
+  if (unknown.length > 0) {
+    throw ApiError.badRequest(
+      `Estos alergenos no existen en el maestro: ${unknown.join(', ')}`,
+    );
+  }
+};
+
+/**
+ * RN-005: una opcion enlazada a un insumo TIENE que declarar cuanto descuenta.
+ *
+ * Con cantidad 0 el enlace es decorativo: `addRequirement` descarta las
+ * cantidades <= 0, la opcion nunca se agota sola y la promesa de Inventario ("si
+ * un insumo llega a cero, las opciones que lo usan se marcan agotadas") deja de
+ * cumplirse en silencio, porque la tabla del constructor ni siquiera mostraba el
+ * insumo.
+ */
+const assertConsumption = (inventoryItemId: number | null, consumptionQuantity: number): void => {
+  if (inventoryItemId !== null && consumptionQuantity <= 0) {
+    throw ApiError.badRequest(
+      'Indica cuanto insumo descuenta la opcion: con cantidad 0 no se descuenta nada ni se agota nunca',
+    );
+  }
+};
+
+/**
+ * El orden recibido tiene que describir EXACTAMENTE lo que hay hoy.
+ *
+ * Renumerar una lista incompleta —porque otro administrador acaba de añadir una
+ * opcion mientras esta pantalla estaba abierta— dejaria filas empatadas otra vez,
+ * que es justo el defecto que este endpoint viene a cerrar.
+ */
+const assertSameSet = (current: number[], received: number[], label: string): void => {
+  const receivedSet = new Set(received);
+
+  if (received.length !== receivedSet.size) {
+    throw ApiError.badRequest(`El orden recibido repite ${label}`);
+  }
+
+  if (current.length !== receivedSet.size || current.some((id) => !receivedSet.has(id))) {
+    throw ApiError.unprocessable(
+      `El orden recibido no coincide con ${label} de ahora. Recarga la pantalla e intentalo de nuevo.`,
+    );
+  }
+};
 export const customizationAdminService = {
   /** Pasos con sus opciones y las reglas efectivas de un producto. */
   async getConfig(productId: number) {
@@ -292,6 +354,11 @@ export const customizationAdminService = {
     });
     if (existing) throw ApiError.conflict('Ese paso ya tiene una opcion con ese nombre');
 
+    const inventoryItemId = input.inventoryItemId ?? null;
+    const consumptionQuantity = input.consumptionQuantity ?? 0;
+    assertConsumption(inventoryItemId, consumptionQuantity);
+    await assertKnownAllergens(input.allergens ?? []);
+
     const sortOrder = input.sortOrder ?? await CustomizationOption.count({ where: { groupId } });
 
     return CustomizationOption.create({
@@ -312,8 +379,10 @@ export const customizationAdminService = {
       carbs: input.carbs,
       fat: input.fat,
       maxPerItem: input.maxPerItem,
-      inventoryItemId: input.inventoryItemId ?? null,
-      consumptionQuantity: input.consumptionQuantity ?? 0,
+      inventoryItemId,
+      // Sin insumo enlazado la cantidad no significa nada: se guarda en cero para
+      // que no reaparezca al volver a enlazarlo.
+      consumptionQuantity: inventoryItemId === null ? 0 : consumptionQuantity,
       ingredientId: null,
     });
   },
@@ -353,6 +422,24 @@ export const customizationAdminService = {
       calories: Number(option.calories),
     };
 
+    /* El enlace con el insumo se valida solo cuando ESTE cambio lo toca: asi una
+     * correccion de macros o de alergenos no queda bloqueada por una fila antigua
+     * que ya venia con cantidad 0. */
+    let nextConsumption = input.consumptionQuantity;
+    if (input.inventoryItemId !== undefined || input.consumptionQuantity !== undefined) {
+      const inventoryItemId =
+        input.inventoryItemId !== undefined ? input.inventoryItemId : option.inventoryItemId;
+      const consumptionQuantity =
+        input.consumptionQuantity !== undefined
+          ? input.consumptionQuantity
+          : Number(option.consumptionQuantity);
+
+      assertConsumption(inventoryItemId, consumptionQuantity);
+      nextConsumption = inventoryItemId === null ? 0 : consumptionQuantity;
+    }
+
+    if (input.allergens !== undefined) await assertKnownAllergens(input.allergens);
+
     if (input.name !== undefined) option.name = input.name;
     if (input.description !== undefined) option.description = input.description;
     if (input.imageUrl !== undefined) option.imageUrl = input.imageUrl;
@@ -371,9 +458,7 @@ export const customizationAdminService = {
     if (input.maxPerItem !== undefined) option.maxPerItem = input.maxPerItem;
     if (input.status !== undefined) option.status = input.status;
     if (input.inventoryItemId !== undefined) option.inventoryItemId = input.inventoryItemId;
-    if (input.consumptionQuantity !== undefined) {
-      option.consumptionQuantity = input.consumptionQuantity;
-    }
+    if (nextConsumption !== undefined) option.consumptionQuantity = nextConsumption;
 
     await option.save();
     return { option, before };
@@ -442,6 +527,11 @@ export const customizationAdminService = {
   async duplicateOption(optionId: number) {
     const source = await CustomizationOption.findByPk(optionId);
     if (!source) throw ApiError.notFound('Opcion no encontrada');
+
+    // La copia va al FINAL del paso. Antes heredaba `sortOrder + 1`, que empataba
+    // con la opcion siguiente y dejaba las flechas de orden sin efecto.
+    const sortOrder = await CustomizationOption.count({ where: { groupId: source.groupId } });
+
     const copy = await CustomizationOption.create({
       groupId: source.groupId,
       ingredientId: source.ingredientId,
@@ -463,9 +553,73 @@ export const customizationAdminService = {
       inventoryItemId: source.inventoryItemId,
       consumptionQuantity: source.consumptionQuantity,
       status: OPTION_STATUS.INACTIVE,
-      sortOrder: source.sortOrder + 1,
+      sortOrder,
     });
     return copy;
+  },
+
+  /**
+   * REORDENAMIENTO POR RENUMERACION
+   * -------------------------------------------------------------------------
+   * Se recibe la lista completa de ids en el orden deseado y se reescribe
+   * `sortOrder` de 0 a n-1.
+   *
+   * Antes el panel INTERCAMBIABA el `sortOrder` de dos filas, lo que solo mueve
+   * algo si los valores son distintos; y no lo eran, porque `duplicateOption`
+   * copiaba `sortOrder + 1` y `createOption` usaba el conteo del paso. Con dos
+   * filas empatadas el desempate pasa a ser alfabetico: el usuario pulsaba la
+   * flecha, leia "Orden actualizado" y la fila no se movia. Renumerar deja la
+   * lista sin empates a la primera y de paso repara las que ya los tenian.
+   */
+  async reorderGroups(productId: number, groupIds: number[]) {
+    const links = await ProductCustomizationGroup.findAll({ where: { productId } });
+    assertSameSet(links.map((link) => link.groupId), groupIds, 'los pasos');
+
+    await sequelize.transaction(async (transaction) => {
+      for (const [index, groupId] of groupIds.entries()) {
+        // El orden efectivo lo manda el enlace producto-paso; el del grupo se
+        // mantiene alineado para que un paso reutilizado no se contradiga.
+        await ProductCustomizationGroup.update(
+          { sortOrder: index },
+          { where: { productId, groupId }, transaction },
+        );
+        await CustomizationGroup.update({ sortOrder: index }, { where: { id: groupId }, transaction });
+      }
+    });
+
+    return { ordered: groupIds.length };
+  },
+
+  async reorderOptions(groupId: number, optionIds: number[]) {
+    const options = await CustomizationOption.findAll({ where: { groupId }, attributes: ['id'] });
+    assertSameSet(options.map((option) => option.id), optionIds, 'las opciones del paso');
+
+    await sequelize.transaction(async (transaction) => {
+      for (const [index, optionId] of optionIds.entries()) {
+        await CustomizationOption.update(
+          { sortOrder: index },
+          { where: { id: optionId, groupId }, transaction },
+        );
+      }
+    });
+
+    return { ordered: optionIds.length };
+  },
+
+  async reorderPresets(productId: number, presetIds: number[]) {
+    const presets = await BuilderPreset.findAll({ where: { productId }, attributes: ['id'] });
+    assertSameSet(presets.map((preset) => preset.id), presetIds, 'las recomendaciones');
+
+    await sequelize.transaction(async (transaction) => {
+      for (const [index, presetId] of presetIds.entries()) {
+        await BuilderPreset.update(
+          { sortOrder: index },
+          { where: { id: presetId, productId }, transaction },
+        );
+      }
+    });
+
+    return { ordered: presetIds.length };
   },
 
   async bulkUpdateOptions(optionIds: number[], input: { status?: OptionStatus }) {

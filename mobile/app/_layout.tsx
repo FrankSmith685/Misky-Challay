@@ -143,6 +143,14 @@ function RootNavigator() {
         <Stack.Screen name="scan-table" />
         <Stack.Screen name="mesa/[token]" />
         <Stack.Screen name="order/[orderNumber]" />
+          <Stack.Screen name="staff/[module]" />
+          <Stack.Screen name="staff/order-detail" />
+          <Stack.Screen name="staff/delivery-assign" />
+          <Stack.Screen name="staff/dining-close" />
+          <Stack.Screen name="staff/dining-command" />
+          <Stack.Screen name="staff/builder-editor" />
+          <Stack.Screen name="staff/catalog-editor" />
+          <Stack.Screen name="staff/business-editor" />
       </Stack>
 
       <SessionHousekeeping />

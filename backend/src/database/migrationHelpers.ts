@@ -27,6 +27,29 @@ const columnExists = async (
   return Object.prototype.hasOwnProperty.call(description, column);
 };
 
+export const tableExists = async (context: QueryInterface, table: string): Promise<boolean> => {
+  const tables = await context.showAllTables();
+  return tables.some((entry) => {
+    if (typeof entry === 'string') return entry === table;
+    const value = entry as unknown as { tableName?: string; table_name?: string };
+    return value.tableName === table || value.table_name === table;
+  });
+};
+
+export const addIndexIfMissing = async (
+  context: QueryInterface,
+  table: string,
+  fields: string[],
+  options: { name: string; unique?: boolean },
+): Promise<void> => {
+  const indexes = await context.showIndex(table) as unknown as Array<{ name?: string }>;
+  if (indexes.some((index) => index.name === options.name)) {
+    logger.warn(`El indice ${options.name} ya existia: se omite (sync lo creo antes)`);
+    return;
+  }
+  await context.addIndex(table, fields, options);
+};
+
 export const addColumnIfMissing = async (
   context: QueryInterface,
   table: string,

@@ -1,9 +1,11 @@
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { authenticate, optionalAuth } from '@middlewares/auth.middleware';
 import { requirePermissions } from '@middlewares/rbac.middleware';
 import { validate } from '@middlewares/validate.middleware';
 import { authLimiter } from '@middlewares/rateLimit.middleware';
 import { PERMISSIONS } from '@config/constants';
+import { asyncHandler } from '@shared/utils/asyncHandler';
+import { complaintsService } from './complaints.service';
 import { complaintsController } from './complaints.controller';
 import {
   createComplaintSchema,
@@ -37,6 +39,27 @@ router.get(
   requirePermissions(PERMISSIONS.COMPLAINT_MANAGE),
   complaintsController.summary,
 );
+/**
+ * Descarga del libro con los filtros que tenga el panel aplicados.
+ *
+ * Va ANTES de `/:id`: Express resuelve por orden y "export" se comeria como
+ * identificador de reclamo. No pasa por el controlador porque la respuesta es un
+ * archivo, no el sobre `{ success, data }` que devuelve `ok()`.
+ */
+router.get(
+  '/export',
+  authenticate,
+  requirePermissions(PERMISSIONS.COMPLAINT_MANAGE),
+  asyncHandler(async (req: Request, res: Response) => {
+    const csv = await complaintsService.exportCsv(req.query);
+    const stamp = new Date().toISOString().slice(0, 10);
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="libro-reclamaciones-${stamp}.csv"`);
+    res.send(csv);
+  }),
+);
+
 router.get(
   '/:id',
   authenticate,

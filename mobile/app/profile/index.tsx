@@ -12,6 +12,8 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, type Href } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
+import { AppImage } from '../../src/components/AppImage';
 import { FormField } from '../../src/components/FormField';
 import { PrimaryButton } from '../../src/components/PrimaryButton';
 import { ScreenScaffold } from '../../src/components/ScreenScaffold';
@@ -66,7 +68,7 @@ const validate = (form: ProfileForm): ProfileErrors => {
 };
 
 export default function ProfileScreen() {
-  const { status, user } = useSession();
+  const { status, user, refreshUser } = useSession();
   const toast = useToast();
 
   const profile = useResource<Profile>({
@@ -78,6 +80,7 @@ export default function ProfileScreen() {
   const [baseline, setBaseline] = useState<ProfileForm>(EMPTY_FORM);
   const [errors, setErrors] = useState<ProfileErrors>({});
   const [saving, setSaving] = useState(false);
+  const [savingAvatar, setSavingAvatar] = useState(false);
 
   /** Mientras el cliente escribe, una revalidación en segundo plano no le pisa el texto. */
   const editingRef = useRef(false);
@@ -145,6 +148,45 @@ export default function ProfileScreen() {
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const pickAvatar = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+      base64: true,
+    });
+    if (result.canceled) return;
+
+    const image = result.assets[0];
+    const mimeType = image.mimeType ?? 'image/jpeg';
+    if (!image.base64 || !['image/jpeg', 'image/png', 'image/webp'].includes(mimeType)) {
+      toast.show({ message: 'Elige una foto JPG, PNG o WebP.', tone: 'error' });
+      return;
+    }
+
+    setSavingAvatar(true);
+    try {
+      const updated = await accountApi.updateAvatar({
+        fileName: image.fileName ?? `perfil-${Date.now()}.jpg`,
+        mimeType: mimeType as 'image/jpeg' | 'image/png' | 'image/webp',
+        dataUrl: `data:${mimeType};base64,${image.base64}`,
+      });
+      profile.mutate(updated);
+      invalidateResource('account:profile');
+      await refreshUser();
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      toast.show({ message: 'Foto de perfil actualizada.', tone: 'success' });
+    } catch (caught) {
+      toast.show({
+        message: caught instanceof Error ? caught.message : 'No pudimos guardar la foto.',
+        tone: 'error',
+      });
+    } finally {
+      setSavingAvatar(false);
     }
   };
 
@@ -232,9 +274,32 @@ export default function ProfileScreen() {
           ) : (
             <>
               <View style={[styles.hero, shadow.md]}>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{initials}</Text>
-                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={profile.data?.avatarUrl ? 'Cambiar foto de perfil' : 'Agregar foto de perfil'}
+                  disabled={savingAvatar}
+                  onPress={() => void pickAvatar()}
+                  style={({ pressed }) => [styles.avatar, pressed && styles.pressed]}
+                >
+                  {profile.data?.avatarUrl ? (
+                    <AppImage
+                      uri={profile.data.avatarUrl}
+                      style={styles.avatarImage}
+                      accessibilityLabel="Foto de perfil"
+                      fallbackIcon="account-outline"
+                      fallbackIconSize={30}
+                    />
+                  ) : (
+                    <Text style={styles.avatarText}>{initials}</Text>
+                  )}
+                  <View style={styles.avatarCamera}>
+                    <MaterialCommunityIcons
+                      name={savingAvatar ? 'loading' : 'camera-outline'}
+                      size={15}
+                      color={colors.onDark}
+                    />
+                  </View>
+                </Pressable>
 
                 <View style={styles.heroCopy}>
                   <Text numberOfLines={1} style={styles.heroName}>
@@ -390,6 +455,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.brand600,
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    ...StyleSheet.absoluteFill,
+  },
+  avatarCamera: {
+    position: 'absolute',
+    right: 3,
+    bottom: 3,
+    width: 23,
+    height: 23,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.58)',
   },
   avatarText: {
     ...type.title,

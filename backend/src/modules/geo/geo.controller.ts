@@ -3,6 +3,7 @@ import { ok } from '@shared/http/ApiResponse';
 import { asyncHandler } from '@shared/utils/asyncHandler';
 import { geoService } from './geo.service';
 import { geocodingService } from './geocoding.service';
+import { peruUbigeoService } from './peruUbigeo.service';
 
 /** Modulo GEO: ciudades, distritos, zonas de cobertura, sucursales y franjas. */
 export const geoController = {
@@ -11,17 +12,38 @@ export const geoController = {
     return ok(res, cities);
   }),
 
+  departments: asyncHandler(async (_req: Request, res: Response) => {
+    return ok(res, peruUbigeoService.listDepartments());
+  }),
+
+  provinces: asyncHandler(async (req: Request, res: Response) => {
+    return ok(res, peruUbigeoService.listProvinces(String(req.query.departmentCode)));
+  }),
+
+  geographicDistricts: asyncHandler(async (req: Request, res: Response) => {
+    return ok(res, peruUbigeoService.listDistricts(String(req.query.provinceCode)));
+  }),
+
   addressSuggestions: asyncHandler(async (req: Request, res: Response) => {
     const rows = await geocodingService.suggestions(
       String(req.query.q),
-      Number(req.query.cityId),
+      req.query.cityId ? Number(req.query.cityId) : undefined,
       req.query.districtId ? Number(req.query.districtId) : undefined,
+      {
+        department: req.query.department ? String(req.query.department) : undefined,
+        province: req.query.province ? String(req.query.province) : undefined,
+        district: req.query.district ? String(req.query.district) : undefined,
+      },
     );
     return ok(res, rows);
   }),
 
   resolveAddress: asyncHandler(async (req: Request, res: Response) => {
-    const result = await geocodingService.resolve(req.body.query, req.body.cityId, req.body.districtId);
+    const result = await geocodingService.resolve(req.body.query, req.body.cityId, req.body.districtId, {
+      department: req.body.department,
+      province: req.body.province,
+      district: req.body.district,
+    });
     return ok(res, result, result ? 'Direccion ubicada' : 'No encontramos una coincidencia exacta');
   }),
 

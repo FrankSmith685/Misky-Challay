@@ -16,6 +16,32 @@ import { paymentsController } from './payments.controller';
  */
 const router = Router();
 
+router.get(
+  '/mobile/pending',
+  authenticate,
+  requirePermissions(PERMISSIONS.PAYMENT_VERIFY),
+  validate(z.object({ query: z.object({ branchId: z.coerce.number().int().positive().optional() }) })),
+  paymentsController.pendingMobile,
+);
+
+router.post(
+  '/:paymentId/mobile/review',
+  authenticate,
+  requirePermissions(PERMISSIONS.PAYMENT_VERIFY),
+  validate(z.object({
+    params: z.object({ paymentId: z.coerce.number().int().positive() }),
+    body: z.object({
+      decision: z.enum(['APPROVE', 'REJECT']),
+      reason: z.string().trim().min(3).max(255).optional(),
+    }).superRefine((value, context) => {
+      if (value.decision === 'REJECT' && !value.reason) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['reason'], message: 'Indica por que se rechaza' });
+      }
+    }),
+  })),
+  paymentsController.reviewMobile,
+);
+
 // Stripe apunta aqui: stripe listen --forward-to localhost:4000/api/v1/payments/webhooks/stripe
 router.post('/webhooks/stripe', paymentsController.webhook);
 // Mismo handler para el simulador local (firma HMAC propia).
@@ -40,6 +66,15 @@ if (isDevelopment) {
   );
 }
 
+/**
+ * Devolucion manual (RN-019). Es el unico boton del sistema que saca dinero por
+ * decision de una persona, y ahora tiene interfaz: la ficha del pedido del panel.
+ *
+ * `amount` es OBLIGATORIO a proposito —no hay reembolso "total" implicito— y se
+ * exige a dos decimales: el importe acaba en un DECIMAL(12,2) y un S/ 10.005
+ * enviado al proveedor dejaba de cuadrar contra lo asentado. El tope real (lo que
+ * queda por devolver de ese cobro) lo calcula el servicio con la fila bloqueada.
+ */
 router.post(
   '/:paymentId/refund',
   authenticate,
@@ -48,7 +83,7 @@ router.post(
     z.object({
       params: z.object({ paymentId: z.coerce.number().int().positive() }),
       body: z.object({
-        amount: z.coerce.number().positive(),
+        amount: z.coerce.number().positive().multipleOf(0.01),
         reason: z.string().min(3).max(255),
       }),
     }),

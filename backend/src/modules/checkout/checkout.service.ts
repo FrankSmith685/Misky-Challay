@@ -12,7 +12,7 @@ import {
   OrderItemCustomization,
   OrderStatusHistory,
   Payment,
-  PaymentAttempt,
+  MobilePaymentClaim,
   Product,
   sequelize,
 } from '@database/models';
@@ -23,6 +23,7 @@ import { isValidDni, isValidRuc } from '@shared/utils/peruDocs';
 import { REDEMPTION_STATUS } from '@database/models/couponRedemption.model';
 import { DISCOUNT_SOURCE } from '@database/models/orderDiscount.model';
 import { PAYABLE_TYPE } from '@database/models/payment.model';
+import { MOBILE_PAYMENT_PROVIDER } from '@database/models/mobilePaymentClaim.model';
 import type { AddressSnapshot } from '@database/models/order.model';
 import {
   BILLING_DOC_TYPE,
@@ -41,7 +42,6 @@ import {
   type ServiceMode,
 } from '@config/constants';
 import { env } from '@config/env';
-import { logger } from '@config/logger';
 import { ApiError } from '@shared/errors/ApiError';
 import { geoService } from '@modules/geo/geo.service';
 import {
@@ -51,9 +51,11 @@ import {
 } from '@modules/pricing/pricing.service';
 import { getPaymentProvider } from '@integrations/payments';
 import { walletService } from '@modules/plans/wallet.service';
-import { confirmPaidOrder } from '@modules/payments/payments.service';
+import { confirmPaidOrder, openOrderCheckoutSession } from '@modules/payments/payments.service';
 import { inventoryService } from '@modules/operations/inventory.service';
 import { ordersService } from '@modules/orders/orders.service';
+import { settingsService } from '@modules/settings/settings.service';
+import { buildOrderItemSnapshot } from './orderItemSnapshot';
 
 export interface CheckoutAddress {
   label?: string;
@@ -76,6 +78,9 @@ export interface CheckoutInput {
   useWallet?: boolean;
   /** ONLINE = pasarela; CASH = pago contra entrega. Por defecto ONLINE. */
   paymentMethod?: PaymentMethod;
+  mobilePayment?: { operationCode: string; payerPhone?: string } | null;
+  /** Canal confiable validado por el controlador; selecciona el retorno web o móvil. */
+  client?: 'WEB' | 'MOBILE';
   /** Datos del comprobante (SUNAT). Boleta si no se envia. */
   billing?: {
     documentType: DocumentType;
@@ -243,14 +248,18 @@ export const checkoutService = {
    * firmado del proveedor lo pasa a CONFIRMED (RN-014).
    */
   async place(input: CheckoutInput) {
+    // La ruta ya exige sesion; esto lo vuelve a comprobar aqui porque de `userId`
+    // dependen la idempotencia por dueno, el limite de usos del cupon y el saldo:
+    // si algun dia se llamara al servicio desde otro sitio, debe fallar, no crear
+    // un pedido huerfano.
+    if (!input.userId) {
+      throw ApiError.unauthorized('Inicia sesion para confirmar tu pedido');
+    }
+
     // La clave que llega del cliente se deriva con su dueno y su ambito antes de
     // tocar la base: sin esto, el indice es global y una clave adivinada devuelve
     // el pedido de otra persona con su total y su enlace de pago.
-    const idempotencyKey = deriveIdempotencyKey(
-      'order',
-      input.userId ?? null,
-      input.idempotencyKey,
-    );
+    const idempotencyKey = deriveIdempotencyKey('order', input.userId, input.idempotencyKey);
 
     // RN-015: si esta clave ya creo un pedido, se devuelve el mismo (no se duplica).
     const existing = await Order.findOne({ where: { idempotencyKey } });
@@ -295,6 +304,26 @@ export const checkoutService = {
       }
     }
 
+    const mobileProvider = input.paymentMethod === PAYMENT_METHOD.YAPE
+      ? MOBILE_PAYMENT_PROVIDER.YAPE
+      : input.paymentMethod === PAYMENT_METHOD.PLIN
+        ? MOBILE_PAYMENT_PROVIDER.PLIN
+        : null;
+    let normalizedOperationCode: string | null = null;
+    if (mobileProvider && quote.grandTotal > 0) {
+      const localPayments = await settingsService.getLocalPaymentSettings();
+      const enabled = mobileProvider === MOBILE_PAYMENT_PROVIDER.YAPE
+        ? localPayments.yapeEnabled
+        : localPayments.plinEnabled;
+      if (!enabled) throw ApiError.unprocessable(`${mobileProvider === 'yape' ? 'Yape' : 'Plin'} no esta disponible por ahora`);
+      normalizedOperationCode = input.mobilePayment?.operationCode.trim().toUpperCase() ?? null;
+      if (!normalizedOperationCode) throw ApiError.badRequest('Ingresa el codigo de operacion despues de pagar');
+      const alreadyClaimed = await MobilePaymentClaim.findOne({
+        where: { provider: mobileProvider, operationCode: normalizedOperationCode },
+      });
+      if (alreadyClaimed) throw ApiError.conflict('Ese codigo de operacion ya fue registrado');
+    }
+
     if (input.serviceMode === SERVICE_MODE.SCHEDULED && !input.deliverySlotId) {
       throw ApiError.badRequest('Elige una franja horaria para tu pedido programado');
     }
@@ -302,29 +331,33 @@ export const checkoutService = {
     // Comprobante: se normaliza y valida antes de crear el pedido. La factura exige
     // RUC valido y razon social; la boleta usa lo que haya (nombre de contacto) y pide
     // DNI a partir del umbral SUNAT.
-    const documentType = input.billing?.documentType ?? DOCUMENT_TYPE.BOLETA;
+    const receiptSettings = await settingsService.getReceiptSettings();
+    const fiscalEnabled = receiptSettings.mode !== 'INTERNAL_ONLY';
+    const documentType = fiscalEnabled
+      ? input.billing?.documentType ?? DOCUMENT_TYPE.BOLETA
+      : DOCUMENT_TYPE.BOLETA;
     const isInvoice = documentType === DOCUMENT_TYPE.FACTURA;
-    const docNumber = input.billing?.docNumber?.trim() || null;
+    const docNumber = fiscalEnabled ? input.billing?.docNumber?.trim() || null : null;
     const billing = {
       documentType,
       docType: isInvoice ? BILLING_DOC_TYPE.RUC : docNumber ? BILLING_DOC_TYPE.DNI : null,
       docNumber,
-      name: (isInvoice ? input.billing?.name : (input.billing?.name ?? input.contactName)) || null,
+      name: (fiscalEnabled && isInvoice ? input.billing?.name : input.contactName) || null,
       address: (isInvoice ? input.billing?.address : null) || null,
     };
 
     // Defensa por si el body no paso por el refine de zod (cliente de API directo).
-    if (isInvoice && (!billing.docNumber || !isValidRuc(billing.docNumber) || !billing.name)) {
+    if (fiscalEnabled && isInvoice && (!billing.docNumber || !isValidRuc(billing.docNumber) || !billing.name)) {
       throw ApiError.badRequest('La factura necesita un RUC valido y la razon social');
     }
-    if (!isInvoice && billing.docNumber && !isValidDni(billing.docNumber)) {
+    if (fiscalEnabled && !isInvoice && billing.docNumber && !isValidDni(billing.docNumber)) {
       throw ApiError.badRequest('El DNI debe tener 8 digitos');
     }
     // El comprobante se emite por el valor total de la venta, no por lo que se cobra a
     // la tarjeta: el saldo (wallet) es un medio de pago, no un descuento. Sobre el umbral
     // SUNAT, la boleta debe identificar al comprador con DNI.
     const invoiceTotal = round2(quote.grandTotal + quote.walletAmount);
-    if (!isInvoice && invoiceTotal >= env.BOLETA_DNI_THRESHOLD && !billing.docNumber) {
+    if (fiscalEnabled && !isInvoice && invoiceTotal >= env.BOLETA_DNI_THRESHOLD && !billing.docNumber) {
       throw ApiError.badRequest(
         `Para una boleta de S/ ${invoiceTotal.toFixed(2)} o mas necesitamos tu DNI.`,
       );
@@ -396,6 +429,7 @@ export const checkoutService = {
         const lineDiscount = lineDiscounts[index] ?? 0;
         const lineGross = round2(Math.max(0, line.lineTotal - lineDiscount));
         const lineTax = splitTaxFromGross(lineGross, quote.taxRate);
+        const snapshot = buildOrderItemSnapshot(line);
 
         const item = await OrderItem.create(
           {
@@ -403,8 +437,8 @@ export const checkoutService = {
             productId: line.productId,
             variantId: line.variantId,
             productNameSnapshot: product?.name ?? 'Producto',
-            variantNameSnapshot: line.description,
-            descriptionSnapshot: line.description,
+            variantNameSnapshot: snapshot.variantNameSnapshot,
+            descriptionSnapshot: snapshot.descriptionSnapshot,
             quantity: line.quantity,
             unitPrice: line.unitPrice,
             extrasTotal: line.extrasTotal,
@@ -578,14 +612,66 @@ export const checkoutService = {
       return { order, payment: cashPayment, checkoutUrl: null, reused: false };
     }
 
-    // --- Caso 3: queda un importe por cobrar -> Stripe ---
-    const provider = getPaymentProvider();
+    // --- Caso 3: Yape/Plin declarado por el cliente ---
+    // Se reserva el pedido, pero NO entra a cocina hasta que Caja contraste el
+    // codigo con el movimiento real y lo apruebe desde el panel.
+    if (mobileProvider && normalizedOperationCode) {
+      try {
+        const localPayment = await sequelize.transaction(async (transaction) => {
+          const payment = await Payment.create({
+            payableType: PAYABLE_TYPE.ORDER,
+            payableId: order.id,
+            userId: input.userId ?? null,
+            provider: mobileProvider,
+            providerReference: normalizedOperationCode,
+            method: mobileProvider,
+            amount: round2(quote.grandTotal),
+            currency: quote.currency,
+            status: PAYMENT_STATUS.PENDING,
+            idempotencyKey,
+            safeResponseJson: { submittedAt: new Date().toISOString() },
+          }, { transaction });
+          await MobilePaymentClaim.create({
+            paymentId: payment.id,
+            provider: mobileProvider,
+            operationCode: normalizedOperationCode,
+            payerPhone: input.mobilePayment?.payerPhone?.trim() || null,
+          }, { transaction });
+          return payment;
+        });
+        return { order, payment: localPayment, checkoutUrl: null, reused: false };
+      } catch (error) {
+        // Una carrera con el mismo codigo no puede dejar un pedido reteniendo
+        // stock, cupo, cupon o saldo.
+        await sequelize.transaction(async (transaction) => {
+          const locked = await Order.findByPk(order.id, { transaction, lock: transaction.LOCK.UPDATE });
+          if (!locked || locked.status !== ORDER_STATUS.PENDING_PAYMENT) return;
+          await ordersService.releaseReservations(locked, transaction);
+          await inventoryService.releaseForOrder(locked, transaction);
+          locked.cancelReason = 'Codigo de operacion duplicado';
+          await ordersService.changeStatus(locked, ORDER_STATUS.CANCELLED, {
+            source: 'SYSTEM', comment: 'No se pudo registrar el pago movil', transaction,
+          });
+        });
+        throw error;
+      }
+    }
 
+    /*
+     * --- Caso 4: queda un importe por cobrar -> pasarela ---
+     *
+     * Abrir la sesion es trabajo de `openOrderCheckoutSession`, el mismo contrato
+     * que usa el reintento del cobro. Mientras vivieron dos copias, cualquier
+     * cambio en las URLs de retorno, en el registro del PaymentAttempt o en el
+     * tratamiento del fallo del proveedor habia que hacerlo dos veces, y el primer
+     * pago y el reintento se desincronizaban. Aqui se queda solo lo propio del
+     * checkout: crear el cobro y matar el pedido si no se pudo abrir.
+     */
     const payment = await Payment.create({
       payableType: PAYABLE_TYPE.ORDER,
       payableId: order.id,
       userId: input.userId ?? null,
-      provider: provider.name,
+      provider: getPaymentProvider().name,
       amount: round2(quote.grandTotal),
       currency: quote.currency,
       status: PAYMENT_STATUS.CREATED,
@@ -593,50 +679,15 @@ export const checkoutService = {
     });
 
     try {
-      const checkout = await provider.createCheckout({
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        amount: Number(payment.amount),
-        currency: payment.currency,
-        customerEmail: input.userEmail ?? null,
-        description: `Pedido ${order.orderNumber} en Verde Bowl`,
-        idempotencyKey,
-        successUrl: `${env.FRONTEND_URL}/checkout/confirmacion?pedido=${order.orderNumber}`,
-        cancelUrl: `${env.FRONTEND_URL}/carrito`,
+      const checkoutUrl = await openOrderCheckoutSession(order, payment, {
+        client: input.client,
+        customerEmail: input.userEmail,
       });
-
-      payment.providerReference = checkout.providerReference;
-      payment.checkoutUrl = checkout.checkoutUrl;
-      payment.status = PAYMENT_STATUS.PENDING;
-      payment.safeResponseJson = checkout.safeResponse;
-      await payment.save();
-
-      await PaymentAttempt.create({
-        paymentId: payment.id,
-        idempotencyKey,
-        requestJson: { orderId: order.id, amount: Number(payment.amount) },
-        responseJson: checkout.safeResponse,
-        success: true,
-      });
-
-      return { order, payment, checkoutUrl: checkout.checkoutUrl, reused: false };
+      return { order, payment, checkoutUrl, reused: false };
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Error del proveedor de pago';
-
-      payment.status = PAYMENT_STATUS.FAILED;
-      payment.failedAt = new Date();
-      payment.failureReason = message;
-      await payment.save();
-
-      await PaymentAttempt.create({
-        paymentId: payment.id,
-        idempotencyKey,
-        requestJson: { orderId: order.id },
-        responseJson: null,
-        success: false,
-        errorMessage: message,
-      });
-
+      // `openOrderCheckoutSession` ya dejo el cobro en FAILED con su motivo y su
+      // PaymentAttempt: aqui solo queda matar el pedido recien nacido para que no
+      // se quede reteniendo stock, cupo de franja, cupon y saldo sin poder pagarse.
       await sequelize.transaction(async (transaction) => {
         const locked = await Order.findByPk(order.id, { transaction, lock: transaction.LOCK.UPDATE });
         if (!locked || locked.status !== ORDER_STATUS.PENDING_PAYMENT) return;
@@ -647,9 +698,7 @@ export const checkoutService = {
           source: 'SYSTEM', comment: locked.cancelReason, transaction,
         });
       });
-
-      logger.error(`No se pudo abrir el pago del pedido ${order.orderNumber}`, error);
-      throw ApiError.internal('No pudimos iniciar el pago. Intenta de nuevo.');
+      throw error;
     }
   },
 

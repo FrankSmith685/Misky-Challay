@@ -17,6 +17,9 @@ export const mediaController = {
   upload: asyncHandler(async (req: Request, res: Response) =>
     created(res, await mediaService.upload({ ...req.body, createdBy: req.user?.sub ?? null }), 'Imagen optimizada y guardada'),
   ),
+  importFromUrl: asyncHandler(async (req: Request, res: Response) =>
+    created(res, await mediaService.importFromUrl({ ...req.body, createdBy: req.user?.sub ?? null }), 'Imagen importada y guardada'),
+  ),
   update: asyncHandler(async (req: Request, res: Response) =>
     ok(res, await mediaService.update(Number(req.params.id), req.body), 'Imagen actualizada'),
   ),

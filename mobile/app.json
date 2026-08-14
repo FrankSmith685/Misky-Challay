@@ -1,9 +1,15 @@
 {
   "expo": {
     "name": "Verde Bowl",
-    "slug": "verde-bowl",
+    "slug": "frank-smith",
     "scheme": "verdebowl",
-    "version": "0.8.0",
+    "version": "0.9.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/bd694d85-89e8-4e4d-bd68-a041d1bcbd26"
+    },
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -72,9 +78,13 @@
           "image": "./assets/splash-icon.png",
           "imageWidth": 180,
           "resizeMode": "contain",
-          "dark": { "backgroundColor": "#123d2b" }
+          "dark": {
+            "backgroundColor": "#123d2b"
+          }
         }
       ],
+      "@maplibre/maplibre-react-native",
+      "expo-font",
       "expo-image"
     ],
     "experiments": {
@@ -83,9 +93,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "e9dfb1e1-60ae-45d3-9c07-3c853323c907"
+        "projectId": "bd694d85-89e8-4e4d-bd68-a041d1bcbd26"
       }
     },
-    "owner": "12frankporx"
+    "owner": "frankporx12s-team"
   }
 }

@@ -1,31 +1,28 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import {
-  Box,
-  Button,
-  CircularProgress,
-  IconButton,
-  InputAdornment,
-  LinearProgress,
-  Link as MuiLink,
-  Stack,
-  TextField,
-  Typography,
-} from '@mui/material';
-import { Eye, EyeOff, LockKeyhole } from 'lucide-react';
+import IconButton from '@mui/material/IconButton';
+import { ArrowLeft, CheckCircle2, Eye, EyeOff, KeyRound, LockKeyhole } from 'lucide-react';
 import toast from '@components/mui/MuiToast';
+import { Alert, Button, Input } from '@components/ui';
 import { useAppDispatch } from '@app/hooks';
-import { resetPassword } from '../authSlice';
 import { ROUTES } from '@constants/routes';
+import { resetPassword } from '../authSlice';
+import { AuthFormFooter } from '../components/AuthFormFooter';
 import { AuthShell } from '../components/AuthShell';
+import { PasswordMatchStatus } from '../components/PasswordMatchStatus';
+import { PasswordStrength } from '../components/PasswordStrength';
 
 const schema = z
   .object({
-    password: z.string().min(8, 'Mínimo 8 caracteres'),
-    confirmPassword: z.string(),
+    password: z
+      .string()
+      .min(8, 'Usa al menos 8 caracteres')
+      .regex(/[A-Z]/, 'Incluye al menos una mayúscula')
+      .regex(/\d/, 'Incluye al menos un número'),
+    confirmPassword: z.string().min(1, 'Confirma tu contraseña'),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: 'Las contraseñas no coinciden',
@@ -40,129 +37,166 @@ const ResetPasswordPage = () => {
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token') ?? '';
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [submitError, setSubmitError] = useState('');
 
   const {
     register,
     handleSubmit,
     watch,
     formState: { errors },
-  } = useForm<ResetForm>({ resolver: zodResolver(schema) });
+  } = useForm<ResetForm>({
+    resolver: zodResolver(schema),
+    mode: 'onSubmit',
+    reValidateMode: 'onChange',
+    defaultValues: { password: '', confirmPassword: '' },
+  });
 
   const password = watch('password', '');
-  const strength = useMemo(() => {
-    if (!password) return 0;
-    return Math.min(
-      100,
-      (password.length >= 8 ? 45 : password.length * 5) +
-        (/[A-Z]/.test(password) ? 20 : 0) +
-        (/\d/.test(password) ? 20 : 0) +
-        (/[^\w]/.test(password) ? 15 : 0),
-    );
-  }, [password]);
+  const confirmation = watch('confirmPassword', '');
 
   const onSubmit = async (values: ResetForm) => {
     setLoading(true);
+    setSubmitError('');
     const result = await dispatch(resetPassword({ token, password: values.password }));
     setLoading(false);
+
     if (resetPassword.fulfilled.match(result)) {
-      toast.success('Contraseña restablecida. Inicia sesión con tu nueva clave.');
+      toast.success('Contraseña actualizada. Ingresa con tu nueva clave.');
       navigate(ROUTES.login, { replace: true });
-    } else {
-      toast.error(result.payload ?? 'No se pudo restablecer la contraseña');
+      return;
     }
+
+    setSubmitError(result.payload ?? 'No se pudo restablecer la contraseña');
   };
 
-  // Un enlace sin token (o manipulado) no puede continuar.
   if (!token) {
     return (
-      <AuthShell eyebrow="Enlace inválido" title="Este enlace no sirve" description="El enlace está incompleto o ya se usó. Solicita uno nuevo.">
-        <Button component={Link} to={ROUTES.forgotPassword} variant="contained" fullWidth sx={{ minHeight: 48 }}>
+      <AuthShell
+        eyebrow="Enlace inválido"
+        title="Necesitas un enlace nuevo"
+        description="Este enlace está incompleto, venció o ya fue utilizado."
+      >
+        <Alert variant="warning" title="No podemos continuar">
+          Solicita otro correo de recuperación para proteger el acceso a tu cuenta.
+        </Alert>
+        <Button
+          component={Link}
+          to={ROUTES.forgotPassword}
+          size="lg"
+          className="w-full"
+          leftIcon={<KeyRound className="size-4" />}
+        >
           Solicitar un enlace nuevo
         </Button>
+        <AuthFormFooter
+          prompt="¿Ya puedes ingresar?"
+          linkLabel="Volver al inicio de sesión"
+          to={ROUTES.login}
+        />
       </AuthShell>
     );
   }
 
   return (
     <AuthShell
-      eyebrow="Casi listo"
+      eyebrow="Último paso"
       title="Crea una contraseña nueva"
-      description="Elige una contraseña segura. Al guardarla, cerraremos tus otras sesiones."
+      description="Al guardarla cerraremos las sesiones anteriores para mantener tu cuenta protegida."
     >
-      <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
-        <Stack spacing={2.5}>
-          <Box>
-            <TextField
+      {submitError && (
+        <Alert
+          variant="danger"
+          title="No pudimos actualizar la contraseña"
+          onClose={() => setSubmitError('')}
+        >
+          {submitError}
+        </Alert>
+      )}
+
+      <Alert variant="success">
+        <span className="flex items-start gap-2">
+          <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
+          El enlace fue reconocido. Ahora elige una clave que no uses en otros servicios.
+        </span>
+      </Alert>
+
+      <form onSubmit={handleSubmit(onSubmit)} noValidate>
+        <div className="grid gap-6">
+          <div>
+            <Input
               label="Nueva contraseña"
               type={showPassword ? 'text' : 'password'}
               autoComplete="new-password"
-              fullWidth
               autoFocus
-              error={Boolean(errors.password)}
-              helperText={errors.password?.message ?? 'Mínimo 8 caracteres; combina números y símbolos'}
-              slotProps={{
-                input: {
-                  startAdornment: <InputAdornment position="start"><LockKeyhole size={19} /></InputAdornment>,
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      <IconButton
-                        aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                        edge="end"
-                        onClick={() => setShowPassword((visible) => !visible)}
-                      >
-                        {showPassword ? <EyeOff size={19} /> : <Eye size={19} />}
-                      </IconButton>
-                    </InputAdornment>
-                  ),
-                },
-              }}
+              error={errors.password?.message}
+              hint="Mínimo 8 caracteres"
+              reserveHelperSpace
+              startAdornment={<LockKeyhole className="size-[18px]" />}
+              endAdornment={
+                <IconButton
+                  aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                  edge="end"
+                  onClick={() => setShowPassword((visible) => !visible)}
+                >
+                  {showPassword ? <EyeOff size={19} /> : <Eye size={19} />}
+                </IconButton>
+              }
               {...register('password')}
             />
-            {password && (
-              <Stack direction="row" spacing={1.5} sx={{ mt: 1, alignItems: 'center' }}>
-                <LinearProgress
-                  variant="determinate"
-                  value={strength}
-                  color={strength >= 75 ? 'success' : strength >= 45 ? 'warning' : 'error'}
-                  sx={{ flex: 1, height: 5, borderRadius: 99 }}
-                />
-                <Typography variant="caption" color="text.secondary">
-                  {strength >= 75 ? 'Segura' : strength >= 45 ? 'Media' : 'Débil'}
-                </Typography>
-              </Stack>
-            )}
-          </Box>
+            <PasswordStrength password={password} />
+          </div>
 
-          <TextField
-            label="Confirma tu contraseña"
-            type={showPassword ? 'text' : 'password'}
-            autoComplete="new-password"
-            fullWidth
-            error={Boolean(errors.confirmPassword)}
-            helperText={errors.confirmPassword?.message}
-            {...register('confirmPassword')}
-          />
+          <div>
+            <Input
+              label="Confirma tu contraseña"
+              type={showConfirmation ? 'text' : 'password'}
+              autoComplete="new-password"
+              error={errors.confirmPassword?.message}
+              hint="Escríbela nuevamente"
+              reserveHelperSpace
+              startAdornment={<LockKeyhole className="size-[18px]" />}
+              endAdornment={
+                <IconButton
+                  aria-label={
+                    showConfirmation
+                      ? 'Ocultar confirmación de contraseña'
+                      : 'Mostrar confirmación de contraseña'
+                  }
+                  edge="end"
+                  onClick={() => setShowConfirmation((visible) => !visible)}
+                >
+                  {showConfirmation ? <EyeOff size={19} /> : <Eye size={19} />}
+                </IconButton>
+              }
+              {...register('confirmPassword')}
+            />
+            <PasswordMatchStatus password={password} confirmation={confirmation} />
+          </div>
 
           <Button
             type="submit"
-            variant="contained"
-            size="large"
-            fullWidth
+            size="lg"
+            className="w-full"
             disabled={loading}
-            startIcon={loading ? <CircularProgress size={18} color="inherit" /> : undefined}
-            sx={{ minHeight: 48 }}
+            isLoading={loading}
+            leftIcon={<KeyRound className="size-4" />}
           >
-            {loading ? 'Guardando…' : 'Guardar contraseña'}
+            {loading ? 'Guardando…' : 'Guardar nueva contraseña'}
           </Button>
-        </Stack>
-      </Box>
+        </div>
+      </form>
 
-      <Typography variant="body2" color="text.secondary" sx={{ mt: 3, textAlign: 'center' }}>
-        <MuiLink component={Link} to={ROUTES.login} underline="hover" sx={{ fontWeight: 750 }}>
+      <div className="mt-6 text-center">
+        <Link
+          to={ROUTES.login}
+          className="inline-flex items-center gap-1.5 text-xs font-extrabold text-ink-muted hover:text-brand-700"
+        >
+          <ArrowLeft className="size-3.5" />
           Volver a iniciar sesión
-        </MuiLink>
-      </Typography>
+        </Link>
+      </div>
     </AuthShell>
   );
 };

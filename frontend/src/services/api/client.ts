@@ -86,6 +86,19 @@ export const getApiErrorMessage = (error: unknown): string => {
       return 'No pudimos conectar con el servidor. Inténtalo nuevamente en unos segundos.';
     }
     const body = error.response?.data;
+
+    /* 403 en jerga interna. El middleware de permisos respondia "Faltan permisos:
+     * catalog.product.write", que al operario no le dice ni que hacer ni a quien
+     * pedirlo, y de paso publica el mapa de permisos del sistema. El servidor ya
+     * humaniza el mensaje; este respaldo cubre las rutas que aun no lo hagan y
+     * cualquier 403 sin cuerpo. */
+    if (error.response?.status === 403) {
+      const serverMessage = body?.message?.trim();
+      return !serverMessage || /^faltan permisos/i.test(serverMessage)
+        ? 'No tienes permiso para realizar esta acción. Pídele acceso a un administrador.'
+        : serverMessage;
+    }
+
     const detail = body?.details?.[0];
     if (body?.code === 'VALIDATION_ERROR' && detail) {
       const field = detail.field.replace(/^(body|query|params)\./, '');

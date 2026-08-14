@@ -17,6 +17,7 @@ import { PrimaryButton } from '../../src/components/PrimaryButton';
 import { QuantityStepper } from '../../src/components/QuantityStepper';
 import { ScreenScaffold } from '../../src/components/ScreenScaffold';
 import { useResource } from '../../src/hooks/useResource';
+import { money } from '../../src/lib/format';
 import { useCart, type RemovedCartLine } from '../../src/providers/CartProvider';
 import { usePurchase } from '../../src/providers/PurchaseProvider';
 import { useSession } from '../../src/providers/SessionProvider';
@@ -25,7 +26,6 @@ import { plansApi } from '../../src/services/api/plans.service';
 import { colors, layout, radius, shadow, spacing, type } from '../../src/theme/tokens';
 import type { CartItem, WalletSummary } from '../../src/types/domain';
 
-const money = (value: number) => `S/ ${value.toFixed(2)}`;
 
 interface CartLineProps {
   item: CartItem;
@@ -238,6 +238,19 @@ export default function CartScreen() {
 
   const header = (
     <View style={styles.header}>
+      <View style={styles.checkoutProgress}>
+        <View style={styles.checkoutStepActive}><Text style={styles.checkoutStepNumberActive}>1</Text></View>
+        <View style={styles.checkoutLine} />
+        <View style={styles.checkoutStep}><Text style={styles.checkoutStepNumber}>2</Text></View>
+        <View style={styles.checkoutLine} />
+        <View style={styles.checkoutStep}><Text style={styles.checkoutStepNumber}>3</Text></View>
+      </View>
+      <View style={styles.checkoutLabels}>
+        <Text style={styles.checkoutLabelActive}>Revisa</Text>
+        <Text style={styles.checkoutLabel}>Completa</Text>
+        <Text style={styles.checkoutLabel}>Confirma</Text>
+      </View>
+
       <View style={[styles.destination, !destination.ok && styles.destinationWarning]}>
         <View style={[styles.destinationIcon, !destination.ok && styles.destinationIconWarning]}>
           <MaterialCommunityIcons
@@ -289,7 +302,7 @@ export default function CartScreen() {
           Delivery, descuentos, saldo e IGV los calcula el servidor antes de confirmar.
         </Text>
 
-        <PrimaryButton label={ctaLabel} onPress={proceed} style={styles.cta} />
+        <PrimaryButton label={ctaLabel} icon={status === 'authenticated' ? 'arrow-right-circle-outline' : 'account-lock-outline'} trailingIcon="arrow-right" onPress={proceed} style={styles.cta} />
       </View>
     ) : undefined;
 
@@ -348,8 +361,10 @@ export default function CartScreen() {
 const styles = StyleSheet.create({
   content: {
     paddingHorizontal: spacing.md,
-    paddingBottom: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: 112,
     gap: spacing.sm + spacing.xs,
+    backgroundColor: '#f3f7f4',
   },
   contentEmpty: {
     flexGrow: 1,
@@ -359,12 +374,21 @@ const styles = StyleSheet.create({
     gap: spacing.sm + spacing.xs,
     paddingBottom: spacing.xs,
   },
+  checkoutProgress: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, marginTop: spacing.sm },
+  checkoutStep: { width: 30, height: 30, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line },
+  checkoutStepActive: { width: 34, height: 34, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accent500, ...shadow.sm },
+  checkoutStepNumber: { ...type.caption, color: colors.inkMuted },
+  checkoutStepNumberActive: { ...type.label, color: colors.surface },
+  checkoutLine: { flex: 1, height: 2, backgroundColor: colors.line },
+  checkoutLabels: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: spacing.md, marginBottom: spacing.sm },
+  checkoutLabel: { ...type.caption, width: 72, color: colors.inkMuted, textAlign: 'center' },
+  checkoutLabelActive: { ...type.caption, width: 72, color: colors.warning, fontWeight: '900', textAlign: 'center' },
   destination: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm + spacing.xs,
     backgroundColor: colors.brand50,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.brand100,
     padding: spacing.sm + spacing.xs,
@@ -411,7 +435,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
     backgroundColor: colors.surface,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.lineSoft,
     padding: spacing.sm + spacing.xs,
@@ -423,10 +447,10 @@ const styles = StyleSheet.create({
   },
   line: {
     backgroundColor: colors.surfaceRaised,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.lineSoft,
-    padding: spacing.sm + spacing.xs,
+    padding: spacing.md,
     ...shadow.sm,
   },
   lineTop: {

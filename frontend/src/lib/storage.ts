@@ -32,6 +32,10 @@ export const clearState = (key: string): void => {
  */
 const PERSONAL_KEYS = [
   'verde-bowl:checkout-draft:v1',
+  // La facturacion se guarda aparte del borrador (sobrevive a la compra para no
+  // reteclear el RUC), asi que necesita su propia entrada aqui: el RUC y la razon
+  // social identifican a una empresa y no pueden heredarse al siguiente cliente.
+  'verde-bowl:checkout-billing:v1',
   'verde-bowl:builder:v2',
   'verde-bowl:purchase-context:v2',
 ];

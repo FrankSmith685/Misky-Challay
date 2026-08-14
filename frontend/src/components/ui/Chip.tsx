@@ -17,7 +17,7 @@ export const Chip = ({ children, onRemove, active, onClick, className }: ChipPro
   <span
     onClick={onClick}
     className={cn(
-      'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-all',
+      'inline-flex items-center gap-1.5 rounded-pill border px-3 py-1.5 text-sm font-medium transition-all',
       active ? 'border-brand-600 bg-brand-600 text-white shadow-sm' : 'border-line bg-surface text-ink-muted',
       onClick && 'cursor-pointer select-none hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-sm',
       className,
@@ -31,7 +31,7 @@ export const Chip = ({ children, onRemove, active, onClick, className }: ChipPro
           event.stopPropagation();
           onRemove();
         }}
-        className="-mr-1 rounded-full p-0.5 hover:text-red-600"
+        className="-mr-1 rounded-field p-0.5 hover:text-red-600"
         aria-label="Quitar"
       >
         <X className="size-3.5" />

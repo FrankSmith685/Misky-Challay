@@ -7,10 +7,14 @@ import type { Allergen, Category, DietaryTag, Product } from './types';
 export interface CatalogFilters {
   search: string;
   categoryId: number | null;
+  /** El constructor es una opción del menú, no una experiencia aislada. */
+  productMode: 'ALL' | 'CUSTOM' | 'READY';
   dietaryTags: string[];
   excludeAllergens: string[];
   maxCalories: number | null;
   minProtein: number | null;
+  /** Se resuelve en el navegador: los favoritos aun no viven en el backend (M12). */
+  onlyFavorites: boolean;
 }
 
 interface CatalogState {
@@ -26,10 +30,12 @@ interface CatalogState {
 const initialFilters: CatalogFilters = {
   search: '',
   categoryId: null,
+  productMode: 'ALL',
   dietaryTags: [],
   excludeAllergens: [],
   maxCalories: null,
   minProtein: null,
+  onlyFavorites: false,
 };
 
 const initialState: CatalogState = {
@@ -49,7 +55,17 @@ export const fetchProducts = createAsyncThunk<
   { rejectValue: string }
 >('catalog/fetchProducts', async ({ branchId, filters }, { rejectWithValue }) => {
   try {
-    return await catalogApi.getProducts({ ...filters, branchId });
+    // Se enumeran los campos porque `onlyFavorites` no viaja al API: se aplica en el cliente.
+    const { search, categoryId, dietaryTags, excludeAllergens, maxCalories, minProtein } = filters;
+    return await catalogApi.getProducts({
+      search,
+      categoryId,
+      dietaryTags,
+      excludeAllergens,
+      maxCalories,
+      minProtein,
+      branchId,
+    });
   } catch (error) {
     return rejectWithValue(getApiErrorMessage(error));
   }
@@ -91,6 +107,9 @@ const catalogSlice = createSlice({
         ? state.filters.excludeAllergens.filter((item) => item !== code)
         : [...state.filters.excludeAllergens, code];
     },
+    toggleOnlyFavorites: (state) => {
+      state.filters.onlyFavorites = !state.filters.onlyFavorites;
+    },
     resetFilters: (state) => {
       state.filters = initialFilters;
     },
@@ -117,7 +136,12 @@ const catalogSlice = createSlice({
   },
 });
 
-export const { setFilters, toggleDietaryTag, toggleExcludedAllergen, resetFilters } =
-  catalogSlice.actions;
+export const {
+  setFilters,
+  toggleDietaryTag,
+  toggleExcludedAllergen,
+  toggleOnlyFavorites,
+  resetFilters,
+} = catalogSlice.actions;
 
 export default catalogSlice.reducer;

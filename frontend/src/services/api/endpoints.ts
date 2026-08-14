@@ -14,6 +14,9 @@ export const ENDPOINTS = {
 
   locations: {
     cities: '/locations/cities',
+    departments: '/locations/departments',
+    provinces: '/locations/provinces',
+    geographicDistricts: '/locations/geographic-districts',
     districts: '/locations/districts',
     branches: '/locations/branches',
     slots: '/locations/slots',
@@ -22,11 +25,17 @@ export const ENDPOINTS = {
 
   account: {
     profile: '/account/profile',
+    profileAvatar: '/account/profile/avatar',
     password: '/account/password',
     foodPreferences: '/account/food-preferences',
     notifications: '/account/notifications',
+    notificationsRead: '/account/notifications/read',
+    availabilityAlerts: '/account/availability-alerts',
     addresses: '/account/addresses',
     address: (id: number | string) => `/account/addresses/${id}`,
+    purchaseContext: '/account/purchase-context',
+    /** Baja de la cuenta a peticion del titular; ambas tiendas la exigen. */
+    delete: '/account',
   },
 
   catalog: {
@@ -76,6 +85,18 @@ export const ENDPOINTS = {
 
   settings: {
     public: '/settings/public',
+    business: '/settings/business',
+    localPayments: '/settings/local-payments',
+    receipts: '/settings/receipts',
+    communication: '/settings/communication',
+    communicationTest: '/settings/communication/test',
+    notificationHistory: '/settings/notification-history',
+  },
+
+  engagement: {
+    reviews: (productId: number | string) => `/engagement/products/${productId}/reviews`,
+    pendingReviews: '/engagement/reviews/pending',
+    createReview: '/engagement/reviews',
   },
 
   complaints: {

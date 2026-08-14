@@ -1,6 +1,8 @@
 import type { TextStyle, ViewStyle } from 'react-native';
 
 export const colors = {
+  /** Verde bosque de marca. Los niveles nuevos permiten jerarquía sin usar negro puro. */
+  brand950: '#082b1e',
   brand900: '#123d2b',
   brand800: '#194e37',
   brand700: '#1c6243',
@@ -8,7 +10,11 @@ export const colors = {
   brand100: '#dcf2e4',
   brand50: '#f0f9f4',
   accent500: '#e8940f',
+  accent400: '#f4ad2f',
+  accent100: '#fff0cf',
+  accent50: '#fff8e9',
   ink: '#14201a',
+  inkSoft: '#33443b',
   inkMuted: '#5d6b64',
   surface: '#ffffff',
   surfaceMuted: '#f6f8f7',
@@ -16,6 +22,11 @@ export const colors = {
   success: '#15875b',
   warning: '#b16c00',
   danger: '#c43d3d',
+  danger50: '#fff1f1',
+  warning50: '#fff7e5',
+  success50: '#edf9f3',
+  info: '#2878a8',
+  info50: '#eef7fc',
 
   /**
    * Superficie elevada: la tarjeta que flota sobre `surfaceMuted`. Es blanca como
@@ -46,12 +57,14 @@ export const spacing = {
   lg: 24,
   xl: 32,
   xxl: 48,
+  xxxl: 64,
 } as const;
 
 export const radius = {
   sm: 10,
   md: 16,
   lg: 24,
+  xl: 32,
   pill: 999,
 } as const;
 
@@ -60,8 +73,9 @@ export const radius = {
  * El minimo absoluto es 12: por debajo el texto deja de leerse a distancia de brazo.
  */
 export const type = {
-  display: { fontSize: 30, lineHeight: 36, fontWeight: '900', letterSpacing: -0.8 },
-  title: { fontSize: 24, lineHeight: 30, fontWeight: '900', letterSpacing: -0.5 },
+  hero: { fontSize: 38, lineHeight: 43, fontWeight: '900', letterSpacing: -1.25 },
+  display: { fontSize: 32, lineHeight: 38, fontWeight: '900', letterSpacing: -0.9 },
+  title: { fontSize: 25, lineHeight: 31, fontWeight: '900', letterSpacing: -0.55 },
   heading: { fontSize: 19, lineHeight: 25, fontWeight: '800' },
   body: { fontSize: 15, lineHeight: 22, fontWeight: '500' },
   bodySm: { fontSize: 13, lineHeight: 19, fontWeight: '500' },
@@ -99,6 +113,10 @@ export const layout = {
   minTouch: 44,
   /** hitSlop uniforme para iconos de 24 px dentro de una caja de 44. */
   iconHitSlop: { top: 10, bottom: 10, left: 10, right: 10 },
+  /** El contenido no se estira indefinidamente en tablets o plegables. */
+  contentMaxWidth: 760,
+  compactBreakpoint: 380,
+  tabletBreakpoint: 720,
 } as const;
 
 export type ToneName = 'light' | 'dark';

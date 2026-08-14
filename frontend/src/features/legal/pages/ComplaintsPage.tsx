@@ -109,7 +109,7 @@ const ComplaintsPage = () => {
   if (receipt) {
     return (
       <Container maxWidth="sm" sx={{ py: { xs: 6, md: 9 } }}>
-        <Paper variant="outlined" sx={{ p: { xs: 3, md: 5 }, textAlign: 'center', borderRadius: 3 }}>
+        <Paper variant="outlined" sx={{ p: { xs: 3, md: 5 }, textAlign: 'center', borderRadius: 'var(--radius-card)' }}>
           <CheckCircle2 size={44} color="#237c52" />
           <Typography variant="h5" sx={{ mt: 2, fontWeight: 800 }}>
             Registramos tu {type === 'QUEJA' ? 'queja' : 'reclamo'}
@@ -117,7 +117,7 @@ const ComplaintsPage = () => {
           <Typography color="text.secondary" sx={{ mt: 1 }}>
             Guarda tu código. Con él y tu documento puedes consultar el estado cuando quieras.
           </Typography>
-          <Box sx={{ my: 3, py: 2, bgcolor: 'action.hover', borderRadius: 2 }}>
+          <Box sx={{ my: 3, py: 2, bgcolor: 'action.hover', borderRadius: 'var(--radius-card)' }}>
             <Typography variant="overline" color="text.secondary">
               Código
             </Typography>
@@ -161,7 +161,7 @@ const ComplaintsPage = () => {
 
       {tab === 0 ? (
         <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
-          <Paper variant="outlined" sx={{ p: { xs: 2.5, md: 4 }, borderRadius: 3 }}>
+          <Paper variant="outlined" sx={{ p: { xs: 2.5, md: 4 }, borderRadius: 'var(--radius-card)' }}>
             <Typography variant="overline" color="primary" sx={{ fontWeight: 800 }}>
               Tipo de solicitud
             </Typography>
@@ -326,7 +326,7 @@ const TrackComplaint = () => {
   };
 
   return (
-    <Paper variant="outlined" sx={{ p: { xs: 2.5, md: 4 }, borderRadius: 3 }}>
+    <Paper variant="outlined" sx={{ p: { xs: 2.5, md: 4 }, borderRadius: 'var(--radius-card)' }}>
       <Typography color="text.secondary" sx={{ mb: 2.5 }}>
         Ingresa el código que te dimos y tu número de documento.
       </Typography>

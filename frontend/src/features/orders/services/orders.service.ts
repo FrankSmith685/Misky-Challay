@@ -1,7 +1,16 @@
+import axios from 'axios';
 import { api } from '@services/api/client';
 import { ENDPOINTS } from '@services/api/endpoints';
 import type { ApiSuccess } from '@/types/api';
 import type { OrderDetail, OrderWithPayment } from '@features/checkout/types';
+
+/**
+ * Solo un 404 (no existe) o un 403 (no es tuyo) significan "ese pedido no esta ahi".
+ * Cualquier otro fallo es del servidor o de la red y merece un reintento, no un
+ * mensaje que le diga al cliente que su pedido no existe.
+ */
+export const isMissingOrder = (error: unknown): boolean =>
+  axios.isAxiosError(error) && (error.response?.status === 404 || error.response?.status === 403);
 
 export const ordersApi = {
   async list(): Promise<OrderDetail[]> {

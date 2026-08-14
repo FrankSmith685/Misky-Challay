@@ -458,9 +458,8 @@ export default function OrdersScreen() {
             ? `${STATUS[sheetOrder.status].label} · ${money(sheetOrder.grandTotal)}`
             : undefined
         }
-      >
-        {sheetOrder ? (
-          <View style={styles.sheet}>
+        footer={
+          sheetOrder ? (
             <PrimaryButton
               label={isActive(sheetOrder) ? 'Ver el seguimiento' : 'Ver el detalle'}
               onPress={() => {
@@ -469,7 +468,11 @@ export default function OrdersScreen() {
                 openDetail(orderNumber);
               }}
             />
-
+          ) : undefined
+        }
+      >
+        {sheetOrder ? (
+          <View style={styles.sheet}>
             <PrimaryButton
               label="Volver a pedir"
               variant="secondary"
@@ -716,8 +719,9 @@ function OrdersSkeleton() {
 const styles = StyleSheet.create({
   content: {
     paddingHorizontal: spacing.md,
-    paddingBottom: spacing.xxl,
+    paddingBottom: 112,
     flexGrow: 1,
+    backgroundColor: '#f3f7f4',
   },
   header: {
     paddingTop: spacing.sm,
@@ -727,7 +731,7 @@ const styles = StyleSheet.create({
     color: colors.brand600,
   },
   title: {
-    ...type.display,
+    ...type.hero,
     color: colors.ink,
     marginTop: spacing.xs,
   },
@@ -748,7 +752,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   featured: {
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     overflow: 'hidden',
     backgroundColor: colors.surfaceRaised,
     marginTop: spacing.sm,
@@ -759,7 +763,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    backgroundColor: colors.brand700,
+    backgroundColor: colors.brand900,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
@@ -774,7 +778,7 @@ const styles = StyleSheet.create({
     color: colors.onDark,
   },
   featuredBody: {
-    padding: spacing.md,
+    padding: spacing.lg,
   },
   featuredTop: {
     flexDirection: 'row',

@@ -1,3 +1,4 @@
+import { Op, col, fn } from 'sequelize';
 import {
   Branch,
   AdminDraft,
@@ -9,11 +10,13 @@ import {
   District,
   Plan,
   PlanBenefit,
+  UserPlan,
   ZoneBranch,
   sequelize,
 } from '@database/models';
 import { DISCOUNT_TYPE, type DiscountType } from '@database/models/coupon.model';
 import { BENEFIT_TYPE, type BenefitType } from '@database/models/planBenefit.model';
+import { USER_PLAN_STATUS } from '@database/models/userPlan.model';
 import type { GeoPoint } from '@database/models/coverageZone.model';
 import { ApiError } from '@shared/errors/ApiError';
 import {
@@ -115,21 +118,64 @@ export const commercialAdminService = {
     });
   },
 
-  /** Apagar un cupon no borra su historial: los canjes hechos siguen contando. */
+  /**
+   * Apagar un cupon no borra su historial: los canjes hechos siguen contando.
+   *
+   * La edicion admite tambien el importe y los topes. El codigo y el tipo NO se
+   * tocan: un cupon ya repartido que cambia de PERCENT a FIXED valdria otra cosa
+   * para quien lo tiene guardado, y para eso esta crear uno nuevo.
+   */
   async updateCoupon(
     couponId: number,
-    input: { isActive?: boolean; description?: string; validUntil?: string | null },
+    input: {
+      isActive?: boolean;
+      description?: string;
+      validUntil?: string | null;
+      value?: number;
+      minOrderAmount?: number;
+      maxDiscountAmount?: number | null;
+      usageLimit?: number | null;
+    },
   ) {
     const coupon = await Coupon.findByPk(couponId);
     if (!coupon) throw ApiError.notFound('Cupon no encontrado');
 
-    const before = { isActive: coupon.isActive, validUntil: coupon.validUntil };
+    const before = {
+      isActive: coupon.isActive,
+      validUntil: coupon.validUntil,
+      value: Number(coupon.value),
+      usageLimit: coupon.usageLimit,
+    };
+
+    if (
+      input.value !== undefined
+      && coupon.discountType === DISCOUNT_TYPE.PERCENT
+      && (input.value <= 0 || input.value > 100)
+    ) {
+      throw ApiError.badRequest('El porcentaje debe estar entre 1 y 100');
+    }
+
+    // Un tope por debajo de los canjes ya hechos dejaria el cupon agotado de
+    // inmediato sin decirlo: el motor compara `usedCount >= usageLimit`.
+    if (
+      input.usageLimit !== undefined
+      && input.usageLimit !== null
+      && input.usageLimit < coupon.usedCount
+    ) {
+      throw ApiError.badRequest(
+        `Ese cupon ya se uso ${coupon.usedCount} veces: el limite no puede ser menor`,
+      );
+    }
 
     if (input.isActive !== undefined) coupon.isActive = input.isActive;
     if (input.description !== undefined) coupon.description = input.description;
     if (input.validUntil !== undefined) {
       coupon.validUntil = input.validUntil ? new Date(input.validUntil) : null;
     }
+    if (input.value !== undefined) coupon.value = input.value;
+    if (input.minOrderAmount !== undefined) coupon.minOrderAmount = input.minOrderAmount;
+    if (input.maxDiscountAmount !== undefined) coupon.maxDiscountAmount = input.maxDiscountAmount;
+    if (input.usageLimit !== undefined) coupon.usageLimit = input.usageLimit;
 
     await coupon.save();
     return { coupon, before };
@@ -144,6 +190,19 @@ export const commercialAdminService = {
       order: [['sortOrder', 'ASC']],
     });
 
+    // Cuantos clientes tienen HOY cada plan vigente. Misma condicion que
+    // `plansService.activePlans`, que es de donde salen los beneficios que se
+    // aplican al cotizar: es el numero que hay que enseñar antes de apagar uno.
+    const subscribers = (await UserPlan.findAll({
+      attributes: ['planId', [fn('COUNT', col('id')), 'total']],
+      where: { status: USER_PLAN_STATUS.ACTIVE, expiresAt: { [Op.gt]: new Date() } },
+      group: ['planId'],
+      raw: true,
+    })) as unknown as Array<{ planId: number; total: number }>;
+    const subscribersByPlan = new Map<number, number>(
+      subscribers.map((row) => [Number(row.planId), Number(row.total)]),
+    );
+
     return plans.map((plan) => ({
       id: plan.id,
       code: plan.code,
@@ -156,6 +215,9 @@ export const commercialAdminService = {
       isFeatured: plan.isFeatured,
       isActive: plan.isActive,
       sortOrder: plan.sortOrder,
+      activeSubscribers: subscribersByPlan.get(plan.id) ?? 0,
+      // Los beneficios apagados VIAJAN: el borrado es logico y el panel tiene que
+      // poder volver a encenderlos sin recrearlos a mano.
       benefits: (plan.benefits ?? []).map((benefit) => ({
         id: benefit.id,
         type: benefit.type,
@@ -163,6 +225,7 @@ export const commercialAdminService = {
         maxAmountPerOrder:
           benefit.maxAmountPerOrder === null ? null : Number(benefit.maxAmountPerOrder),
         description: benefit.description,
+        isActive: benefit.isActive,
       })),
     }));
   },
@@ -258,6 +321,9 @@ export const commercialAdminService = {
       throw ApiError.badRequest('El descuento debe estar entre 1 y 100');
     }
 
+    // El indice unico es (plan_id, type), asi que el `findOrCreate` recupera
+    // tambien la fila APAGADA: guardar el beneficio de nuevo lo reactiva en vez
+    // de reventar con un choque de clave unica.
     const [benefit] = await PlanBenefit.findOrCreate({
       where: { planId, type: input.type },
       defaults: {
@@ -273,15 +339,27 @@ export const commercialAdminService = {
       value: input.value,
       maxAmountPerOrder: input.maxAmountPerOrder ?? null,
       description: input.description,
+      isActive: true,
     });
 
     return benefit;
   },
 
+  /**
+   * Quitar un beneficio es un APAGADO, no un borrado.
+   *
+   * A diferencia del precio, el saldo y la vigencia —que se congelan en
+   * `user_plans` al comprar—, los beneficios se leen EN VIVO al cotizar
+   * (`plansService.activeBenefits` filtra por `isActive`). Un `destroy()` fisico
+   * le retiraba el delivery gratis a todos los clientes con plan vigente y no
+   * habia forma de deshacerlo: ni fila, ni historial, ni vuelta atras.
+   */
   async removePlanBenefit(planId: number, benefitId: number) {
     const benefit = await PlanBenefit.findOne({ where: { id: benefitId, planId } });
     if (!benefit) throw ApiError.notFound('Beneficio no encontrado');
-    await benefit.destroy();
+    if (!benefit.isActive) return benefit;
+    await benefit.update({ isActive: false });
+    return benefit;
   },
 
   // ==========================================================================
@@ -321,7 +399,7 @@ export const commercialAdminService = {
         hasPolygon: Array.isArray(zone.polygon) && zone.polygon.length >= 3,
         polygon: zone.polygon,
         branchIds: links
-          .filter((link) => link.coverageZoneId === zone.id)
+          .filter((link) => link.coverageZoneId === zone.id && link.isActive)
           .map((link) => link.branchId),
       })),
       branches: branches.map((branch) => ({
@@ -439,12 +517,23 @@ export const commercialAdminService = {
     return { branch, before };
   },
 
-  /** RN-003: el horario decide si la sucursal acepta pedidos ahora. */
+  /**
+   * RN-003: el horario decide si la sucursal acepta pedidos ahora.
+   *
+   * Apertura y cierre iguales describen una franja vacia, no un dia completo: el
+   * evaluador (`geo.service`) la leeria como cerrado las 24 horas y el panel
+   * habria respondido "Horario guardado". Un cierre MENOR que la apertura si vale:
+   * es el horario que cruza medianoche.
+   */
   async setSchedule(
     branchId: number,
     weekday: number,
     input: { opensAt: string; closesAt: string; isClosed: boolean },
   ) {
+    if (!input.isClosed && input.opensAt === input.closesAt) {
+      throw ApiError.badRequest('La hora de cierre no puede ser igual a la de apertura');
+    }
+
     const [schedule] = await BranchSchedule.findOrCreate({
       where: { branchId, weekday, exceptionDate: null },
       defaults: {

@@ -1,7 +1,13 @@
 import { api } from '@services/api/client';
 import { ENDPOINTS } from '@services/api/endpoints';
 import type { ApiSuccess } from '@/types/api';
-import type { Plan, PlanPurchase, WalletSummary, WalletTransaction } from '../types';
+import {
+  PLAN_TERMS_VERSION,
+  type Plan,
+  type PlanPurchase,
+  type WalletSummary,
+  type WalletTransaction,
+} from '../types';
 
 export const plansApi = {
   async list(): Promise<Plan[]> {
@@ -17,6 +23,8 @@ export const plansApi = {
     const { data } = await api.post<ApiSuccess<PlanPurchase>>(ENDPOINTS.plans.purchase, {
       planCode,
       idempotencyKey,
+      termsAccepted: true,
+      termsVersion: PLAN_TERMS_VERSION,
     });
     return data.data;
   },

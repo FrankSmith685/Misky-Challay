@@ -4,6 +4,7 @@ import {
   BranchInventory,
   CustomizationOption,
   Driver,
+  DiningTable,
   InventoryItem,
   Product,
   ProductVariant,
@@ -238,7 +239,23 @@ export const seedOperations = async (): Promise<void> => {
     });
   }
 
+  // 5) Salón inicial. Cada local puede crear más mesas desde el panel.
+  for (let index = 1; index <= 12; index += 1) {
+    const code = `Mesa ${String(index).padStart(2, '0')}`;
+    await DiningTable.findOrCreate({
+      where: { branchId: branch.id, code },
+      defaults: {
+        branchId: branch.id,
+        code,
+        area: index <= 8 ? 'Salón principal' : 'Terraza',
+        capacity: index % 4 === 0 ? 4 : 2,
+        sortOrder: index,
+        isActive: true,
+      },
+    });
+  }
+
   logger.success(
-    `Operaciones listas: ${ITEMS.length} insumos, ${RECIPES.length} recetas, ${DRIVERS.length} repartidores`,
+    `Operaciones listas: ${ITEMS.length} insumos, ${RECIPES.length} recetas, ${DRIVERS.length} repartidores y 12 mesas`,
   );
 };

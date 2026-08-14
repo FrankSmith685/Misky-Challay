@@ -16,10 +16,13 @@ import * as Haptics from 'expo-haptics';
 import { setStatusBarStyle } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BrandLogo } from '../../src/components/BrandLogo';
+import { AppImage } from '../../src/components/AppImage';
 import { EmptyState } from '../../src/components/EmptyState';
 import { LocationBar } from '../../src/components/LocationBar';
 import { PrimaryButton } from '../../src/components/PrimaryButton';
 import { ProductCard } from '../../src/components/ProductCard';
+import { Reveal } from '../../src/components/Reveal';
+import { SectionHeader } from '../../src/components/SectionHeader';
 import { Skeleton } from '../../src/components/Skeleton';
 import { useReorder } from '../../src/hooks/useReorder';
 import { useResource } from '../../src/hooks/useResource';
@@ -341,6 +344,8 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.hero}>
+          <View pointerEvents="none" style={styles.heroOrbTop} />
+          <View pointerEvents="none" style={styles.heroOrbBottom} />
           {authenticated ? (
             <>
               <Text style={styles.kicker}>QUÉ GUSTO VERTE DE NUEVO</Text>
@@ -363,10 +368,33 @@ export default function HomeScreen() {
             </>
           )}
 
+          <Reveal delay={80} style={styles.heroVisual}>
+            <AppImage
+              uri="/images/builder/bowl-signature.jpg"
+              style={styles.heroVisualImage}
+              contentFit="cover"
+            />
+            <View style={styles.heroVisualShade} />
+            <View style={styles.heroVisualCopy}>
+              <View style={styles.heroVisualPill}>
+                <MaterialCommunityIcons name="leaf" size={15} color={colors.brand800} />
+                <Text style={styles.heroVisualPillText}>Ingredientes visibles</Text>
+              </View>
+              <Text style={styles.heroVisualTitle}>Tu bowl, tus decisiones.</Text>
+              <Text style={styles.heroVisualText}>Precio y nutrición se actualizan mientras eliges.</Text>
+            </View>
+            <View style={styles.heroFloatingStat}>
+              <MaterialCommunityIcons name="fire" size={16} color={colors.accent500} />
+              <Text style={styles.heroFloatingStatText}>Macros al instante</Text>
+            </View>
+          </Reveal>
+
           <LocationBar inverse />
 
           <PrimaryButton
-            label="Explorar el menú"
+            label="Ver menú y crear mi bowl"
+            icon="food-apple-outline"
+            trailingIcon="arrow-right"
             onPress={() => router.push('/(tabs)/menu')}
             style={styles.heroButton}
           />
@@ -404,22 +432,12 @@ export default function HomeScreen() {
         </Pressable>
 
         <View style={styles.sectionHeader}>
-          <View style={styles.sectionTitles}>
-            <Text style={styles.eyebrow}>
-              {authenticated ? 'PENSADO PARA TI' : 'RECOMENDADOS'}
-            </Text>
-            <Text style={styles.sectionTitle}>Lo mejor de hoy</Text>
-          </View>
-
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Ver el menú completo"
-            hitSlop={layout.iconHitSlop}
-            onPress={() => router.push('/(tabs)/menu')}
-            style={({ pressed }) => [styles.seeAll, pressed && styles.pressed]}
-          >
-            <Text style={styles.seeAllLabel}>Ver todo</Text>
-          </Pressable>
+          <SectionHeader
+            eyebrow={authenticated ? 'PENSADO PARA TI' : 'RECOMENDADOS'}
+            title="Lo mejor de hoy"
+            actionLabel="Ver todo"
+            onAction={() => router.push('/(tabs)/menu')}
+          />
         </View>
 
         {recommendations.loading ? (
@@ -460,10 +478,7 @@ export default function HomeScreen() {
         )}
 
         <View style={styles.sectionHeader}>
-          <View style={styles.sectionTitles}>
-            <Text style={styles.eyebrow}>ELIGE TU EXPERIENCIA</Text>
-            <Text style={styles.sectionTitle}>Tres formas de disfrutar</Text>
-          </View>
+          <SectionHeader eyebrow="ELIGE TU EXPERIENCIA" title="Tres formas de disfrutar" />
         </View>
 
         <View style={styles.modeGrid}>
@@ -494,7 +509,7 @@ export default function HomeScreen() {
           </View>
 
           <View style={styles.modeCopy}>
-            <Text style={styles.modeTitle}>Ver hasta dónde llegamos</Text>
+            <Text style={[styles.modeTitle, styles.coverageTitle]}>Ver hasta dónde llegamos</Text>
             <Text style={styles.modeDescription}>
               Consulta la cobertura de tu zona en el mapa, sin crear una cuenta.
             </Text>
@@ -744,7 +759,7 @@ function RepeatCard({ order, busy, disabled, onReorder }: RepeatCardProps) {
 const styles = StyleSheet.create({
   page: {
     flex: 1,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: '#f3f7f4',
   },
   content: {
     paddingBottom: spacing.xl + spacing.sm,
@@ -754,19 +769,19 @@ const styles = StyleSheet.create({
   },
 
   header: {
-    backgroundColor: colors.surfaceDark,
-    paddingHorizontal: spacing.md,
+    backgroundColor: colors.brand950,
+    paddingHorizontal: spacing.lg,
     paddingBottom: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   headerAction: {
-    width: layout.minTouch,
-    height: layout.minTouch,
+    width: 48,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: radius.sm + 4,
+    borderRadius: radius.md + 2,
     backgroundColor: colors.surfaceDarkRaised,
   },
   headerBadge: {
@@ -799,17 +814,29 @@ const styles = StyleSheet.create({
   },
 
   hero: {
-    backgroundColor: colors.surfaceDark,
-    paddingHorizontal: spacing.md,
+    position: 'relative',
+    overflow: 'hidden',
+    backgroundColor: colors.brand950,
+    paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
-    paddingBottom: spacing.xl,
+    paddingBottom: spacing.xxl,
+    borderBottomLeftRadius: radius.xl + 8,
+    borderBottomRightRadius: radius.xl + 8,
+  },
+  heroOrbTop: {
+    position: 'absolute', width: 210, height: 210, borderRadius: 105,
+    top: -120, right: -72, backgroundColor: 'rgba(35,124,82,.28)',
+  },
+  heroOrbBottom: {
+    position: 'absolute', width: 180, height: 180, borderRadius: 90,
+    bottom: 120, left: -120, backgroundColor: 'rgba(232,148,15,.12)',
   },
   kicker: {
     ...type.label,
     color: colors.brand100,
   },
   heroTitle: {
-    ...type.display,
+    ...type.hero,
     color: colors.onDark,
     marginTop: spacing.sm,
   },
@@ -819,12 +846,78 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm + spacing.xs,
     marginBottom: spacing.md,
   },
+  heroVisual: {
+    height: 230,
+    overflow: 'hidden',
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,.18)',
+    backgroundColor: colors.surfaceDarkRaised,
+    marginBottom: spacing.lg,
+    ...shadow.lg,
+  },
+  heroVisualImage: {
+    ...StyleSheet.absoluteFill,
+    width: '100%',
+    height: '100%',
+  },
+  heroVisualShade: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(7,42,30,.28)',
+  },
+  heroVisualCopy: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    padding: spacing.lg,
+  },
+  heroVisualPill: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(255,255,255,.92)',
+  },
+  heroVisualPillText: {
+    ...type.caption,
+    color: colors.brand800,
+    fontWeight: '900',
+  },
+  heroVisualTitle: {
+    ...type.heading,
+    color: colors.surface,
+    marginTop: spacing.sm,
+  },
+  heroVisualText: {
+    ...type.bodySm,
+    color: colors.surface,
+    marginTop: 2,
+  },
+  heroFloatingStat: {
+    position: 'absolute',
+    top: spacing.md,
+    right: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: radius.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    backgroundColor: 'rgba(255,255,255,.95)',
+  },
+  heroFloatingStatText: {
+    ...type.caption,
+    color: colors.brand900,
+    fontWeight: '900',
+  },
   heroButton: {
     marginTop: spacing.sm + spacing.xs,
     backgroundColor: colors.accent500,
     borderColor: colors.accent500,
+    minHeight: 60,
   },
-
   returning: {
     paddingHorizontal: spacing.md,
     paddingTop: spacing.md,
@@ -991,10 +1084,10 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.md,
     marginTop: spacing.lg,
     padding: spacing.sm + spacing.xs,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.brand100,
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: colors.accent50,
   },
   planIcon: {
     width: 48,
@@ -1024,9 +1117,6 @@ const styles = StyleSheet.create({
   },
 
   sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     marginTop: spacing.xl,
     marginBottom: spacing.md,
@@ -1112,23 +1202,26 @@ const styles = StyleSheet.create({
   },
 
   modeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.sm + spacing.xs,
     paddingHorizontal: spacing.md,
   },
   modeCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexGrow: 1,
+    flexBasis: 160,
+    minHeight: 164,
     gap: spacing.sm + spacing.xs,
-    padding: spacing.md,
-    borderRadius: radius.md,
+    padding: spacing.lg,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.line,
     backgroundColor: colors.surfaceRaised,
   },
   modeIcon: {
-    width: layout.minTouch,
-    height: layout.minTouch,
-    borderRadius: radius.sm + 4,
+    width: 52,
+    height: 52,
+    borderRadius: radius.md + 2,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.brand50,
@@ -1140,6 +1233,7 @@ const styles = StyleSheet.create({
     ...type.body,
     fontWeight: '900',
     color: colors.ink,
+    marginTop: spacing.md,
   },
   modeDescription: {
     ...type.bodySm,
@@ -1159,6 +1253,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.brand100,
     backgroundColor: colors.brand50,
+  },
+  coverageTitle: {
+    marginTop: 0,
   },
   businessCard: {
     flexDirection: 'row',

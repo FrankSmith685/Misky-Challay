@@ -1,48 +1,54 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import IconButton from '@mui/material/IconButton';
 import {
-  Box,
-  Button,
-  Checkbox,
-  CircularProgress,
-  Divider,
-  FormControlLabel,
-  FormHelperText,
-  IconButton,
-  InputAdornment,
-  LinearProgress,
-  Link as MuiLink,
-  Stack,
-  TextField,
-  Typography,
-} from '@mui/material';
-import { Eye, EyeOff, LockKeyhole, Mail, Phone, UserRound } from 'lucide-react';
+  ArrowRight,
+  Eye,
+  EyeOff,
+  LockKeyhole,
+  Mail,
+  Phone,
+  UserRound,
+} from 'lucide-react';
 import toast from '@components/mui/MuiToast';
+import { Alert, Button, Checkbox, Input } from '@components/ui';
 import { useAppDispatch, useAppSelector } from '@app/hooks';
-import { register as registerThunk } from '../authSlice';
 import { ROUTES } from '@constants/routes';
+import { register as registerThunk } from '../authSlice';
+import { readReturnTo, resolveAfterAuthPath } from '../authRedirect';
+import { AuthFormFooter } from '../components/AuthFormFooter';
 import { AuthShell } from '../components/AuthShell';
+import { PasswordMatchStatus } from '../components/PasswordMatchStatus';
+import { PasswordStrength } from '../components/PasswordStrength';
 
 const registerSchema = z
   .object({
-    firstName: z.string().min(2, 'Nombre demasiado corto'),
-    lastName: z.string().min(2, 'Apellido demasiado corto'),
-    email: z.string().email('Ingresa un email valido'),
+    firstName: z.string().trim().min(2, 'Escribe al menos 2 caracteres'),
+    lastName: z.string().trim().min(2, 'Escribe al menos 2 caracteres'),
+    email: z
+      .string()
+      .trim()
+      .min(1, 'Ingresa tu correo electrónico')
+      .email('Ingresa un correo electrónico válido'),
     phone: z
       .string()
       .trim()
-      .regex(/^[0-9+\s-]{6,20}$/, 'Telefono invalido')
+      .regex(/^[0-9+\s-]{6,20}$/, 'Ingresa un teléfono válido')
       .optional()
       .or(z.literal('')),
-    password: z.string().min(8, 'Minimo 8 caracteres'),
-    confirmPassword: z.string(),
+    password: z
+      .string()
+      .min(8, 'Usa al menos 8 caracteres')
+      .regex(/[A-Z]/, 'Incluye al menos una mayúscula')
+      .regex(/\d/, 'Incluye al menos un número'),
+    confirmPassword: z.string().min(1, 'Confirma tu contraseña'),
     acceptedTerms: z.boolean(),
   })
   .refine((data) => data.password === data.confirmPassword, {
-    message: 'Las contrasenas no coinciden',
+    message: 'Las contraseñas no coinciden',
     path: ['confirmPassword'],
   })
   .refine((data) => data.acceptedTerms === true, {
@@ -55,41 +61,59 @@ type RegisterForm = z.infer<typeof registerSchema>;
 const RegisterPage = () => {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
+  const location = useLocation();
+  /** De donde venia: el carrito manda aqui a quien necesita cuenta para pedir. */
+  const from = readReturnTo(location);
   const status = useAppSelector((state) => state.auth.status);
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
+  const [submitError, setSubmitError] = useState('');
 
   const {
     register,
     handleSubmit,
     watch,
     formState: { errors },
-  } = useForm<RegisterForm>({ resolver: zodResolver(registerSchema) });
+  } = useForm<RegisterForm>({
+    resolver: zodResolver(registerSchema),
+    mode: 'onSubmit',
+    reValidateMode: 'onChange',
+    defaultValues: {
+      firstName: '',
+      lastName: '',
+      email: '',
+      phone: '',
+      password: '',
+      confirmPassword: '',
+      acceptedTerms: false,
+    },
+  });
 
   const password = watch('password', '');
-  const passwordStrength = useMemo(() => {
-    if (!password) return 0;
-    return Math.min(100, (password.length >= 8 ? 45 : password.length * 5) + (/[A-Z]/.test(password) ? 20 : 0) + (/\d/.test(password) ? 20 : 0) + (/[^\w]/.test(password) ? 15 : 0));
-  }, [password]);
+  const confirmation = watch('confirmPassword', '');
 
   const onSubmit = async (values: RegisterForm) => {
+    setSubmitError('');
     const result = await dispatch(
       registerThunk({
-        firstName: values.firstName,
-        lastName: values.lastName,
-        email: values.email,
+        firstName: values.firstName.trim(),
+        lastName: values.lastName.trim(),
+        email: values.email.trim(),
         password: values.password,
-        phone: values.phone ? values.phone : undefined,
+        phone: values.phone?.trim() || undefined,
         acceptedTerms: values.acceptedTerms,
       }),
     );
 
     if (registerThunk.fulfilled.match(result)) {
-      toast.success('Cuenta creada. Bienvenido a Verde Bowl!');
-      navigate(ROUTES.home, { replace: true });
+      toast.success('Cuenta creada. ¡Bienvenido a Verde Bowl!');
+      // Si llego aqui desde el carrito para poder confirmar su pedido, vuelve alli.
+      // Una cuenta recien creada nunca es del equipo, asi que el destino base es la portada.
+      navigate(resolveAfterAuthPath(from, false), { replace: true });
       return;
     }
 
-    toast.error(result.payload ?? 'No se pudo crear la cuenta');
+    setSubmitError(result.payload ?? 'No se pudo crear la cuenta');
   };
 
   return (
@@ -97,152 +121,197 @@ const RegisterPage = () => {
       wide
       eyebrow="Únete a Verde Bowl"
       title="Crea tu cuenta"
-      description="Completa tus datos y empieza a disfrutar una experiencia de compra más rápida y personalizada."
+      description="Guarda tus datos una vez y disfruta una compra más rápida y personalizada."
     >
-      <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate>
-        <Stack spacing={2.25}>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            <TextField
-              label="Nombre"
-              autoComplete="given-name"
-              fullWidth
-              autoFocus
-              error={Boolean(errors.firstName)}
-              helperText={errors.firstName?.message}
-              slotProps={{ input: { startAdornment: <InputAdornment position="start"><UserRound size={18} /></InputAdornment> } }}
-              {...register('firstName')}
-            />
-            <TextField
-              label="Apellido"
-              autoComplete="family-name"
-              fullWidth
-              error={Boolean(errors.lastName)}
-              helperText={errors.lastName?.message}
-              {...register('lastName')}
-            />
-          </Stack>
+      {submitError && (
+        <Alert
+          variant="danger"
+          title="No pudimos crear tu cuenta"
+          onClose={() => setSubmitError('')}
+        >
+          {submitError}
+        </Alert>
+      )}
 
-          <TextField
-            label="Correo electrónico"
-            type="email"
-            autoComplete="email"
-            placeholder="tu@email.com"
-            fullWidth
-            error={Boolean(errors.email)}
-            helperText={errors.email?.message}
-            slotProps={{ input: { startAdornment: <InputAdornment position="start"><Mail size={18} /></InputAdornment> } }}
-            {...register('email')}
-          />
+      <form onSubmit={handleSubmit(onSubmit)} noValidate>
+        <div className="grid gap-6">
+          <section>
+            <div className="mb-4 flex items-center gap-2">
+              <span className="grid size-7 place-items-center rounded-lg bg-brand-50 text-xs font-black text-brand-700">
+                1
+              </span>
+              <div>
+                <h2 className="text-sm font-extrabold text-ink">Tus datos</h2>
+                <p className="text-[11px] text-ink-muted">Para identificar y coordinar tus pedidos.</p>
+              </div>
+            </div>
 
-          <TextField
-            label="Teléfono"
-            type="tel"
-            autoComplete="tel"
-            placeholder="999 999 999"
-            fullWidth
-            error={Boolean(errors.phone)}
-            helperText={errors.phone?.message ?? 'Opcional · lo usaremos solo para coordinar tus pedidos'}
-            slotProps={{ input: { startAdornment: <InputAdornment position="start"><Phone size={18} /></InputAdornment> } }}
-            {...register('phone')}
-          />
+            <div className="grid gap-x-4 gap-y-4 sm:grid-cols-2">
+              <Input
+                label="Nombre"
+                autoComplete="given-name"
+                autoFocus
+                error={errors.firstName?.message}
+                reserveHelperSpace
+                startAdornment={<UserRound className="size-[18px]" />}
+                {...register('firstName')}
+              />
+              <Input
+                label="Apellido"
+                autoComplete="family-name"
+                error={errors.lastName?.message}
+                reserveHelperSpace
+                {...register('lastName')}
+              />
+              <Input
+                className="sm:col-span-2"
+                label="Correo electrónico"
+                type="email"
+                autoComplete="email"
+                placeholder="tu@email.com"
+                error={errors.email?.message}
+                hint="Aquí recibirás confirmaciones y recuperación de acceso"
+                reserveHelperSpace
+                startAdornment={<Mail className="size-[18px]" />}
+                {...register('email')}
+              />
+              <Input
+                className="sm:col-span-2"
+                label="Teléfono"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                placeholder="999 999 999"
+                error={errors.phone?.message}
+                hint="Opcional · solo lo usaremos para coordinar tus pedidos"
+                reserveHelperSpace
+                startAdornment={<Phone className="size-[18px]" />}
+                {...register('phone')}
+              />
+            </div>
+          </section>
 
-          <Box>
-            <TextField
-              label="Contraseña"
-              type={showPassword ? 'text' : 'password'}
-              autoComplete="new-password"
-              fullWidth
-              error={Boolean(errors.password)}
-              helperText={errors.password?.message ?? 'Mínimo 8 caracteres; combina números y símbolos'}
-              slotProps={{
-                input: {
-                  startAdornment: <InputAdornment position="start"><LockKeyhole size={18} /></InputAdornment>,
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      <IconButton
-                        aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                        edge="end"
-                        onClick={() => setShowPassword((visible) => !visible)}
-                      >
-                        {showPassword ? <EyeOff size={19} /> : <Eye size={19} />}
-                      </IconButton>
-                    </InputAdornment>
-                  ),
-                },
-              }}
-              {...register('password')}
-            />
-            {password && (
-              <Stack direction="row" spacing={1.5} sx={{ mt: 1, alignItems: 'center' }}>
-                <LinearProgress
-                  variant="determinate"
-                  value={passwordStrength}
-                  color={passwordStrength >= 75 ? 'success' : passwordStrength >= 45 ? 'warning' : 'error'}
-                  sx={{ flex: 1, height: 5, borderRadius: 99 }}
+          <section className="border-t border-line pt-5">
+            <div className="mb-4 flex items-center gap-2">
+              <span className="grid size-7 place-items-center rounded-lg bg-brand-50 text-xs font-black text-brand-700">
+                2
+              </span>
+              <div>
+                <h2 className="text-sm font-extrabold text-ink">Protege tu cuenta</h2>
+                <p className="text-[11px] text-ink-muted">Crea una contraseña difícil de adivinar.</p>
+              </div>
+            </div>
+
+            <div className="grid items-start gap-x-4 gap-y-4 sm:grid-cols-2">
+              <div>
+                <Input
+                  label="Contraseña"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  error={errors.password?.message}
+                  hint="Mínimo 8 caracteres"
+                  reserveHelperSpace
+                  startAdornment={<LockKeyhole className="size-[18px]" />}
+                  endAdornment={
+                    <IconButton
+                      aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                      edge="end"
+                      onClick={() => setShowPassword((visible) => !visible)}
+                    >
+                      {showPassword ? <EyeOff size={19} /> : <Eye size={19} />}
+                    </IconButton>
+                  }
+                  {...register('password')}
                 />
-                <Typography variant="caption" color="text.secondary">
-                  {passwordStrength >= 75 ? 'Segura' : passwordStrength >= 45 ? 'Media' : 'Débil'}
-                </Typography>
-              </Stack>
-            )}
-          </Box>
+                <PasswordStrength password={password} />
+              </div>
 
-          <TextField
-            label="Confirma tu contraseña"
-            type={showPassword ? 'text' : 'password'}
-            autoComplete="new-password"
-            fullWidth
-            error={Boolean(errors.confirmPassword)}
-            helperText={errors.confirmPassword?.message}
-            {...register('confirmPassword')}
-          />
+              <div>
+                <Input
+                  label="Confirma tu contraseña"
+                  type={showConfirmation ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  error={errors.confirmPassword?.message}
+                  hint="Escríbela nuevamente"
+                  reserveHelperSpace
+                  startAdornment={<LockKeyhole className="size-[18px]" />}
+                  endAdornment={
+                    <IconButton
+                      aria-label={
+                        showConfirmation
+                          ? 'Ocultar confirmación de contraseña'
+                          : 'Mostrar confirmación de contraseña'
+                      }
+                      edge="end"
+                      onClick={() => setShowConfirmation((visible) => !visible)}
+                    >
+                      {showConfirmation ? <EyeOff size={19} /> : <Eye size={19} />}
+                    </IconButton>
+                  }
+                  {...register('confirmPassword')}
+                />
+                <PasswordMatchStatus
+                  password={password}
+                  confirmation={confirmation}
+                  reserveSpace={false}
+                />
+              </div>
+            </div>
+          </section>
 
-          <Box>
-            <FormControlLabel
-              sx={{ alignItems: 'flex-start', m: 0 }}
-              control={<Checkbox size="small" sx={{ pt: 0 }} {...register('acceptedTerms')} />}
+          <div className="rounded-2xl border border-brand-100 bg-brand-50/55 px-3 py-2.5 sm:px-4">
+            <Checkbox
               label={
-                <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.55 }}>
+                <span className="text-xs leading-5 text-ink-muted">
                   He leído y acepto los{' '}
-                  <MuiLink component={Link} to={ROUTES.terms} target="_blank" underline="hover">
+                  <Link
+                    to={ROUTES.terms}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-bold text-brand-700 hover:underline"
+                  >
                     Términos y Condiciones
-                  </MuiLink>{' '}
+                  </Link>{' '}
                   y la{' '}
-                  <MuiLink component={Link} to={ROUTES.privacy} target="_blank" underline="hover">
+                  <Link
+                    to={ROUTES.privacy}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-bold text-brand-700 hover:underline"
+                  >
                     Política de Privacidad
-                  </MuiLink>
-                  , y consiento el tratamiento de mis datos para gestionar mis pedidos y beneficios.
-                </Typography>
+                  </Link>
+                  .
+                </span>
               }
+              {...register('acceptedTerms')}
             />
             {errors.acceptedTerms && (
-              <FormHelperText error sx={{ ml: 0 }}>
+              <p className="mt-1 pl-8 text-xs font-semibold leading-5 text-red-600" role="alert">
                 {errors.acceptedTerms.message}
-              </FormHelperText>
+              </p>
             )}
-          </Box>
+          </div>
 
           <Button
             type="submit"
-            variant="contained"
-            size="large"
-            fullWidth
+            size="lg"
+            className="w-full"
             disabled={status === 'loading'}
-            startIcon={status === 'loading' ? <CircularProgress size={18} color="inherit" /> : undefined}
-            sx={{ minHeight: 48 }}
+            isLoading={status === 'loading'}
+            leftIcon={<ArrowRight className="size-4" />}
           >
             {status === 'loading' ? 'Creando cuenta…' : 'Crear mi cuenta'}
           </Button>
-        </Stack>
-      </Box>
+        </div>
+      </form>
 
-      <Divider sx={{ my: 3 }} />
-      <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
-        ¿Ya tienes una cuenta?{' '}
-        <MuiLink component={Link} to={ROUTES.login} underline="hover" sx={{ fontWeight: 750 }}>
-          Inicia sesión
-        </MuiLink>
-      </Typography>
+      <AuthFormFooter
+        prompt="¿Ya tienes una cuenta?"
+        linkLabel="Inicia sesión"
+        to={ROUTES.login}
+        from={from}
+      />
     </AuthShell>
   );
 };

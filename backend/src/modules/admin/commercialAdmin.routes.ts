@@ -1,9 +1,14 @@
-import { Router } from 'express';
+import { Router, type NextFunction, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { authenticate } from '@middlewares/auth.middleware';
 import { requireAnyPermission, requirePermissions } from '@middlewares/rbac.middleware';
 import { validate } from '@middlewares/validate.middleware';
-import { PERMISSIONS } from '@config/constants';
+import { PERMISSIONS, type PermissionCode } from '@config/constants';
+import { ApiError } from '@shared/errors/ApiError';
+import { ok } from '@shared/http/ApiResponse';
+import { asyncHandler } from '@shared/utils/asyncHandler';
+import { audit } from '@shared/utils/audit';
+import { customizationAdminService } from '@modules/customization/customizationAdmin.service';
 import { commercialAdminController } from './commercialAdmin.controller';
 
 /**
@@ -21,6 +26,28 @@ const imageUrl = z
   .refine((value) => value.startsWith('/') || /^https?:\/\//i.test(value), {
     message: 'Usa una ruta local /images/... o una URL http(s)',
   });
+
+/** Hora del reloj de verdad: `\d{2}:\d{2}` daba por buena "99:99". */
+const clockTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Formato HH:MM, de 00:00 a 23:59');
+
+/**
+ * Enlazar una opcion a un insumo con cantidad 0 no descuenta nada y no la agota
+ * nunca: el enlace es decorativo y el hueco, invisible. El servicio lo vuelve a
+ * comprobar sobre el estado real de la fila (un PATCH puede traer solo uno de los
+ * dos campos); esto es para que el formulario reciba el error en su sitio.
+ */
+const linkedInventoryNeedsQuantity = (value: {
+  inventoryItemId?: number | null;
+  consumptionQuantity?: number;
+}): boolean =>
+  value.inventoryItemId === undefined
+  || value.inventoryItemId === null
+  || (value.consumptionQuantity ?? 0) > 0;
+
+const INVENTORY_QUANTITY_ISSUE = {
+  message: 'Indica cuanto descuenta: una opcion enlazada a un insumo no puede consumir 0',
+  path: ['consumptionQuantity'],
+};
 
 router.use(authenticate);
 
@@ -62,10 +89,18 @@ router.patch(
   validate(
     z.object({
       params: z.object({ couponId: z.coerce.number().int().positive() }),
+      /* El codigo y el tipo de descuento NO se editan: un cupon ya repartido que
+       * cambiara de PERCENT a FIXED valdria otra cosa para quien lo tiene
+       * guardado. Todo lo demas —importe, minimo, tope y limite de usos— si, que
+       * es lo que la tabla del panel ya prometia y nadie podia corregir. */
       body: z.object({
         isActive: z.boolean().optional(),
         description: z.string().min(3).max(150).optional(),
         validUntil: z.string().nullable().optional(),
+        value: z.coerce.number().min(0).optional(),
+        minOrderAmount: z.coerce.number().min(0).optional(),
+        maxDiscountAmount: z.coerce.number().positive().nullable().optional(),
+        usageLimit: z.coerce.number().int().positive().nullable().optional(),
       }),
     }),
   ),
@@ -207,12 +242,21 @@ router.put(
   validate(
     z.object({
       params: z.object({ branchId: z.coerce.number().int().positive() }),
-      body: z.object({
-        weekday: z.coerce.number().int().min(0).max(6),
-        opensAt: z.string().regex(/^\d{2}:\d{2}$/, 'Formato HH:MM'),
-        closesAt: z.string().regex(/^\d{2}:\d{2}$/, 'Formato HH:MM'),
-        isClosed: z.boolean().default(false),
-      }),
+      /* Un cierre MENOR que la apertura es legitimo: es el horario que cruza
+       * medianoche, y el evaluador de geo.service ya lo entiende. Lo que no
+       * describe nada es una franja de longitud cero, que se guardaba con un 200
+       * y dejaba la cocina cerrada las 24 horas. */
+      body: z
+        .object({
+          weekday: z.coerce.number().int().min(0).max(6),
+          opensAt: clockTime,
+          closesAt: clockTime,
+          isClosed: z.boolean().default(false),
+        })
+        .refine((value) => value.isClosed || value.opensAt !== value.closesAt, {
+          message: 'La hora de cierre no puede ser igual a la de apertura',
+          path: ['closesAt'],
+        }),
     }),
   ),
   commercialAdminController.setSchedule,
@@ -333,6 +377,54 @@ router.post(
 const groupId = z.object({ groupId: z.coerce.number().int().positive() });
 const optionId = z.object({ optionId: z.coerce.number().int().positive() });
 
+/**
+ * Que campos de una opcion puede tocar quien NO administra el constructor.
+ *
+ * Los alergenos, las calorias y los macros de cada ingrediente del bowl solo se
+ * editan aqui, y el nutricionista —que es quien responde por ellos— no tiene
+ * `catalog.customization.write`. Se le abre la escritura, pero campo por campo:
+ * el precio, el estado, el insumo y el orden siguen siendo del gestor de
+ * catalogo. Responsabilidad y capacidad, por fin en las mismas manos.
+ */
+const OPTION_FIELD_PERMISSION: Record<string, PermissionCode> = {
+  calories: PERMISSIONS.NUTRITION_WRITE,
+  protein: PERMISSIONS.NUTRITION_WRITE,
+  carbs: PERMISSIONS.NUTRITION_WRITE,
+  fat: PERMISSIONS.NUTRITION_WRITE,
+  allergens: PERMISSIONS.ALLERGEN_WRITE,
+  dietaryTags: PERMISSIONS.DIETARY_TAG_WRITE,
+};
+
+const restrictOptionFields = (req: Request, _res: Response, next: NextFunction): void => {
+  if (req.user?.isSuperAdmin) {
+    next();
+    return;
+  }
+
+  const granted = new Set(req.user?.permissions ?? []);
+  if (granted.has(PERMISSIONS.CATALOG_CUSTOMIZATION_WRITE)) {
+    next();
+    return;
+  }
+
+  // El body ya viene parseado por zod, asi que aqui solo quedan campos conocidos.
+  const blocked = Object.keys((req.body ?? {}) as Record<string, unknown>).filter((field) => {
+    const required = OPTION_FIELD_PERMISSION[field];
+    return required === undefined || !granted.has(required);
+  });
+
+  if (blocked.length > 0) {
+    next(
+      ApiError.forbidden(
+        'Sobre este ingrediente solo puedes editar la nutricion, los alergenos y las etiquetas',
+      ),
+    );
+    return;
+  }
+
+  next();
+};
+
 router.get(
   '/builder/:productId',
   requireAnyPermission(
@@ -421,26 +513,28 @@ router.post(
   validate(
     z.object({
       params: groupId,
-      body: z.object({
-        name: z.string().min(2).max(80),
-        description: z.string().max(255).nullable().optional(),
-        imageUrl: imageUrl.nullable().optional(),
-        imageAlt: z.string().max(180).nullable().optional(),
-        imagePosition: z.string().regex(/^\d{1,3}% \d{1,3}%$/).optional(),
-        dietaryTags: z.array(z.string().min(1).max(40)).max(10).optional(),
-        allergens: z.array(z.string().min(1).max(40)).max(10).optional(),
-        spiceLevel: z.coerce.number().int().min(0).max(3).optional(),
-        sortOrder: z.coerce.number().int().min(0).optional(),
-        priceDelta: z.coerce.number().min(0),
-        chargeAlways: z.boolean().default(false),
-        calories: z.coerce.number().min(0).default(0),
-        protein: z.coerce.number().min(0).default(0),
-        carbs: z.coerce.number().min(0).default(0),
-        fat: z.coerce.number().min(0).default(0),
-        maxPerItem: z.coerce.number().int().min(1).max(10).default(1),
-        inventoryItemId: z.coerce.number().int().positive().nullable().optional(),
-        consumptionQuantity: z.coerce.number().min(0).optional(),
-      }),
+      body: z
+        .object({
+          name: z.string().min(2).max(80),
+          description: z.string().max(255).nullable().optional(),
+          imageUrl: imageUrl.nullable().optional(),
+          imageAlt: z.string().max(180).nullable().optional(),
+          imagePosition: z.string().regex(/^\d{1,3}% \d{1,3}%$/).optional(),
+          dietaryTags: z.array(z.string().min(1).max(40)).max(10).optional(),
+          allergens: z.array(z.string().min(1).max(40)).max(10).optional(),
+          spiceLevel: z.coerce.number().int().min(0).max(3).optional(),
+          sortOrder: z.coerce.number().int().min(0).optional(),
+          priceDelta: z.coerce.number().min(0),
+          chargeAlways: z.boolean().default(false),
+          calories: z.coerce.number().min(0).default(0),
+          protein: z.coerce.number().min(0).default(0),
+          carbs: z.coerce.number().min(0).default(0),
+          fat: z.coerce.number().min(0).default(0),
+          maxPerItem: z.coerce.number().int().min(1).max(10).default(1),
+          inventoryItemId: z.coerce.number().int().positive().nullable().optional(),
+          consumptionQuantity: z.coerce.number().min(0).optional(),
+        })
+        .refine(linkedInventoryNeedsQuantity, INVENTORY_QUANTITY_ISSUE),
     }),
   ),
   commercialAdminController.createOption,
@@ -448,33 +542,41 @@ router.post(
 
 router.patch(
   '/builder/options/:optionId',
-  requirePermissions(PERMISSIONS.CATALOG_CUSTOMIZATION_WRITE),
+  requireAnyPermission(
+    PERMISSIONS.CATALOG_CUSTOMIZATION_WRITE,
+    PERMISSIONS.NUTRITION_WRITE,
+    PERMISSIONS.ALLERGEN_WRITE,
+    PERMISSIONS.DIETARY_TAG_WRITE,
+  ),
   validate(
     z.object({
       params: optionId,
-      body: z.object({
-        name: z.string().min(2).max(80).optional(),
-        description: z.string().max(255).nullable().optional(),
-        imageUrl: imageUrl.nullable().optional(),
-        imageAlt: z.string().max(180).nullable().optional(),
-        imagePosition: z.string().regex(/^\d{1,3}% \d{1,3}%$/).optional(),
-        dietaryTags: z.array(z.string().min(1).max(40)).max(10).optional(),
-        allergens: z.array(z.string().min(1).max(40)).max(10).optional(),
-        spiceLevel: z.coerce.number().int().min(0).max(3).optional(),
-        sortOrder: z.coerce.number().int().min(0).optional(),
-        priceDelta: z.coerce.number().min(0).optional(),
-        chargeAlways: z.boolean().optional(),
-        calories: z.coerce.number().min(0).optional(),
-        protein: z.coerce.number().min(0).optional(),
-        carbs: z.coerce.number().min(0).optional(),
-        fat: z.coerce.number().min(0).optional(),
-        maxPerItem: z.coerce.number().int().min(1).max(10).optional(),
-        status: z.enum(['ACTIVE', 'OUT_OF_STOCK', 'INACTIVE']).optional(),
-        inventoryItemId: z.coerce.number().int().positive().nullable().optional(),
-        consumptionQuantity: z.coerce.number().min(0).optional(),
-      }),
+      body: z
+        .object({
+          name: z.string().min(2).max(80).optional(),
+          description: z.string().max(255).nullable().optional(),
+          imageUrl: imageUrl.nullable().optional(),
+          imageAlt: z.string().max(180).nullable().optional(),
+          imagePosition: z.string().regex(/^\d{1,3}% \d{1,3}%$/).optional(),
+          dietaryTags: z.array(z.string().min(1).max(40)).max(10).optional(),
+          allergens: z.array(z.string().min(1).max(40)).max(10).optional(),
+          spiceLevel: z.coerce.number().int().min(0).max(3).optional(),
+          sortOrder: z.coerce.number().int().min(0).optional(),
+          priceDelta: z.coerce.number().min(0).optional(),
+          chargeAlways: z.boolean().optional(),
+          calories: z.coerce.number().min(0).optional(),
+          protein: z.coerce.number().min(0).optional(),
+          carbs: z.coerce.number().min(0).optional(),
+          fat: z.coerce.number().min(0).optional(),
+          maxPerItem: z.coerce.number().int().min(1).max(10).optional(),
+          status: z.enum(['ACTIVE', 'OUT_OF_STOCK', 'INACTIVE']).optional(),
+          inventoryItemId: z.coerce.number().int().positive().nullable().optional(),
+          consumptionQuantity: z.coerce.number().min(0).optional(),
+        })
+        .refine(linkedInventoryNeedsQuantity, INVENTORY_QUANTITY_ISSUE),
     }),
   ),
+  restrictOptionFields,
   commercialAdminController.updateOption,
 );
 
@@ -584,6 +686,93 @@ router.delete(
   requirePermissions(PERMISSIONS.CATALOG_CUSTOMIZATION_WRITE),
   validate(z.object({ params: z.object({ presetId: z.coerce.number().int().positive() }) })),
   commercialAdminController.deletePreset,
+);
+
+// ------------------------- Orden del constructor -------------------------
+/**
+ * Reordenar es RENUMERAR, no intercambiar.
+ *
+ * El panel intercambiaba el `sortOrder` de dos filas, lo que exige que los
+ * valores sean unicos, y no lo eran: con dos empatados el desempate pasaba a ser
+ * alfabetico y la flecha no movia nada mientras el toast decia "Orden
+ * actualizado". Estos tres endpoints reciben la lista completa en el orden
+ * deseado y la reescriben 0..n-1 en una transaccion, asi que ademas reparan los
+ * empates que ya hubiera.
+ *
+ * Los handlers viven aqui, y no en `commercialAdmin.controller`, porque ese
+ * archivo pertenece a otro paquete de trabajo; son tres lineas cada uno y hacen
+ * lo mismo que sus vecinos: servicio, auditoria y respuesta.
+ */
+const idList = z.array(z.coerce.number().int().positive()).min(1).max(200);
+
+router.patch(
+  '/builder/:productId/groups/order',
+  requirePermissions(PERMISSIONS.CATALOG_CUSTOMIZATION_WRITE),
+  validate(
+    z.object({
+      params: z.object({ productId: z.coerce.number().int().positive() }),
+      body: z.object({ groupIds: idList }),
+    }),
+  ),
+  asyncHandler(async (req: Request, res: Response) => {
+    const productId = Number(req.params.productId);
+    const groupIds = req.body.groupIds as number[];
+    const result = await customizationAdminService.reorderGroups(productId, groupIds);
+
+    await audit(req, {
+      action: 'builder.group.reorder',
+      entity: 'customization_groups',
+      entityId: productId,
+      after: { groupIds },
+    });
+
+    return ok(res, result, 'Orden de pasos actualizado');
+  }),
+);
+
+router.patch(
+  '/builder/groups/:groupId/options/order',
+  requirePermissions(PERMISSIONS.CATALOG_CUSTOMIZATION_WRITE),
+  validate(z.object({ params: groupId, body: z.object({ optionIds: idList }) })),
+  asyncHandler(async (req: Request, res: Response) => {
+    const group = Number(req.params.groupId);
+    const optionIds = req.body.optionIds as number[];
+    const result = await customizationAdminService.reorderOptions(group, optionIds);
+
+    await audit(req, {
+      action: 'builder.option.reorder',
+      entity: 'customization_options',
+      entityId: group,
+      after: { optionIds },
+    });
+
+    return ok(res, result, 'Orden de ingredientes actualizado');
+  }),
+);
+
+router.patch(
+  '/builder/:productId/presets/order',
+  requirePermissions(PERMISSIONS.CATALOG_CUSTOMIZATION_WRITE),
+  validate(
+    z.object({
+      params: z.object({ productId: z.coerce.number().int().positive() }),
+      body: z.object({ presetIds: idList }),
+    }),
+  ),
+  asyncHandler(async (req: Request, res: Response) => {
+    const productId = Number(req.params.productId);
+    const presetIds = req.body.presetIds as number[];
+    const result = await customizationAdminService.reorderPresets(productId, presetIds);
+
+    await audit(req, {
+      action: 'builder.preset.reorder',
+      entity: 'builder_presets',
+      entityId: productId,
+      after: { presetIds },
+    });
+
+    return ok(res, result, 'Orden de recomendaciones actualizado');
+  }),
 );
 
 export default router;

@@ -20,6 +20,8 @@ import { PrimaryButton } from '../../src/components/PrimaryButton';
 import { ScreenScaffold } from '../../src/components/ScreenScaffold';
 import { Skeleton } from '../../src/components/Skeleton';
 import { useResource } from '../../src/hooks/useResource';
+import { isValidDni, isValidRuc } from '../../src/lib/peruDocs';
+import { money } from '../../src/lib/format';
 import { useCart } from '../../src/providers/CartProvider';
 import { usePurchase } from '../../src/providers/PurchaseProvider';
 import { useSession } from '../../src/providers/SessionProvider';
@@ -67,29 +69,8 @@ interface FieldErrors {
 /** El total se recotiza solo; esta pausa evita un POST por cada tecla del cupón. */
 const QUOTE_DEBOUNCE_MS = 350;
 
-const money = (value: number) => `S/ ${Number(value).toFixed(2)}`;
 
 const attemptKey = () => `mobile-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-
-/** DNI: 8 dígitos. Mismo criterio que `shared/utils/peruDocs` del backend. */
-const isValidDni = (value: string) => /^\d{8}$/.test(value.trim());
-
-/**
- * RUC: 11 dígitos, prefijo válido y dígito verificador (módulo 11). Un RUC
- * imposible se guardaría y el OSE rechazaría la factura después, sin el dato real.
- */
-const isValidRuc = (value: string): boolean => {
-  const ruc = value.trim();
-  if (!/^(10|15|16|17|20)\d{9}$/.test(ruc)) return false;
-
-  const weights = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
-  const sum = weights.reduce((total, weight, index) => total + weight * Number(ruc[index]), 0);
-  let check = 11 - (sum % 11);
-  if (check === 10) check = 0;
-  if (check === 11) check = 1;
-
-  return check === Number(ruc[10]);
-};
 
 const isValidPhone = (value: string) => /^[0-9+\s-]{6,20}$/.test(value.trim());
 
@@ -218,6 +199,7 @@ export default function CheckoutScreen() {
     branch,
     address: purchaseAddress,
     coverage: purchaseCoverage,
+    selectDeliveryAddress,
   } = usePurchase();
   const toast = useToast();
 
@@ -265,6 +247,7 @@ export default function CheckoutScreen() {
   /** El pedido ya nació: el carrito puede vaciarse sin que eso expulse de la pantalla. */
   const placed = useRef(false);
   const trackedStart = useRef(false);
+  const checkoutScroll = useRef<ScrollView>(null);
 
   const addresses = useResource<Address[]>({
     key: status === 'authenticated' ? 'account:addresses' : null,
@@ -324,9 +307,31 @@ export default function CheckoutScreen() {
     setAddressId((current) =>
       current !== null && addressRows.some((row) => row.id === current)
         ? current
-        : (addressRows.find((row) => row.isDefault)?.id ?? addressRows[0].id),
+        : (addressRows.find((row) => row.id === purchaseAddress?.id)?.id
+          ?? addressRows.find((row) => row.isDefault)?.id
+          ?? addressRows[0].id),
     );
-  }, [addressRows]);
+  }, [addressRows, purchaseAddress?.id]);
+
+  const chooseAddress = useCallback(async (row: Address) => {
+    setAddressId(row.id);
+    setQuoteError('');
+    try {
+      const result = await selectDeliveryAddress(row);
+      if (result && !result.covered) {
+        toast.show({
+          message: result.reason ?? 'Esa dirección está fuera de cobertura. Elige otra para continuar.',
+          tone: 'warning',
+          placement: 'top',
+        });
+      }
+    } catch (caught) {
+      toast.show({
+        message: caught instanceof Error ? caught.message : 'No pudimos comprobar esa dirección.',
+        tone: 'error',
+      });
+    }
+  }, [selectDeliveryAddress, toast]);
 
   // --- Franjas horarias --------------------------------------------------
   useEffect(() => {
@@ -495,9 +500,10 @@ export default function CheckoutScreen() {
    * de pago, no un descuento. Es lo que SUNAT compara contra el umbral.
    */
   const invoiceTotal = quote ? quote.grandTotal + quote.walletAmount : 0;
+  const fiscalEnabled = config?.receipts.mode !== 'INTERNAL_ONLY';
   const boletaThreshold = config?.invoicing.boletaDniThreshold ?? null;
   const boletaNeedsDni =
-    documentType === 'BOLETA' && boletaThreshold !== null && invoiceTotal >= boletaThreshold;
+    fiscalEnabled && documentType === 'BOLETA' && boletaThreshold !== null && invoiceTotal >= boletaThreshold;
 
   const codAvailable =
     Boolean(config?.cod.enabled) &&
@@ -652,10 +658,11 @@ export default function CheckoutScreen() {
       found.contactPhone = 'Ingresa un teléfono de contacto válido (6 a 20 dígitos).';
     }
 
-    if (documentType === 'FACTURA') {
+    if (fiscalEnabled && documentType === 'FACTURA') {
       if (!isValidRuc(ruc)) found.billing = 'Ingresa un RUC válido (11 dígitos, empieza en 10/20).';
       else if (billingName.trim().length < 3) found.billing = 'Ingresa la razón social.';
-    } else if (boletaNeedsDni) {
+      else if (billingAddress.trim().length < 5) found.billing = 'Ingresa el domicilio fiscal.';
+    } else if (fiscalEnabled && boletaNeedsDni) {
       if (!dni.trim()) {
         found.billing = `Para una boleta de ${money(invoiceTotal)} necesitamos tu DNI.`;
       } else if (!isValidDni(dni)) {
@@ -676,6 +683,7 @@ export default function CheckoutScreen() {
 
     return found;
   }, [
+    billingAddress,
     billingName,
     boletaNeedsDni,
     contactName,
@@ -799,7 +807,7 @@ export default function CheckoutScreen() {
   // --- Estado del botón principal ----------------------------------------
   const missingDestination = serviceMode === 'PICKUP' ? !branch : !selectedAddress;
   /** Todavía no hay ningún importe que enseñar y tampoco un fallo que resolver. */
-  const awaitingFirstQuote = quote === null && quoteError === '';
+  const awaitingFirstQuote = quoteInput !== null && quote === null && quoteError === '';
   const missingForMinimum = quote ? Math.max(0, quote.minimumOrder - quote.subtotal) : 0;
 
   const blockAction = useMemo<BlockAction | null>(() => {
@@ -890,8 +898,20 @@ export default function CheckoutScreen() {
         <Text style={styles.footerValue}>{quote ? money(quote.grandTotal) : '—'}</Text>
       </View>
 
+      {serviceMode === 'DELIVERY' && selectedAddress ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Cambiar dirección de entrega"
+          onPress={() => checkoutScroll.current?.scrollTo({ y: 0, animated: true })}
+          style={({ pressed }) => [styles.changeAddress, pressed && styles.pressed]}
+        >
+          <MaterialCommunityIcons name="map-marker-outline" size={18} color={colors.brand700} />
+          <Text style={styles.changeAddressText}>Cambiar dirección</Text>
+        </Pressable>
+      ) : null}
+
       <PrimaryButton
-        loading={placing || awaitingFirstQuote}
+        loading={placing || (!blockAction && awaitingFirstQuote)}
         label={blockAction ? blockAction.label : confirmLabel}
         onPress={() => (blockAction ? blockAction.run() : void place())}
       />
@@ -910,6 +930,7 @@ export default function CheckoutScreen() {
         style={styles.flex}
       >
         <ScrollView
+          ref={checkoutScroll}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           contentContainerStyle={styles.content}
@@ -975,7 +996,7 @@ export default function CheckoutScreen() {
                         title={row.label}
                         subtitle={row.line1}
                         selected={row.id === addressId}
-                        onPress={() => setAddressId(row.id)}
+                        onPress={() => void chooseAddress(row)}
                       />
                     ))}
 
@@ -1139,7 +1160,18 @@ export default function CheckoutScreen() {
                 />
               </Section>
 
-              <Section
+              {!fiscalEnabled ? (
+                <Section
+                  icon="receipt-text-outline"
+                  title="Ticket interno"
+                  description="Recibiras un resumen del pedido, sin serie ni correlativo fiscal."
+                >
+                  <View style={styles.notice}>
+                    <MaterialCommunityIcons name="information-outline" size={19} color={colors.brand700} />
+                    <Text style={styles.noticeText}>El ticket usa el numero de tu pedido para identificar la entrega. No es una boleta ni una factura.</Text>
+                  </View>
+                </Section>
+              ) : <Section
                 icon="receipt-text-outline"
                 title="Comprobante"
                 description="Boleta por defecto; factura si necesitas sustentar el gasto."
@@ -1194,9 +1226,12 @@ export default function CheckoutScreen() {
                       icon="office-building-outline"
                     />
                     <FormField
-                      label="Dirección fiscal (opcional)"
+                      label="Domicilio fiscal"
                       value={billingAddress}
-                      onChangeText={setBillingAddress}
+                      onChangeText={(value) => {
+                        setBillingAddress(value);
+                        setErrors((current) => ({ ...current, billing: undefined }));
+                      }}
                       placeholder="Av. Ejemplo 123, Lima"
                       maxLength={200}
                       icon="map-marker-outline"
@@ -1233,11 +1268,11 @@ export default function CheckoutScreen() {
                   </>
                 ) : (
                   <Text style={styles.hint}>
-                    Emitimos la boleta a tu nombre. Si el total sube del umbral SUNAT te pediremos
-                    el DNI aquí mismo.
+                    La boleta queda solicitada con tu pedido. Podrás revisar su estado y descargarla
+                    desde Pedidos cuando el emisor electrónico la confirme.
                   </Text>
                 )}
-              </Section>
+              </Section>}
 
               <Section
                 icon="credit-card-outline"
@@ -1904,6 +1939,19 @@ const styles = StyleSheet.create({
   footerValue: {
     ...type.title,
     color: colors.brand700,
+  },
+  changeAddress: {
+    minHeight: layout.minTouch,
+    marginBottom: spacing.xs,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+  },
+  changeAddressText: {
+    ...type.bodySm,
+    color: colors.brand700,
+    fontWeight: '800',
   },
   pressed: {
     opacity: 0.75,

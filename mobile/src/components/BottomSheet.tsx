@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -27,6 +29,8 @@ export interface BottomSheetProps {
   children: ReactNode;
   title?: string;
   subtitle?: string;
+  /** Acciones persistentes: permanecen visibles aunque el cuerpo haga scroll o aparezca el teclado. */
+  footer?: ReactNode;
   /** Oculta el asa y bloquea el arrastre: para hojas que exigen una decisión. */
   dismissible?: boolean;
   /** Altura máxima como fracción de la pantalla. Por defecto 0.9. */
@@ -51,6 +55,7 @@ export function BottomSheet({
   children,
   title,
   subtitle,
+  footer,
   dismissible = true,
   maxHeightRatio = 0.9,
   accessibilityLabel,
@@ -151,7 +156,10 @@ export function BottomSheet({
           />
         </Animated.View>
 
-        <GestureDetector gesture={pan}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardAvoider}
+        >
           <Animated.View
             accessibilityViewIsModal
             accessibilityLabel={accessibilityLabel ?? title}
@@ -159,11 +167,19 @@ export function BottomSheet({
             style={[
               styles.sheet,
               shadow.lg,
-              { maxHeight: windowHeight * maxHeightRatio, paddingBottom: insets.bottom + spacing.md },
+              { maxHeight: windowHeight * maxHeightRatio },
               sheetStyle,
             ]}
           >
-            {dismissible && <View style={styles.handle} />}
+            {dismissible ? (
+              <GestureDetector gesture={pan}>
+                <View style={styles.handleTouch}>
+                  <View style={styles.handle} />
+                </View>
+              </GestureDetector>
+            ) : (
+              <View style={styles.handleSpacer} />
+            )}
 
             {(title || subtitle) && (
               <View style={styles.header}>
@@ -186,9 +202,22 @@ export function BottomSheet({
               </View>
             )}
 
-            <View style={styles.body}>{children}</View>
+            <View
+              style={[
+                styles.body,
+                !footer && { paddingBottom: insets.bottom + spacing.md },
+              ]}
+            >
+              {children}
+            </View>
+
+            {footer ? (
+              <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}>
+                {footer}
+              </View>
+            ) : null}
           </Animated.View>
-        </GestureDetector>
+        </KeyboardAvoidingView>
       </GestureHandlerRootView>
     </Modal>
   );
@@ -196,6 +225,9 @@ export function BottomSheet({
 
 const styles = StyleSheet.create({
   root: {
+    flex: 1,
+  },
+  keyboardAvoider: {
     flex: 1,
     justifyContent: 'flex-end',
   },
@@ -208,29 +240,38 @@ const styles = StyleSheet.create({
   },
   sheet: {
     backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.lg + 4,
-    borderTopRightRadius: radius.lg + 4,
-    paddingHorizontal: spacing.md,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    borderTopWidth: 1,
+    borderColor: colors.lineSoft,
+    overflow: 'hidden',
+  },
+  handleTouch: {
+    minHeight: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   handle: {
-    alignSelf: 'center',
-    width: 44,
+    width: 52,
     height: 5,
     borderRadius: radius.pill,
-    backgroundColor: colors.line,
-    marginTop: spacing.sm + spacing.xs,
+    backgroundColor: '#cbd5d0',
+  },
+  handleSpacer: {
+    height: spacing.sm,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: spacing.sm,
-    paddingTop: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
   },
   headerText: {
     flex: 1,
   },
   title: {
-    ...type.heading,
+    ...type.title,
     color: colors.ink,
   },
   subtitle: {
@@ -247,7 +288,18 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted,
   },
   body: {
+    minHeight: 0,
+    flexShrink: 1,
+    paddingHorizontal: spacing.md,
     paddingTop: spacing.md,
+  },
+  footer: {
+    flexShrink: 0,
+    borderTopWidth: 1,
+    borderTopColor: colors.lineSoft,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm + spacing.xs,
   },
   pressed: {
     opacity: 0.7,

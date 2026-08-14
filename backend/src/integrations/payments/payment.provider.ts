@@ -12,6 +12,8 @@ export interface CreateCheckoutInput {
   currency: string;
   customerEmail?: string | null;
   description: string;
+  /** Nombre visible en el checkout alojado. */
+  displayName?: string;
   /** Clave de idempotencia: repetirla no debe crear un segundo cobro (RN-015). */
   idempotencyKey: string;
   successUrl: string;

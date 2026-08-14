@@ -21,6 +21,8 @@ export class User extends Model<InferAttributes<User>, InferCreationAttributes<U
   declare passwordHash: string | null;
   declare firstName: string | null;
   declare lastName: string | null;
+  /** Ruta local servida por el backend para la foto elegida por el titular. */
+  declare avatarUrl: CreationOptional<string | null>;
   declare status: CreationOptional<UserStatus>;
   /**
    * Superadmin: NO es un rol de datos, es una marca del sistema.
@@ -71,6 +73,7 @@ User.init(
     passwordHash: { type: DataTypes.STRING(255), allowNull: true },
     firstName: { type: DataTypes.STRING(80), allowNull: true },
     lastName: { type: DataTypes.STRING(80), allowNull: true },
+    avatarUrl: { type: DataTypes.STRING(255), allowNull: true },
     status: {
       type: DataTypes.ENUM(...Object.values(USER_STATUS)),
       allowNull: false,

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { BottomSheet } from './BottomSheet';
 import { Chip } from './Chip';
@@ -74,7 +74,6 @@ export function CatalogFilters({
   loading = false,
   preferences,
 }: CatalogFiltersProps) {
-  const { height } = useWindowDimensions();
   const [draft, setDraft] = useState<CatalogFilterState>(value);
 
   // El borrador se sincroniza al abrir: si el cliente cierra sin aplicar, lo que
@@ -112,12 +111,28 @@ export function CatalogFilters({
     <BottomSheet
       visible={visible}
       onClose={onClose}
-      title="Filtrar el menú"
+      title="Filtrar menú"
       subtitle="Cruzamos tus preferencias con la carta de la cocina seleccionada."
       maxHeightRatio={0.92}
+      footer={
+        <View style={styles.actions}>
+          <PrimaryButton
+            label="Limpiar"
+            variant="secondary"
+            disabled={active === 0}
+            onPress={() => setDraft(EMPTY_CATALOG_FILTERS)}
+            style={styles.clear}
+          />
+          <PrimaryButton
+            label={active > 0 ? `Ver resultados (${active})` : 'Ver resultados'}
+            onPress={confirm}
+            style={styles.confirm}
+          />
+        </View>
+      }
     >
       <ScrollView
-        style={{ maxHeight: height * 0.52 }}
+        style={styles.scroll}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -228,20 +243,6 @@ export function CatalogFilters({
         )}
       </ScrollView>
 
-      <View style={styles.actions}>
-        <PrimaryButton
-          label="Limpiar"
-          variant="secondary"
-          disabled={active === 0}
-          onPress={() => setDraft(EMPTY_CATALOG_FILTERS)}
-          style={styles.clear}
-        />
-        <PrimaryButton
-          label={active > 0 ? `Ver resultados (${active})` : 'Ver resultados'}
-          onPress={confirm}
-          style={styles.confirm}
-        />
-      </View>
     </BottomSheet>
   );
 }
@@ -272,6 +273,9 @@ function FilterGroup({
 }
 
 const styles = StyleSheet.create({
+  scroll: {
+    flexShrink: 1,
+  },
   content: {
     paddingBottom: spacing.md,
   },
@@ -318,7 +322,6 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
     gap: spacing.sm + spacing.xs,
-    paddingTop: spacing.md,
   },
   clear: {
     flex: 1,

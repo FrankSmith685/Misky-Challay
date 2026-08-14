@@ -1,7 +1,20 @@
-import { Check, CircleAlert, Flame, ImageOff, LockKeyhole, Minus, Plus, ShieldAlert } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  ChevronDown,
+  CircleAlert,
+  Flame,
+  ImageOff,
+  LockKeyhole,
+  ShieldAlert,
+} from 'lucide-react';
+import { Button } from '@components/ui/Button';
+import { QuantityStepper } from '@components/ui/QuantityStepper';
 import { formatCurrency } from '@lib/format';
 import { cn } from '@lib/cn';
 import type { BuilderGroup, BuilderOption, QuoteLine } from '../types';
+import { BUILDER_SCROLL_ANCHOR } from './BuilderProgress';
 
 interface GroupStepProps {
   group: BuilderGroup;
@@ -15,6 +28,10 @@ interface GroupStepProps {
   selectedOptionNames: Record<number, string>;
   isCollapsed?: boolean;
   onExpand?: () => void;
+  previousLabel?: string;
+  continueLabel: string;
+  onBack?: () => void;
+  onContinue: () => void;
 }
 
 /** Paso visual del constructor: reglas, disponibilidad y costo entendibles de un vistazo. */
@@ -30,11 +47,18 @@ export const GroupStep = ({
   selectedOptionNames,
   isCollapsed = false,
   onExpand,
+  previousLabel,
+  continueLabel,
+  onBack,
+  onContinue,
 }: GroupStepProps) => {
   const isFull = unitsUsed >= group.maxSelection;
   const isOptional = group.minSelection === 0;
   const isDone = isOptional ? unitsUsed > 0 : unitsUsed >= group.minSelection;
   const freeLeft = Math.max(0, group.freeQuantity - unitsUsed);
+  const remaining = Math.max(0, group.maxSelection - unitsUsed);
+  const requiredRemaining = Math.max(0, group.minSelection - unitsUsed);
+  const canContinue = requiredRemaining === 0;
   const groupImage = group.options.find((option) => option.imageUrl)?.imageUrl;
   const hasUniqueOptionImages =
     new Set(group.options.map((option) => option.imageUrl).filter(Boolean)).size > 1;
@@ -44,27 +68,22 @@ export const GroupStep = ({
     : group.minSelection === group.maxSelection
       ? `Elige ${group.minSelection}`
       : `Elige de ${group.minSelection} a ${group.maxSelection}`;
+  const panelId = `builder-panel-${group.id}`;
 
   return (
     <section
       id={`builder-group-${group.id}`}
+      style={BUILDER_SCROLL_ANCHOR}
       className={cn(
-        'scroll-mt-28 overflow-hidden rounded-[24px] border bg-surface shadow-[0_12px_36px_rgba(25,70,48,0.06)] transition-colors',
+        'overflow-hidden rounded-card border bg-surface shadow-e2 transition-colors',
         isDone ? 'border-brand-200' : 'border-line',
       )}
     >
       <header
-        role={isCollapsed ? 'button' : undefined}
-        tabIndex={isCollapsed ? 0 : undefined}
-        aria-expanded={!isCollapsed}
-        className="relative cursor-pointer overflow-hidden border-b border-line bg-surface-muted/60 px-5 py-5 sm:cursor-default sm:px-6"
-        onClick={onExpand}
-        onKeyDown={(event) => {
-          if (isCollapsed && (event.key === 'Enter' || event.key === ' ')) {
-            event.preventDefault();
-            onExpand?.();
-          }
-        }}
+        className={cn(
+          'relative cursor-pointer overflow-hidden border-line bg-gradient-to-r from-surface-muted/80 to-white px-5 py-5 transition-colors hover:from-brand-50/70 hover:to-white sm:px-6',
+          !isCollapsed && 'border-b',
+        )}
       >
         {groupImage && (
           <img
@@ -80,7 +99,7 @@ export const GroupStep = ({
         <div className="relative flex items-start gap-3">
           <span
             className={cn(
-              'mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl text-sm font-extrabold transition-colors',
+              'mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-card text-sm font-extrabold transition-colors',
               isDone
                 ? 'bg-brand-600 text-white'
                 : 'bg-white text-brand-700 shadow-sm ring-1 ring-line',
@@ -91,28 +110,45 @@ export const GroupStep = ({
 
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-lg font-bold text-ink">{group.name}</h2>
-              <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-ink-muted ring-1 ring-line">
+              {/* El control vive DENTRO del h2 (patrón acordeón): si fuese al revés
+                  el constructor se quedaría sin un solo encabezado. El ::after
+                  estira el área pulsable a toda la cabecera. */}
+              <h2 className="text-lg font-bold text-ink">
+                <button
+                  type="button"
+                  aria-expanded={!isCollapsed}
+                  aria-controls={panelId}
+                  onClick={onExpand}
+                  className="text-left after:absolute after:-inset-5 after:content-[''] sm:after:-inset-x-6"
+                >
+                  {group.name}
+                </button>
+              </h2>
+              <span className="rounded-pill bg-white px-2.5 py-1 text-[11px] font-semibold text-ink-muted ring-1 ring-line">
                 {rule}
               </span>
               {group.freeQuantity > 0 && (
-                <span className="rounded-full bg-brand-50 px-2.5 py-1 text-[11px] font-semibold text-brand-700">
+                <span className="rounded-pill bg-brand-50 px-2.5 py-1 text-[11px] font-semibold text-brand-700">
                   {group.freeQuantity} incluida{group.freeQuantity === 1 ? '' : 's'}
                 </span>
               )}
             </div>
             {group.description && (
-              <p className="mt-1 max-w-2xl text-sm text-ink-muted">{group.description}</p>
+              <p className={cn('mt-1 max-w-2xl text-sm leading-6 text-ink-muted', isCollapsed && 'hidden')}>{group.description}</p>
             )}
           </div>
 
-          <span className="shrink-0 text-sm font-bold text-brand-700">
+          <span className="flex shrink-0 items-center gap-1.5 text-sm font-bold text-brand-700">
             {unitsUsed}/{group.maxSelection}
+            <ChevronDown
+              className={cn('size-4 transition-transform', !isCollapsed && 'rotate-180')}
+              aria-hidden="true"
+            />
           </span>
         </div>
       </header>
 
-      <ul className={cn('gap-3 p-4 sm:grid sm:grid-cols-2 sm:p-5', isCollapsed ? 'hidden sm:grid' : 'grid')}>
+      <ul id={panelId} className={cn('gap-3 p-4 sm:grid-cols-2 sm:p-5', isCollapsed ? 'hidden' : 'grid')}>
         {group.options.map((option, optionIndex) => {
           const isSelected = selectedIds.includes(option.id);
           const blockedByConflict =
@@ -139,14 +175,20 @@ export const GroupStep = ({
                   if (!blocked) onToggle(option);
                 }}
                 onKeyDown={(event) => {
-                  if ((event.key === 'Enter' || event.key === ' ') && !blocked) onToggle(option);
+                  // Los controles anidados (porciones, resolver conflicto) tienen su
+                  // propio teclado: solo respondemos a las teclas dirigidas a la tarjeta.
+                  if (event.target !== event.currentTarget) return;
+                  if (event.key !== 'Enter' && event.key !== ' ') return;
+                  // Sin esto, el espacio activa la opción Y desplaza la página.
+                  event.preventDefault();
+                  if (!blocked) onToggle(option);
                 }}
                 aria-pressed={isSelected}
                 className={cn(
-                  'group relative flex h-full min-h-[104px] w-full overflow-hidden rounded-2xl border bg-white text-left transition-all duration-200',
+                  'group relative flex h-full min-h-[112px] w-full overflow-hidden rounded-card border bg-white text-left transition-all duration-200',
                   isSelected
-                    ? 'border-brand-600 shadow-[0_8px_24px_rgba(35,124,82,0.16)] ring-1 ring-brand-600'
-                    : 'border-line hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-lg',
+                    ? 'border-brand-600 shadow-e2 ring-1 ring-brand-600'
+                    : 'border-line hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-e2',
                   blocked && !blockedByConflict &&
                     'cursor-not-allowed opacity-45 hover:translate-y-0 hover:border-line hover:shadow-none',
                   blockedByConflict && 'border-amber-200 bg-amber-50/35',
@@ -172,7 +214,7 @@ export const GroupStep = ({
                       <span className="font-semibold leading-tight text-ink">{option.name}</span>
                       <span
                         className={cn(
-                          'flex size-5 shrink-0 items-center justify-center rounded-full border transition-colors',
+                          'flex size-5 shrink-0 items-center justify-center rounded-field border transition-colors',
                           isSelected ? 'border-brand-600 bg-brand-600' : 'border-line bg-white',
                         )}
                       >
@@ -187,10 +229,10 @@ export const GroupStep = ({
                     {(option.dietaryTags.length > 0 || option.allergens.length > 0 || option.spiceLevel > 0) && (
                       <span className="mt-2 flex flex-wrap gap-1">
                         {option.dietaryTags.slice(0, 2).map((tag) => (
-                          <span key={tag} className="rounded-full bg-brand-50 px-2 py-0.5 text-[10px] font-semibold capitalize text-brand-700">{tag}</span>
+                          <span key={tag} className="rounded-pill bg-brand-50 px-2 py-0.5 text-[10px] font-semibold capitalize text-brand-700">{tag}</span>
                         ))}
                         {option.allergens.length > 0 && (
-                          <span title={`Alérgenos: ${option.allergens.join(', ')}`} className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                          <span title={`Alérgenos: ${option.allergens.join(', ')}`} className="inline-flex items-center gap-1 rounded-pill bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
                             <ShieldAlert className="size-3" /> Alérgenos
                           </span>
                         )}
@@ -205,7 +247,7 @@ export const GroupStep = ({
 
                   <div className="flex items-end justify-between gap-2 text-[11px]">
                     <span className="text-ink-muted">
-                      {Math.round(option.nutrition.calories)} kcal
+                      {Math.round(option.nutrition.calories)} kcal · {Math.round(option.nutrition.protein)} g prot.
                     </span>
                     <span className="font-bold">
                       {!option.isAvailable ? (
@@ -221,7 +263,7 @@ export const GroupStep = ({
                         <span className="text-brand-700">Incluido</span>
                       ) : (
                         <span
-                          className={option.chargeAlways ? 'text-accent-500' : 'text-ink-muted'}
+                          className={option.chargeAlways ? 'text-accent-700' : 'text-ink-muted'}
                         >
                           +{formatCurrency(option.priceDelta)}
                         </span>
@@ -229,10 +271,17 @@ export const GroupStep = ({
                     </span>
                   </div>
                   {isSelected && option.maxPerItem > 1 && (
-                    <div className="flex items-center justify-end gap-1 border-t border-line pt-2" onClick={(event) => event.stopPropagation()}>
-                      <button type="button" onClick={() => onQuantityChange(option, -1)} aria-label={`Quitar una porción de ${option.name}`} className="flex size-7 items-center justify-center rounded-full border border-line bg-white hover:border-brand-400"><Minus className="size-3" /></button>
-                      <span className="min-w-7 text-center text-xs font-bold">{quantity}</span>
-                      <button type="button" disabled={quantity >= option.maxPerItem || isFull} onClick={() => onQuantityChange(option, 1)} aria-label={`Agregar una porción de ${option.name}`} className="flex size-7 items-center justify-center rounded-full border border-line bg-white hover:border-brand-400 disabled:opacity-40"><Plus className="size-3" /></button>
+                    <div className="flex items-center justify-end border-t border-line pt-2" onClick={(event) => event.stopPropagation()}>
+                      {/* Mínimo 1: quitar la opción es tarea de la tarjeta, no del "−".
+                          El máximo baja al valor actual cuando el paso está lleno. */}
+                      <QuantityStepper
+                        value={quantity}
+                        min={1}
+                        max={isFull ? quantity : option.maxPerItem}
+                        size="touch"
+                        ariaLabel={`de ${option.name}`}
+                        onChange={(next) => onQuantityChange(option, next - quantity)}
+                      />
                     </div>
                   )}
                   {blockedByConflict && conflict && (
@@ -247,6 +296,77 @@ export const GroupStep = ({
           );
         })}
       </ul>
+
+      {!isCollapsed && (
+        <footer className="border-t border-line bg-gradient-to-r from-brand-50/70 via-white to-white px-4 py-4 sm:px-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-start gap-2.5">
+              <span
+                className={cn(
+                  'mt-0.5 grid size-7 shrink-0 place-items-center rounded-card',
+                  canContinue
+                    ? 'bg-brand-600 text-white'
+                    : 'bg-amber-100 text-amber-800',
+                )}
+              >
+                {canContinue ? (
+                  <Check className="size-3.5" strokeWidth={3} />
+                ) : (
+                  <span className="text-[11px] font-black">{requiredRemaining}</span>
+                )}
+              </span>
+              <div>
+                <p className="text-xs font-extrabold text-ink">
+                  {canContinue ? 'Este paso ya está listo' : `Elige ${requiredRemaining} más para continuar`}
+                </p>
+                <p className="mt-0.5 text-[11px] leading-4 text-ink-muted">
+                  {canContinue
+                    ? remaining > 0
+                      ? `Puedes añadir ${remaining} opción${remaining === 1 ? '' : 'es'} más o continuar cuando quieras.`
+                      : 'Llegaste al máximo permitido para esta categoría.'
+                    : `Puedes seleccionar hasta ${group.maxSelection} en esta categoría.`}
+                </p>
+              </div>
+            </div>
+
+            <div
+              className={cn(
+                'grid gap-2 sm:flex sm:shrink-0',
+                onBack ? 'grid-cols-2' : 'grid-cols-1',
+              )}
+            >
+              {onBack ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={onBack}
+                  leftIcon={<ArrowLeft className="size-4" />}
+                >
+                  <span className="sm:hidden">Anterior</span>
+                  <span className="hidden sm:inline">
+                    {previousLabel ? `Volver a ${previousLabel}` : 'Anterior'}
+                  </span>
+                </Button>
+              ) : (
+                <span className="hidden sm:block" />
+              )}
+              <Button
+                type="button"
+                disabled={!canContinue}
+                onClick={onContinue}
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="sm:hidden">
+                    {continueLabel === 'Revisar mi bowl' ? 'Revisar bowl' : 'Siguiente'}
+                  </span>
+                  <span className="hidden sm:inline">{continueLabel}</span>
+                  <ArrowRight className="size-4" />
+                </span>
+              </Button>
+            </div>
+          </div>
+        </footer>
+      )}
     </section>
   );
 };

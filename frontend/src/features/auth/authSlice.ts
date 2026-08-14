@@ -144,6 +144,10 @@ const authSlice = createSlice({
         state.status = 'failed';
         state.error = action.payload ?? 'No se pudo iniciar sesion';
       })
+      .addCase(register.pending, (state) => {
+        state.status = 'loading';
+        state.error = null;
+      })
       .addCase(register.fulfilled, (state, action) => {
         state.status = 'succeeded';
         state.user = action.payload.user;

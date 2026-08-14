@@ -2,8 +2,6 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -518,8 +516,15 @@ export default function SavedBowlsScreen() {
         onClose={() => busyId === null && setRenaming(null)}
         title="Renombrar receta"
         subtitle="Usa un nombre que reconozcas de un vistazo."
+        footer={
+          <PrimaryButton
+            label="Guardar nombre"
+            loading={renaming !== null && busyId === renaming.id}
+            onPress={() => void rename()}
+          />
+        }
       >
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View>
           <Text style={styles.fieldLabel}>Nombre de la receta</Text>
           <TextInput
             value={draftName}
@@ -538,13 +543,7 @@ export default function SavedBowlsScreen() {
           <Text style={nameError ? styles.fieldError : styles.fieldHint}>
             {nameError || `${draftName.trim().length}/80 caracteres`}
           </Text>
-
-          <PrimaryButton
-            label="Guardar nombre"
-            loading={renaming !== null && busyId === renaming.id}
-            onPress={() => void rename()}
-          />
-        </KeyboardAvoidingView>
+        </View>
       </BottomSheet>
     </ScreenScaffold>
   );

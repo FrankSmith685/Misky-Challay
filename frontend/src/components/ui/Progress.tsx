@@ -16,14 +16,14 @@ export const Progress = ({ value, max = 100, className, showLabel, tone = 'brand
   return (
     <div className={className}>
       <div
-        className="h-2 w-full overflow-hidden rounded-full bg-surface-muted"
+        className="h-2 w-full overflow-hidden rounded-pill bg-surface-muted"
         role="progressbar"
         aria-valuenow={Math.round(pct)}
         aria-valuemin={0}
         aria-valuemax={100}
       >
         <div
-          className={cn('h-full rounded-full transition-all', tone === 'brand' ? 'bg-brand-600' : 'bg-accent-500')}
+          className={cn('h-full rounded-pill transition-all', tone === 'brand' ? 'bg-brand-600' : 'bg-accent-500')}
           style={{ width: `${pct}%` }}
         />
       </div>

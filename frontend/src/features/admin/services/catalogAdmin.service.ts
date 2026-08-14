@@ -98,10 +98,23 @@ export const catalogAdminApi = {
     await api.post(`${BASE}/products/${productId}/variants`, input);
   },
 
-  /** Lo unico que puede tocar el nutricionista. */
+  /**
+   * Lo unico que puede tocar el nutricionista.
+   *
+   * `fiber` y `sodium` son opcionales porque el servidor los PRESERVA si no llegan;
+   * hasta ahora no viajaban nunca y se quedaban clavados en 0 sin que nadie
+   * pudiera editarlos, pese a estar validados en el endpoint desde el principio.
+   */
   async updateNutrition(
     variantId: number,
-    input: { calories: number; protein: number; carbs: number; fat: number },
+    input: {
+      calories: number;
+      protein: number;
+      carbs: number;
+      fat: number;
+      fiber?: number;
+      sodium?: number;
+    },
   ): Promise<void> {
     await api.patch(`${BASE}/variants/${variantId}/nutrition`, input);
   },

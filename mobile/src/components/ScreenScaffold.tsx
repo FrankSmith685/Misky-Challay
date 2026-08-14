@@ -4,7 +4,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
-import { colors, layout, radius, spacing, type } from '../theme/tokens';
+import { colors, layout, radius, shadow, spacing, type } from '../theme/tokens';
 import type { ToneName } from '../theme/tokens';
 
 export interface ScreenScaffoldProps {
@@ -75,7 +75,7 @@ export function ScreenScaffold({
       <StatusBar style={isDark ? 'light' : 'dark'} />
 
       {hasHeader && (
-        <View style={styles.header}>
+        <View style={[styles.header, isDark ? styles.headerDark : styles.headerLight]}>
           {backVisible ? (
             <Pressable
               accessibilityRole="button"
@@ -144,6 +144,17 @@ const styles = StyleSheet.create({
     gap: spacing.sm + spacing.xs,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm + spacing.xs,
+    borderBottomWidth: 1,
+  },
+  headerLight: {
+    borderBottomColor: colors.lineSoft,
+    backgroundColor: colors.surface,
+    ...shadow.sm,
+    zIndex: 2,
+  },
+  headerDark: {
+    borderBottomColor: colors.brand800,
+    backgroundColor: colors.surfaceDark,
   },
   backButton: {
     width: layout.minTouch,
@@ -153,9 +164,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   backButtonLight: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.brand50,
     borderWidth: 1,
-    borderColor: colors.line,
+    borderColor: colors.brand100,
   },
   backButtonDark: {
     backgroundColor: colors.surfaceDarkRaised,
@@ -184,6 +195,9 @@ const styles = StyleSheet.create({
   },
   contentPadded: {
     paddingHorizontal: spacing.md,
+    width: '100%',
+    maxWidth: layout.contentMaxWidth,
+    alignSelf: 'center',
   },
   footer: {
     borderTopWidth: 1,

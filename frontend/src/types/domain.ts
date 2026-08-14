@@ -98,8 +98,11 @@ export interface CartItem {
 export interface User {
   id: number;
   email: string | null;
+  /** Viene con la sesion: el checkout lo usa como contacto por defecto. */
+  phone: string | null;
   firstName: string | null;
   lastName: string | null;
+  avatarUrl: string | null;
   roles: string[];
   permissions: string[];
   /** Se salta la verificacion de permisos (marca del sistema, no un rol). */

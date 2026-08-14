@@ -1,12 +1,19 @@
 import { logger } from '@config/logger';
 import { plansService } from '@modules/plans/plans.service';
 import { Op } from 'sequelize';
-import { AdminDraft, Branch, Order, sequelize } from '@database/models';
-import { ORDER_STATUS } from '@config/constants';
+import { AdminDraft, Branch, KitchenTicket, MobilePaymentClaim, Order, Payment, sequelize } from '@database/models';
+import { ORDER_STATUS, PAYMENT_STATUS, PERMISSIONS, PUSH_CHANNEL, PUSH_TEMPLATE } from '@config/constants';
+import { PAYABLE_TYPE } from '@database/models/payment.model';
+import { MOBILE_PAYMENT_CLAIM_STATUS } from '@database/models/mobilePaymentClaim.model';
 import { env } from '@config/env';
 import { ordersService } from '@modules/orders/orders.service';
 import { inventoryService } from '@modules/operations/inventory.service';
 import { commercialAdminService } from '@modules/admin/commercialAdmin.service';
+import { TICKET_STATUS } from '@database/models/kitchenTicket.model';
+import { kitchenPushService } from '@modules/operations/kitchenPush.service';
+import { publishKitchenEvent } from '@modules/operations/kitchenEvents';
+import { operationsService } from '@modules/operations/operations.service';
+import { sendMobilePushToStaff } from '@modules/notifications/mobilePush.service';
 
 /**
  * TAREAS PROGRAMADAS
@@ -15,21 +22,32 @@ import { commercialAdminService } from '@modules/admin/commercialAdmin.service';
  * del backend, esto debe moverse a una cola (BullMQ/Redis) para que la tarea no
  * se ejecute varias veces en paralelo.
  *
- * Los movimientos de saldo son idempotentes (plan-<id>-expiration), asi que un
- * doble disparo no anularia el saldo dos veces.
+ * Los movimientos de saldo son idempotentes (lot-<id>-expiration), así que un
+ * doble disparo no anula el mismo lote dos veces.
  */
 
 const HOUR = 60 * 60 * 1000;
 const MINUTE = 60 * 1000;
 const PAYMENT_HOLD_MINUTES = 15;
+const KITCHEN_ACCEPT_SLA_MINUTES = 2;
 
-/** Vence los planes caducados y anula el saldo restante (decision de Fase 0). */
+/** Libera comandas programadas solo al comenzar su ventana de preparacion. */
+const releaseScheduledKitchenOrdersJob = async (): Promise<void> => {
+  try {
+    const released = await operationsService.releaseDueScheduledOrders();
+    if (released > 0) logger.info(`Pedidos programados enviados a Cocina: ${released}`);
+  } catch (error) {
+    logger.error('Fallo la liberacion de pedidos programados a Cocina', error);
+  }
+};
+
+/** Vence beneficios y únicamente los lotes de saldo que alcanzaron su propia fecha. */
 const expirePlansJob = async (): Promise<void> => {
   try {
     const result = await plansService.expireDuePlans();
     if (result.expired > 0) {
       logger.info(
-        `Job de vencimiento: ${result.expired} planes vencidos, S/ ${result.creditVoided} de saldo anulado`,
+        `Job de vencimiento: ${result.expired} planes vencidos, S/ ${result.creditVoided} de lotes vencidos`,
       );
     }
   } catch (error) {
@@ -51,6 +69,28 @@ const expirePendingPaymentsJob = async (): Promise<void> => {
         const locked = await Order.findByPk(order.id, { transaction, lock: transaction.LOCK.UPDATE });
         if (!locked || locked.status !== ORDER_STATUS.PENDING_PAYMENT) return;
         locked.cancelReason = 'El tiempo para completar el pago venció';
+        const payment = await Payment.findOne({
+          where: { payableType: PAYABLE_TYPE.ORDER, payableId: locked.id, status: PAYMENT_STATUS.PENDING },
+          transaction,
+          lock: transaction.LOCK.UPDATE,
+        });
+        if (payment) {
+          payment.status = PAYMENT_STATUS.FAILED;
+          payment.failedAt = new Date();
+          payment.failureReason = locked.cancelReason;
+          await payment.save({ transaction });
+          const claim = await MobilePaymentClaim.findOne({
+            where: { paymentId: payment.id, status: MOBILE_PAYMENT_CLAIM_STATUS.PENDING },
+            transaction,
+            lock: transaction.LOCK.UPDATE,
+          });
+          if (claim) {
+            claim.status = MOBILE_PAYMENT_CLAIM_STATUS.REJECTED;
+            claim.reviewedAt = new Date();
+            claim.rejectionReason = locked.cancelReason;
+            await claim.save({ transaction });
+          }
+        }
         await inventoryService.releaseForOrder(locked, transaction);
         await ordersService.releaseReservations(locked, transaction);
         await ordersService.changeStatus(locked, ORDER_STATUS.CANCELLED, {
@@ -158,6 +198,61 @@ const generateDeliverySlotsJob = async (): Promise<void> => {
   }
 };
 
+/**
+ * Escala comandas que siguen en cola: la marca en BD evita enviar el mismo aviso
+ * tras reiniciar el proceso o cuando hay mas de una instancia compitiendo.
+ */
+const escalateUnacceptedKitchenTicketsJob = async (): Promise<void> => {
+  try {
+    const cutoff = new Date(Date.now() - KITCHEN_ACCEPT_SLA_MINUTES * MINUTE);
+    const overdue = await KitchenTicket.findAll({
+      where: {
+        status: TICKET_STATUS.QUEUED,
+        escalatedAt: null,
+        createdAt: { [Op.lte]: cutoff },
+      },
+      order: [['createdAt', 'ASC']],
+      limit: 100,
+    });
+
+    for (const ticket of overdue) {
+      const [claimed] = await KitchenTicket.update(
+        { escalatedAt: new Date() },
+        { where: { id: ticket.id, status: TICKET_STATUS.QUEUED, escalatedAt: null } },
+      );
+      if (!claimed) continue;
+      const order = await Order.findByPk(ticket.orderId, { attributes: ['orderNumber'] });
+      const orderNumber = order?.orderNumber ?? `Ticket ${ticket.id}`;
+      publishKitchenEvent({
+        type: 'TICKET_UPDATED',
+        branchId: ticket.branchId,
+        ticketId: ticket.id,
+        orderNumber,
+        status: ticket.status,
+      });
+      await kitchenPushService.notifyBranch(ticket.branchId, {
+        title: 'Pedido sin aceptar',
+        body: `${orderNumber} lleva más de ${KITCHEN_ACCEPT_SLA_MINUTES} minutos esperando en cocina.`,
+        tag: `kitchen-escalation-${ticket.id}`,
+      });
+      await sendMobilePushToStaff({
+        branchId: ticket.branchId,
+        permission: PERMISSIONS.KITCHEN_READ,
+        title: 'Pedido sin aceptar',
+        body: `${orderNumber} lleva más de ${KITCHEN_ACCEPT_SLA_MINUTES} minutos esperando en Cocina.`,
+        actionUrl: `/staff/kitchen?branchId=${ticket.branchId}`,
+        channel: PUSH_CHANNEL.KITCHEN_OPERATIONS,
+        template: PUSH_TEMPLATE.KITCHEN_OPERATION,
+        orderId: ticket.orderId,
+        idempotencyKey: `kitchen-ticket-${ticket.id}-escalated`,
+      });
+      logger.warn(`Comanda escalada por falta de aceptación: ${orderNumber}`);
+    }
+  } catch (error) {
+    logger.error('Fallo el escalamiento de comandas sin aceptar', error);
+  }
+};
+
 /** Temporizadores activos, para poder detenerlos en un apagado ordenado. */
 const timers: NodeJS.Timeout[] = [];
 
@@ -166,15 +261,19 @@ export const startJobs = (): void => {
   void expirePendingPaymentsJob();
   void publishAdminDraftsJob();
   void generateDeliverySlotsJob();
+  void releaseScheduledKitchenOrdersJob();
+  void escalateUnacceptedKitchenTicketsJob();
   timers.push(
     setInterval(() => void expirePlansJob(), HOUR),
     setInterval(() => void expirePendingPaymentsJob(), MINUTE),
     setInterval(() => void publishAdminDraftsJob(), MINUTE),
     setInterval(() => void generateDeliverySlotsJob(), 6 * HOUR),
+    setInterval(() => void releaseScheduledKitchenOrdersJob(), 30_000),
+    setInterval(() => void escalateUnacceptedKitchenTicketsJob(), 30_000),
   );
 
   logger.info(
-    'Tareas programadas activas: planes, reservas de pago, publicaciones del panel y franjas de entrega',
+    'Tareas programadas activas: planes, reservas de pago, publicaciones, franjas, pedidos programados y escalamiento KDS',
   );
 };
 

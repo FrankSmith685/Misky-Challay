@@ -11,6 +11,18 @@ export const orderNumberSchema = z.object({
   params: z.object({ orderNumber: z.string().min(5).max(20) }),
 });
 
+/**
+ * Reintento del cobro. `client` decide a que pantalla devuelve la pasarela y es
+ * una lista blanca cerrada: jamas se acepta una URL de retorno del cliente.
+ * El cuerpo entero es opcional porque la web puede llamar sin nada.
+ */
+export const retryPaymentSchema = z.object({
+  params: z.object({ orderNumber: z.string().min(5).max(20) }),
+  body: z
+    .object({ client: z.enum(['WEB', 'MOBILE']).default('WEB') })
+    .optional(),
+});
+
 export const cancelOrderSchema = z.object({
   params: z.object({ orderNumber: z.string().min(5).max(20) }),
   body: z.object({

@@ -27,7 +27,8 @@ export interface CheckoutInput {
   /** Gastar el saldo del plan en este pedido. */
   useWallet?: boolean;
   /** ONLINE = tarjeta; CASH = pago contra entrega (efectivo al recibir). */
-  paymentMethod?: 'ONLINE' | 'CASH';
+  paymentMethod?: 'ONLINE' | 'CASH' | 'YAPE' | 'PLIN';
+  mobilePayment?: { operationCode: string; payerPhone?: string };
   /** Comprobante: boleta (por defecto) o factura con RUC. */
   billing?: {
     documentType: 'BOLETA' | 'FACTURA';
@@ -91,15 +92,39 @@ export interface PlacedOrder {
   reused: boolean;
 }
 
+/**
+ * Personalizacion historica de una linea (RN-017: nombres congelados). `optionId`
+ * es referencial y puede venir nulo si la opcion desaparecio del catalogo.
+ */
+export interface OrderItemCustomizationDetail {
+  id: number;
+  groupId: number | null;
+  groupNameSnapshot: string;
+  optionId: number | null;
+  optionNameSnapshot: string;
+  quantity: number;
+  priceDelta: number;
+  lineExtra: number;
+}
+
 export interface OrderItemDetail {
   id: number;
+  /**
+   * Referencias al catalogo vivo, no al pedido: el detalle se lee siempre de los
+   * snapshots. Solo sirven para reconstruir el carrito en "Volver a pedir", y por
+   * eso pueden ser nulas cuando el producto ya no existe.
+   */
+  productId: number | null;
+  variantId: number | null;
   productNameSnapshot: string;
+  variantNameSnapshot?: string | null;
   descriptionSnapshot: string | null;
   quantity: number;
   unitPrice: number;
   lineTotal: number;
   nutritionSnapshotJson: Nutrition | null;
   allergenSnapshotJson: string[] | null;
+  customizations?: OrderItemCustomizationDetail[];
 }
 
 export interface OrderDetail {
@@ -124,6 +149,12 @@ export interface OrderDetail {
   billingDocType?: string | null;
   billingDocNumber?: string | null;
   billingName?: string | null;
+  invoiceStatus?: 'PENDING' | 'ISSUED' | 'FAILED' | 'VOIDED';
+  invoiceSeries?: string | null;
+  invoiceNumber?: string | null;
+  invoiceIssuedAt?: string | null;
+  invoicePdfUrl?: string | null;
+  invoiceXmlUrl?: string | null;
   placedAt: string;
   confirmedAt: string | null;
   cancelReason: string | null;

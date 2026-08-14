@@ -32,6 +32,15 @@ export class PlanBenefit extends Model<
   /** Tope del descuento por pedido (null = sin tope). */
   declare maxAmountPerOrder: CreationOptional<number | null>;
   declare description: string;
+  /**
+   * Interruptor del beneficio y, a la vez, su borrado.
+   *
+   * Los beneficios se leen EN VIVO al cotizar (`plansService.activeBenefits`
+   * filtra por este campo), a diferencia del precio, el saldo y la vigencia, que
+   * se congelan en `user_plans` al comprar. Por eso quitar uno NO borra la fila:
+   * la apaga. Asi el cambio es reversible y el indice unico (plan_id, type) deja
+   * que `setPlanBenefit` la reactive en vez de chocar contra ella.
+   */
   declare isActive: CreationOptional<boolean>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;

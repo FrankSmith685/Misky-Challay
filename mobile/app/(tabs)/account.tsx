@@ -4,6 +4,7 @@ import * as Application from 'expo-application';
 import Constants from 'expo-constants';
 import * as Haptics from 'expo-haptics';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AppImage } from '../../src/components/AppImage';
 import { BrandLogo } from '../../src/components/BrandLogo';
 import { LocationBar } from '../../src/components/LocationBar';
 import { PrimaryButton } from '../../src/components/PrimaryButton';
@@ -142,7 +143,7 @@ export default function AccountScreen() {
 
   const initials = `${firstName?.[0] ?? ''}${lastName?.[0] ?? ''}`.toUpperCase() || 'VB';
   const fullName = [firstName, lastName].filter(Boolean).join(' ') || 'Cliente Verde Bowl';
-  const isStaff = user.isSuperAdmin || user.roles.some((role) => role !== 'customer');
+  const isStaff = user.isSuperAdmin || user.permissions.length > 0;
 
   const unread = feed.data?.unreadCount ?? 0;
   const push = pushCopy(notifications.status);
@@ -262,7 +263,11 @@ export default function AccountScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <View style={[styles.profileCard, shadow.md]}>
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{initials}</Text>
+            {profile.data?.avatarUrl ? (
+              <AppImage uri={profile.data.avatarUrl} style={styles.avatarImage} accessibilityLabel={`Foto de ${fullName}`} />
+            ) : (
+              <Text style={styles.avatarText}>{initials}</Text>
+            )}
           </View>
 
           <View style={styles.profileCopy}>
@@ -286,7 +291,12 @@ export default function AccountScreen() {
         </View>
 
         {isStaff && (
-          <View style={styles.staffNotice}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Abrir mi panel de equipo"
+            onPress={() => router.push('/(tabs)/staff' as Href)}
+            style={({ pressed }) => [styles.staffNotice, pressed && styles.pressed]}
+          >
             <MaterialCommunityIcons
               name="badge-account-outline"
               size={22}
@@ -295,11 +305,12 @@ export default function AccountScreen() {
             <View style={styles.staffCopy}>
               <Text style={styles.staffTitle}>También eres parte del equipo</Text>
               <Text style={styles.staffText}>
-                Esta es la experiencia del cliente. Cocina, caja y administración siguen en el
-                panel web protegido por permisos.
+                Tu panel móvil ya está disponible. Abre cocina, caja, salón, reparto o
+                administración según tus permisos y locales asignados.
               </Text>
             </View>
-          </View>
+            <MaterialCommunityIcons name="chevron-right" size={22} color={colors.accent500} />
+          </Pressable>
         )}
 
         <View style={styles.pushCard}>
@@ -406,18 +417,21 @@ export default function AccountScreen() {
 const styles = StyleSheet.create({
   content: {
     paddingHorizontal: spacing.md,
-    paddingBottom: spacing.xl,
+    paddingTop: spacing.md,
+    paddingBottom: 112,
+    backgroundColor: '#f3f7f4',
   },
   guestContent: {
     flexGrow: 1,
     alignItems: 'center',
     paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.xl,
+    paddingBottom: 112,
+    backgroundColor: '#f3f7f4',
   },
   guestIllustration: {
     width: 110,
     height: 110,
-    borderRadius: radius.lg + 12,
+    borderRadius: radius.xl + 8,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.brand50,
@@ -487,18 +501,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm + spacing.xs,
-    backgroundColor: colors.surfaceDark,
-    borderRadius: radius.lg,
-    padding: spacing.md + spacing.xs,
+    backgroundColor: colors.brand950,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    minHeight: 132,
   },
   avatar: {
-    width: 58,
-    height: 58,
-    borderRadius: radius.md + 4,
+    width: 68,
+    height: 68,
+    borderRadius: radius.lg,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.brand600,
+    overflow: 'hidden',
   },
+  avatarImage: { width: '100%', height: '100%' },
   avatarText: {
     ...type.title,
     color: colors.onDark,
@@ -521,9 +538,9 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   editButton: {
-    width: layout.minTouch,
-    height: layout.minTouch,
-    borderRadius: radius.sm + 4,
+    width: 48,
+    height: 48,
+    borderRadius: radius.md + 2,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surface,
@@ -532,9 +549,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: spacing.sm + spacing.xs,
-    backgroundColor: '#fff8e8',
-    borderRadius: radius.md,
-    padding: spacing.md,
+    backgroundColor: colors.accent50,
+    borderRadius: radius.lg,
+    padding: spacing.md + 2,
     marginTop: spacing.sm + spacing.xs,
   },
   staffCopy: {
@@ -555,10 +572,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm + spacing.xs,
     backgroundColor: colors.surfaceRaised,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.lineSoft,
-    padding: spacing.md,
+    padding: spacing.md + 2,
     marginTop: spacing.sm + spacing.xs,
   },
   pushIcon: {
@@ -614,13 +631,13 @@ const styles = StyleSheet.create({
     ...type.label,
     color: colors.inkMuted,
     textTransform: 'uppercase',
-    marginTop: spacing.xl,
+    marginTop: spacing.xl + spacing.sm,
     marginBottom: spacing.sm,
   },
   menuCard: {
     overflow: 'hidden',
     backgroundColor: colors.surfaceRaised,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.lineSoft,
   },
@@ -628,7 +645,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm + spacing.xs,
-    minHeight: 68,
+    minHeight: 76,
     paddingHorizontal: spacing.md,
   },
   menuDivider: {
@@ -636,9 +653,9 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.line,
   },
   rowIcon: {
-    width: layout.minTouch,
-    height: layout.minTouch,
-    borderRadius: radius.sm + 4,
+    width: 48,
+    height: 48,
+    borderRadius: radius.md + 2,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.brand50,
@@ -674,7 +691,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing.sm + spacing.xs,
     minHeight: 54,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: '#f0c7c7',
     backgroundColor: '#fffafa',

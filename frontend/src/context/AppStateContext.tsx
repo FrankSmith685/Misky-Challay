@@ -34,10 +34,18 @@ export interface SelectedAddress {
   reference?: string;
 }
 
+export interface SelectedPickupBranch {
+  id: number;
+  name: string;
+  addressLine: string;
+  distanceKm?: number;
+}
+
 export interface AppState {
   cityId: number | null;
   address: SelectedAddress | null;
   branchId: number | null;
+  pickupBranch: SelectedPickupBranch | null;
   deliveryType: DeliveryType;
   serviceMode: ServiceMode;
   scheduledSlotId: number | null;
@@ -50,6 +58,8 @@ export interface AppStateContextValue extends AppState {
   setAddress: (address: SelectedAddress | null) => void;
   setBranch: (branchId: number | null) => void;
   setDeliveryType: (type: DeliveryType) => void;
+  selectDelivery: (address: SelectedAddress, branchId: number) => void;
+  selectPickup: (branch: SelectedPickupBranch) => void;
   setServiceMode: (mode: ServiceMode) => void;
   setScheduledSlot: (slotId: number | null) => void;
   openCart: () => void;
@@ -65,6 +75,7 @@ const INITIAL_STATE: AppState = {
   cityId: null,
   address: null,
   branchId: null,
+  pickupBranch: null,
   deliveryType: 'DELIVERY',
   serviceMode: 'ASAP',
   scheduledSlotId: null,
@@ -83,6 +94,13 @@ const restoreState = (): AppState => {
       cityId: typeof saved.cityId === 'number' ? saved.cityId : null,
       address: saved.address?.line1 ? saved.address : null,
       branchId: typeof saved.branchId === 'number' ? saved.branchId : null,
+      pickupBranch:
+        saved.pickupBranch
+        && typeof saved.pickupBranch.id === 'number'
+        && typeof saved.pickupBranch.name === 'string'
+        && typeof saved.pickupBranch.addressLine === 'string'
+          ? saved.pickupBranch
+          : null,
       deliveryType: saved.deliveryType === 'PICKUP' ? 'PICKUP' : 'DELIVERY',
       serviceMode: saved.serviceMode === 'SCHEDULED' ? 'SCHEDULED' : 'ASAP',
       scheduledSlotId: typeof saved.scheduledSlotId === 'number' ? saved.scheduledSlotId : null,
@@ -103,10 +121,28 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
       cityId: state.cityId,
       address: state.address,
       branchId: state.branchId,
+      pickupBranch: state.pickupBranch,
       deliveryType: state.deliveryType,
       serviceMode: state.serviceMode,
       scheduledSlotId: state.scheduledSlotId,
     };
+
+    const hasPurchaseContext =
+      persistent.cityId !== null
+      || persistent.address !== null
+      || persistent.branchId !== null
+      || persistent.pickupBranch !== null
+      || persistent.deliveryType !== INITIAL_STATE.deliveryType
+      || persistent.serviceMode !== INITIAL_STATE.serviceMode
+      || persistent.scheduledSlotId !== null;
+
+    // No dejamos una clave vacia tras cerrar sesion ni al visitar por primera
+    // vez. El contexto solo se persiste cuando existe una eleccion real.
+    if (!hasPurchaseContext) {
+      localStorage.removeItem(APP_STATE_KEY);
+      return;
+    }
+
     localStorage.setItem(APP_STATE_KEY, JSON.stringify(persistent));
   }, [state]);
 
@@ -114,23 +150,61 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
     setState((current) => ({ ...current, ...partial }));
   }, []);
 
+  /**
+   * Cierre de sesion / cambio de cliente en un equipo compartido.
+   *
+   * Quitar la clave de localStorage no basta: este Provider sigue montado y
+   * conserva la seleccion anterior en memoria, por lo que la cabecera continua
+   * mostrando la direccion o el local del usuario que acaba de salir.
+   */
+  const reset = useCallback(() => {
+    try {
+      localStorage.removeItem(APP_STATE_KEY);
+    } catch {
+      // El estado en memoria se limpia igualmente en modo privado.
+    }
+    setState(INITIAL_STATE);
+  }, []);
+
   const value = useMemo<AppStateContextValue>(
     () => ({
       ...state,
-      hasCoverage: state.branchId !== null && (state.deliveryType === 'PICKUP' || !!state.address),
-      setCity: (cityId) => patch({ cityId, branchId: null }),
+      hasCoverage:
+        state.deliveryType === 'PICKUP'
+          ? state.branchId !== null && state.pickupBranch?.id === state.branchId
+          : state.branchId !== null && !!state.address,
+      setCity: (cityId) => patch({ cityId, branchId: null, pickupBranch: null }),
       setAddress: (address) => patch({ address }),
-      setBranch: (branchId) => patch({ branchId }),
-      setDeliveryType: (deliveryType) => patch({ deliveryType }),
+      setBranch: (branchId) => setState((current) => ({
+        ...current,
+        branchId,
+        pickupBranch: current.pickupBranch?.id === branchId ? current.pickupBranch : null,
+      })),
+      setDeliveryType: (deliveryType) => setState((current) => (
+        current.deliveryType === deliveryType
+          ? current
+          : { ...current, deliveryType, branchId: null, pickupBranch: null }
+      )),
+      selectDelivery: (address, branchId) => patch({
+        address,
+        branchId,
+        pickupBranch: null,
+        deliveryType: 'DELIVERY',
+      }),
+      selectPickup: (pickupBranch) => patch({
+        branchId: pickupBranch.id,
+        pickupBranch,
+        deliveryType: 'PICKUP',
+      }),
       setServiceMode: (serviceMode) => patch({ serviceMode, scheduledSlotId: null }),
       setScheduledSlot: (scheduledSlotId) => patch({ scheduledSlotId }),
       openCart: () => patch({ isCartOpen: true }),
       closeCart: () => patch({ isCartOpen: false }),
       openLocationModal: () => patch({ isLocationModalOpen: true }),
       closeLocationModal: () => patch({ isLocationModalOpen: false }),
-      reset: () => setState(INITIAL_STATE),
+      reset,
     }),
-    [state, patch],
+    [state, patch, reset],
   );
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;

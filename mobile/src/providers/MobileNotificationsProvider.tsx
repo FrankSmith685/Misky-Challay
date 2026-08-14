@@ -62,6 +62,7 @@ const requiresFirebaseConfiguration = (message: string) =>
  */
 const ANDROID_CHANNELS = [
   { id: 'order-updates', name: 'Estado de pedidos', high: true },
+  { id: 'kitchen-operations', name: 'Operación de cocina', high: true },
   { id: 'plan-updates', name: 'Planes y saldo', high: true },
   // Es el único prescindible: interesa, pero no interrumpe.
   { id: 'availability-alerts', name: 'Disponibilidad de platos', high: false },
@@ -77,6 +78,14 @@ const ANDROID_CHANNELS = [
  * el propio aviso, así que jamás se navega a lo que llegue sin comprobarlo.
  */
 const routeForActionUrl = (actionUrl: string): Href | null => {
+  const kitchen = /^\/staff\/kitchen(?:\?branchId=(\d+))?$/.exec(actionUrl);
+  if (kitchen) {
+    return {
+      pathname: '/staff/[module]',
+      params: { module: 'kitchen', ...(kitchen[1] ? { branchId: kitchen[1] } : {}) },
+    } as Href;
+  }
+
   const order = /^\/order\/([A-Za-z0-9-]+)$/.exec(actionUrl);
   if (order) {
     return { pathname: '/order/[orderNumber]', params: { orderNumber: order[1] } } as Href;

@@ -4,8 +4,11 @@ import {
   InferAttributes,
   InferCreationAttributes,
   Model,
+  NonAttribute,
 } from 'sequelize';
 import { sequelize } from '../connection';
+import type { Order } from './order.model';
+import type { Driver } from './driver.model';
 
 export const DELIVERY_STATUS = {
   PENDING: 'PENDING', // esperando repartidor
@@ -52,9 +55,14 @@ export class Delivery extends Model<InferAttributes<Delivery>, InferCreationAttr
   declare deliveredAt: CreationOptional<Date | null>;
   /** Prueba de entrega: quien recibio, foto, firma... */
   declare proofJson: CreationOptional<Record<string, unknown> | null>;
+  /** Por que no se pudo entregar. Lo escribe quien marca FAILED desde la calle. */
   declare failureReason: CreationOptional<string | null>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
+
+  /* Asociaciones que carga el tablero de reparto (`include` de board()). */
+  declare order?: NonAttribute<Order>;
+  declare driver?: NonAttribute<Driver>;
 }
 
 Delivery.init(

@@ -16,9 +16,10 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import MapView, { Marker } from 'react-native-maps';
 import { Chip } from '../../src/components/Chip';
+import { CoverageSummaryCard } from '../../src/components/CoverageSummaryCard';
 import { FormField } from '../../src/components/FormField';
+import { FreeMap } from '../../src/components/map/FreeMap';
 import { PrimaryButton } from '../../src/components/PrimaryButton';
 import { ScreenScaffold } from '../../src/components/ScreenScaffold';
 import { invalidateResource } from '../../src/hooks/useResource';
@@ -48,6 +49,7 @@ interface MapPoint {
 type SelectorKind = 'department' | 'province' | 'district';
 
 const LABEL_PRESETS = ['Casa', 'Trabajo', 'Otro'] as const;
+const LIMA_CENTER: MapPoint = { latitude: -12.0464, longitude: -77.0428 };
 
 const normalize = (value?: string | null): string =>
   (value ?? '')
@@ -55,8 +57,6 @@ const normalize = (value?: string | null): string =>
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .trim();
-
-const money = (value: number): string => `S/ ${value.toFixed(2)}`;
 
 /** Selector de una lista larga (departamentos, provincias, distritos) con buscador. */
 function SelectorModal<T extends GeoNode>({
@@ -407,8 +407,13 @@ export default function NewAddressScreen() {
       if (result.covered) {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } else {
-        setError(result.reason ?? 'Esta dirección está fuera de cobertura.');
-        toast.show({ message: 'Todavía no llegamos a ese punto.', tone: 'error' });
+        // Fuera de cobertura no significa dirección inválida: se puede conservar
+        // con su pin y referencia, pero no elegir para el pedido actual.
+        setError('');
+        toast.show({
+          message: 'Puedes guardarla, pero todavía no podrás pedir delivery a ese punto.',
+          tone: 'warning',
+        });
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No pudimos validar la cobertura.');
@@ -418,7 +423,7 @@ export default function NewAddressScreen() {
   };
 
   const save = async () => {
-    if (!coverage?.covered || !point) return;
+    if (!coverage || !point) return;
     if (!label) {
       setError('Ponle un nombre a esta dirección.');
       return;
@@ -448,12 +453,15 @@ export default function NewAddressScreen() {
       });
 
       invalidateResource('account:addresses');
-      // La cobertura ya está resuelta: se pasa hecha para fijar la sede sin repetirla.
-      await purchase.selectDeliveryAddress(created, coverage);
+      // Solo una dirección cubierta se convierte en destino del pedido. La no
+      // cubierta queda en la libreta para referencias y futuras ampliaciones.
+      if (coverage.covered) await purchase.selectDeliveryAddress(created, coverage);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       toast.show({
-        message: `Guardada. Te atiende ${coverage.branch?.name ?? 'la cocina más cercana'}.`,
-        tone: 'success',
+        message: coverage.covered
+          ? `Guardada. Te atiende ${coverage.branch?.name ?? 'la cocina más cercana'}.`
+          : 'Dirección guardada. Te avisaremos cuando tengamos cobertura en esa zona.',
+        tone: coverage.covered ? 'success' : 'info',
       });
 
       if (router.canGoBack()) router.back();
@@ -467,6 +475,43 @@ export default function NewAddressScreen() {
 
   const canSubmit = Boolean(line1) && Boolean(point) && !locating;
 
+  const mapPanel = (
+    <View style={styles.mapCard}>
+      <View style={styles.mapTitleRow}>
+        <View style={styles.mapTitleCopy}>
+          <Text style={styles.mapEyebrow}>PASO 1 · UBICA LA ENTRADA</Text>
+          <Text style={styles.blockTitle}>Tu dirección en el mapa</Text>
+          <Text style={styles.blockCopy}>Toca el mapa o arrastra el pin hasta tu puerta.</Text>
+        </View>
+        <View style={styles.mapTitleIcon}>
+          <MaterialCommunityIcons name="map-marker-radius-outline" size={25} color={colors.surface} />
+        </View>
+      </View>
+      <FreeMap
+        style={styles.map}
+        center={point ?? LIMA_CENTER}
+        marker={point}
+        zoom={point ? 17 : 11}
+        onPress={(coordinate) => void resolvePoint(coordinate)}
+        onMarkerDragEnd={(coordinate) => void resolvePoint(coordinate)}
+      />
+      <View style={styles.mapHint}>
+        {locating ? (
+          <ActivityIndicator color={colors.brand600} />
+        ) : (
+          <MaterialCommunityIcons name="gesture-tap" size={19} color={colors.brand700} />
+        )}
+        <Text style={styles.mapHintText}>
+          {locating
+            ? 'Identificando la zona del pin…'
+            : point
+              ? 'Punto encontrado. Ajústalo si la entrada está en otro lugar.'
+              : 'Empieza con tu GPS o toca una zona aproximada del mapa.'}
+        </Text>
+      </View>
+    </View>
+  );
+
   return (
     <ScreenScaffold title="Agregar dirección" subtitle="Nuevo destino de entrega" showBack>
       <KeyboardAvoidingView
@@ -478,10 +523,25 @@ export default function NewAddressScreen() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
         >
-          <Text style={styles.intro}>
-            Usa tu ubicación o busca la vía. Después arrastra el pin hasta la puerta exacta: de ahí
-            salen la zona y la cocina que te atiende.
-          </Text>
+          <View style={styles.flowIntro}>
+            <Text style={styles.flowEyebrow}>ENTREGA PRECISA</Text>
+            <Text style={styles.flowTitle}>Primero ubica tu puerta</Text>
+            <Text style={styles.intro}>
+              De este punto salen la cobertura, el costo de envío y la cocina que te atenderá.
+            </Text>
+            <View style={styles.flowSteps}>
+              {['Ubica', 'Completa', 'Confirma'].map((step, index) => (
+                <View key={step} style={styles.flowStep}>
+                  <View style={[styles.flowNumber, index === 0 && styles.flowNumberActive]}>
+                    <Text style={[styles.flowNumberText, index === 0 && styles.flowNumberTextActive]}>{index + 1}</Text>
+                  </View>
+                  <Text style={styles.flowStepText}>{step}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+
+          {mapPanel}
 
           <PrimaryButton
             label="Usar mi ubicación actual"
@@ -639,37 +699,6 @@ export default function NewAddressScreen() {
             ) : null}
           </View>
 
-          {point ? (
-            <View style={styles.mapCard}>
-              <MapView
-                style={styles.map}
-                region={{ ...point, latitudeDelta: 0.006, longitudeDelta: 0.006 }}
-                onPress={(event) => void resolvePoint(event.nativeEvent.coordinate)}
-              >
-                <Marker
-                  coordinate={point}
-                  draggable
-                  onDragEnd={(event) => void resolvePoint(event.nativeEvent.coordinate)}
-                  pinColor={colors.brand600}
-                />
-              </MapView>
-
-              <View style={styles.mapHint}>
-                {locating ? (
-                  <ActivityIndicator color={colors.brand600} />
-                ) : (
-                  <MaterialCommunityIcons name="gesture-tap" size={18} color={colors.brand700} />
-                )}
-
-                <Text style={styles.mapHintText}>
-                  {locating
-                    ? 'Identificando la zona del pin…'
-                    : 'Toca el mapa o arrastra el pin hasta la entrada.'}
-                </Text>
-              </View>
-            </View>
-          ) : null}
-
           {line1 ? (
             <View style={styles.selected}>
               <MaterialCommunityIcons name="check-circle" size={22} color={colors.success} />
@@ -713,33 +742,7 @@ export default function NewAddressScreen() {
             </View>
           </Pressable>
 
-          {coverage ? (
-            <View style={[styles.coverage, coverage.covered ? styles.covered : styles.notCovered]}>
-              <MaterialCommunityIcons
-                name={coverage.covered ? 'truck-check-outline' : 'map-marker-off-outline'}
-                size={26}
-                color={coverage.covered ? colors.success : colors.danger}
-              />
-
-              <View style={styles.coverageCopy}>
-                <Text style={styles.coverageTitle}>
-                  {coverage.covered ? '¡Sí llegamos!' : 'Fuera de cobertura'}
-                </Text>
-
-                <Text style={styles.coverageText}>
-                  {coverage.covered
-                    ? [
-                        coverage.branch?.name,
-                        coverage.etaMinutes ? `~${coverage.etaMinutes} min` : null,
-                        coverage.zone ? `envío ${money(coverage.zone.deliveryFee)}` : null,
-                      ]
-                        .filter(Boolean)
-                        .join(' · ')
-                    : (coverage.reason ?? 'Todavía no repartimos en esta zona.')}
-                </Text>
-              </View>
-            </View>
-          ) : null}
+          {coverage ? <CoverageSummaryCard result={coverage} /> : null}
 
           {error ? (
             <View style={styles.errorBox}>
@@ -748,10 +751,10 @@ export default function NewAddressScreen() {
           ) : null}
 
           <PrimaryButton
-            label={coverage?.covered ? 'Guardar dirección' : 'Comprobar cobertura'}
+            label={coverage ? 'Guardar dirección' : 'Comprobar cobertura'}
             loading={busy}
             disabled={!canSubmit}
-            onPress={() => void (coverage?.covered ? save() : validate())}
+            onPress={() => void (coverage ? save() : validate())}
             style={styles.submit}
           />
         </ScrollView>
@@ -796,10 +799,49 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl,
     gap: spacing.md,
   },
+  flowIntro: {
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceDark,
+    padding: spacing.lg,
+  },
+  flowEyebrow: {
+    ...type.caption,
+    color: colors.brand100,
+    fontWeight: '900',
+    letterSpacing: 1.1,
+  },
+  flowTitle: {
+    ...type.title,
+    color: colors.onDark,
+    marginTop: 4,
+  },
   intro: {
     ...type.bodySm,
-    color: colors.inkMuted,
+    color: colors.onDarkMuted,
+    marginTop: spacing.sm,
   },
+  flowSteps: {
+    flexDirection: 'row',
+    marginTop: spacing.md,
+  },
+  flowStep: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  flowNumber: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceDarkRaised,
+  },
+  flowNumberActive: { backgroundColor: colors.accent500 },
+  flowNumberText: { ...type.caption, color: colors.onDarkMuted },
+  flowNumberTextActive: { color: colors.surface },
+  flowStepText: { ...type.caption, color: colors.onDarkMuted, fontSize: 10 },
   block: {
     gap: spacing.sm,
   },
@@ -878,6 +920,66 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     ...shadow.sm,
   },
+  mapUnavailable: {
+    overflow: 'hidden',
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.brand100,
+    backgroundColor: colors.brand50,
+  },
+  mapFallbackCanvas: {
+    height: 190,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#e8f2ec',
+  },
+  mapStreet: {
+    position: 'absolute',
+    height: 18,
+    width: '140%',
+    borderWidth: 4,
+    borderColor: colors.surface,
+    backgroundColor: '#d9e8df',
+  },
+  mapStreetOne: { transform: [{ rotate: '18deg' }] },
+  mapStreetTwo: { transform: [{ rotate: '-35deg' }] },
+  mapStreetThree: { transform: [{ rotate: '78deg' }] },
+  mapFallbackPin: {
+    width: 62,
+    height: 62,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    ...shadow.md,
+  },
+  mapUnavailableCopy: { padding: spacing.md },
+  mapUnavailableTitle: { ...type.body, color: colors.brand900, fontWeight: '900' },
+  mapUnavailableText: { ...type.bodySm, color: colors.brand700, marginTop: 4 },
+  mapTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    padding: spacing.md,
+  },
+  mapTitleCopy: { flex: 1 },
+  mapEyebrow: {
+    ...type.caption,
+    color: colors.brand600,
+    fontWeight: '900',
+    letterSpacing: 1,
+    marginBottom: 3,
+  },
+  mapTitleIcon: {
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    backgroundColor: colors.brand700,
+  },
   map: {
     width: '100%',
     height: 280,
@@ -935,32 +1037,6 @@ const styles = StyleSheet.create({
   defaultText: {
     ...type.caption,
     fontWeight: '500',
-    color: colors.inkMuted,
-    marginTop: 3,
-  },
-  coverage: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm + spacing.xs,
-    borderRadius: radius.md,
-    padding: spacing.md,
-  },
-  covered: {
-    backgroundColor: colors.brand50,
-  },
-  notCovered: {
-    backgroundColor: '#fff0f0',
-  },
-  coverageCopy: {
-    flex: 1,
-  },
-  coverageTitle: {
-    ...type.body,
-    fontWeight: '800',
-    color: colors.ink,
-  },
-  coverageText: {
-    ...type.bodySm,
     color: colors.inkMuted,
     marginTop: 3,
   },

@@ -1,4 +1,4 @@
-import { Op } from 'sequelize';
+import { Op, type WhereOptions } from 'sequelize';
 import { Complaint, Order, sequelize } from '@database/models';
 import {
   COMPLAINT_STATUS,
@@ -6,7 +6,7 @@ import {
 } from '@database/models/complaint.model';
 import { ApiError } from '@shared/errors/ApiError';
 import { getPagination, buildMeta, type PaginationQuery } from '@shared/utils/pagination';
-import { businessInfo } from '@config/business';
+import { settingsService } from '@modules/settings/settings.service';
 import { addDaysToIsoDate, zonedDateAt, zonedParts } from '@shared/utils/datetime';
 import { notificationsService } from '@modules/notifications/notifications.service';
 import { logger } from '@config/logger';
@@ -47,6 +47,83 @@ const computeDueDate = (from: Date, businessDays: number): Date => {
   return zonedDateAt(iso, 23, 59);
 };
 
+export interface ComplaintListFilters extends PaginationQuery {
+  status?: string;
+  search?: string;
+  /** Llega por query string, asi que tambien vale "true"/"1". */
+  overdue?: boolean | string;
+}
+
+/** Vencido = paso el plazo legal y todavia no se ha respondido. */
+const overdueCondition = (): WhereOptions => ({
+  status: { [Op.ne]: COMPLAINT_STATUS.RESOLVED },
+  dueAt: { [Op.lt]: new Date() },
+});
+
+const isTrue = (value: boolean | string | undefined): boolean =>
+  value === true || value === 'true' || value === '1';
+
+/**
+ * Filtros de la lista, del contador y de la exportacion: una sola construccion.
+ *
+ * El chip "Vencidos" reutiliza LITERALMENTE la condicion del contador global; si
+ * cada uno tuviera la suya, el banner podria anunciar cuatro y la lista mostrar
+ * tres. Se acumulan en `Op.and` porque estado, vencimiento y busqueda pueden
+ * coincidir sobre la misma columna (`status`).
+ */
+const buildWhere = (filters: ComplaintListFilters): WhereOptions => {
+  const conditions: WhereOptions[] = [];
+
+  if (filters.status) conditions.push({ status: filters.status });
+  if (isTrue(filters.overdue)) conditions.push(overdueCondition());
+  if (filters.search) {
+    conditions.push({
+      [Op.or]: [
+        { code: { [Op.like]: `%${filters.search}%` } },
+        { consumerName: { [Op.like]: `%${filters.search}%` } },
+        { docNumber: { [Op.like]: `%${filters.search}%` } },
+      ],
+    });
+  }
+
+  return conditions.length > 0 ? { [Op.and]: conditions } : {};
+};
+
+/**
+ * Escape de un campo CSV.
+ *
+ * Las comillas se doblan y todo va entrecomillado porque el detalle del reclamo
+ * es texto libre con saltos de linea. El prefijo del apostrofe frena la inyeccion
+ * de formulas: un consumidor puede escribir "=1+1" en su reclamo y la hoja de
+ * calculo de quien lo abra lo ejecutaria como formula.
+ */
+const csvCell = (value: unknown): string => {
+  if (value === null || value === undefined) return '""';
+  const text = value instanceof Date ? value.toISOString() : String(value);
+  const safe = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+  return `"${safe.replace(/"/g, '""')}"`;
+};
+
+const CSV_COLUMNS: Array<{ header: string; value: (row: Complaint) => unknown }> = [
+  { header: 'Codigo', value: (row) => row.code },
+  { header: 'Tipo', value: (row) => row.type },
+  { header: 'Bien', value: (row) => row.itemType },
+  { header: 'Consumidor', value: (row) => row.consumerName },
+  { header: 'Documento', value: (row) => `${row.docType} ${row.docNumber}` },
+  { header: 'Correo', value: (row) => row.email },
+  { header: 'Telefono', value: (row) => row.phone },
+  { header: 'Estado', value: (row) => row.status },
+  { header: 'Presentado', value: (row) => row.createdAt },
+  { header: 'Vence', value: (row) => row.dueAt },
+  { header: 'Respondido', value: (row) => row.respondedAt },
+  { header: 'Detalle', value: (row) => row.detail },
+  { header: 'Pedido del consumidor', value: (row) => row.request },
+  { header: 'Respuesta', value: (row) => row.response },
+];
+
+/** Techo de la exportacion: un CSV se arma entero en memoria antes de enviarse. */
+const EXPORT_LIMIT = 5_000;
+
 export const complaintsService = {
   /**
    * Registra una hoja del Libro de Reclamaciones.
@@ -66,6 +143,7 @@ export const complaintsService = {
       orderId = order?.id ?? null;
     }
 
+    const businessInfo = await settingsService.getBusinessInfo();
     const dueAt = computeDueDate(new Date(), businessInfo.complaintResponseDays);
 
     const complaint = await sequelize.transaction(async (transaction) => {
@@ -106,21 +184,11 @@ export const complaintsService = {
     return complaint;
   },
 
-  async list(filters: PaginationQuery & { status?: string; search?: string }) {
+  async list(filters: ComplaintListFilters) {
     const pagination = getPagination(filters);
-    const where: Record<string, unknown> = {};
-
-    if (filters.status) where.status = filters.status;
-    if (filters.search) {
-      where[Op.or as unknown as string] = [
-        { code: { [Op.like]: `%${filters.search}%` } },
-        { consumerName: { [Op.like]: `%${filters.search}%` } },
-        { docNumber: { [Op.like]: `%${filters.search}%` } },
-      ];
-    }
 
     const { rows, count } = await Complaint.findAndCountAll({
-      where,
+      where: buildWhere(filters),
       // La lista NO necesita el documento, telefono, direccion ni los textos libres:
       // esos datos personales solo se cargan en el detalle. Proyectar aqui evita
       // enviar PII de mas al listado y aligera la respuesta.
@@ -154,15 +222,34 @@ export const complaintsService = {
       Complaint.count({ where: { status: COMPLAINT_STATUS.RECEIVED } }),
       Complaint.count({ where: { status: COMPLAINT_STATUS.IN_PROGRESS } }),
       Complaint.count({ where: { status: COMPLAINT_STATUS.RESOLVED } }),
-      Complaint.count({
-        where: {
-          status: { [Op.ne]: COMPLAINT_STATUS.RESOLVED },
-          dueAt: { [Op.lt]: new Date() },
-        },
-      }),
+      Complaint.count({ where: overdueCondition() }),
     ]);
 
     return { received, inProgress, resolved, overdue };
+  },
+
+  /**
+   * Exporta a CSV lo que el panel tenga filtrado en ese momento.
+   *
+   * Sale con TODOS los campos, tambien los personales: es el Libro de
+   * Reclamaciones, y quien lo descarga ya tiene `complaint.manage`, que es
+   * justamente el permiso de leer esos datos uno por uno en pantalla.
+   */
+  async exportCsv(filters: ComplaintListFilters): Promise<string> {
+    const rows = await Complaint.findAll({
+      where: buildWhere(filters),
+      order: [['id', 'DESC']],
+      limit: EXPORT_LIMIT,
+    });
+
+    const lines = [
+      CSV_COLUMNS.map((column) => csvCell(column.header)).join(';'),
+      ...rows.map((row) => CSV_COLUMNS.map((column) => csvCell(column.value(row))).join(';')),
+    ];
+
+    // Punto y coma y BOM: es lo que hace que Excel en es-PE abra el archivo en
+    // columnas y con las tildes intactas en vez de una sola columna con simbolos.
+    return `\uFEFF${lines.join('\r\n')}\r\n`;
   },
 
   async getById(id: number): Promise<Complaint> {

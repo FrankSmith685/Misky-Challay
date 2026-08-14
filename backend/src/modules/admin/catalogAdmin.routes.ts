@@ -168,9 +168,12 @@ router.patch(
 );
 
 // --- Disponibilidad por sucursal ---
+// Quien puede ESCRIBIR la disponibilidad tiene que poder leerla: el interruptor
+// del panel necesita saber como esta hoy antes de ofrecer cambiarlo, y un rol a
+// medida con solo `catalog.availability.write` no llegaba a la lectura.
 router.get(
   '/products/:productId/availability',
-  requireAnyPermission(PERMISSIONS.CATALOG_PRODUCT_READ),
+  requireAnyPermission(PERMISSIONS.CATALOG_PRODUCT_READ, PERMISSIONS.CATALOG_AVAILABILITY_WRITE),
   validate(z.object({ params: productId })),
   catalogAdminController.availability,
 );
@@ -181,11 +184,19 @@ router.patch(
   validate(
     z.object({
       params: productId,
-      body: z.object({
-        branchId: z.coerce.number().int().positive().optional(),
-        isAvailable: z.boolean(),
-        reason: z.string().max(255).optional(),
-      }),
+      body: z
+        .object({
+          branchId: z.coerce.number().int().positive().optional(),
+          isAvailable: z.boolean(),
+          reason: z.string().trim().min(3).max(255).optional(),
+        })
+        // Retirar un plato del menu de una cocina SIN motivo deja al cliente con
+        // un "no disponible" sin explicacion y al siguiente turno sin saber por
+        // que se apago. Reponerlo no necesita motivo: el servicio lo borra.
+        .refine((body) => body.isAvailable || Boolean(body.reason), {
+          message: 'Indica el motivo por el que se retira de esa cocina',
+          path: ['reason'],
+        }),
     }),
   ),
   catalogAdminController.setAvailability,

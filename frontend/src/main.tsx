@@ -16,3 +16,14 @@ createRoot(container).render(
     </AppProviders>
   </StrictMode>,
 );
+
+// El service worker vuelve instalable el panel y recibe las alertas del KDS.
+// En desarrollo se registra tambien: cocina se prueba precisamente en tablets de
+// la red local, donde los defectos de instalacion no deben aparecer al desplegar.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register('/sw.js').catch(() => {
+      // La aplicacion sigue operativa sin PWA; el tablero conserva sonido y SSE.
+    });
+  });
+}

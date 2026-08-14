@@ -14,7 +14,7 @@ test('acepta una búsqueda contextualizada por ciudad y distrito', () => {
 });
 
 test('evita consultas de dirección demasiado cortas', () => {
-  const result = addressSuggestionsSchema.safeParse({ query: { q: 'Av', cityId: 1 } });
+  const result = addressSuggestionsSchema.safeParse({ query: { q: 'A', cityId: 1 } });
   assert.equal(result.success, false);
 });
 

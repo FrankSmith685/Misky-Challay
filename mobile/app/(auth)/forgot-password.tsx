@@ -37,7 +37,7 @@ export default function ForgotPasswordScreen() {
         <View style={styles.sent}>
           <View style={styles.sentIcon}><MaterialCommunityIcons name="email-check-outline" size={34} color={colors.brand700} /></View>
           <Text style={styles.sentTitle}>Enlace solicitado</Text>
-          <Text style={styles.sentCopy}>Por seguridad mostramos este resultado exista o no una cuenta. El enlace vence en 60 minutos y actualmente abre el flujo seguro de la web.</Text>
+          <Text style={styles.sentCopy}>Por seguridad mostramos este resultado exista o no una cuenta. El enlace vence en 60 minutos y abrirá directamente Verde Bowl para que cambies tu contraseña.</Text>
           <PrimaryButton label="Volver a iniciar sesión" onPress={() => router.replace('/(auth)/login')} style={styles.button} />
         </View>
       ) : (

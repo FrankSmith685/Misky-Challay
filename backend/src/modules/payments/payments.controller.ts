@@ -7,8 +7,28 @@ import { env, isProduction } from '@config/env';
 import { PERMISSIONS } from '@config/constants';
 import { getPaymentProvider } from '@integrations/payments';
 import { paymentsService } from './payments.service';
+import { audit } from '@shared/utils/audit';
+import { branchScopeCheck, resolveBranchId } from '@shared/utils/scope';
 
 export const paymentsController = {
+  pendingMobile: asyncHandler(async (req: Request, res: Response) => {
+    const branchId = resolveBranchId(req, req.query.branchId as string | undefined);
+    return ok(res, await paymentsService.pendingMobilePayments(branchId));
+  }),
+
+  reviewMobile: asyncHandler(async (req: Request, res: Response) => {
+    if (!req.user) throw ApiError.unauthorized();
+    const result = await paymentsService.reviewMobilePayment(
+      Number(req.params.paymentId), req.body.decision, req.user.sub, req.body.reason, branchScopeCheck(req),
+    );
+    await audit(req, {
+      action: `payment.mobile.${req.body.decision === 'APPROVE' ? 'approve' : 'reject'}`,
+      entity: 'payments', entityId: req.params.paymentId,
+      after: result,
+    });
+    return ok(res, result, req.body.decision === 'APPROVE' ? 'Pago aprobado y pedido enviado a cocina' : 'Pago rechazado y reservas liberadas');
+  }),
+
   /**
    * Webhook del proveedor. Es la unica via por la que un pedido se confirma (RN-014).
    * Llega con el body CRUDO (Buffer) para poder verificar la firma.

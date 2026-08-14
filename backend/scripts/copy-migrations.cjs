@@ -23,3 +23,10 @@ const copied = fs
   });
 
 console.log(`Migraciones SQL copiadas a dist: ${copied.length ? copied.join(', ') : 'ninguna'}`);
+
+const geoDataFrom = path.resolve(__dirname, '..', 'src', 'modules', 'geo', 'data');
+const geoDataTo = path.resolve(__dirname, '..', 'dist', 'modules', 'geo', 'data');
+fs.mkdirSync(geoDataTo, { recursive: true });
+for (const file of fs.readdirSync(geoDataFrom).filter((name) => name.endsWith('.json'))) {
+  fs.copyFileSync(path.join(geoDataFrom, file), path.join(geoDataTo, file));
+}

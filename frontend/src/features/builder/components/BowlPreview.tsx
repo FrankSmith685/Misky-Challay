@@ -49,7 +49,7 @@ export const BowlPreview = ({ options, isUpdating = false }: BowlPreviewProps) =
       {options.length > 0 && (
         <figcaption className="mt-2 flex flex-wrap justify-center gap-1.5">
           {options.slice(0, 5).map((option) => (
-            <span key={option.id} className="rounded-full bg-white px-2 py-1 text-[10px] font-semibold text-ink-muted ring-1 ring-line">
+            <span key={option.id} className="rounded-pill bg-white px-2 py-1 text-[10px] font-semibold text-ink-muted ring-1 ring-line">
               {option.name}{option.quantity > 1 ? ` ×${option.quantity}` : ''}
             </span>
           ))}

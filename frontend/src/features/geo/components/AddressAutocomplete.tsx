@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import Autocomplete from '@mui/material/Autocomplete';
+import Chip from '@mui/material/Chip';
+import CircularProgress from '@mui/material/CircularProgress';
 import TextField from '@mui/material/TextField';
-import { MapPin, Navigation, Search } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { Building2, MapPin, Navigation, Search } from 'lucide-react';
+import toast from '@components/mui/MuiToast';
 import { useDebounce } from '@hooks/useDebounce';
 import { getApiErrorMessage } from '@services/api/client';
 import { geoApi } from '../services/geo.service';
@@ -16,12 +18,26 @@ interface AddressAutocompleteProps {
   cityName?: string;
   districtId?: number | null;
   districtName?: string;
+  departmentName?: string;
+  provinceName?: string;
+  ubigeoCode?: string | null;
   label?: string;
   placeholder?: string;
   error?: string;
+  disabled?: boolean;
 }
 
-/** Entrada contextual: ciudad/distrito primero, direccion verificada despues. */
+const precisionLabel = (suggestion: AddressSuggestion) => {
+  if (suggestion.precision === 'exact') return 'Número exacto';
+  if (suggestion.precision === 'near') return 'Calle cercana';
+  if (suggestion.source === 'context') return 'Ubicar en mapa';
+  return 'Punto aproximado';
+};
+
+/**
+ * Autocomplete compartido para cobertura, cuenta y administración.
+ * El distrito es obligatorio: limita las coincidencias y evita calles homónimas.
+ */
 export const AddressAutocomplete = ({
   value,
   onChange,
@@ -30,28 +46,59 @@ export const AddressAutocomplete = ({
   cityName,
   districtId,
   districtName,
+  departmentName,
+  provinceName,
+  ubigeoCode,
   label = 'Dirección exacta',
   placeholder = 'Ej. Av. José Larco 345',
   error,
+  disabled = false,
 }: AddressAutocompleteProps) => {
   const [options, setOptions] = useState<AddressSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [resolving, setResolving] = useState(false);
-  const debounced = useDebounce(value.trim(), 500);
+  const [searchError, setSearchError] = useState('');
+  const debounced = useDebounce(value.trim(), 350);
   const requestId = useRef(0);
+  const canSearch = Boolean(districtName);
 
   useEffect(() => {
-    if (!cityId || debounced.length < 3) {
+    if (!canSearch || debounced.length < 2) {
       setOptions([]);
+      setSearchError('');
       return;
     }
+
     const currentRequest = ++requestId.current;
     setLoading(true);
-    geoApi.addressSuggestions({ query: debounced, cityId, districtId: districtId ?? undefined })
-      .then((rows) => { if (requestId.current === currentRequest) setOptions(rows); })
-      .catch(() => { if (requestId.current === currentRequest) setOptions([]); })
-      .finally(() => { if (requestId.current === currentRequest) setLoading(false); });
-  }, [cityId, districtId, debounced]);
+    setSearchError('');
+    geoApi
+      .addressSuggestions({
+        query: debounced,
+        cityId: cityId ?? undefined,
+        districtId: districtId ?? undefined,
+        department: departmentName,
+        province: provinceName,
+        district: districtName,
+      })
+      .then((rows) => {
+        if (requestId.current === currentRequest) setOptions(rows);
+      })
+      .catch((requestError) => {
+        if (requestId.current !== currentRequest) return;
+        setOptions([]);
+        setSearchError(getApiErrorMessage(requestError));
+      })
+      .finally(() => {
+        if (requestId.current === currentRequest) setLoading(false);
+      });
+  }, [canSearch, cityId, departmentName, districtId, districtName, provinceName, debounced]);
+
+  useEffect(() => {
+    setOptions([]);
+    setSearchError('');
+    requestId.current += 1;
+  }, [districtId]);
 
   const choose = async (suggestion: AddressSuggestion) => {
     if (suggestion.latitude !== null && suggestion.longitude !== null) {
@@ -59,13 +106,15 @@ export const AddressAutocomplete = ({
       onSelect(suggestion);
       return;
     }
-    if (!cityId) return;
     setResolving(true);
     try {
       const resolved = await geoApi.resolveAddress({
         query: suggestion.line1,
-        cityId,
+        cityId: cityId ?? undefined,
         districtId: districtId ?? undefined,
+        department: departmentName,
+        province: provinceName,
+        district: districtName,
       });
       if (!resolved) {
         onSelect(suggestion);
@@ -81,56 +130,144 @@ export const AddressAutocomplete = ({
     }
   };
 
+  const helperText = error
+    ?? (!canSearch
+      ? 'Selecciona primero el distrito para activar las sugerencias.'
+      : searchError
+        ? 'No pudimos cargar coincidencias. Puedes escribir la dirección y marcarla en el mapa.'
+        : loading || resolving
+          ? `Buscando dentro de ${districtName ?? 'tu distrito'}…`
+          : value.trim().length === 1
+            ? 'Escribe un carácter más para comenzar la búsqueda.'
+            : options.length > 0
+              ? `${options.length} coincidencia${options.length === 1 ? '' : 's'} en ${districtName ?? cityName ?? 'la zona elegida'}.`
+              : `Las sugerencias se limitarán a ${districtName ?? cityName ?? 'la zona elegida'}.`);
+
   return (
     <Autocomplete<AddressSuggestion, false, false, true>
       freeSolo
+      autoHighlight
+      openOnFocus
+      selectOnFocus
+      clearOnBlur={false}
+      disabled={disabled || !canSearch}
       options={options}
       loading={loading || resolving}
       inputValue={value}
       filterOptions={(rows) => rows}
-      getOptionLabel={(option) => typeof option === 'string' ? option : option.label}
-      isOptionEqualToValue={(option, selected) => typeof selected !== 'string' && option.id === selected.id}
+      getOptionLabel={(option) => (typeof option === 'string' ? option : option.line1)}
+      isOptionEqualToValue={(option, selected) =>
+        typeof selected !== 'string' && option.id === selected.id
+      }
       onInputChange={(_event, nextValue, reason) => {
         if (reason === 'input' || reason === 'clear') onChange(nextValue);
       }}
       onChange={(_event, nextValue) => {
         if (nextValue && typeof nextValue !== 'string') void choose(nextValue);
-        if (typeof nextValue === 'string' && nextValue.trim().length >= 5) {
+        if (typeof nextValue === 'string' && nextValue.trim().length >= 3) {
           void choose({
             id: `manual-${nextValue}`,
             label: [nextValue, districtName, cityName, 'Perú'].filter(Boolean).join(', '),
             line1: nextValue.trim(),
             district: districtName ?? null,
             districtId: districtId ?? null,
-            city: cityName ?? null,
+            ubigeoCode: ubigeoCode ?? null,
+            city: provinceName ?? cityName ?? null,
+            province: provinceName ?? cityName ?? null,
+            region: departmentName ?? null,
+            postcode: null,
             latitude: null,
             longitude: null,
             source: 'context',
+            precision: 'manual',
+            hasHouseNumber: /\d/.test(nextValue),
           });
         }
       }}
-      noOptionsText={value.trim().length < 3 ? 'Escribe al menos 3 caracteres' : 'Sigue escribiendo o marca el punto en el mapa'}
-      loadingText="Buscando direcciones..."
+      noOptionsText={
+        value.trim().length < 2
+          ? 'Escribe al menos 2 caracteres'
+          : 'No hay coincidencias todavía; continúa escribiendo'
+      }
+      loadingText="Buscando calles y numeraciones…"
       renderOption={(props, option) => (
         <li {...props} key={option.id}>
-          <span className="mr-3 grid size-9 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-700"><MapPin className="size-4" /></span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-semibold text-ink">{option.line1}</span>
-            <span className="block truncate text-xs text-ink-muted">{option.label}</span>
+          <span className="mr-3 grid size-10 shrink-0 place-items-center rounded-card bg-brand-50 text-brand-700 ring-1 ring-brand-100">
+            {option.hasHouseNumber ? (
+              <Building2 className="size-4" />
+            ) : (
+              <MapPin className="size-4" />
+            )}
           </span>
-          {option.latitude !== null ? <Navigation className="ml-2 size-4 shrink-0 text-brand-600" /> : <Search className="ml-2 size-4 shrink-0 text-ink-muted" />}
+          <span className="min-w-0 flex-1 py-0.5">
+            <span className="block truncate text-sm font-extrabold text-ink">
+              {option.line1}
+            </span>
+            <span className="mt-0.5 block truncate text-xs text-ink-muted">
+              {[option.district, option.city, option.region]
+                .filter((item): item is string => Boolean(item))
+                .filter((item, index, all) => all.indexOf(item) === index)
+                .join(' · ')}
+            </span>
+          </span>
+          <Chip
+            size="small"
+            label={precisionLabel(option)}
+            color={option.precision === 'exact' ? 'success' : 'default'}
+            variant={option.precision === 'exact' ? 'filled' : 'outlined'}
+            sx={{ ml: 1, display: { xs: 'none', sm: 'inline-flex' }, fontSize: 10 }}
+          />
+          {option.latitude !== null ? (
+            <Navigation className="ml-2 size-4 shrink-0 text-brand-600" />
+          ) : (
+            <Search className="ml-2 size-4 shrink-0 text-ink-muted" />
+          )}
         </li>
       )}
       renderInput={(params) => (
         <TextField
           {...params}
           label={label}
-          placeholder={placeholder}
+          placeholder={canSearch ? placeholder : 'Elige un distrito para comenzar'}
           error={Boolean(error)}
-          helperText={error ?? (districtName ? `Buscando en ${districtName}, ${cityName ?? 'Lima'}, Perú` : 'Selecciona el distrito para obtener mejores resultados')}
+          helperText={helperText}
+          slotProps={{
+            ...params.slotProps,
+            formHelperText: {
+              sx: { minHeight: 20, mt: 1, lineHeight: 1.45 },
+            },
+            input: {
+              ...params.slotProps.input,
+              endAdornment: (
+                <>
+                  {(loading || resolving) && <CircularProgress color="inherit" size={18} />}
+                  {params.slotProps.input.endAdornment}
+                </>
+              ),
+            },
+          }}
         />
       )}
-      slotProps={{ paper: { sx: { mt: 1, borderRadius: 3, border: '1px solid', borderColor: 'divider', boxShadow: '0 18px 45px rgba(20,55,37,.14)', '& .MuiAutocomplete-option': { py: 1.25 } } } }}
+      slotProps={{
+        paper: {
+          sx: {
+            mt: 1,
+            overflow: 'hidden',
+            borderRadius: 'var(--radius-card)',
+            border: '1px solid',
+            borderColor: 'divider',
+            boxShadow: 'var(--shadow-e4)',
+            '& .MuiAutocomplete-listbox': { p: 1 },
+            '& .MuiAutocomplete-option': {
+              minHeight: 64,
+              borderRadius: 'var(--radius-field)',
+              px: 1.25,
+              py: 1,
+              '&[aria-selected="true"]': { bgcolor: 'rgba(33,131,90,.1)' },
+            },
+          },
+        },
+      }}
     />
   );
 };

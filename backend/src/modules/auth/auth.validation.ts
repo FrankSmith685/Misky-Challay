@@ -2,11 +2,19 @@ import { z } from 'zod';
 
 export const registerSchema = z.object({
   body: z.object({
-    email: z.string().email('Email invalido'),
+    email: z.string().trim().toLowerCase().email('Email invalido'),
     password: z.string().min(8, 'La contrasena debe tener al menos 8 caracteres'),
     firstName: z.string().min(2, 'Nombre demasiado corto'),
     lastName: z.string().min(2, 'Apellido demasiado corto'),
-    phone: z.string().min(6).max(20).optional(),
+    // El formato es libre (con espacios o guiones); el servicio lo normaliza a
+    // digitos antes de compararlo y guardarlo. Lo que se exige aqui es que haya
+    // un numero de verdad detras.
+    phone: z
+      .string()
+      .trim()
+      .max(20)
+      .refine((value) => value.replace(/\D/g, '').length >= 6, 'Telefono invalido')
+      .optional(),
     // El consentimiento se valida en el servidor, no solo en el formulario: un
     // registro sin aceptacion expresa es invalido bajo la Ley 29733, venga de donde
     // venga la peticion.
@@ -18,7 +26,7 @@ export const registerSchema = z.object({
 
 export const loginSchema = z.object({
   body: z.object({
-    email: z.string().email('Email invalido'),
+    email: z.string().trim().toLowerCase().email('Email invalido'),
     password: z.string().min(1, 'La contrasena es obligatoria'),
   }),
 });
@@ -31,7 +39,8 @@ export const refreshSchema = z.object({
 
 export const forgotPasswordSchema = z.object({
   body: z.object({
-    email: z.string().email('Email invalido'),
+    email: z.string().trim().toLowerCase().email('Email invalido'),
+    client: z.enum(['WEB', 'MOBILE']).optional().default('WEB'),
   }),
 });
 

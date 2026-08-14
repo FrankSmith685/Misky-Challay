@@ -13,10 +13,11 @@ import {
   Text,
   View,
 } from 'react-native';
-import MapView, { Marker } from 'react-native-maps';
 import { Chip } from '../../src/components/Chip';
+import { CoverageSummaryCard } from '../../src/components/CoverageSummaryCard';
 import { EmptyState } from '../../src/components/EmptyState';
 import { FormField } from '../../src/components/FormField';
+import { FreeMap } from '../../src/components/map/FreeMap';
 import { PrimaryButton } from '../../src/components/PrimaryButton';
 import { ScreenScaffold } from '../../src/components/ScreenScaffold';
 import { Skeleton } from '../../src/components/Skeleton';
@@ -43,8 +44,6 @@ interface Geography {
   provinceName: string | null;
   districtName: string | null;
 }
-
-const money = (value: number): string => `S/ ${value.toFixed(2)}`;
 
 /** Dos puntos son el mismo si difieren menos de ~1 m: el pin no se mueve solo. */
 const samePoint = (a: MapPoint | null, b: MapPoint | null): boolean => {
@@ -132,7 +131,7 @@ export default function EditAddressScreen() {
   const locationChanged =
     !samePoint(point, originalPoint) || line1.trim() !== (original?.line1 ?? '').trim();
 
-  const needsCoverage = locationChanged && !coverage?.covered;
+  const needsCoverage = locationChanged && coverage === null;
 
   const movePin = async (next: MapPoint) => {
     setPoint(next);
@@ -175,8 +174,11 @@ export default function EditAddressScreen() {
       if (result.covered) {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } else {
-        setError(result.reason ?? 'Ese punto está fuera de cobertura.');
-        toast.show({ message: 'Todavía no llegamos a ese punto.', tone: 'error' });
+        setError('');
+        toast.show({
+          message: 'Puedes guardar el cambio, pero esa dirección no estará disponible para delivery.',
+          tone: 'warning',
+        });
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No pudimos validar la cobertura.');
@@ -221,11 +223,23 @@ export default function EditAddressScreen() {
       // Si es la dirección con la que se está comprando, la sede se rehace con
       // la cobertura recién validada; si no cambió de sitio, se deja como estaba.
       if (purchase.address?.id === original.id) {
-        await purchase.selectDeliveryAddress(updated, locationChanged ? coverage : purchase.coverage);
+        if (locationChanged && !coverage?.covered) {
+          await purchase.selectDeliveryAddress(null);
+        } else {
+          await purchase.selectDeliveryAddress(
+            updated,
+            locationChanged ? coverage : purchase.coverage,
+          );
+        }
       }
 
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      toast.show({ message: 'Dirección actualizada.', tone: 'success' });
+      toast.show({
+        message: coverage && !coverage.covered
+          ? 'Dirección actualizada; no se usará para delivery mientras siga fuera de cobertura.'
+          : 'Dirección actualizada.',
+        tone: coverage && !coverage.covered ? 'info' : 'success',
+      });
 
       if (router.canGoBack()) router.back();
       else router.replace('/addresses' as Href);
@@ -331,18 +345,14 @@ export default function EditAddressScreen() {
         >
           {point ? (
             <View style={styles.mapCard}>
-              <MapView
+              <FreeMap
                 style={styles.map}
-                region={{ ...point, latitudeDelta: 0.005, longitudeDelta: 0.005 }}
-                onPress={(event) => void movePin(event.nativeEvent.coordinate)}
-              >
-                <Marker
-                  coordinate={point}
-                  draggable
-                  onDragEnd={(event) => void movePin(event.nativeEvent.coordinate)}
-                  pinColor={colors.brand600}
-                />
-              </MapView>
+                center={point}
+                marker={point}
+                zoom={17}
+                onPress={(coordinate) => void movePin(coordinate)}
+                onMarkerDragEnd={(coordinate) => void movePin(coordinate)}
+              />
 
               <View style={styles.mapHint}>
                 {locating ? (
@@ -367,8 +377,7 @@ export default function EditAddressScreen() {
               />
 
               <Text style={styles.noPointText}>
-                Esta dirección no tiene un punto exacto guardado. Créala de nuevo desde el mapa para
-                que el repartidor no tenga que adivinar.
+                Esta dirección no tiene un punto exacto guardado. Usa GPS al crearla nuevamente para que el repartidor no tenga que adivinar.
               </Text>
             </View>
           )}
@@ -454,33 +463,7 @@ export default function EditAddressScreen() {
             </View>
           </Pressable>
 
-          {coverage ? (
-            <View style={[styles.coverage, coverage.covered ? styles.covered : styles.notCovered]}>
-              <MaterialCommunityIcons
-                name={coverage.covered ? 'truck-check-outline' : 'map-marker-off-outline'}
-                size={26}
-                color={coverage.covered ? colors.success : colors.danger}
-              />
-
-              <View style={styles.coverageCopy}>
-                <Text style={styles.coverageTitle}>
-                  {coverage.covered ? '¡Sí llegamos!' : 'Fuera de cobertura'}
-                </Text>
-
-                <Text style={styles.coverageText}>
-                  {coverage.covered
-                    ? [
-                        coverage.branch?.name,
-                        coverage.etaMinutes ? `~${coverage.etaMinutes} min` : null,
-                        coverage.zone ? `envío ${money(coverage.zone.deliveryFee)}` : null,
-                      ]
-                        .filter(Boolean)
-                        .join(' · ')
-                    : (coverage.reason ?? 'Todavía no repartimos en esta zona.')}
-                </Text>
-              </View>
-            </View>
-          ) : null}
+          {coverage ? <CoverageSummaryCard result={coverage} /> : null}
 
           {error ? (
             <View style={styles.errorBox}>
@@ -605,32 +588,6 @@ const styles = StyleSheet.create({
   defaultText: {
     ...type.caption,
     fontWeight: '500',
-    color: colors.inkMuted,
-    marginTop: 3,
-  },
-  coverage: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm + spacing.xs,
-    borderRadius: radius.md,
-    padding: spacing.md,
-  },
-  covered: {
-    backgroundColor: colors.brand50,
-  },
-  notCovered: {
-    backgroundColor: '#fff0f0',
-  },
-  coverageCopy: {
-    flex: 1,
-  },
-  coverageTitle: {
-    ...type.body,
-    fontWeight: '800',
-    color: colors.ink,
-  },
-  coverageText: {
-    ...type.bodySm,
     color: colors.inkMuted,
     marginTop: 3,
   },

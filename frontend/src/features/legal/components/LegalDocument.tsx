@@ -28,7 +28,7 @@ export const LegalDocument = ({ title, updatedAt, intro, sections }: LegalDocume
     </Typography>
 
     {intro && (
-      <Paper variant="outlined" sx={{ p: 2.5, mt: 3, borderRadius: 2, bgcolor: 'action.hover' }}>
+      <Paper variant="outlined" sx={{ p: 2.5, mt: 3, borderRadius: 'var(--radius-card)', bgcolor: 'action.hover' }}>
         <Typography variant="body2" color="text.secondary">
           {intro}
         </Typography>

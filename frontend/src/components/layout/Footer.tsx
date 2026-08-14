@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Box, Container, Divider, IconButton, Link as MuiLink, Stack, Typography } from '@mui/material';
-import { Clock3, Instagram, Mail, MapPin, ShieldCheck, Truck } from 'lucide-react';
+import { Clock3, Mail, MapPin, MessageCircle, Phone, ShieldCheck, Truck } from 'lucide-react';
 import { ROUTES } from '@constants/routes';
 import { AppLogo } from '@components/common/AppLogo';
 import { useBusinessInfo } from '@services/businessInfo';
@@ -15,7 +15,11 @@ const DISCOVER = [
 const LEGAL = [
   { label: 'Política de Privacidad', to: ROUTES.privacy },
   { label: 'Términos y Condiciones', to: ROUTES.terms },
+  { label: 'Política de Cookies', to: ROUTES.cookies },
   { label: 'Libro de Reclamaciones', to: ROUTES.complaints },
+  // Google Play revisa que la baja de cuenta se alcance navegando el sitio, no
+  // solo escribiendo la URL a mano.
+  { label: 'Eliminar mi cuenta', to: ROUTES.deleteAccount },
 ];
 
 const TRUST = [
@@ -27,8 +31,10 @@ const TRUST = [
 export const Footer = () => {
   const business = useBusinessInfo();
 
+  // El pie usa las paradas oscuras/claras de la marca (primary.900 / primary.300):
+  // si el negocio cambia el verde, el pie lo sigue en vez de conservar su hex propio.
   return (
-  <Box component="footer" sx={{ mt: 'auto', bgcolor: '#123b2b', color: 'common.white' }}>
+  <Box component="footer" sx={{ mt: 'auto', bgcolor: 'primary.900', color: 'common.white' }}>
     <Box sx={{ borderBottom: '1px solid rgba(255,255,255,.10)', bgcolor: 'rgba(255,255,255,.035)' }}>
       <Container maxWidth="xl">
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3,1fr)' }, py: 2.5 }}>
@@ -39,7 +45,7 @@ export const Footer = () => {
               spacing={1.5}
               sx={{ px: { xs: 0, sm: 2.5 }, py: { xs: 1.25, sm: 0 }, borderLeft: { sm: index ? '1px solid rgba(255,255,255,.10)' : 0 }, alignItems: 'center' }}
             >
-              <Box sx={{ display: 'grid', width: 38, height: 38, placeItems: 'center', borderRadius: 2.5, bgcolor: 'rgba(255,255,255,.09)', color: '#9ed6b4' }}>
+              <Box sx={{ display: 'grid', width: 38, height: 38, placeItems: 'center', borderRadius: 'var(--radius-card)', bgcolor: 'rgba(255,255,255,.09)', color: 'primary.300' }}>
                 <Icon size={18} />
               </Box>
               <Box>
@@ -60,13 +66,13 @@ export const Footer = () => {
             Bowls frescos y personalizables, nutrición transparente y una experiencia de compra diseñada alrededor de tu tiempo.
           </Typography>
           <Stack direction="row" spacing={1} sx={{ mt: 3 }}>
-            <IconButton aria-label="Instagram" sx={{ color: 'white', bgcolor: 'rgba(255,255,255,.08)' }}><Instagram size={18} /></IconButton>
+            <IconButton component="a" href={`https://wa.me/${business.phone.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" aria-label="Escríbenos por WhatsApp" sx={{ color: 'white', bgcolor: 'rgba(255,255,255,.08)' }}><MessageCircle size={18} /></IconButton>
             <IconButton component="a" href={`mailto:${business.email}`} aria-label="Enviar correo" sx={{ color: 'white', bgcolor: 'rgba(255,255,255,.08)' }}><Mail size={18} /></IconButton>
           </Stack>
         </Box>
 
         <Box component="nav" aria-label="Enlaces del pie">
-          <Typography variant="overline" sx={{ color: '#9ed6b4', fontWeight: 800 }}>Descubre</Typography>
+          <Typography variant="overline" sx={{ color: 'primary.300', fontWeight: 800 }}>Descubre</Typography>
           <Stack spacing={1.4} sx={{ mt: 1.5 }}>
             {DISCOVER.map((item) => (
               <MuiLink key={item.to} component={Link} to={item.to} color="inherit" underline="hover" sx={{ width: 'fit-content', fontSize: 14, color: 'rgba(255,255,255,.75)' }}>
@@ -77,7 +83,7 @@ export const Footer = () => {
         </Box>
 
         <Box component="nav" aria-label="Enlaces legales">
-          <Typography variant="overline" sx={{ color: '#9ed6b4', fontWeight: 800 }}>Legal</Typography>
+          <Typography variant="overline" sx={{ color: 'primary.300', fontWeight: 800 }}>Legal</Typography>
           <Stack spacing={1.4} sx={{ mt: 1.5 }}>
             {LEGAL.map((item) => (
               <MuiLink key={item.to} component={Link} to={item.to} color="inherit" underline="hover" sx={{ width: 'fit-content', fontSize: 14, color: 'rgba(255,255,255,.75)' }}>
@@ -88,10 +94,11 @@ export const Footer = () => {
         </Box>
 
         <Box>
-          <Typography variant="overline" sx={{ color: '#9ed6b4', fontWeight: 800 }}>Visítanos</Typography>
+          <Typography variant="overline" sx={{ color: 'primary.300', fontWeight: 800 }}>Visítanos</Typography>
           <Stack spacing={1.75} sx={{ mt: 1.5, color: 'rgba(255,255,255,.72)' }}>
             <Stack direction="row" spacing={1.25}><MapPin size={18} /><Typography variant="body2">{business.address}</Typography></Stack>
             <Stack direction="row" spacing={1.25}><Mail size={18} /><MuiLink href={`mailto:${business.email}`} color="inherit" underline="hover" variant="body2">{business.email}</MuiLink></Stack>
+            <Stack direction="row" spacing={1.25}><Phone size={18} /><MuiLink href={`tel:${business.phone.replace(/\s+/g, '')}`} color="inherit" underline="hover" variant="body2">{business.phone}</MuiLink></Stack>
             <Typography variant="caption" sx={{ pl: 3.75, color: 'rgba(255,255,255,.48)' }}>Atención todos los días</Typography>
           </Stack>
         </Box>

@@ -30,7 +30,7 @@ export const FavoriteButton = ({
         dispatch(toggleFavorite(product));
       }}
       className={cn(
-        'inline-flex items-center justify-center rounded-full p-2 shadow-sm transition-colors',
+        'inline-flex items-center justify-center rounded-field p-2 shadow-sm transition-colors',
         isFavorite
           ? 'bg-red-50 text-red-500'
           : 'bg-surface/90 text-ink-muted hover:text-red-500',

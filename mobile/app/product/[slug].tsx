@@ -17,6 +17,7 @@ import { QuantityStepper } from '../../src/components/QuantityStepper';
 import { ScreenScaffold } from '../../src/components/ScreenScaffold';
 import { Skeleton } from '../../src/components/Skeleton';
 import { useResource } from '../../src/hooks/useResource';
+import { money } from '../../src/lib/format';
 import { useCart } from '../../src/providers/CartProvider';
 import { useFavorites } from '../../src/providers/FavoritesProvider';
 import { usePurchase } from '../../src/providers/PurchaseProvider';
@@ -30,7 +31,6 @@ import { engagementApi } from '../../src/services/api/engagement.service';
 import { colors, layout, radius, shadow, spacing, type } from '../../src/theme/tokens';
 import type { AvailabilityAlert, ProductDetail, ProductReviews } from '../../src/types/domain';
 
-const money = (value: number): string => `S/ ${value.toFixed(2)}`;
 
 export default function ProductDetailScreen() {
   const { slug, alerta } = useLocalSearchParams<{ slug: string; alerta?: string }>();
@@ -124,14 +124,11 @@ export default function ProductDetailScreen() {
       void mobileAnalytics.track('CART_ADD', { productId: product.id, quantity }, branchId);
 
       toast.show({
-        message:
-          quantity === 1
-            ? `${product.name} está en tu carrito`
-            : `${quantity} × ${product.name} en tu carrito`,
+        message: quantity === 1 ? 'Producto agregado. Revisa tu pedido.' : `${quantity} productos agregados.`,
         tone: 'success',
-        action: { label: 'Ver carrito', onPress: () => router.push('/(tabs)/cart') },
       });
       setQuantity(1);
+      router.replace('/(tabs)/cart');
     } catch (caught) {
       toast.show({
         message: caught instanceof Error ? caught.message : 'No pudimos agregar este plato.',
@@ -267,7 +264,9 @@ export default function ProductDetailScreen() {
                 disabled={adding}
               />
               <PrimaryButton
-                label="Agregar al carrito"
+                label="Agregar y revisar carrito"
+                icon="shopping-outline"
+                trailingIcon="arrow-right"
                 loading={adding}
                 disabled={!selected}
                 onPress={() => void addToCart()}
@@ -585,6 +584,26 @@ function AvailabilityAlertSheet({
           ? 'Puedes cambiar los canales o cancelarlo cuando quieras.'
           : `Te escribimos una sola vez, en cuanto ${productName} vuelva a la carta.`
       }
+      footer={
+        <View style={styles.sheetActions}>
+          {waiting ? (
+            <PrimaryButton
+              variant="secondary"
+              label="Cancelar aviso"
+              disabled={saving}
+              onPress={() => void cancel()}
+              style={styles.sheetSecondary}
+            />
+          ) : null}
+          <PrimaryButton
+            label={waiting ? 'Guardar canales' : 'Crear aviso'}
+            loading={saving}
+            disabled={loading}
+            onPress={() => void save()}
+            style={styles.sheetPrimary}
+          />
+        </View>
+      }
     >
       <View style={styles.sheetBranch}>
         <MaterialCommunityIcons name="storefront-outline" size={21} color={colors.brand700} />
@@ -617,24 +636,6 @@ function AvailabilityAlertSheet({
         </View>
       )}
 
-      <View style={styles.sheetActions}>
-        {waiting && (
-          <PrimaryButton
-            variant="secondary"
-            label="Cancelar aviso"
-            disabled={saving}
-            onPress={() => void cancel()}
-            style={styles.sheetSecondary}
-          />
-        )}
-        <PrimaryButton
-          label={waiting ? 'Guardar canales' : 'Crear aviso'}
-          loading={saving}
-          disabled={loading}
-          onPress={() => void save()}
-          style={styles.sheetPrimary}
-        />
-      </View>
     </BottomSheet>
   );
 }
@@ -687,7 +688,8 @@ function ChannelRow({
 
 const styles = StyleSheet.create({
   content: {
-    paddingBottom: spacing.xl,
+    paddingBottom: spacing.xxxl,
+    backgroundColor: '#f3f7f4',
   },
   skeleton: {
     padding: spacing.md,
@@ -700,10 +702,11 @@ const styles = StyleSheet.create({
   },
   hero: {
     marginHorizontal: spacing.md,
+    marginTop: spacing.sm,
   },
   image: {
-    height: 250,
-    borderRadius: radius.lg,
+    height: 320,
+    borderRadius: radius.xl,
   },
   badge: {
     position: 'absolute',
@@ -731,7 +734,7 @@ const styles = StyleSheet.create({
   },
   body: {
     paddingHorizontal: spacing.md,
-    paddingTop: spacing.lg,
+    paddingTop: spacing.xl,
   },
   eyebrow: {
     ...type.label,
@@ -739,7 +742,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
   },
   title: {
-    ...type.display,
+    ...type.hero,
     color: colors.ink,
     marginTop: 5,
   },
@@ -770,7 +773,7 @@ const styles = StyleSheet.create({
   soldOutNotice: {
     flexDirection: 'row',
     gap: spacing.sm + spacing.xs,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.brand100,
     backgroundColor: colors.brand50,
@@ -943,9 +946,9 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   heart: {
-    width: layout.minTouch,
-    height: layout.minTouch,
-    borderRadius: radius.sm + 4,
+    width: 48,
+    height: 48,
+    borderRadius: radius.md + 2,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surface,

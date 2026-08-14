@@ -33,7 +33,7 @@ export const authController = {
   }),
 
   forgotPassword: asyncHandler(async (req: Request, res: Response) => {
-    await authService.forgotPassword(req.body.email);
+    await authService.forgotPassword(req.body.email, req.body.client);
     // Misma respuesta exista o no el correo: no se revela si hay cuenta (anti-enumeracion).
     return ok(
       res,

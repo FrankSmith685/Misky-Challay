@@ -11,7 +11,13 @@ import {
 import { USER_PLAN_STATUS } from '@database/models/userPlan.model';
 import type { BenefitType } from '@database/models/planBenefit.model';
 import { PAYABLE_TYPE } from '@database/models/payment.model';
-import { PAYMENT_STATUS, WALLET_TX_TYPE } from '@config/constants';
+import {
+  PAID_CREDIT_VALIDITY_DAYS,
+  PAYMENT_STATUS,
+  PLAN_TERMS_VERSION,
+  WALLET_LOT_KIND,
+  WALLET_TX_TYPE,
+} from '@config/constants';
 import { env } from '@config/env';
 import { logger } from '@config/logger';
 import { ApiError } from '@shared/errors/ApiError';
@@ -52,9 +58,18 @@ export const plansService = {
    * Crea la activacion en PENDING_PAYMENT y abre el pago. El saldo NO se acredita
    * aqui: eso solo ocurre cuando el webhook confirma el cobro (RN-012).
    */
-  async purchase(userId: number, planCode: string, clientKey: string) {
+  async purchase(
+    userId: number,
+    planCode: string,
+    clientKey: string,
+    termsVersion: string,
+    client: 'WEB' | 'MOBILE' = 'WEB',
+  ) {
     const plan = await Plan.findOne({ where: { code: planCode, isActive: true } });
     if (!plan) throw ApiError.notFound('El plan no existe o ya no esta disponible');
+    if (termsVersion !== PLAN_TERMS_VERSION) {
+      throw ApiError.badRequest('Las condiciones del plan cambiaron. Revísalas antes de continuar.');
+    }
 
     // Se deriva con el dueno y el ambito: la clave del cliente no puede alcanzar
     // el pago de otro usuario ni cruzarse con el espacio de claves de los pedidos.
@@ -82,6 +97,8 @@ export const plansService = {
       priceSnapshot: Number(plan.price),
       creditSnapshot: Number(plan.grantedCredit),
       validityDaysSnapshot: plan.validityDays,
+      termsAcceptedAt: new Date(),
+      termsVersion,
     });
 
     const provider = getPaymentProvider();
@@ -98,6 +115,17 @@ export const plansService = {
     });
 
     try {
+      const mobileReturn = client === 'MOBILE';
+      const returnBaseUrl = mobileReturn
+        ? (env.MOBILE_RETURN_BASE_URL ?? env.FRONTEND_URL)
+        : env.FRONTEND_URL;
+      const successUrl = mobileReturn
+        ? `${returnBaseUrl}/planes/movil?plan=${userPlan.id}&resultado=aprobado`
+        : `${returnBaseUrl}/cuenta/saldo?plan=${userPlan.id}`;
+      const cancelUrl = mobileReturn
+        ? `${returnBaseUrl}/planes/movil?plan=${userPlan.id}&resultado=cancelado`
+        : `${returnBaseUrl}/planes`;
+
       const checkout = await provider.createCheckout({
         orderId: userPlan.id,
         orderNumber: `PLAN-${userPlan.id}`,
@@ -105,9 +133,10 @@ export const plansService = {
         currency: payment.currency,
         customerEmail: user?.email ?? null,
         description: `${plan.name} - Verde Bowl`,
+        displayName: plan.name,
         idempotencyKey,
-        successUrl: `${env.FRONTEND_URL}/cuenta/saldo?plan=${userPlan.id}`,
-        cancelUrl: `${env.FRONTEND_URL}/planes`,
+        successUrl,
+        cancelUrl,
       });
 
       payment.providerReference = checkout.providerReference;
@@ -155,6 +184,9 @@ export const plansService = {
     const expiresAt = new Date(
       now.getTime() + userPlan.validityDaysSnapshot * 24 * 60 * 60 * 1000,
     );
+    const paidExpiresAt = new Date(
+      now.getTime() + PAID_CREDIT_VALIDITY_DAYS * 24 * 60 * 60 * 1000,
+    );
 
     userPlan.status = USER_PLAN_STATUS.ACTIVE;
     userPlan.startsAt = now;
@@ -162,19 +194,38 @@ export const plansService = {
     userPlan.expiresAt = expiresAt;
     await userPlan.save({ transaction });
 
-    // El credito lleva la fecha de vencimiento del plan: al vencer se anula (decision de Fase 0).
+    // El capital pagado y el bono son lotes independientes. El bono acompaña la
+    // vigencia del plan; el dinero del cliente tiene una vigencia amplia de 180 días.
     await walletService.move(
       {
         userId: userPlan.userId,
         type: WALLET_TX_TYPE.CREDIT,
-        amount: Number(userPlan.creditSnapshot),
-        description: `Saldo de ${userPlan.planNameSnapshot}`,
-        idempotencyKey: `plan-${userPlan.id}-credit`,
+        amount: Number(userPlan.priceSnapshot),
+        description: `Saldo pagado de ${userPlan.planNameSnapshot}`,
+        idempotencyKey: `plan-${userPlan.id}-paid-credit`,
         userPlanId: userPlan.id,
-        expiresAt,
+        expiresAt: paidExpiresAt,
+        lotKind: WALLET_LOT_KIND.PAID,
       },
       transaction,
     );
+
+    const bonus = round2(Number(userPlan.creditSnapshot) - Number(userPlan.priceSnapshot));
+    if (bonus > 0) {
+      await walletService.move(
+        {
+          userId: userPlan.userId,
+          type: WALLET_TX_TYPE.CREDIT,
+          amount: bonus,
+          description: `Bono de ${userPlan.planNameSnapshot}`,
+          idempotencyKey: `plan-${userPlan.id}-bonus-credit`,
+          userPlanId: userPlan.id,
+          expiresAt,
+          lotKind: WALLET_LOT_KIND.BONUS,
+        },
+        transaction,
+      );
+    }
 
     logger.success(
       `Plan ${userPlan.planNameSnapshot} activado para el usuario ${userPlan.userId} (S/ ${userPlan.creditSnapshot})`,
@@ -235,21 +286,62 @@ export const plansService = {
 
   /** Resumen para la pantalla "Mi saldo". */
   async wallet(userId: number) {
-    const [balance, plans] = await Promise.all([
+    const [balance, plans, lots] = await Promise.all([
       walletService.getBalance(userId),
       plansService.activePlans(userId),
+      walletService.activeLots(userId),
     ]);
 
-    const nextExpiry = plans[0]?.expiresAt ?? null;
+    const paidBalance = round2(
+      lots
+        .filter((lot) => lot.kind !== WALLET_LOT_KIND.BONUS)
+        .reduce((sum, lot) => sum + Number(lot.remainingAmount), 0),
+    );
+    const bonusBalance = round2(
+      lots
+        .filter((lot) => lot.kind === WALLET_LOT_KIND.BONUS)
+        .reduce((sum, lot) => sum + Number(lot.remainingAmount), 0),
+    );
+    const lotPlanIds = [...new Set(lots.map((lot) => lot.userPlanId).filter((id): id is number => id !== null))];
+    const purchasedPlans = lotPlanIds.length
+      ? await UserPlan.findAll({ where: { userId, id: { [Op.in]: lotPlanIds } } })
+      : [];
+    const nextExpiry = lots.find((lot) => lot.expiresAt)?.expiresAt ?? null;
 
     return {
       balance,
+      paidBalance,
+      bonusBalance,
       currency: 'PEN',
-      expiresAt: nextExpiry,
+      nextExpiry,
+      paidCreditValidityDays: PAID_CREDIT_VALIDITY_DAYS,
+      lots: lots.map((lot) => ({
+        id: lot.id,
+        kind: lot.kind,
+        remainingAmount: Number(lot.remainingAmount),
+        expiresAt: lot.expiresAt,
+        userPlanId: lot.userPlanId,
+        planName:
+          purchasedPlans.find((plan) => plan.id === lot.userPlanId)?.planNameSnapshot ?? null,
+      })),
       activePlans: plans.map((userPlan) => ({
         id: userPlan.id,
         name: userPlan.planNameSnapshot,
         credit: Number(userPlan.creditSnapshot),
+        paidRemaining: round2(
+          lots
+            .filter(
+              (lot) => lot.userPlanId === userPlan.id && lot.kind !== WALLET_LOT_KIND.BONUS,
+            )
+            .reduce((sum, lot) => sum + Number(lot.remainingAmount), 0),
+        ),
+        bonusRemaining: round2(
+          lots
+            .filter(
+              (lot) => lot.userPlanId === userPlan.id && lot.kind === WALLET_LOT_KIND.BONUS,
+            )
+            .reduce((sum, lot) => sum + Number(lot.remainingAmount), 0),
+        ),
         expiresAt: userPlan.expiresAt,
         benefits: (userPlan.plan?.benefits ?? []).map((benefit) => ({
           type: benefit.type,
@@ -260,8 +352,8 @@ export const plansService = {
   },
 
   /**
-   * Vence los planes caducados y ANULA el saldo restante (decision de Fase 0).
-   * Lo ejecuta un job programado; tambien se puede forzar desde el panel.
+   * Vence beneficios y lotes que alcanzaron su propia fecha. Nunca calcula la
+   * anulación contra el saldo agregado: cada lote conoce exactamente su remanente.
    */
   async expireDuePlans(): Promise<{ expired: number; creditVoided: number }> {
     const due = await UserPlan.findAll({
@@ -271,37 +363,18 @@ export const plansService = {
       },
     });
 
-    let creditVoided = 0;
-
     for (const userPlan of due) {
       await sequelize.transaction(async (transaction) => {
         userPlan.status = USER_PLAN_STATUS.EXPIRED;
         userPlan.expiredAt = new Date();
         await userPlan.save({ transaction });
-
-        // Se anula lo que quede en la billetera, hasta el credito que dio este plan.
-        const balance = await walletService.getBalance(userPlan.userId);
-        const toVoid = round2(Math.min(balance, Number(userPlan.creditSnapshot)));
-
-        if (toVoid > 0) {
-          await walletService.move(
-            {
-              userId: userPlan.userId,
-              type: WALLET_TX_TYPE.EXPIRATION,
-              amount: toVoid,
-              description: `Saldo vencido de ${userPlan.planNameSnapshot}`,
-              idempotencyKey: `plan-${userPlan.id}-expiration`,
-              userPlanId: userPlan.id,
-            },
-            transaction,
-          );
-          creditVoided += toVoid;
-        }
       });
     }
 
+    const { creditVoided } = await walletService.expireDueLots();
+
     if (due.length > 0) {
-      logger.warn(`Planes vencidos: ${due.length} (saldo anulado: S/ ${round2(creditVoided)})`);
+      logger.warn(`Planes vencidos: ${due.length} (lotes vencidos: S/ ${round2(creditVoided)})`);
     }
 
     return { expired: due.length, creditVoided: round2(creditVoided) };

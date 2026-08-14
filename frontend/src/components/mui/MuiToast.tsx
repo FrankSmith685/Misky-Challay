@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import Alert from '@mui/material/Alert';
 import AlertTitle from '@mui/material/AlertTitle';
+import LinearProgress from '@mui/material/LinearProgress';
 import Portal from '@mui/material/Portal';
 import Snackbar from '@mui/material/Snackbar';
 import useMediaQuery from '@mui/material/useMediaQuery';
@@ -82,7 +83,7 @@ export const Toaster = ({ toastOptions }: ToasterProps) => {
           right: isMobile ? '12px !important' : '24px !important',
           bottom: isMobile ? '12px !important' : 'auto !important',
           left: isMobile ? '12px !important' : 'auto !important',
-          width: isMobile ? 'auto' : 336,
+          width: isMobile ? 'auto' : 380,
           maxWidth: isMobile ? 'none' : 'calc(100vw - 48px)',
           transform: 'none !important',
         })}
@@ -92,26 +93,51 @@ export const Toaster = ({ toastOptions }: ToasterProps) => {
             severity={current.severity}
             variant="standard"
             onClose={close}
-            elevation={10}
+            elevation={0}
             sx={{
               width: '100%',
-              alignItems: 'center',
+              minHeight: 76,
+              position: 'relative',
+              overflow: 'hidden',
+              alignItems: 'flex-start',
               border: '1px solid',
-              borderLeftWidth: 4,
               borderColor: `${current.severity}.main`,
-              borderRadius: 3,
+              borderRadius: 'var(--radius-card)',
               color: 'text.primary',
               bgcolor: 'background.paper',
-              boxShadow: '0 12px 32px rgba(20,32,26,.14)',
-              '& .MuiAlert-icon': { mr: 1.25, fontSize: 22, color: `${current.severity}.main` },
-              '& .MuiAlert-message': { minWidth: 0, py: .25 },
-              '& .MuiAlert-action': { ml: 1, pl: 0, color: 'text.secondary' },
+              boxShadow: 'var(--shadow-e4)',
+              px: 1.5,
+              py: 1.35,
+              '& .MuiAlert-icon': {
+                mt: .1,
+                mr: 1.4,
+                fontSize: 22,
+                color: `${current.severity}.main`,
+                bgcolor: 'background.paper',
+                boxShadow: 'var(--shadow-e1)',
+              },
+              '& .MuiAlert-message': { minWidth: 0, flex: 1, py: .1 },
+              '& .MuiAlert-action': { mt: -.25, ml: 1, pl: 0, color: 'text.secondary' },
             }}
           >
-            <AlertTitle sx={{ mb: 0, fontSize: 13, fontWeight: 800, lineHeight: 1.35 }}>
+            <AlertTitle sx={{ mb: .35, fontSize: 14, fontWeight: 850, lineHeight: 1.35 }}>
               {current.severity === 'success' ? 'Listo' : current.severity === 'error' ? 'No se pudo completar' : current.severity === 'warning' ? 'Atención' : 'Información'}
             </AlertTitle>
-            <span style={{ fontSize: 12.5, lineHeight: 1.35 }}>{current.message}</span>
+            <span style={{ display: 'block', fontSize: 13, lineHeight: 1.45 }}>{current.message}</span>
+            <LinearProgress
+              color={current.severity}
+              sx={{
+                position: 'absolute',
+                right: 0,
+                bottom: 0,
+                left: 0,
+                height: 3,
+                bgcolor: 'transparent',
+                '& .MuiLinearProgress-bar': {
+                  animationDuration: `${toastOptions?.duration ?? 3600}ms`,
+                },
+              }}
+            />
           </Alert>
         ) : undefined}
       </Snackbar>

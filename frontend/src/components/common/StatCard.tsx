@@ -14,7 +14,9 @@ interface StatCardProps {
 
 /** Tarjeta de indicador (KPI) para el resumen del panel. */
 export const StatCard = ({ label, value, icon: Icon, hint, trend, className }: StatCardProps) => (
-  <Paper variant="outlined" className={cn('group rounded-[1.15rem] border-line bg-surface p-5 shadow-[0_8px_28px_rgba(20,32,26,.045)] transition-all hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-[0_14px_34px_rgba(20,60,40,.09)]', className)}>
+  // Sombras de la escala e1..e5 (styles/index.css): en reposo el mismo paso que
+  // Card, y un peldano mas al pasar el puntero.
+  <Paper variant="outlined" className={cn('group rounded-card border-line bg-surface p-5 shadow-e2 transition-all hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-e3', className)}>
     <Box className="flex items-start justify-between">
       <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase' }}>{label}</Typography>
       {Icon && <Box className="grid size-9 place-items-center rounded-xl bg-brand-50 text-brand-600 transition-colors group-hover:bg-brand-100"><Icon className="size-[18px]" /></Box>}

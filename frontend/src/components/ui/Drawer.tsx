@@ -1,6 +1,9 @@
-import { useEffect, type ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
+import Box from '@mui/material/Box';
+import MuiDrawer from '@mui/material/Drawer';
+import IconButton from '@mui/material/IconButton';
+import Typography from '@mui/material/Typography';
 import { X } from 'lucide-react';
-import { cn } from '@lib/cn';
 
 interface DrawerProps {
   isOpen: boolean;
@@ -11,51 +14,79 @@ interface DrawerProps {
   children: ReactNode;
 }
 
-/** Panel lateral deslizante. Cierra con Escape, con el fondo o el boton. */
+/** Panel lateral de producto sobre Drawer de MUI: portal, foco, Escape y backdrop incluidos. */
 export const Drawer = ({ isOpen, onClose, title, description, side = 'right', children }: DrawerProps) => {
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKeyDown = (event: KeyboardEvent) => event.key === 'Escape' && onClose();
-    document.addEventListener('keydown', onKeyDown);
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', onKeyDown);
-      document.body.style.overflow = '';
-    };
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
+  const generatedId = useId().replace(/:/g, '');
+  const titleId = `app-drawer-title-${generatedId}`;
+  const descriptionId = `app-drawer-description-${generatedId}`;
 
   return (
-    <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-ink/40 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
-
-      <aside
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className={cn(
-          'absolute top-0 flex h-full w-96 max-w-[90%] flex-col border-line bg-surface shadow-xl',
-          side === 'right' ? 'right-0 border-l' : 'left-0 border-r',
-        )}
+    <MuiDrawer
+      anchor={side}
+      open={isOpen}
+      onClose={onClose}
+      aria-labelledby={titleId}
+      aria-describedby={description ? descriptionId : undefined}
+      ModalProps={{ keepMounted: true }}
+      slotProps={{
+        backdrop: {
+          sx: { backgroundColor: 'rgba(9,25,16,.56)', backdropFilter: 'blur(4px)' },
+        },
+      }}
+      sx={{
+        '& .MuiDrawer-paper': {
+          width: { xs: 'min(100vw, 380px)', sm: 420 },
+          maxWidth: '100%',
+        },
+      }}
+    >
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          gap: 2,
+          px: { xs: 2.5, sm: 3 },
+          py: { xs: 2.25, sm: 2.75 },
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+          background: 'linear-gradient(135deg, rgba(237,249,242,.95), rgba(255,255,255,.98))',
+        }}
       >
-        <div className="flex items-start justify-between border-b border-line p-5">
-          <div>
-            <h2 className="text-lg font-semibold text-ink">{title}</h2>
-            {description && <p className="mt-0.5 text-sm text-ink-muted">{description}</p>}
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Cerrar"
-            className="rounded-full p-1 text-ink-muted hover:bg-surface-muted"
-          >
-            <X className="size-5" />
-          </button>
-        </div>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography id={titleId} variant="h6" component="h2" sx={{ fontWeight: 850 }}>
+            {title}
+          </Typography>
+          {description && (
+            <Typography
+              id={descriptionId}
+              variant="body2"
+              color="text.secondary"
+              sx={{ mt: .5, lineHeight: 1.55 }}
+            >
+              {description}
+            </Typography>
+          )}
+        </Box>
+        <IconButton aria-label="Cerrar panel" onClick={onClose} sx={{ mt: -.5, mr: -.75 }}>
+          <X size={20} />
+        </IconButton>
+      </Box>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-5">{children}</div>
-      </aside>
-    </div>
+      {/* El panel llega al borde inferior de la pantalla: sin el safe-area su
+          último control cae bajo el indicador de inicio del iPhone. */}
+      <Box
+        sx={{
+          minHeight: 0,
+          flex: 1,
+          overflowY: 'auto',
+          px: { xs: 2.5, sm: 3 },
+          pt: { xs: 2.5, sm: 3 },
+          pb: { xs: 'calc(20px + env(safe-area-inset-bottom, 0px))', sm: 'calc(24px + env(safe-area-inset-bottom, 0px))' },
+        }}
+      >
+        {children}
+      </Box>
+    </MuiDrawer>
   );
 };

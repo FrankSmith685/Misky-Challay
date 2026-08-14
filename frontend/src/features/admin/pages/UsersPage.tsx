@@ -1,39 +1,27 @@
 import { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, Clipboard, Crown, KeyRound, LogIn, Plus, Users } from 'lucide-react';
-import toast from 'react-hot-toast';
+import toast from '@components/mui/MuiToast';
 import { Card } from '@components/ui/Card';
 import { Button } from '@components/ui/Button';
 import { Input } from '@components/ui/Input';
 import { Select, SelectOption } from '@components/ui/Select';
 import { Modal } from '@components/ui/Modal';
+import { useConfirm } from '@components/ui/ConfirmDialog';
 import { PageLoader } from '@components/common/PageLoader';
 import { PageHeader } from '@components/common/PageHeader';
+import { LoadError } from '@components/common/LoadError';
 import { getApiErrorMessage } from '@services/api/client';
 import { usePermissions } from '@hooks/usePermissions';
 import { PERM } from '@constants/permissions';
+import { ADMIN_LANDING_ORDER } from '@constants/adminNav';
 import { formatDate } from '@lib/format';
 import { cn } from '@lib/cn';
+import { StatusBadge } from '@components/ui/StatusBadge';
 import { geoApi } from '@features/geo/services/geo.service';
 import type { Branch } from '@features/geo/types';
 import { accessApi, type RoleRow, type StaffRow } from '../services/access.service';
 
 const EMPTY_FORM = { email: '', password: '', firstName: '', lastName: '' };
-
-const ACCESS_LANDINGS: Array<{ label: string; path: string; anyOf: string[] }> = [
-  { label: 'Resumen', path: '/admin/resumen', anyOf: [PERM.REPORT_SALES_READ, PERM.REPORT_OPERATIONS_READ] },
-  { label: 'Reparto', path: '/admin/reparto', anyOf: [PERM.DELIVERY_READ] },
-  { label: 'Cocina', path: '/admin/cocina', anyOf: [PERM.KITCHEN_READ] },
-  { label: 'Pedidos', path: '/admin/pedidos', anyOf: [PERM.ORDER_READ] },
-  { label: 'Inventario', path: '/admin/inventario', anyOf: [PERM.INVENTORY_READ] },
-  { label: 'Catalogo y nutricion', path: '/admin/catalogo', anyOf: [PERM.CATALOG_PRODUCT_READ, PERM.NUTRITION_READ] },
-  { label: 'Constructor', path: '/admin/constructor', anyOf: [PERM.CATALOG_CUSTOMIZATION_WRITE] },
-  { label: 'Cupones', path: '/admin/cupones', anyOf: [PERM.PROMOTION_MANAGE] },
-  { label: 'Planes', path: '/admin/planes', anyOf: [PERM.PLAN_MANAGE] },
-  { label: 'Cobertura', path: '/admin/cobertura', anyOf: [PERM.GEO_READ, PERM.GEO_WRITE] },
-  { label: 'Usuarios', path: '/admin/usuarios', anyOf: [PERM.USER_READ] },
-  { label: 'Roles y permisos', path: '/admin/roles', anyOf: [PERM.ROLE_READ] },
-  { label: 'Sistema de diseño', path: '/admin/sistema-diseno', anyOf: [PERM.SETTINGS_MANAGE] },
-];
 
 const BRANCH_SCOPED_ROLE_CODES = new Set(['kitchen', 'dispatcher', 'driver', 'branch_admin']);
 
@@ -50,11 +38,13 @@ interface CreatedAccess {
 const UsersPage = () => {
   const { can, isSuperAdmin } = usePermissions();
   const canManage = can(PERM.USER_MANAGE);
+  const confirm = useConfirm();
 
   const [staff, setStaff] = useState<StaffRow[]>([]);
   const [roles, setRoles] = useState<RoleRow[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [isCreating, setIsCreating] = useState(false);
   const [editing, setEditing] = useState<StaffRow | null>(null);
@@ -62,22 +52,38 @@ const UsersPage = () => {
   const [roleIds, setRoleIds] = useState<number[]>([]);
   const [branchId, setBranchId] = useState<number | ''>('');
   const [isSaving, setIsSaving] = useState(false);
+  // Id de la fila cuya accion esta en vuelo: sin esto, ni el boton avisa de que se
+  // pulso ni impide el segundo toque, que llega a un estado ya cambiado.
+  const [busyId, setBusyId] = useState<number | null>(null);
   const [createdAccess, setCreatedAccess] = useState<CreatedAccess | null>(null);
 
   const selectedRoles = roles.filter((role) => roleIds.includes(role.id));
   const selectedPermissions = new Set(selectedRoles.flatMap((role) => role.permissions));
-  const landing = ACCESS_LANDINGS.find((entry) =>
+  /*
+   * El aterrizaje sale de la MISMA tabla que el menu lateral y el recibidor
+   * (`constants/adminNav.ts`). Aqui habia una tercera lista escrita a mano a la
+   * que le faltaban Reclamaciones, Medios y Bitacora: se prometia una pantalla
+   * distinta de la que el usuario iba a ver al ingresar.
+   */
+  const landing = ADMIN_LANDING_ORDER.find((entry) =>
     entry.anyOf.some((permission) => selectedPermissions.has(permission)),
   );
   const requiresBranch = selectedRoles.some((role) => BRANCH_SCOPED_ROLE_CODES.has(role.code));
 
   const load = useCallback(async () => {
+    setIsLoading(true);
     try {
-      const [staffRows, roleRows] = await Promise.all([accessApi.staff(), accessApi.roles()]);
+      const [staffRows, roleRows, branchRows] = await Promise.all([
+        accessApi.staff(),
+        accessApi.roles(),
+        geoApi.getBranches(),
+      ]);
       setStaff(staffRows);
       setRoles(roleRows.filter((role) => role.permissions.length > 0)); // roles internos
+      setBranches(branchRows);
+      setLoadError(null);
     } catch (error) {
-      toast.error(getApiErrorMessage(error));
+      setLoadError(getApiErrorMessage(error));
     } finally {
       setIsLoading(false);
     }
@@ -85,10 +91,6 @@ const UsersPage = () => {
 
   useEffect(() => {
     void load();
-    geoApi
-      .getBranches()
-      .then(setBranches)
-      .catch(() => setBranches([]));
   }, [load]);
 
   const openCreate = () => {
@@ -150,7 +152,7 @@ const UsersPage = () => {
           roleIds,
           branchId: branchId === '' ? null : Number(branchId),
         });
-        toast.success('Roles actualizados');
+        toast.success('Roles actualizados. Deberá volver a ingresar para que apliquen.');
       }
 
       closeModal();
@@ -181,23 +183,65 @@ const UsersPage = () => {
     }
   };
 
+  const fullNameOf = (user: StaffRow): string =>
+    [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email || `Usuario #${user.id}`;
+
   const handleToggleStatus = async (user: StaffRow) => {
+    const blocking = user.status === 'ACTIVE';
+
+    if (blocking) {
+      // Bloquear corta la sesion EN CURSO: el servidor sube la version del token.
+      // Por eso se confirma, y por eso el aviso dice lo que va a pasar de verdad.
+      const { confirmed } = await confirm({
+        title: `¿Bloquear a ${fullNameOf(user)}?`,
+        message:
+          'Se cerrará su sesión de inmediato y no podrá volver a ingresar al panel hasta que lo actives otra vez. Su historial y sus acciones se conservan.',
+        confirmLabel: 'Bloquear',
+        tone: 'danger',
+      });
+      if (!confirmed) return;
+    }
+
+    setBusyId(user.id);
     try {
-      await accessApi.setStatus(user.id, user.status === 'ACTIVE' ? 'BLOCKED' : 'ACTIVE');
-      toast.success('Estado actualizado');
+      await accessApi.setStatus(user.id, blocking ? 'BLOCKED' : 'ACTIVE');
+      toast.success(blocking ? 'Usuario bloqueado' : 'Usuario activado');
       await load();
     } catch (error) {
       toast.error(getApiErrorMessage(error));
+    } finally {
+      setBusyId(null);
     }
   };
 
   const handleToggleSuperAdmin = async (user: StaffRow) => {
+    const granting = !user.isSuperAdmin;
+
+    /*
+     * Superadmin no es un rol: es saltarse la verificacion de permisos entera, en
+     * los dos lados. Se pide teclear el email para que no se conceda desde un
+     * boton llamado "Hacer SA" en una fila que se parece a las demas.
+     */
+    const { confirmed } = await confirm({
+      title: granting ? '¿Conceder superadmin?' : '¿Retirar el superadmin?',
+      message: granting
+        ? `${fullNameOf(user)} podrá hacer TODO en el sistema sin ninguna verificación de permisos: mover dinero, cambiar precios, editar roles y crear usuarios. No hay forma de limitarlo después salvo retirándoselo.`
+        : `${fullNameOf(user)} pasará a depender solo de los permisos de sus roles, y su sesión actual se cerrará. Si es la última persona con superadmin, el sistema lo impedirá.`,
+      confirmLabel: granting ? 'Conceder superadmin' : 'Retirar superadmin',
+      tone: 'danger',
+      requireTypedText: user.email ?? undefined,
+    });
+    if (!confirmed) return;
+
+    setBusyId(user.id);
     try {
-      await accessApi.setSuperAdmin(user.id, !user.isSuperAdmin);
-      toast.success('Superadmin actualizado');
+      await accessApi.setSuperAdmin(user.id, granting);
+      toast.success(granting ? 'Superadmin concedido' : 'Superadmin retirado');
       await load();
     } catch (error) {
       toast.error(getApiErrorMessage(error));
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -210,7 +254,7 @@ const UsersPage = () => {
         title="Usuarios internos"
         description="Define quién entra al panel, con qué rol y sobre qué sucursal."
         icon={Users}
-        action={canManage && (
+        action={canManage && !loadError && (
           <Button leftIcon={<Plus className="size-4" />} onClick={openCreate}>
             Nuevo usuario
           </Button>
@@ -219,7 +263,7 @@ const UsersPage = () => {
 
       <Card className="mb-5 border-brand-100 bg-gradient-to-r from-brand-50 to-white">
         <div className="flex items-start gap-3">
-          <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-brand-600 text-white">
+          <div className="grid size-10 shrink-0 place-items-center rounded-card bg-brand-600 text-white">
             <KeyRound className="size-5" />
           </div>
           <div>
@@ -233,110 +277,159 @@ const UsersPage = () => {
         </div>
       </Card>
 
-      <div className="overflow-x-auto rounded-card border border-line bg-surface">
-        <table className="w-full min-w-[720px] text-sm">
-          <thead className="border-b border-line bg-surface-muted text-left text-xs uppercase tracking-wide text-ink-muted">
-            <tr>
-              <th className="p-3">Usuario</th>
-              <th className="p-3">Roles</th>
-              <th className="p-3">Sucursal</th>
-              <th className="p-3">Estado</th>
-              <th className="p-3">Ultimo acceso</th>
-              <th className="p-3"></th>
-            </tr>
-          </thead>
+      {loadError ? (
+        <LoadError message={loadError} onRetry={() => void load()} />
+      ) : (
+        <>
+        <div className="hidden overflow-x-auto rounded-card border border-line bg-surface md:block">
+          <table className="w-full min-w-[720px] text-sm">
+            <caption className="sr-only">
+              Personal interno con sus roles, su sucursal y el estado de su cuenta
+            </caption>
+            <thead className="border-b border-line bg-surface-muted text-left text-xs uppercase tracking-wide text-ink-muted">
+              <tr>
+                <th scope="col" className="p-3">Usuario</th>
+                <th scope="col" className="p-3">Roles</th>
+                <th scope="col" className="p-3">Sucursal</th>
+                <th scope="col" className="p-3">Estado</th>
+                <th scope="col" className="p-3">Ultimo acceso</th>
+                <th scope="col" className="p-3"><span className="sr-only">Acciones</span></th>
+              </tr>
+            </thead>
 
-          <tbody>
-            {staff.map((user) => {
-              const branchNames = user.branchIds
-                .map((id) => branches.find((branch) => branch.id === id)?.name ?? `#${id}`)
-                .join(', ');
+            <tbody>
+              {staff.map((user) => {
+                const branchNames = user.branchIds
+                  .map((id) => branches.find((branch) => branch.id === id)?.name ?? `#${id}`)
+                  .join(', ');
 
-              return (
-                <tr key={user.id} className="border-b border-line last:border-0">
-                  <td className="p-3">
-                    <p className="flex items-center gap-1.5 font-medium text-ink">
-                      {[user.firstName, user.lastName].filter(Boolean).join(' ')}
-                      {user.isSuperAdmin && (
-                        <span
-                          title="Superadmin"
-                          className="inline-flex items-center gap-1 rounded-full bg-accent-400/15 px-1.5 py-0.5 text-[10px] font-medium text-accent-500"
-                        >
-                          <Crown className="size-3" /> Superadmin
-                        </span>
-                      )}
-                    </p>
-                    <p className="text-xs text-ink-muted">{user.email}</p>
-                  </td>
+                return (
+                  <tr key={user.id} className="border-b border-line last:border-0">
+                    <td className="p-3">
+                      <p className="flex items-center gap-1.5 font-medium text-ink">
+                        {[user.firstName, user.lastName].filter(Boolean).join(' ')}
+                        {user.isSuperAdmin && (
+                          <span
+                            title="Superadmin"
+                            className="inline-flex items-center gap-1 rounded-pill bg-accent-400/15 px-1.5 py-0.5 text-[10px] font-medium text-accent-700"
+                          >
+                            <Crown className="size-3" /> Superadmin
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-xs text-ink-muted">{user.email}</p>
+                    </td>
 
-                  <td className="p-3 text-xs text-ink-muted">
-                    {user.roles.map((role) => role.name).join(', ')}
-                  </td>
+                    <td className="p-3 text-xs text-ink-muted">
+                      {user.roles.map((role) => role.name).join(', ')}
+                    </td>
 
-                  <td className="p-3 text-xs text-ink-muted">
-                    {branchNames || <span className="text-brand-700">Todas (global)</span>}
-                  </td>
+                    <td className="p-3 text-xs text-ink-muted">
+                      {branchNames || <span className="text-brand-700">Todas (global)</span>}
+                    </td>
 
-                  <td className="p-3">
-                    <span
-                      className={cn(
-                        'rounded-full px-2 py-0.5 text-xs font-medium',
-                        user.status === 'ACTIVE'
-                          ? 'bg-brand-50 text-brand-700'
-                          : 'bg-red-50 text-red-700',
-                      )}
-                    >
-                      {user.status === 'ACTIVE' ? 'Activo' : 'Bloqueado'}
-                    </span>
-                  </td>
+                    <td className="p-3">
+                      <StatusBadge
+                        status={user.status}
+                        map={{ ACTIVE: { label: 'Activo', variant: 'brand' } }}
+                        fallback={{ label: 'Bloqueado', variant: 'danger' }}
+                      />
+                    </td>
 
-                  <td className="p-3 text-xs text-ink-muted">
-                    {user.lastLoginAt ? formatDate(user.lastLoginAt) : 'Nunca'}
-                  </td>
+                    <td className="p-3 text-xs text-ink-muted">
+                      {user.lastLoginAt ? formatDate(user.lastLoginAt) : 'Nunca'}
+                    </td>
 
-                  <td className="p-3">
-                    {canManage && (
-                      <div className="flex justify-end gap-1">
-                        <Button size="sm" variant="outline" onClick={() => openEdit(user)}>
-                          Roles
-                        </Button>
+                    <td className="p-3">
+                      {canManage && (
+                        <div className="flex justify-end gap-1">
+                          <Button size="sm" variant="outline" onClick={() => openEdit(user)}>
+                            Roles
+                          </Button>
 
-                        {isSuperAdmin && (
+                          {isSuperAdmin && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              isLoading={busyId === user.id}
+                              onClick={() => void handleToggleSuperAdmin(user)}
+                            >
+                              {user.isSuperAdmin ? 'Quitar SA' : 'Hacer SA'}
+                            </Button>
+                          )}
+
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => handleToggleSuperAdmin(user)}
+                            isLoading={busyId === user.id}
+                            onClick={() => void handleToggleStatus(user)}
                           >
-                            {user.isSuperAdmin ? 'Quitar SA' : 'Hacer SA'}
+                            {user.status === 'ACTIVE' ? 'Bloquear' : 'Activar'}
                           </Button>
-                        )}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
 
-                        <Button size="sm" variant="ghost" onClick={() => handleToggleStatus(user)}>
-                          {user.status === 'ACTIVE' ? 'Bloquear' : 'Activar'}
-                        </Button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+          {staff.length === 0 && (
+            <Card className="border-0 py-10 text-center">
+              <p className="text-sm text-ink-muted">Todavia no hay usuarios internos.</p>
+            </Card>
+          )}
+        </div>
 
-        {staff.length === 0 && (
-          <Card className="border-0 py-10 text-center">
-            <p className="text-sm text-ink-muted">Todavia no hay usuarios internos.</p>
-          </Card>
-        )}
-      </div>
+        <div className="grid gap-3 md:hidden" aria-label="Personal interno">
+          {staff.map((user) => {
+            const branchNames = user.branchIds
+              .map((id) => branches.find((branch) => branch.id === id)?.name ?? `#${id}`)
+              .join(', ');
+            return (
+              <Card key={user.id} className="p-4">
+                <div className="flex min-w-0 items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="flex flex-wrap items-center gap-1.5 font-bold text-ink">
+                      {[user.firstName, user.lastName].filter(Boolean).join(' ')}
+                      {user.isSuperAdmin && <span className="inline-flex items-center gap-1 rounded-pill bg-accent-400/15 px-1.5 py-0.5 text-[10px] font-semibold text-accent-700"><Crown className="size-3" /> Superadmin</span>}
+                    </p>
+                    <p className="mt-0.5 break-all text-xs text-ink-muted">{user.email}</p>
+                  </div>
+                  <StatusBadge status={user.status} map={{ ACTIVE: { label: 'Activo', variant: 'brand' } }} fallback={{ label: 'Bloqueado', variant: 'danger' }} />
+                </div>
+
+                <dl className="mt-4 grid gap-3 rounded-card bg-surface-muted p-3 text-xs">
+                  <div><dt className="font-bold uppercase tracking-wide text-ink-muted">Roles</dt><dd className="mt-1 text-ink">{user.roles.map((role) => role.name).join(', ') || 'Sin rol asignado'}</dd></div>
+                  <div><dt className="font-bold uppercase tracking-wide text-ink-muted">Alcance</dt><dd className="mt-1 text-ink">{branchNames || <span className="font-semibold text-brand-700">Todas las sucursales</span>}</dd></div>
+                  <div><dt className="font-bold uppercase tracking-wide text-ink-muted">Último acceso</dt><dd className="mt-1 text-ink">{user.lastLoginAt ? formatDate(user.lastLoginAt) : 'Nunca'}</dd></div>
+                </dl>
+
+                {canManage && <div className="mt-4 grid grid-cols-2 gap-2">
+                  <Button size="sm" variant="outline" onClick={() => openEdit(user)}>Roles y alcance</Button>
+                  <Button size="sm" variant="ghost" isLoading={busyId === user.id} onClick={() => void handleToggleStatus(user)}>{user.status === 'ACTIVE' ? 'Bloquear' : 'Activar'}</Button>
+                  {isSuperAdmin && <Button className="col-span-2" size="sm" variant="ghost" isLoading={busyId === user.id} onClick={() => void handleToggleSuperAdmin(user)}>{user.isSuperAdmin ? 'Quitar superadmin' : 'Convertir en superadmin'}</Button>}
+                </div>}
+              </Card>
+            );
+          })}
+          {staff.length === 0 && <Card className="border-dashed py-10 text-center"><p className="text-sm text-ink-muted">Todavía no hay usuarios internos.</p></Card>}
+        </div>
+        </>
+      )}
 
       <Modal
         isOpen={isCreating || editing !== null}
         onClose={closeModal}
         title={isCreating ? 'Nuevo usuario interno' : `Roles de ${editing?.firstName ?? ''}`}
         description="Sin sucursal asignada, el usuario tiene alcance global."
+        icon={isCreating ? Users : KeyRound}
+        eyebrow={isCreating ? 'Alta de personal' : 'Accesos y alcance'}
+        disableBackdropClose
+        actions={<><Button variant="outline" disabled={isSaving} onClick={closeModal}>Cancelar</Button><Button isLoading={isSaving} onClick={() => void handleSave()}>{isCreating ? 'Crear usuario' : 'Guardar cambios'}</Button></>}
       >
-        <div className="space-y-4">
+        <div className="grid gap-4">
           {isCreating && (
             <>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -379,11 +472,11 @@ const UsersPage = () => {
 
           <div>
             <p className="mb-1.5 text-sm font-medium text-ink">Roles</p>
-            <div className="space-y-1 rounded-xl border border-line p-3">
+            <div className="grid gap-1 rounded-card border border-line p-3">
               {roles.map((role) => (
                 <label
                   key={role.id}
-                  className="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-surface-muted"
+                  className="flex cursor-pointer items-start gap-2 rounded-field px-2 py-1.5 text-sm hover:bg-surface-muted"
                 >
                   <input
                     type="checkbox"
@@ -418,7 +511,7 @@ const UsersPage = () => {
 
           <div
             className={cn(
-              'rounded-xl border p-3 text-sm',
+              'rounded-card border p-3 text-sm',
               landing && !(requiresBranch && branchId === '')
                 ? 'border-brand-200 bg-brand-50 text-brand-800'
                 : 'border-amber-200 bg-amber-50 text-amber-800',
@@ -440,9 +533,13 @@ const UsersPage = () => {
             </p>
           </div>
 
-          <Button className="w-full" isLoading={isSaving} onClick={handleSave}>
-            {isCreating ? 'Crear usuario' : 'Guardar'}
-          </Button>
+          {editing && (
+            <p className="text-xs text-ink-muted">
+              Al guardar, {fullNameOf(editing)} tendrá que volver a ingresar: los permisos y la
+              sucursal viajan dentro de su sesión.
+            </p>
+          )}
+
         </div>
       </Modal>
 
@@ -451,10 +548,13 @@ const UsersPage = () => {
         onClose={() => setCreatedAccess(null)}
         title="Acceso del usuario creado"
         description="Comparte estos datos una sola vez. Si SMTP está configurado, el sistema también envía la invitación por correo."
+        icon={CheckCircle2}
+        eyebrow="Usuario creado correctamente"
+        tone="neutral"
       >
         {createdAccess && (
-          <div className="space-y-4">
-            <div className="flex items-start gap-3 rounded-xl border border-brand-200 bg-brand-50 p-3 text-brand-800">
+          <div className="grid gap-4">
+            <div className="flex items-start gap-3 rounded-card border border-brand-200 bg-brand-50 p-3 text-brand-800">
               <CheckCircle2 className="mt-0.5 size-5 shrink-0" />
               <div>
                 <p className="font-semibold">Usuario listo para ingresar</p>
@@ -462,7 +562,7 @@ const UsersPage = () => {
               </div>
             </div>
 
-            <dl className="divide-y divide-line overflow-hidden rounded-xl border border-line text-sm">
+            <dl className="divide-y divide-line overflow-hidden rounded-card border border-line text-sm">
               <div className="grid grid-cols-[110px_1fr] gap-3 p-3"><dt className="text-ink-muted">Ingreso</dt><dd className="break-all font-medium text-ink">{createdAccess.loginUrl}</dd></div>
               <div className="grid grid-cols-[110px_1fr] gap-3 p-3"><dt className="text-ink-muted">Usuario</dt><dd className="break-all font-medium text-ink">{createdAccess.email}</dd></div>
               <div className="grid grid-cols-[110px_1fr] gap-3 p-3"><dt className="text-ink-muted">Contraseña</dt><dd className="break-all font-mono font-semibold text-ink">{createdAccess.password}</dd></div>

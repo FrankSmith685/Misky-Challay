@@ -1,28 +1,44 @@
 import { Link } from 'react-router-dom';
-import { Box, Button, Card, CardActionArea, CardContent, Chip, Stack, Typography } from '@mui/material';
-import { Flame, Plus, Salad, Sparkles } from 'lucide-react';
+import {
+  Box,
+  Button,
+  Card,
+  CardActionArea,
+  CardContent,
+  Chip,
+  Stack,
+  Typography,
+} from '@mui/material';
+import { AlertTriangle, Flame, Plus, Sparkles, Star } from 'lucide-react';
+import { ProductMedia } from '@components/ui/ProductMedia';
+import { TagList } from '@components/ui/DietaryTag';
 import toast from '@components/mui/MuiToast';
 import { ROUTES } from '@constants/routes';
 import { formatCurrency } from '@lib/format';
 import { useAppDispatch } from '@app/hooks';
 import { addItem } from '@features/cart/cartSlice';
 import { FavoriteButton } from '@features/favorites/components/FavoriteButton';
-import type { Product } from '../types';
+import { AvailabilityAlertButton } from './AvailabilityAlertButton';
+import type { Allergen, Product } from '../types';
 
-const TAG_LABEL: Record<string, string> = {
-  vegano: 'Vegano',
-  vegetariano: 'Vegetariano',
-  'alto-en-proteina': 'Alto en proteína',
-  'sin-gluten': 'Sin gluten',
-  'bajo-en-calorias': 'Bajo en calorías',
-};
+interface ProductCardProps {
+  product: Product;
+  /** Alérgenos declarados en el perfil alimentario del cliente. */
+  allergenAlerts?: Allergen[];
+}
 
-export const ProductCard = ({ product }: { product: Product }) => {
+export const ProductCard = ({ product, allergenAlerts }: ProductCardProps) => {
   const dispatch = useAppDispatch();
   const isBuilder = product.type === 'CUSTOMIZABLE';
+  // El aviso solo aparece si el plato choca con lo que el cliente declaró; si no, nada cambia.
+  const allergenWarnings = (allergenAlerts ?? []).filter((allergen) =>
+    product.allergens.includes(allergen.code),
+  );
   const to = isBuilder ? ROUTES.builder : ROUTES.product(product.slug);
-  // Se puede anadir directo solo si es FIJO y tenemos su variante por defecto.
   const canQuickAdd = !isBuilder && product.defaultVariantId !== null;
+  const displayPrice = isBuilder
+    ? product.priceFrom
+    : product.defaultVariantPrice || product.priceFrom;
 
   const handleQuickAdd = () => {
     if (product.defaultVariantId === null) return;
@@ -47,62 +63,192 @@ export const ProductCard = ({ product }: { product: Product }) => {
 
   return (
     <Card
+      variant="outlined"
       sx={{
         position: 'relative',
+        display: 'flex',
         height: '100%',
+        flexDirection: 'column',
         overflow: 'hidden',
-        opacity: product.isAvailable ? 1 : .62,
+        borderRadius: 'var(--radius-card)',
+        borderColor: 'divider',
+        bgcolor: 'background.paper',
+        opacity: product.isAvailable ? 1 : .68,
+        boxShadow: 'var(--shadow-e2)',
         transition: 'transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease',
-        '&:hover': product.isAvailable ? { transform: 'translateY(-5px)', borderColor: 'primary.light', boxShadow: '0 20px 50px rgba(20,60,40,.13)' } : undefined,
+        '&:hover': product.isAvailable
+          ? {
+              transform: 'translateY(-3px)',
+              borderColor: 'primary.light',
+              boxShadow: 'var(--shadow-e3)',
+            }
+          : undefined,
       }}
     >
       <FavoriteButton
-        className="absolute right-3 top-3 z-10"
-        product={{ productId: product.id, slug: product.slug, name: product.name, imageUrl: product.imageUrl, priceFrom: product.priceFrom, type: product.type }}
+        className="absolute right-3 top-3 z-20 border border-white/70 bg-white/95 p-2.5 shadow-lg backdrop-blur"
+        product={{
+          productId: product.id,
+          slug: product.slug,
+          name: product.name,
+          imageUrl: product.imageUrl,
+          priceFrom: product.priceFrom,
+          type: product.type,
+        }}
       />
 
-      <CardActionArea component={Link} to={to} disabled={!product.isAvailable} sx={{ display: 'flex', height: '100%', flexDirection: 'column', alignItems: 'stretch' }}>
-        <Box sx={{ position: 'relative', display: 'grid', height: { xs: 190, sm: 210 }, flexShrink: 0, placeItems: 'center', overflow: 'hidden', bgcolor: 'action.hover' }}>
-          {product.imageUrl ? (
-            <Box component="img" src={product.imageUrl} alt={product.name} loading="lazy" sx={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 450ms ease', '.MuiCard-root:hover &': { transform: 'scale(1.045)' } }} />
-          ) : (
-            <Salad size={46} color="#8ed1ac" />
+      <CardActionArea
+        component={Link}
+        to={to}
+        sx={{
+          display: 'flex',
+          flex: 1,
+          flexDirection: 'column',
+          alignItems: 'stretch',
+          justifyContent: 'flex-start',
+        }}
+      >
+        <ProductMedia src={product.imageUrl} alt={product.name} ratio="4/3" className="shrink-0">
+          <Box
+            sx={{
+              position: 'absolute',
+              inset: 0,
+              background: 'linear-gradient(180deg, transparent 58%, rgba(10,30,20,.28) 100%)',
+              pointerEvents: 'none',
+            }}
+          />
+          <Stack
+            direction="row"
+            spacing={.75}
+            sx={{ position: 'absolute', bottom: 12, left: 12, right: 56, flexWrap: 'wrap' }}
+          >
+            {product.isFeatured && (
+              <Chip
+                icon={<Star size={13} />}
+                label="Recomendado"
+                size="small"
+                sx={{ borderRadius: 'var(--radius-pill)', bgcolor: 'rgba(255,255,255,.94)', fontWeight: 800 }}
+              />
+            )}
+            {isBuilder && (
+              <Chip
+                icon={<Sparkles size={13} />}
+                label="Personalizable"
+                color="secondary"
+                size="small"
+                sx={{ borderRadius: 'var(--radius-pill)', fontWeight: 850 }}
+              />
+            )}
+          </Stack>
+          {!product.isAvailable && (
+            <Chip
+              label="Temporalmente no disponible"
+              size="small"
+              sx={{
+                position: 'absolute',
+                bottom: 12,
+                left: 12,
+                bgcolor: 'rgba(255,255,255,.94)',
+                borderRadius: 'var(--radius-pill)',
+                color: 'error.main',
+                fontWeight: 800,
+              }}
+            />
           )}
-          {isBuilder && <Chip icon={<Sparkles size={14} />} label="Personalizable" color="secondary" size="small" sx={{ position: 'absolute', left: 12, bottom: 12 }} />}
-        </Box>
+        </ProductMedia>
 
-        <CardContent sx={{ display: 'flex', flex: 1, flexDirection: 'column', p: 2.25 }}>
-          <Typography component="h3" variant="h6" sx={{ fontSize: 17, pr: 1 }}>{product.name}</Typography>
-          {product.description && <Typography variant="body2" color="text.secondary" sx={{ mt: .75, display: '-webkit-box', overflow: 'hidden', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }}>{product.description}</Typography>}
+        <CardContent sx={{ display: 'flex', flex: 1, flexDirection: 'column', p: { xs: 2, sm: 2.5 } }}>
+          <Typography
+            component="h3"
+            variant="h6"
+            sx={{ pr: 1, fontSize: 18, fontWeight: 850, letterSpacing: '-.015em', lineHeight: 1.25 }}
+          >
+            {product.name}
+          </Typography>
+          {product.description && (
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{
+                mt: .8,
+                display: '-webkit-box',
+                minHeight: 40,
+                overflow: 'hidden',
+                lineHeight: 1.45,
+                WebkitBoxOrient: 'vertical',
+                WebkitLineClamp: 2,
+              }}
+            >
+              {product.description}
+            </Typography>
+          )}
+
+          {allergenWarnings.length > 0 && (
+            <Stack direction="row" sx={{ mt: 1.5, flexWrap: 'wrap', gap: .75 }}>
+              {allergenWarnings.map((allergen) => (
+                <Chip
+                  key={allergen.code}
+                  icon={<AlertTriangle size={13} />}
+                  label={`Contiene ${allergen.name.toLocaleLowerCase('es-PE')}`}
+                  size="small"
+                  color="error"
+                  variant="outlined"
+                  sx={{ borderRadius: 'var(--radius-pill)', fontWeight: 800 }}
+                />
+              ))}
+            </Stack>
+          )}
 
           {product.dietaryTags.length > 0 && (
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: .6, mt: 1.5 }}>
-              {product.dietaryTags.slice(0, 3).map((tag) => <Chip key={tag} label={TAG_LABEL[tag] ?? tag} size="small" variant="outlined" sx={{ height: 24, fontSize: 10.5 }} />)}
-            </Box>
+            <TagList tags={product.dietaryTags} max={2} className="mt-3" />
           )}
 
-          <Stack direction="row" spacing={1} sx={{ mt: 'auto', pt: 2, alignItems: 'flex-end', justifyContent: 'space-between' }}>
+          <Stack
+            direction="row"
+            spacing={1}
+            sx={{ mt: 'auto', pt: 2.25, alignItems: 'flex-end', justifyContent: 'space-between' }}
+          >
             <Box>
-              {isBuilder && <Typography variant="caption" color="text.secondary">Desde</Typography>}
-              {/* Un FIJO muestra el precio de la variante que de verdad se anade, no el
-                  minimo entre variantes: si no, la tarjeta diria un precio y el carrito otro. */}
-              <Typography sx={{ color: 'primary.dark', fontSize: 21, fontWeight: 850, lineHeight: 1.15 }}>{formatCurrency(isBuilder ? product.priceFrom : (product.defaultVariantPrice || product.priceFrom))}</Typography>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: 'block', fontWeight: 650, lineHeight: 1.2 }}
+              >
+                {isBuilder ? 'Desde' : 'Precio'}
+              </Typography>
+              <Typography
+                sx={{ color: 'primary.dark', fontSize: 22, fontWeight: 900, letterSpacing: '-.02em', lineHeight: 1.2 }}
+              >
+                {formatCurrency(displayPrice)}
+              </Typography>
             </Box>
             {product.nutrition && (
-              <Stack direction="row" spacing={.5} sx={{ alignItems: 'center', color: 'text.secondary' }}>
+              <Stack
+                direction="row"
+                spacing={.6}
+                sx={{
+                  alignItems: 'center',
+                  borderRadius: 'var(--radius-pill)',
+                  bgcolor: 'action.hover',
+                  px: 1.1,
+                  py: .65,
+                  color: 'text.secondary',
+                }}
+              >
                 <Flame size={14} />
-                <Typography variant="caption">{Math.round(product.nutrition.calories)} kcal · {Math.round(product.nutrition.protein)}g prot.</Typography>
+                <Typography variant="caption" sx={{ fontWeight: 750, whiteSpace: 'nowrap' }}>{Math.round(product.nutrition.calories)} kcal</Typography>
+                <Box component="span" sx={{ width: 1, height: 12, bgcolor: 'divider' }} />
+                <Typography variant="caption" sx={{ fontWeight: 750, whiteSpace: 'nowrap' }}>{Math.round(product.nutrition.protein)} g prot.</Typography>
               </Stack>
             )}
           </Stack>
-          {!product.isAvailable && <Typography variant="caption" color="error.main" sx={{ mt: 1, fontWeight: 700 }}>No disponible en tu sucursal</Typography>}
         </CardContent>
       </CardActionArea>
 
-      {/* Accion FUERA del CardActionArea: anidar un boton dentro de un enlace es HTML
-          invalido. FIJO -> anade directo; PERSONALIZABLE -> lleva al constructor. */}
-      <Box sx={{ p: 2.25, pt: 0 }}>
-        {isBuilder ? (
+      <Box sx={{ borderTop: '1px solid', borderColor: 'divider', p: { xs: 2, sm: 2.5 }, pt: { xs: 1.5, sm: 1.75 } }}>
+        {!product.isAvailable ? (
+          <AvailabilityAlertButton product={product} fullWidth compact />
+        ) : isBuilder ? (
           <Button
             component={Link}
             to={ROUTES.builder}
@@ -110,6 +256,7 @@ export const ProductCard = ({ product }: { product: Product }) => {
             variant="outlined"
             startIcon={<Sparkles size={16} />}
             disabled={!product.isAvailable}
+            sx={{ minHeight: 44 }}
           >
             Personalizar
           </Button>
@@ -120,6 +267,7 @@ export const ProductCard = ({ product }: { product: Product }) => {
             startIcon={<Plus size={16} />}
             disabled={!product.isAvailable || !canQuickAdd}
             onClick={handleQuickAdd}
+            sx={{ minHeight: 44 }}
           >
             Añadir al carrito
           </Button>

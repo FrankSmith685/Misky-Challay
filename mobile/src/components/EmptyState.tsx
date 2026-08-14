@@ -1,6 +1,6 @@
 import { StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { colors, radius, spacing, type } from '../theme/tokens';
+import { colors, radius, shadow, spacing, type } from '../theme/tokens';
 import { PrimaryButton } from './PrimaryButton';
 import type { ToneName } from '../theme/tokens';
 
@@ -86,12 +86,13 @@ const styles = StyleSheet.create({
     minHeight: 280,
   },
   iconBox: {
-    width: 76,
-    height: 76,
-    borderRadius: radius.lg,
+    width: 82,
+    height: 82,
+    borderRadius: radius.xl,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.brand50,
+    ...shadow.sm,
   },
   iconBoxDark: {
     backgroundColor: colors.surfaceDarkRaised,

@@ -14,6 +14,17 @@ export interface ProductQuery {
   featured?: boolean;
 }
 
+export interface AvailabilityAlert {
+  id: number;
+  productId: number;
+  branchId: number;
+  notifyEmail: boolean;
+  notifyInApp: boolean;
+  status: 'WAITING' | 'NOTIFIED' | 'CANCELLED';
+  notifiedAt: string | null;
+  createdAt: string;
+}
+
 /** Convierte los filtros del estado de Redux en query params del API. */
 const toParams = (query: ProductQuery): Record<string, string | number> => {
   const params: Record<string, string | number> = {};
@@ -58,5 +69,30 @@ export const catalogApi = {
       params: branchId ? { branchId } : {},
     });
     return data.data;
+  },
+
+  async getAvailabilityAlert(productId: number, branchId: number): Promise<AvailabilityAlert | null> {
+    const { data } = await api.get<ApiSuccess<AvailabilityAlert | null>>(
+      ENDPOINTS.account.availabilityAlerts,
+      { params: { productId, branchId } },
+    );
+    return data.data;
+  },
+
+  async subscribeAvailabilityAlert(input: {
+    productId: number;
+    branchId: number;
+    notifyEmail: boolean;
+    notifyInApp: boolean;
+  }): Promise<AvailabilityAlert> {
+    const { data } = await api.post<ApiSuccess<AvailabilityAlert>>(
+      ENDPOINTS.account.availabilityAlerts,
+      input,
+    );
+    return data.data;
+  },
+
+  async cancelAvailabilityAlert(productId: number, branchId: number): Promise<void> {
+    await api.delete(ENDPOINTS.account.availabilityAlerts, { params: { productId, branchId } });
   },
 };

@@ -469,6 +469,19 @@ const INCOMPATIBILITIES: Array<[string, string, string]> = [
 
 /** Recursos locales generados para la experiencia visual del constructor. */
 const BUILDER_IMAGE = '/images/builder/bowl-signature.jpg';
+const PRODUCT_IMAGES: Record<string, string> = {
+  'poke-clasico-salmon': '/images/menu/poke-clasico-salmon.jpg',
+  'bowl-pollo-teriyaki': '/images/menu/bowl-pollo-teriyaki.jpg',
+  'bowl-vegano-quinoa': '/images/menu/bowl-vegano-quinoa.jpg',
+  'bowl-mediterraneo': '/images/menu/bowl-mediterraneo.jpg',
+  'wrap-de-pollo': '/images/menu/wrap-de-pollo.jpg',
+  'wrap-veggie': '/images/menu/wrap-veggie.jpg',
+  'edamame-al-vapor': '/images/menu/edamame-al-vapor.jpg',
+  'chips-de-camote': '/images/menu/chips-de-camote.jpg',
+  'mousse-de-maracuya': '/images/menu/mousse-de-maracuya.jpg',
+  'limonada-de-hierbabuena': '/images/menu/limonada-de-hierbabuena.jpg',
+  'agua-mineral': '/images/menu/agua-mineral.jpg',
+};
 const GROUP_IMAGES: Record<string, string> = {
   base: '/images/builder/bases.jpg',
   proteina: '/images/builder/proteins.jpg',
@@ -589,6 +602,8 @@ export const seedCatalog = async (): Promise<void> => {
   for (const seed of PRODUCTS) {
     const categoryId = categoryByslug.get(seed.category);
     if (!categoryId) continue;
+    const productImage =
+      seed.type === 'CUSTOMIZABLE' ? BUILDER_IMAGE : (PRODUCT_IMAGES[seed.slug] ?? null);
 
     const [product] = await Product.findOrCreate({
       where: { slug: seed.slug },
@@ -599,18 +614,16 @@ export const seedCatalog = async (): Promise<void> => {
         description: seed.description,
         type: seed.type === 'CUSTOMIZABLE' ? PRODUCT_TYPE.CUSTOMIZABLE : PRODUCT_TYPE.FIXED,
         isFeatured: seed.isFeatured ?? false,
-        imageUrl: seed.type === 'CUSTOMIZABLE' ? BUILDER_IMAGE : null,
+        imageUrl: productImage,
         sortOrder: 0,
       },
     });
 
     // Completa recursos visuales faltantes sin reemplazar una imagen gestionada en el panel.
     if (
-      seed.type === 'CUSTOMIZABLE' &&
+      productImage &&
       (!product.imageUrl || product.imageUrl === '/images/builder/bowl-signature.png')
-    ) {
-      await product.update({ imageUrl: BUILDER_IMAGE });
-    }
+    ) await product.update({ imageUrl: productImage });
 
     if (seed.type === 'CUSTOMIZABLE') customizableProductId = product.id;
 

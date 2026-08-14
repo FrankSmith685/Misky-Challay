@@ -30,6 +30,15 @@ export const checkoutApi = {
     return data.data;
   },
 
+  /**
+   * Cancela un pedido que nunca llego a pagarse. Devuelve el stock reservado, el
+   * cupon y el saldo (RN-018); sin esto, abandonar la pasarela dejaba todo eso
+   * retenido hasta que alguien lo mirara a mano.
+   */
+  async cancelOrder(orderNumber: string, reason: string): Promise<void> {
+    await api.post(ENDPOINTS.orders.cancel(orderNumber), { reason });
+  },
+
   /** Solo desarrollo: la pagina del simulador "paga" o "rechaza". */
   async simulatePayment(providerReference: string, outcome: 'pay' | 'fail'): Promise<void> {
     await api.post(ENDPOINTS.payments.simulate, { providerReference, outcome });

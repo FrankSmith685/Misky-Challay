@@ -34,8 +34,8 @@ export default function LoginScreen() {
     <AuthScaffold eyebrow="Bienvenido de vuelta" title="Ingresa a tu cuenta" description="Recupera tus datos, preferencias y pedidos desde cualquier dispositivo.">
       {errors.submit && <View style={styles.alert}><Text style={styles.alertTitle}>No pudimos ingresar</Text><Text style={styles.alertCopy}>{errors.submit}</Text></View>}
       <View style={styles.fields}>
-        <FormField label="Correo electrónico" icon="email-outline" keyboardType="email-address" autoCapitalize="none" autoComplete="email" value={email} onChangeText={setEmail} error={errors.email} placeholder="tu@email.com" />
-        <FormField label="Contraseña" icon="lock-outline" secureTextEntry autoComplete="current-password" value={password} onChangeText={setPassword} error={errors.password} hint="Distingue mayúsculas y minúsculas" />
+        <FormField label="Correo electrónico" icon="email-outline" keyboardType="email-address" autoCapitalize="none" autoCorrect={false} autoComplete="email" textContentType="emailAddress" returnKeyType="next" value={email} onChangeText={setEmail} error={errors.email} placeholder="tu@email.com" />
+        <FormField label="Contraseña" icon="lock-outline" secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete="current-password" textContentType="password" returnKeyType="done" onSubmitEditing={() => void submit()} value={password} onChangeText={setPassword} error={errors.password} hint="Distingue mayúsculas y minúsculas" />
       </View>
       <Pressable onPress={() => router.push('/(auth)/forgot-password')} style={styles.forgot}><Text style={styles.link}>¿Olvidaste tu contraseña?</Text></Pressable>
       <PrimaryButton label="Ingresar a mi cuenta" loading={isBusy} onPress={submit} />

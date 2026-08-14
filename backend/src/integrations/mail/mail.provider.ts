@@ -11,6 +11,17 @@ export interface MailMessage {
   text: string;
 }
 
+export interface MailTransportSettings {
+  host: string;
+  port: number;
+  secure: boolean;
+  user?: string;
+  password?: string;
+  fromEmail: string;
+  fromName: string;
+  replyToEmail?: string;
+}
+
 export interface MailProvider {
   readonly name: string;
   /** true cuando hay un proveedor real configurado (no la consola). */

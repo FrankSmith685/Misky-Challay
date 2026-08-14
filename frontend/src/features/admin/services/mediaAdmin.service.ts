@@ -18,10 +18,27 @@ export interface MediaAsset {
   };
 }
 
+export interface MediaListParams {
+  category?: string;
+  includeDeleted?: boolean;
+  page?: number;
+  limit?: number;
+  /** Busca en el nombre original y en el texto alternativo (LIKE en el servidor). */
+  search?: string;
+}
+
 export const mediaAdminApi = {
-  async list(category?: string, includeDeleted = false): Promise<MediaAsset[]> {
-    const { data } = await api.get<ApiSuccess<MediaAsset[]>>('/media', { params: { category, includeDeleted } });
-    return data.data;
+  /**
+   * Biblioteca PAGINADA. El servidor cortaba en 250 por categoria sin avisar, y con
+   * "Mostrar papelera" era peor: los borrados consumian del mismo cupo. El contador
+   * "{n} recursos" mostraba un 250 enganoso.
+   *
+   * `total` es el conteo real; la paginacion en servidor la implementa el paquete K
+   * junto con la pantalla.
+   */
+  async list(params: MediaListParams = {}): Promise<{ items: MediaAsset[]; total: number }> {
+    const { data } = await api.get<ApiSuccess<MediaAsset[]>>('/media', { params });
+    return { items: data.data, total: data.meta?.total ?? data.data.length };
   },
   async upload(input: {
     fileName: string;
@@ -31,6 +48,14 @@ export const mediaAdminApi = {
     category?: string;
   }): Promise<{ id: number; url: string; altText: string | null; category: string }> {
     const { data } = await api.post<ApiSuccess<{ id: number; url: string; altText: string | null; category: string }>>('/media', input);
+    return data.data;
+  },
+  async importFromUrl(input: {
+    sourceUrl: string;
+    altText?: string | null;
+    category?: string;
+  }): Promise<{ id: number; url: string; altText: string | null; category: string }> {
+    const { data } = await api.post<ApiSuccess<{ id: number; url: string; altText: string | null; category: string }>>('/media/import-url', input);
     return data.data;
   },
   async update(id: number, input: { altText?: string | null; category?: string }): Promise<void> {

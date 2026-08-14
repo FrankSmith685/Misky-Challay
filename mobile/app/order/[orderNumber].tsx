@@ -714,10 +714,9 @@ export default function OrderDetailScreen() {
 
             <Text style={styles.taxNote}>
               Incluye IGV {money(order.taxTotal)} ·{' '}
-              {order.documentType === 'FACTURA' ? 'Factura' : 'Boleta'}
               {order.invoiceStatus === 'ISSUED' && order.invoiceSeries && order.invoiceNumber
-                ? ` ${order.invoiceSeries}-${order.invoiceNumber}`
-                : ' pendiente de emisión'}
+                ? `${order.documentType === 'FACTURA' ? 'Factura' : 'Boleta'} ${order.invoiceSeries}-${order.invoiceNumber}`
+                : 'Ticket interno disponible · no es comprobante de pago'}
             </Text>
           </View>
 

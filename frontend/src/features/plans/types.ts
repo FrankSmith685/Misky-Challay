@@ -26,15 +26,32 @@ export interface ActivePlan {
   id: number;
   name: string;
   credit: number;
+  paidRemaining: number;
+  bonusRemaining: number;
   expiresAt: string | null;
   benefits: Array<{ type: BenefitType; description: string }>;
 }
 
 export interface WalletSummary {
   balance: number;
+  paidBalance: number;
+  bonusBalance: number;
   currency: string;
-  expiresAt: string | null;
+  nextExpiry: string | null;
+  paidCreditValidityDays: number;
+  lots: WalletCreditLot[];
   activePlans: ActivePlan[];
+}
+
+export type WalletLotKind = 'PAID' | 'BONUS' | 'REFUND' | 'LEGACY';
+
+export interface WalletCreditLot {
+  id: number;
+  kind: WalletLotKind;
+  remainingAmount: number;
+  expiresAt: string | null;
+  userPlanId: number | null;
+  planName: string | null;
 }
 
 export interface WalletTransaction {
@@ -52,3 +69,5 @@ export interface PlanPurchase {
   checkoutUrl: string | null;
   reused: boolean;
 }
+
+export const PLAN_TERMS_VERSION = '2026-08-02';

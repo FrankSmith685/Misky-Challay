@@ -3,6 +3,7 @@ import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image, type ImageContentFit } from 'expo-image';
 import { resolvePublicAssetUrl } from '../config/env';
+import { bundledImageFor } from '../config/bundledImages';
 import { colors } from '../theme/tokens';
 
 export interface AppImageProps {
@@ -42,16 +43,18 @@ export function AppImage({
   priority = 'normal',
 }: AppImageProps) {
   const [failed, setFailed] = useState(false);
+  const bundled = bundledImageFor(uri);
   const resolved = resolvePublicAssetUrl(uri);
-  const showImage = Boolean(resolved) && !failed;
+  const source = bundled ?? (resolved ? { uri: resolved } : null);
+  const showImage = Boolean(source) && !failed;
 
   return (
     <View style={[styles.container, style]}>
-      {showImage && resolved ? (
+      {showImage && source ? (
         <Image
           accessible={Boolean(accessibilityLabel)}
           accessibilityLabel={accessibilityLabel}
-          source={{ uri: resolved }}
+          source={source}
           placeholder={{ blurhash: PLACEHOLDER_BLURHASH }}
           placeholderContentFit={contentFit}
           contentFit={contentFit}

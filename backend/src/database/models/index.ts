@@ -8,6 +8,7 @@ import { UserRole } from './userRole.model';
 import { RolePermission } from './rolePermission.model';
 import { Address } from './address.model';
 import { UserPreference } from './userPreference.model';
+import { UserPurchaseContext } from './userPurchaseContext.model';
 
 // Geografia, cobertura y sucursales
 import { City } from './city.model';
@@ -41,6 +42,9 @@ import { SavedBowl } from './savedBowl.model';
 import { MediaAsset } from './mediaAsset.model';
 import { BuilderEvent } from './builderEvent.model';
 import { UxEvent } from './uxEvent.model';
+import { ProductFavorite } from './productFavorite.model';
+import { ProductReview } from './productReview.model';
+import { NewsletterSubscription } from './newsletterSubscription.model';
 
 // Comercio: pedidos, cupones y pagos
 import { Order } from './order.model';
@@ -52,8 +56,12 @@ import { Coupon } from './coupon.model';
 import { CouponRedemption } from './couponRedemption.model';
 import { Payment } from './payment.model';
 import { PaymentAttempt } from './paymentAttempt.model';
+import { MobilePaymentClaim } from './mobilePaymentClaim.model';
 import { Refund } from './refund.model';
 import { WebhookEvent } from './webhookEvent.model';
+import { DiningTable } from './diningTable.model';
+import { DiningOffering } from './diningOffering.model';
+import { DiningOrderRequest } from './diningOrderRequest.model';
 
 // Operacion: cocina, inventario, delivery y gobierno
 import { KitchenTicket } from './kitchenTicket.model';
@@ -72,6 +80,9 @@ import { Complaint } from './complaint.model';
 
 // Notificaciones
 import { Notification } from './notification.model';
+import { ProductAvailabilitySubscription } from './productAvailabilitySubscription.model';
+import { KitchenPushSubscription } from './kitchenPushSubscription.model';
+import { MobileDevice } from './mobileDevice.model';
 
 // Planes y billetera
 import { Plan } from './plan.model';
@@ -79,6 +90,12 @@ import { PlanBenefit } from './planBenefit.model';
 import { UserPlan } from './userPlan.model';
 import { Wallet } from './wallet.model';
 import { WalletTransaction } from './walletTransaction.model';
+import { WalletCreditLot } from './walletCreditLot.model';
+import { WalletLotAllocation } from './walletLotAllocation.model';
+import { BusinessSetting } from './businessSetting.model';
+import { CommunicationSetting } from './communicationSetting.model';
+import { LocalPaymentSetting } from './localPaymentSetting.model';
+import { ReceiptSetting } from './receiptSetting.model';
 
 /**
  * Registro central de modelos y asociaciones.
@@ -98,6 +115,7 @@ export const models = {
   RolePermission,
   Address,
   UserPreference,
+  UserPurchaseContext,
   City,
   District,
   CoverageZone,
@@ -125,6 +143,9 @@ export const models = {
   MediaAsset,
   BuilderEvent,
   UxEvent,
+  ProductFavorite,
+  ProductReview,
+  NewsletterSubscription,
   Order,
   OrderItem,
   OrderItemCustomization,
@@ -134,8 +155,12 @@ export const models = {
   CouponRedemption,
   Payment,
   PaymentAttempt,
+  MobilePaymentClaim,
   Refund,
   WebhookEvent,
+  DiningTable,
+  DiningOffering,
+  DiningOrderRequest,
   KitchenTicket,
   KitchenTicketEvent,
   InventoryItem,
@@ -154,7 +179,16 @@ export const models = {
   UserPlan,
   Wallet,
   WalletTransaction,
+  WalletCreditLot,
+  WalletLotAllocation,
+  BusinessSetting,
+  CommunicationSetting,
+  LocalPaymentSetting,
+  ReceiptSetting,
   Notification,
+  ProductAvailabilitySubscription,
+  KitchenPushSubscription,
+  MobileDevice,
 };
 
 export type Models = typeof models;
@@ -216,6 +250,12 @@ export const registerModels = (): Models => {
   AdminDraft.belongsTo(User, { foreignKey: 'ownerUserId', as: 'owner', ...OWNED });
   User.hasMany(UxEvent, { foreignKey: 'userId', as: 'uxEvents', ...CONTEXT });
   UxEvent.belongsTo(User, { foreignKey: 'userId', as: 'user', ...CONTEXT });
+  User.hasMany(ProductFavorite, { foreignKey: 'userId', as: 'productFavorites', ...OWNED });
+  ProductFavorite.belongsTo(User, { foreignKey: 'userId', as: 'user', ...OWNED });
+  User.hasMany(ProductReview, { foreignKey: 'userId', as: 'productReviews', ...PROTECTED });
+  ProductReview.belongsTo(User, { foreignKey: 'userId', as: 'user', ...PROTECTED });
+  User.hasMany(NewsletterSubscription, { foreignKey: 'userId', as: 'newsletterSubscriptions', ...CONTEXT });
+  NewsletterSubscription.belongsTo(User, { foreignKey: 'userId', as: 'user', ...CONTEXT });
   Role.belongsToMany(User, {
     through: UserRole,
     foreignKey: 'roleId',
@@ -247,6 +287,16 @@ export const registerModels = (): Models => {
   User.hasMany(Address, { foreignKey: 'userId', as: 'addresses', ...OWNED });
   Address.belongsTo(User, { foreignKey: 'userId', as: 'user', ...OWNED });
   Address.belongsTo(District, { foreignKey: 'districtId', as: 'district', ...CONTEXT });
+
+  /* --- Contexto de compra ---
+   * Donde se quedo el cliente (modalidad, sede y direccion activa). Se va con el
+   * cliente, pero borrar la sede o la direccion a la que apunta solo lo deja
+   * incompleto: se vuelve a preguntar, no se pierde la cuenta. */
+  User.hasOne(UserPurchaseContext, { foreignKey: 'userId', as: 'purchaseContext', ...OWNED });
+  UserPurchaseContext.belongsTo(User, { foreignKey: 'userId', as: 'user', ...OWNED });
+  UserPurchaseContext.belongsTo(Address, { foreignKey: 'addressId', as: 'address', ...CONTEXT });
+  UserPurchaseContext.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch', ...CONTEXT });
+  UserPurchaseContext.belongsTo(City, { foreignKey: 'cityId', as: 'city', ...CONTEXT });
 
   // --- Geografia y cobertura ---
   // El maestro territorial no se borra si algo cuelga de el: un distrito con
@@ -295,6 +345,10 @@ export const registerModels = (): Models => {
 
   Category.hasMany(Product, { foreignKey: 'categoryId', as: 'products', ...PROTECTED });
   Product.belongsTo(Category, { foreignKey: 'categoryId', as: 'category', ...PROTECTED });
+  Product.hasMany(ProductFavorite, { foreignKey: 'productId', as: 'favorites', ...OWNED });
+  ProductFavorite.belongsTo(Product, { foreignKey: 'productId', as: 'product', ...OWNED });
+  Product.hasMany(ProductReview, { foreignKey: 'productId', as: 'reviews', ...PROTECTED });
+  ProductReview.belongsTo(Product, { foreignKey: 'productId', as: 'product', ...PROTECTED });
 
   Product.hasMany(ProductVariant, { foreignKey: 'productId', as: 'variants', ...OWNED });
   ProductVariant.belongsTo(Product, { foreignKey: 'productId', as: 'product', ...OWNED });
@@ -434,9 +488,23 @@ export const registerModels = (): Models => {
   Order.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch', ...PROTECTED });
   Order.belongsTo(CoverageZone, { foreignKey: 'coverageZoneId', as: 'zone', ...CONTEXT });
   Order.belongsTo(DeliverySlot, { foreignKey: 'deliverySlotId', as: 'slot', ...CONTEXT });
+  Branch.hasMany(DiningTable, { foreignKey: 'branchId', as: 'diningTables', ...OWNED });
+  DiningTable.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch', ...OWNED });
+  Branch.hasMany(DiningOffering, { foreignKey: 'branchId', as: 'diningOfferings', ...OWNED });
+  DiningOffering.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch', ...OWNED });
+  Product.hasMany(DiningOffering, { foreignKey: 'productId', as: 'diningOfferings', ...OWNED });
+  DiningOffering.belongsTo(Product, { foreignKey: 'productId', as: 'product', ...OWNED });
+  ProductVariant.hasMany(DiningOffering, { foreignKey: 'variantId', as: 'diningOfferings', ...OWNED });
+  DiningOffering.belongsTo(ProductVariant, { foreignKey: 'variantId', as: 'variant', ...OWNED });
+  DiningTable.hasMany(Order, { foreignKey: 'diningTableId', as: 'orders', ...PROTECTED });
+  Order.belongsTo(DiningTable, { foreignKey: 'diningTableId', as: 'diningTable', ...CONTEXT });
+  User.hasMany(Order, { foreignKey: 'waiterId', as: 'servedOrders', ...CONTEXT });
+  Order.belongsTo(User, { foreignKey: 'waiterId', as: 'waiter', ...CONTEXT });
 
   Order.hasMany(OrderItem, { foreignKey: 'orderId', as: 'items', ...PROTECTED });
   OrderItem.belongsTo(Order, { foreignKey: 'orderId', as: 'order', ...PROTECTED });
+  OrderItem.hasOne(ProductReview, { foreignKey: 'orderItemId', as: 'review', ...PROTECTED });
+  ProductReview.belongsTo(OrderItem, { foreignKey: 'orderItemId', as: 'orderItem', ...PROTECTED });
 
   OrderItem.hasMany(OrderItemCustomization, {
     foreignKey: 'orderItemId',
@@ -467,6 +535,10 @@ export const registerModels = (): Models => {
   // resuelve en el servicio, no con una FK, para poder cubrir tambien la compra de planes.
   Payment.hasMany(PaymentAttempt, { foreignKey: 'paymentId', as: 'attempts', ...PROTECTED });
   PaymentAttempt.belongsTo(Payment, { foreignKey: 'paymentId', as: 'payment', ...PROTECTED });
+
+  Payment.hasOne(MobilePaymentClaim, { foreignKey: 'paymentId', as: 'mobileClaim', ...PROTECTED });
+  MobilePaymentClaim.belongsTo(Payment, { foreignKey: 'paymentId', as: 'payment', ...PROTECTED });
+  MobilePaymentClaim.belongsTo(User, { foreignKey: 'reviewedBy', as: 'reviewer', ...CONTEXT });
 
   // Un reembolso es dinero que salio de la cuenta: no se borra con nada.
   Payment.hasMany(Refund, { foreignKey: 'paymentId', as: 'refunds', ...PROTECTED });
@@ -547,6 +619,21 @@ export const registerModels = (): Models => {
   Notification.belongsTo(User, { foreignKey: 'userId', as: 'user', ...OWNED });
   Notification.belongsTo(Order, { foreignKey: 'orderId', as: 'order', ...CONTEXT });
 
+  User.hasMany(ProductAvailabilitySubscription, {
+    foreignKey: 'userId',
+    as: 'availabilitySubscriptions',
+    ...OWNED,
+  });
+  ProductAvailabilitySubscription.belongsTo(User, { foreignKey: 'userId', as: 'user', ...OWNED });
+  ProductAvailabilitySubscription.belongsTo(Product, { foreignKey: 'productId', as: 'product', ...OWNED });
+  ProductAvailabilitySubscription.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch', ...OWNED });
+  User.hasMany(KitchenPushSubscription, { foreignKey: 'userId', as: 'kitchenPushSubscriptions', ...OWNED });
+  KitchenPushSubscription.belongsTo(User, { foreignKey: 'userId', as: 'user', ...OWNED });
+  Branch.hasMany(KitchenPushSubscription, { foreignKey: 'branchId', as: 'kitchenPushSubscriptions', ...OWNED });
+  KitchenPushSubscription.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch', ...OWNED });
+  User.hasMany(MobileDevice, { foreignKey: 'userId', as: 'mobileDevices', ...OWNED });
+  MobileDevice.belongsTo(User, { foreignKey: 'userId', as: 'user', ...OWNED });
+
   // --- Planes y billetera (M06) ---
   Plan.hasMany(PlanBenefit, { foreignKey: 'planId', as: 'benefits', ...OWNED });
   PlanBenefit.belongsTo(Plan, { foreignKey: 'planId', as: 'plan', ...OWNED });
@@ -566,6 +653,42 @@ export const registerModels = (): Models => {
   WalletTransaction.belongsTo(Wallet, { foreignKey: 'walletId', as: 'wallet', ...PROTECTED });
   WalletTransaction.belongsTo(UserPlan, { foreignKey: 'userPlanId', as: 'userPlan', ...CONTEXT });
   WalletTransaction.belongsTo(Order, { foreignKey: 'orderId', as: 'order', ...CONTEXT });
+
+  // Los lotes separan capital pagado, bono y devoluciones; las asignaciones
+  // documentan qué lote se consumió en cada pedido.
+  Wallet.hasMany(WalletCreditLot, { foreignKey: 'walletId', as: 'creditLots', ...PROTECTED });
+  WalletCreditLot.belongsTo(Wallet, { foreignKey: 'walletId', as: 'wallet', ...PROTECTED });
+  WalletCreditLot.belongsTo(UserPlan, { foreignKey: 'userPlanId', as: 'userPlan', ...CONTEXT });
+  WalletCreditLot.belongsTo(WalletTransaction, {
+    foreignKey: 'sourceTransactionId',
+    as: 'sourceTransaction',
+    ...CONTEXT,
+  });
+  WalletTransaction.hasMany(WalletLotAllocation, {
+    foreignKey: 'walletTransactionId',
+    as: 'lotAllocations',
+    ...PROTECTED,
+  });
+  WalletLotAllocation.belongsTo(WalletTransaction, {
+    foreignKey: 'walletTransactionId',
+    as: 'walletTransaction',
+    ...PROTECTED,
+  });
+  WalletCreditLot.hasMany(WalletLotAllocation, {
+    foreignKey: 'walletCreditLotId',
+    as: 'allocations',
+    ...PROTECTED,
+  });
+  WalletLotAllocation.belongsTo(WalletCreditLot, {
+    foreignKey: 'walletCreditLotId',
+    as: 'creditLot',
+    ...PROTECTED,
+  });
+
+  // Configuración singleton. Conserva quién realizó la última modificación.
+  BusinessSetting.belongsTo(User, { foreignKey: 'updatedBy', as: 'updater', ...CONTEXT });
+  CommunicationSetting.belongsTo(User, { foreignKey: 'updatedBy', as: 'updater', ...CONTEXT });
+  ReceiptSetting.belongsTo(User, { foreignKey: 'updatedBy', as: 'updater', ...CONTEXT });
 
   registered = true;
   return models;
@@ -614,8 +737,12 @@ export {
   CouponRedemption,
   Payment,
   PaymentAttempt,
+  MobilePaymentClaim,
   Refund,
   WebhookEvent,
+  DiningTable,
+  DiningOffering,
+  DiningOrderRequest,
   KitchenTicket,
   KitchenTicketEvent,
   InventoryItem,
@@ -632,9 +759,22 @@ export {
   UserPlan,
   Wallet,
   WalletTransaction,
+  WalletCreditLot,
+  WalletLotAllocation,
+  BusinessSetting,
+  CommunicationSetting,
+  LocalPaymentSetting,
+  ReceiptSetting,
   Notification,
+  ProductAvailabilitySubscription,
+  KitchenPushSubscription,
+  MobileDevice,
   UserPreference,
+  UserPurchaseContext,
   AdminDraft,
   UxEvent,
+  ProductFavorite,
+  ProductReview,
+  NewsletterSubscription,
   Complaint,
 };

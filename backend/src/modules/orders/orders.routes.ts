@@ -2,7 +2,12 @@ import { Router } from 'express';
 import { authenticate, optionalAuth } from '@middlewares/auth.middleware';
 import { validate } from '@middlewares/validate.middleware';
 import { ordersController } from './orders.controller';
-import { cancelOrderSchema, listOrdersSchema, orderNumberSchema } from './orders.validation';
+import {
+  cancelOrderSchema,
+  listOrdersSchema,
+  orderNumberSchema,
+  retryPaymentSchema,
+} from './orders.validation';
 
 /**
  * Modulo ORDERS (M09).
@@ -15,6 +20,22 @@ const router = Router();
 
 router.get('/', authenticate, validate(listOrdersSchema), ordersController.list);
 router.get('/:orderNumber', optionalAuth, validate(orderNumberSchema), ordersController.detail);
+
+/*
+ * Reintento del cobro. Exige sesion y solo lo puede pedir el dueno del pedido: el
+ * numero de pedido viaja en correos y pantallas, y quien lo tenga no debe poder
+ * abrir un cobro a nombre de otra persona.
+ *
+ * Sin limitador propio a proposito: el servicio devuelve la sesion que ya existe
+ * mientras siga viva, asi que repetir la llamada no genera trabajo en la pasarela.
+ */
+router.post(
+  '/:orderNumber/payment/retry',
+  authenticate,
+  validate(retryPaymentSchema),
+  ordersController.retryPayment,
+);
+
 router.post(
   '/:orderNumber/cancel',
   authenticate,

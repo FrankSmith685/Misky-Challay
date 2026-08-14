@@ -5,6 +5,7 @@ import { Permission, Role, User, UserRole } from '@database/models';
 import { ApiError } from '@shared/errors/ApiError';
 import { logger } from '@config/logger';
 import { comparePassword, hashPassword } from '@shared/utils/password';
+import { normalizePhone } from '@shared/utils/phone';
 import {
   signAccessToken,
   signRefreshToken,
@@ -21,8 +22,14 @@ const sha256 = (value: string): string => crypto.createHash('sha256').update(val
 export interface AuthenticatedUser {
   id: number;
   email: string | null;
+  /**
+   * Viaja con la sesion para que el checkout no tenga que volver a pedirle al
+   * cliente un dato que ya dio al registrarse.
+   */
+  phone: string | null;
   firstName: string | null;
   lastName: string | null;
+  avatarUrl: string | null;
   roles: string[];
   permissions: string[];
   /** Se salta la verificacion de permisos (marca del sistema, no un rol). */
@@ -69,8 +76,10 @@ const loadUserWithAccess = async (userId: number): Promise<AuthenticatedUser> =>
   return {
     id: user.id,
     email: user.email,
+    phone: user.phone,
     firstName: user.firstName,
     lastName: user.lastName,
+    avatarUrl: user.avatarUrl,
     roles: roles.map((role) => role.code),
     permissions: [...permissions],
     isSuperAdmin: user.isSuperAdmin,
@@ -97,12 +106,33 @@ const issueTokens = (user: AuthenticatedUser, tokenVersion: number): Omit<AuthRe
 
 export const authService = {
   async register(input: RegisterInput): Promise<AuthResult> {
-    const existing = await User.findOne({ where: { email: input.email } });
-    if (existing) throw ApiError.conflict('El email ya esta registrado');
+    const email = input.email.trim().toLowerCase();
+    const phone = normalizePhone(input.phone);
+
+    /*
+     * Se comprueban los DOS datos unicos, no solo el email.
+     *
+     * `users` tiene indice unico en email y en telefono. Al mirar solo el email,
+     * un registro con correo nuevo y un telefono ya usado pasaba el control y
+     * reventaba en el INSERT: el cliente veia "El registro ya existe" con un email
+     * que efectivamente no existia, y no habia forma de adivinar que sobraba.
+     *
+     * `paranoid: false` porque el indice unico SI cuenta las filas dadas de baja
+     * en blando; sin eso, el email de una cuenta eliminada volveria a colarse
+     * hasta el INSERT.
+     */
+    const [emailTaken, phoneTaken] = await Promise.all([
+      User.findOne({ where: { email }, paranoid: false }),
+      phone ? User.findOne({ where: { phone }, paranoid: false }) : null,
+    ]);
+    if (emailTaken) throw ApiError.conflict('Ese email ya esta registrado');
+    if (phoneTaken) {
+      throw ApiError.conflict('Ese telefono ya esta registrado en otra cuenta');
+    }
 
     const created = await User.create({
-      email: input.email,
-      phone: input.phone ?? null,
+      email,
+      phone,
       passwordHash: await hashPassword(input.password),
       firstName: input.firstName,
       lastName: input.lastName,
@@ -169,7 +199,7 @@ export const authService = {
    * exista o no el correo. En la base se guarda solo el SHA-256 del token; el token
    * en claro solo viaja en el correo, una vez.
    */
-  async forgotPassword(email: string): Promise<void> {
+  async forgotPassword(email: string, client: 'WEB' | 'MOBILE' = 'WEB'): Promise<void> {
     const user = await User.findOne({ where: { email } });
     // Silencioso a proposito: no se revela si el email existe ni si esta activo.
     if (!user?.email || user.status !== USER_STATUS.ACTIVE) return;
@@ -186,7 +216,12 @@ export const authService = {
         user.passwordResetTokenHash = sha256(rawToken);
         user.passwordResetExpiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MINUTES * 60_000);
         await user.save();
-        await notificationsService.notifyPasswordReset(user.id, rawToken, RESET_TOKEN_TTL_MINUTES);
+        await notificationsService.notifyPasswordReset(
+          user.id,
+          rawToken,
+          RESET_TOKEN_TTL_MINUTES,
+          client,
+        );
       } catch (error) {
         logger.error('Fallo al generar el enlace de recuperacion', error);
       }

@@ -6,6 +6,7 @@ export interface User {
   phone: string | null;
   firstName: string | null;
   lastName: string | null;
+  avatarUrl: string | null;
   roles: string[];
   permissions: string[];
   isSuperAdmin: boolean;
@@ -171,6 +172,12 @@ export interface PublicSettings {
   };
   /** Pago con tarjeta. En false el backend rechazaria el cobro: no lo ofrezcas. */
   payments: { onlineEnabled: boolean };
+  receipts: {
+    mode: 'INTERNAL_ONLY' | 'EXTERNAL_MANUAL' | 'INTEGRATED';
+    autoPrintKitchenTicket: boolean;
+    autoPrintCustomerTicket: boolean;
+    paperWidth: 58 | 80;
+  };
   /**
    * Compuerta de la app. `minSupportedVersion` bloquea, `latestVersion` solo
    * avisa y `maintenance` corta el servicio con un mensaje propio.
@@ -376,10 +383,8 @@ export interface CoverageResult {
   covered: boolean;
   reason?: string;
   /**
-   * `polygon` es la zona de reparto dibujable sobre el mapa (el equivalente
-   * movil del `coveragePolygon` de la web). El backend lo devuelve en
-   * `{ lat, lng }`, no en `{ latitude, longitude }`: conviertelo antes de
-   * pasarselo a <Polygon> de react-native-maps.
+   * `polygon` es la zona de reparto dibujable sobre el mapa. El backend lo
+   * devuelve en `{ lat, lng }`; la app lo convierte para el componente MapLibre.
    */
   zone?: {
     id: number; name: string; deliveryFee: number; minimumOrder: number; estimatedMinutes: number;
@@ -497,6 +502,7 @@ export interface Profile {
   email: string | null;
   firstName: string | null;
   lastName: string | null;
+  avatarUrl: string | null;
   phone: string | null;
   emailVerifiedAt: string | null;
   createdAt: string;

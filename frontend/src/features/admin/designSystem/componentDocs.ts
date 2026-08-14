@@ -39,8 +39,8 @@ export type ComponentDocMeta = {
 export const COMPONENT_DOCS: Record<string, ComponentDocMeta> = {
   "textfield": {
     "id": "textfield",
-    "name": "TextField",
-    "import": "@mui/material",
+    "name": "Input",
+    "import": "@components/ui",
     "builtOn": "FormControl + InputLabel + OutlinedInput/FilledInput/Input + FormHelperText",
     "description": "Campo de entrada de texto de una sola linea que agrupa label, input y texto de ayuda en un solo componente. Es el control base para capturar datos como nombres, correos o cantidades en formularios.",
     "whenToUse": "Usalo para entrada de texto corta; usa TextField multiline para parrafos y Autocomplete cuando el usuario elige entre opciones existentes.",
@@ -103,8 +103,8 @@ export const COMPONENT_DOCS: Record<string, ComponentDocMeta> = {
   },
   "textarea": {
     "id": "textarea",
-    "name": "TextField (multiline)",
-    "import": "@mui/material",
+    "name": "Textarea",
+    "import": "@components/ui",
     "builtOn": "TextField con multiline; renderiza TextareaAutosize (o un <textarea> simple si se fija rows)",
     "description": "Variante de TextField que renderiza un area de texto multilinea para contenido largo como comentarios, descripciones o notas. Puede crecer automaticamente segun el contenido.",
     "whenToUse": "Usalo cuando esperas varias lineas de texto; para una sola linea usa el TextField normal.",
@@ -162,7 +162,7 @@ export const COMPONENT_DOCS: Record<string, ComponentDocMeta> = {
   "select": {
     "id": "select",
     "name": "Select",
-    "import": "@mui/material",
+    "import": "@components/ui",
     "builtOn": "FormControl + OutlinedInput/FilledInput/Input + Menu (Popover) para el desplegable; MenuItem como opciones",
     "description": "Menu desplegable que permite elegir uno o varios valores de una lista predefinida. Se usa con componentes MenuItem como opciones y admite integrarse en un TextField mediante la prop select.",
     "whenToUse": "Usalo para pocas opciones fijas; usa Autocomplete cuando hay muchas opciones o se necesita busqueda, y RadioGroup cuando conviene mostrarlas todas.",
@@ -226,7 +226,7 @@ export const COMPONENT_DOCS: Record<string, ComponentDocMeta> = {
   "checkbox": {
     "id": "checkbox",
     "name": "Checkbox",
-    "import": "@mui/material",
+    "import": "@components/ui",
     "builtOn": "SwitchBase (ButtonBase) + SvgIcon (iconos check)",
     "description": "Casilla de verificacion para activar o desactivar una opcion booleana de forma independiente. Admite un estado intermedio (indeterminate) util para selecciones parciales.",
     "whenToUse": "Usalo para opciones on/off independientes o seleccion multiple en una lista; usa Radio cuando solo se puede elegir una opcion y Switch para ajustes de aplicacion inmediata.",
@@ -283,8 +283,8 @@ export const COMPONENT_DOCS: Record<string, ComponentDocMeta> = {
   },
   "radio": {
     "id": "radio",
-    "name": "Radio / RadioGroup",
-    "import": "@mui/material",
+    "name": "RadioGroup",
+    "import": "@components/ui",
     "builtOn": "RadioGroup (FormGroup + Context) + Radio (SwitchBase + SvgIcon)",
     "description": "Grupo de botones de opcion que permite elegir un unico valor de un conjunto mutuamente excluyente. RadioGroup gestiona el valor comun y cada Radio representa una opcion.",
     "whenToUse": "Usalo cuando hay pocas opciones excluyentes y conviene verlas todas; usa Select para listas largas y Checkbox cuando se pueden elegir varias.",
@@ -342,7 +342,7 @@ export const COMPONENT_DOCS: Record<string, ComponentDocMeta> = {
   "switch": {
     "id": "switch",
     "name": "Switch",
-    "import": "@mui/material",
+    "import": "@components/ui",
     "builtOn": "SwitchBase (ButtonBase) + track + thumb",
     "description": "Interruptor tipo palanca para alternar un ajuste entre encendido y apagado. Comunica un cambio de estado inmediato y es habitual en paneles de configuracion.",
     "whenToUse": "Usalo para ajustes que se aplican al instante (activar/desactivar); usa Checkbox cuando la eleccion se confirma al enviar un formulario.",
@@ -638,64 +638,64 @@ export const COMPONENT_DOCS: Record<string, ComponentDocMeta> = {
   "button": {
     "id": "button",
     "name": "Button",
-    "import": "@mui/material",
-    "builtOn": "ButtonBase -> <button>",
-    "description": "Boton de accion con texto que dispara una operacion al hacer clic. Es el componente base para las llamadas a la accion (CTA) en formularios, dialogos y barras de herramientas.",
-    "whenToUse": "Usa Button para acciones acompanadas de texto; usa IconButton cuando basta un icono para comunicar la accion y Fab para la accion primaria flotante de una pantalla.",
+    "import": "@components/ui",
+    "builtOn": "MuiButton -> <button>, con la escala de alturas BUTTON_HEIGHT",
+    "description": "Boton de accion del producto: envuelve al Button de Material UI con la API de Verde Bowl (cinco variantes semanticas, tres tamanos anclados a BUTTON_HEIGHT, estado de carga propio e icono a la izquierda). Con isLoading queda deshabilitado, expone aria-busy y cambia el icono por un spinner, asi que no hay que gestionar el doble clic a mano.",
+    "whenToUse": "Es el boton por defecto en toda la aplicacion. El Button de @mui/material solo se usa donde MUI lo exige: dentro de ButtonGroup y como disparador de Menu. Para acciones que se entienden con un icono usa IconButton con aria-label, y Fab para la accion primaria flotante de una pantalla.",
     "props": [
       {
         "name": "variant",
-        "type": "'text' | 'outlined' | 'contained'",
-        "default": "'text'",
-        "description": "Define el nivel de enfasis visual: 'contained' para la accion principal, 'outlined' para acciones secundarias y 'text' para acciones de bajo enfasis."
-      },
-      {
-        "name": "color",
-        "type": "'primary' | 'secondary' | 'success' | 'error' | 'info' | 'warning' | 'inherit'",
+        "type": "'primary' | 'secondary' | 'outline' | 'ghost' | 'danger'",
         "default": "'primary'",
-        "description": "Color semantico tomado de la paleta del tema. Usa 'error' para acciones destructivas e 'inherit' para heredar el color del contenedor."
+        "description": "Nivel y color de la accion. 'primary' es la accion principal, 'outline' y 'ghost' las secundarias, y 'danger' se reserva a lo destructivo (cancelar un pedido, enviar a la papelera). Traduce internamente a variant + color de MUI."
       },
       {
         "name": "size",
-        "type": "'small' | 'medium' | 'large'",
-        "default": "'medium'",
-        "description": "Tamano del boton; afecta al padding y al tamano de la tipografia."
+        "type": "'sm' | 'md' | 'lg'",
+        "default": "'md'",
+        "description": "Altura tomada de BUTTON_HEIGHT, que se exporta desde el mismo modulo: sm 40, md 44 y lg 48 px. 44 es el paso tactil del producto, asi que en Cocina y Reparto (tablet, de pie) no se baja de 'md'."
       },
       {
-        "name": "onClick",
-        "type": "(e) => void",
+        "name": "isLoading",
+        "type": "boolean",
+        "default": "false",
+        "description": "Sustituye el icono por un spinner, deshabilita el boton y marca aria-busy. Es la senal de que el clic se registro: usalo en toda accion que llame al servidor."
+      },
+      {
+        "name": "leftIcon",
+        "type": "ReactNode",
         "default": "",
-        "description": "Manejador que se ejecuta cuando el usuario hace clic en el boton."
+        "description": "Icono antes del texto. Ocupa el lugar de startIcon, que esta omitido del tipo a proposito para que solo haya una forma de ponerlo."
       },
       {
         "name": "disabled",
         "type": "boolean",
         "default": "false",
-        "description": "Deshabilita el boton, impide el clic y muestra el estado atenuado."
+        "description": "Deshabilita el boton. isLoading ya lo aplica por su cuenta, no hace falta combinarlos."
       },
       {
-        "name": "startIcon",
-        "type": "ReactNode",
+        "name": "onClick",
+        "type": "(e) => void",
         "default": "",
-        "description": "Icono que se coloca antes del texto del boton."
+        "description": "Manejador del clic. Si dispara una peticion, acompanalo siempre de isLoading."
       },
       {
-        "name": "endIcon",
-        "type": "ReactNode",
-        "default": "",
-        "description": "Icono que se coloca despues del texto del boton."
+        "name": "component",
+        "type": "ElementType",
+        "default": "'button'",
+        "description": "Renderiza el boton como otro elemento; con component={Link} y `to` se convierte en un enlace de react-router sin perder el estilo."
       },
       {
-        "name": "fullWidth",
-        "type": "boolean",
-        "default": "false",
-        "description": "Hace que el boton ocupe todo el ancho de su contenedor."
-      },
-      {
-        "name": "href",
+        "name": "className",
         "type": "string",
         "default": "",
-        "description": "Si se define, el boton se renderiza como un enlace <a> hacia esa URL (a traves de ButtonBase)."
+        "description": "Clases extra (por ejemplo w-full en un formulario). El radio, la altura y la transicion los pone el componente."
+      },
+      {
+        "name": "sx",
+        "type": "SxProps",
+        "default": "",
+        "description": "Escape a los estilos de MUI. Se fusiona despues de los del componente, asi que puede sobrescribirlos; usalo como ultimo recurso."
       }
     ]
   },
@@ -916,116 +916,86 @@ export const COMPONENT_DOCS: Record<string, ComponentDocMeta> = {
   "table": {
     "id": "table",
     "name": "Table",
-    "import": "@mui/material",
-    "builtOn": "TableContainer (Paper opcional) + Table -> <table>, con TableHead/TableBody/TableRow/TableCell",
-    "description": "Familia de componentes para renderizar datos tabulares con cabecera, cuerpo y filas semanticas. Se compone junto a TableContainer, TableHead, TableBody, TableRow y TableCell para construir tablas accesibles y estilizadas.",
-    "whenToUse": "Usa Table para datos estructurados en filas y columnas; para listas simples de un solo eje usa List, y para grillas complejas con paginacion y orden avanzado considera DataGrid.",
+    "import": "@components/ui",
+    "builtOn": "TableContainer(Paper outlined) + MuiTable -> <table>, con Thead / Tbody / Tr / Th / Td",
+    "description": "Tabla del producto. Ya incluye el contenedor con scroll horizontal, el borde y la cabecera tenue, de modo que no hay que montar TableContainer a mano. `caption` escribe un <caption> visualmente oculto y Th pone scope=\"col\" por defecto: sin esas dos piezas, un lector de pantalla anuncia \"tabla, 7 columnas\" y luego valores sueltos sin decir de que columna son.",
+    "whenToUse": "Usala para datos de dos ejes. En movil, la tabla scrollea en horizontal; si la fila tiene mas de cuatro datos importantes, cambia a tarjetas por debajo de sm, como hacen Pedidos y Reclamaciones.",
     "props": [
       {
-        "name": "stickyHeader",
-        "type": "boolean",
-        "default": "false",
-        "description": "Prop de Table que fija la cabecera (TableHead) al hacer scroll vertical dentro del TableContainer."
+        "name": "caption",
+        "type": "string",
+        "default": "",
+        "description": "Nombre accesible de la tabla. Se pinta como <caption> en sr-only porque la pantalla ya trae su titulo visible encima."
+      },
+      {
+        "name": "children",
+        "type": "ReactNode",
+        "default": "",
+        "description": "Composicion con Thead, Tbody, Tr, Th y Td. Th y Td aceptan las props de TableCell de MUI (align, colSpan, padding)."
+      },
+      {
+        "name": "scope",
+        "type": "'col' | 'row'",
+        "default": "'col'",
+        "description": "Prop de Th. 'row' en las tablas cuya primera celda es la etiqueta de la fila."
       },
       {
         "name": "size",
         "type": "'small' | 'medium'",
         "default": "'medium'",
-        "description": "Prop de Table que define la densidad de las celdas; 'small' compacta el padding para tablas con muchas filas."
+        "description": "Se reenvia a MuiTable. 'small' compacta el relleno de las celdas en tablas largas."
       },
       {
-        "name": "align",
-        "type": "'inherit' | 'left' | 'center' | 'right' | 'justify'",
-        "default": "'inherit'",
-        "description": "Prop de TableCell que alinea el contenido de la celda; util para columnas numericas ('right')."
-      },
-      {
-        "name": "padding",
-        "type": "'checkbox' | 'none' | 'normal'",
-        "default": "'normal'",
-        "description": "Prop de Table (heredada por TableCell) que controla el relleno de las celdas; 'checkbox' se usa en la columna de seleccion y 'none' elimina el padding."
-      },
-      {
-        "name": "hover",
+        "name": "stickyHeader",
         "type": "boolean",
         "default": "false",
-        "description": "Prop de TableRow que resalta la fila al pasar el cursor, indicando interactividad."
+        "description": "Se reenvia a MuiTable: fija la cabecera al hacer scroll vertical dentro del contenedor."
       },
       {
-        "name": "selected",
-        "type": "boolean",
-        "default": "false",
-        "description": "Prop de TableRow que aplica el estado visual de fila seleccionada."
-      },
-      {
-        "name": "component",
-        "type": "React.ElementType",
-        "default": "'table'",
-        "description": "Sobrescribe el elemento raiz; por ejemplo, TableContainer suele renderizarse como Paper."
+        "name": "className",
+        "type": "string",
+        "default": "",
+        "description": "Clases extra sobre <table> (por ejemplo min-w para forzar el scroll horizontal antes de que las columnas se aplasten)."
       }
     ]
   },
   "chip": {
     "id": "chip",
     "name": "Chip",
-    "import": "@mui/material",
-    "builtOn": "<div> con role adaptativo (role=\"button\" cuando es interactivo)",
-    "description": "Elemento compacto que representa una entrada, atributo, filtro o accion. Puede mostrar texto, icono o avatar y admite eliminacion mediante un boton integrado.",
-    "whenToUse": "Usa Chip para tags, filtros seleccionados o entradas removibles; para acciones primarias usa Button y para estados no interactivos considera Badge o texto simple.",
+    "import": "@components/ui",
+    "builtOn": "<span> con rounded-pill; el aspa de quitar es un <button> propio",
+    "description": "Ficha compacta seleccionable o removible: filtros aplicados, etiquetas de entrada y valores de un multiselector. Con `active` se pinta en color de marca y con `onRemove` aparece el aspa, que detiene la propagacion para no disparar tambien el onClick del chip.",
+    "whenToUse": "Usa Chip para algo que el usuario puede quitar o alternar. Si solo comunica un estado y no se toca, usa Badge; para una tira de filtros excluyentes, FilterPills.",
     "props": [
       {
-        "name": "label",
+        "name": "children",
         "type": "ReactNode",
         "default": "",
-        "description": "Contenido de texto o nodo que se muestra dentro del chip."
+        "description": "Contenido del chip. Admite un icono suelto delante del texto."
       },
       {
-        "name": "variant",
-        "type": "'filled' | 'outlined'",
-        "default": "'filled'",
-        "description": "Estilo visual del chip: relleno solido o solo con borde."
-      },
-      {
-        "name": "color",
-        "type": "'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning'",
-        "default": "'default'",
-        "description": "Color semantico del chip segun la paleta del tema."
-      },
-      {
-        "name": "size",
-        "type": "'small' | 'medium'",
-        "default": "'medium'",
-        "description": "Tamano del chip; 'small' para densidades altas o grupos de filtros."
+        "name": "active",
+        "type": "boolean",
+        "default": "false",
+        "description": "Marca el chip como seleccionado (fondo de marca y texto blanco). Util en tiras de filtros."
       },
       {
         "name": "onClick",
-        "type": "(e) => void",
+        "type": "() => void",
         "default": "",
-        "description": "Manejador de clic; al definirse, el chip se muestra interactivo (clickable) con efecto hover y ondas al pulsar."
+        "description": "Al definirse, el chip se vuelve pulsable (cursor, hover y elevacion). Si el chip es un control real, envuelvelo o dale foco: el <span> no lo recibe solo."
       },
       {
-        "name": "onDelete",
-        "type": "(e) => void",
+        "name": "onRemove",
+        "type": "() => void",
         "default": "",
-        "description": "Manejador de eliminacion; al definirse aparece el icono de borrado a la derecha del chip."
+        "description": "Al definirse aparece el aspa a la derecha, con aria-label \"Quitar\", que no propaga el clic al chip."
       },
       {
-        "name": "icon",
-        "type": "ReactElement",
+        "name": "className",
+        "type": "string",
         "default": "",
-        "description": "Icono mostrado al inicio del chip."
-      },
-      {
-        "name": "avatar",
-        "type": "ReactElement",
-        "default": "",
-        "description": "Avatar mostrado al inicio del chip, como alternativa al icono."
-      },
-      {
-        "name": "disabled",
-        "type": "boolean",
-        "default": "false",
-        "description": "Deshabilita el chip e impide la interaccion."
+        "description": "Clases extra. El radio de pildora y el ritmo interno los pone el componente."
       }
     ]
   },
@@ -1136,65 +1106,41 @@ export const COMPONENT_DOCS: Record<string, ComponentDocMeta> = {
   "badge": {
     "id": "badge",
     "name": "Badge",
-    "import": "@mui/material",
-    "builtOn": "<span> contenedor con <span> superpuesto como insignia",
-    "description": "Superpone un pequeno indicador (contador o punto) sobre un elemento hijo, como un icono o un avatar. Se usa para notificaciones, mensajes no leidos o estados.",
-    "whenToUse": "Usa Badge para contadores o indicadores sobre otro elemento; para etiquetas independientes usa Chip y para avisos globales usa Alert o Snackbar.",
+    "import": "@components/ui",
+    "builtOn": "<span> con rounded-pill; acepta cualquier atributo de span",
+    "description": "Etiqueta compacta para estados, conteos y categorias. Nueve variantes con fondo y tinta ya emparejados. La variante 'accent' usa accent-700 y no accent-500: ese amarillo da 2,42:1 sobre blanco, la mitad del minimo AA para 12 px, y aqui se pintan avisos que hay que poder leer.",
+    "whenToUse": "Usa Badge para un estado que se lee y no se toca. Si el usuario puede quitarlo o alternarlo, usa Chip; si necesitas el estado de un pedido, un ticket o un reparto, usa los badges de estado del panel, que ya traen el mapa de etiquetas en espanol.",
     "props": [
       {
-        "name": "badgeContent",
+        "name": "variant",
+        "type": "'brand' | 'accent' | 'neutral' | 'success' | 'strong' | 'solid' | 'warning' | 'danger' | 'outline'",
+        "default": "'brand'",
+        "description": "Pareja de fondo y tinta. 'solid' y 'strong' para destacar dentro de una lista, 'danger' y 'warning' para lo que exige atencion, 'outline' cuando el fondo ya esta coloreado."
+      },
+      {
+        "name": "children",
         "type": "ReactNode",
         "default": "",
-        "description": "Contenido de la insignia, tipicamente un numero de notificaciones."
+        "description": "Texto de la etiqueta. Admite un icono de 12 px delante; el gap ya esta puesto."
       },
       {
-        "name": "color",
-        "type": "'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning'",
-        "default": "'default'",
-        "description": "Color semantico de la insignia segun la paleta del tema."
+        "name": "className",
+        "type": "string",
+        "default": "",
+        "description": "Clases extra. No sobrescribas el radio: sale del token rounded-pill que gestiona el editor de tema."
       },
       {
-        "name": "variant",
-        "type": "'standard' | 'dot'",
-        "default": "'standard'",
-        "description": "Tipo de insignia: 'standard' muestra el contenido y 'dot' solo un punto."
-      },
-      {
-        "name": "max",
-        "type": "number",
-        "default": "99",
-        "description": "Valor maximo a mostrar; si badgeContent lo supera se muestra como 'max+'."
-      },
-      {
-        "name": "showZero",
-        "type": "boolean",
-        "default": "false",
-        "description": "Si es true, muestra la insignia aunque badgeContent sea 0."
-      },
-      {
-        "name": "invisible",
-        "type": "boolean",
-        "default": "false",
-        "description": "Oculta la insignia sin desmontar el elemento hijo."
-      },
-      {
-        "name": "anchorOrigin",
-        "type": "{ vertical: 'top' | 'bottom', horizontal: 'left' | 'right' }",
-        "default": "{ vertical: 'top', horizontal: 'right' }",
-        "description": "Posicion de la insignia respecto al elemento hijo."
-      },
-      {
-        "name": "overlap",
-        "type": "'circular' | 'rectangular'",
-        "default": "'rectangular'",
-        "description": "Ajusta el desplazamiento de la insignia segun la forma del hijo; usa 'circular' para avatares."
+        "name": "title",
+        "type": "string",
+        "default": "",
+        "description": "Como cualquier atributo de <span>, se reenvia tal cual al elemento (title, id, data-*, onClick...)."
       }
     ]
   },
   "alert": {
     "id": "alert",
     "name": "Alert",
-    "import": "@mui/material",
+    "import": "@components/ui",
     "builtOn": "Paper (renderizado como <div role=\"alert\">) que agrupa el icono de severidad, el mensaje y el area de accion o cierre",
     "description": "Muestra un mensaje breve y destacado que informa al usuario sobre el estado o resultado de una accion (exito, error, aviso o informacion) sin interrumpir su flujo. Puede acompanarse de un componente AlertTitle, colocado como hijo, para anadir un encabezado al mensaje.",
     "whenToUse": "Usalo para mensajes en linea persistentes dentro del layout; usa Snackbar para notificaciones temporales flotantes y Dialog para bloquear la interaccion hasta que el usuario responda.",
@@ -1245,8 +1191,8 @@ export const COMPONENT_DOCS: Record<string, ComponentDocMeta> = {
   },
   "snackbar": {
     "id": "snackbar",
-    "name": "Snackbar",
-    "import": "@mui/material",
+    "name": "Toast",
+    "import": "@components/mui/MuiToast",
     "builtOn": "ClickAwayListener -> div fijo (position: fixed) -> Grow (transicion) -> SnackbarContent (o el children personalizado)",
     "description": "Muestra una notificacion breve y no intrusiva en un extremo de la pantalla, normalmente para confirmar que una accion se completo. Puede ocultarse automaticamente tras un tiempo o incluir una accion como deshacer.",
     "whenToUse": "Usalo para avisos temporales de baja prioridad que no requieren accion obligatoria; usa Alert para mensajes persistentes en linea y Dialog cuando se necesita una decision del usuario.",
@@ -1558,64 +1504,34 @@ export const COMPONENT_DOCS: Record<string, ComponentDocMeta> = {
   "pagination": {
     "id": "pagination",
     "name": "Pagination",
-    "import": "@mui/material",
-    "builtOn": "<nav> con <ul>/<li> + PaginationItem sobre ButtonBase",
-    "description": "Divide listados o resultados extensos en paginas y ofrece controles numerados para moverse entre ellas. Facilita cargar y mostrar datos por bloques manejables.",
-    "whenToUse": "Usalo cuando el conjunto de datos es grande y conocido; considera scroll infinito o un boton Cargar mas para flujos continuos.",
+    "import": "@components/ui",
+    "builtOn": "<nav aria-label=\"Paginacion\"> con botones de 36 px",
+    "description": "Paginador de ventana: anterior, hasta cinco numeros alrededor de la pagina actual y siguiente. La pagina activa lleva aria-current=\"page\" y los extremos se deshabilitan solos. Si solo hay una pagina no se renderiza nada, asi que se puede montar sin condicion previa.",
+    "whenToUse": "Usalo siempre que el servidor devuelva `meta` con total y totalPages: una lista cortada en silencio es peor que una lista larga. Para flujos de scroll continuo (menu de la tienda) usa carga incremental en su lugar.",
     "props": [
-      {
-        "name": "count",
-        "type": "number",
-        "default": "1",
-        "description": "Numero total de paginas disponibles."
-      },
       {
         "name": "page",
         "type": "number",
         "default": "",
-        "description": "Pagina actualmente seleccionada en modo controlado."
+        "description": "Pagina actual, empezando en 1. Es un componente controlado."
+      },
+      {
+        "name": "totalPages",
+        "type": "number",
+        "default": "",
+        "description": "Numero total de paginas, normalmente Math.ceil(meta.total / pageSize). Con 1 o menos el componente devuelve null."
       },
       {
         "name": "onChange",
-        "type": "(e, page) => void",
+        "type": "(page: number) => void",
         "default": "",
-        "description": "Callback que se dispara al cambiar de pagina; recibe el nuevo numero de pagina."
+        "description": "Recibe la pagina destino. Recuerda volver a 1 cuando cambie un filtro o la busqueda."
       },
       {
-        "name": "variant",
-        "type": "'text' | 'outlined'",
-        "default": "'text'",
-        "description": "Estilo visual de los elementos de paginacion."
-      },
-      {
-        "name": "shape",
-        "type": "'circular' | 'rounded'",
-        "default": "'circular'",
-        "description": "Forma de los botones de pagina."
-      },
-      {
-        "name": "color",
-        "type": "'standard' | 'primary' | 'secondary'",
-        "default": "'standard'",
-        "description": "Color de resaltado del elemento seleccionado."
-      },
-      {
-        "name": "size",
-        "type": "'small' | 'medium' | 'large'",
-        "default": "'medium'",
-        "description": "Tamano de los botones de paginacion."
-      },
-      {
-        "name": "siblingCount",
-        "type": "number",
-        "default": "1",
-        "description": "Cantidad de paginas mostradas a cada lado de la pagina actual antes de colapsar con puntos suspensivos."
-      },
-      {
-        "name": "showFirstButton",
-        "type": "boolean",
-        "default": "false",
-        "description": "Muestra un boton para saltar directamente a la primera pagina (existe showLastButton para la ultima)."
+        "name": "className",
+        "type": "string",
+        "default": "",
+        "description": "Clases extra sobre el <nav> (alineacion, margenes)."
       }
     ]
   },
@@ -1685,8 +1601,8 @@ export const COMPONENT_DOCS: Record<string, ComponentDocMeta> = {
   },
   "dialog": {
     "id": "dialog",
-    "name": "Dialog",
-    "import": "@mui/material",
+    "name": "Modal",
+    "import": "@components/ui",
     "builtOn": "Modal + Paper (con Backdrop y transicion Fade por defecto); se acompana de DialogTitle, DialogContent y DialogActions",
     "description": "Ventana modal centrada que interrumpe el flujo para mostrar informacion critica o pedir una decision al usuario. Bloquea el resto de la interfaz hasta que se confirme o se cierre.",
     "whenToUse": "Usalo para confirmaciones, formularios cortos o alertas que requieren atencion inmediata; para paneles laterales usa Drawer y para mensajes breves no bloqueantes usa Snackbar.",
@@ -1744,7 +1660,7 @@ export const COMPONENT_DOCS: Record<string, ComponentDocMeta> = {
   "drawer": {
     "id": "drawer",
     "name": "Drawer",
-    "import": "@mui/material",
+    "import": "@components/ui",
     "builtOn": "Paper con transicion Slide; la variante temporary anade Modal + Backdrop, mientras que persistent y permanent no usan Modal",
     "description": "Panel deslizante anclado a un borde de la pantalla para navegacion, filtros o menus secundarios. Puede aparecer sobre el contenido o quedar fijo de forma permanente.",
     "whenToUse": "Usalo para navegacion lateral o paneles de filtros persistentes; para decisiones puntuales que interrumpen el flujo usa Dialog.",
@@ -1796,110 +1712,68 @@ export const COMPONENT_DOCS: Record<string, ComponentDocMeta> = {
   "tooltip": {
     "id": "tooltip",
     "name": "Tooltip",
-    "import": "@mui/material",
-    "builtOn": "Popper (posiciona el globo respecto al elemento hijo)",
-    "description": "Etiqueta emergente que muestra un texto breve al pasar el cursor, enfocar o mantener pulsado un elemento. Aporta contexto sin ocupar espacio permanente en la UI.",
-    "whenToUse": "Usalo para aclarar iconos o acciones con una pista corta al pasar el raton; para explicaciones extensas o interactivas usa Popover.",
+    "import": "@components/ui",
+    "builtOn": "<span class=\"group relative\"> + globo con role=\"tooltip\", solo CSS",
+    "description": "Globo de ayuda que aparece al pasar el cursor y tambien al enfocar con el teclado (group-focus-within), sin JavaScript ni portal.",
+    "whenToUse": "Para nombrar un control que solo muestra icono. No sustituye al aria-label: el globo es visual, el nombre accesible va en el boton. Como se posiciona en el flujo, dentro de una tarjeta con overflow-hidden o de otro elemento con la clase `group` usa el Tooltip de @mui/material, que se portala fuera.",
     "props": [
       {
-        "name": "title",
+        "name": "content",
         "type": "ReactNode",
         "default": "",
-        "description": "Contenido que se muestra en el globo. Si esta vacio, el tooltip no se renderiza."
+        "description": "Texto del globo. Se pinta en una sola linea (whitespace-nowrap): si no cabe en una frase corta, no es un tooltip."
       },
       {
         "name": "children",
-        "type": "ReactElement",
+        "type": "ReactNode",
         "default": "",
-        "description": "Unico elemento hijo que dispara el tooltip; debe poder recibir ref y eventos."
+        "description": "Elemento que dispara la ayuda. Debe ser enfocable para que el globo aparezca tambien con teclado."
       },
       {
-        "name": "placement",
-        "type": "'bottom' | 'top' | 'left' | 'right' | 'bottom-start' | 'bottom-end' | 'top-start' | 'top-end' | 'left-start' | 'left-end' | 'right-start' | 'right-end'",
-        "default": "'bottom'",
-        "description": "Posicion del globo respecto al elemento hijo."
+        "name": "side",
+        "type": "'top' | 'bottom' | 'left' | 'right'",
+        "default": "'top'",
+        "description": "Lado por el que sale el globo respecto al disparador."
       },
       {
-        "name": "arrow",
-        "type": "boolean",
-        "default": "false",
-        "description": "Muestra una flecha que apunta al elemento de referencia."
-      },
-      {
-        "name": "enterDelay",
-        "type": "number",
-        "default": "100",
-        "description": "Milisegundos de espera antes de mostrar el tooltip tras posar el cursor."
-      },
-      {
-        "name": "leaveDelay",
-        "type": "number",
-        "default": "0",
-        "description": "Milisegundos de espera antes de ocultar el tooltip tras retirar el cursor."
-      },
-      {
-        "name": "followCursor",
-        "type": "boolean",
-        "default": "false",
-        "description": "Hace que el globo siga la posicion del cursor mientras este permanece sobre el elemento."
-      },
-      {
-        "name": "disableHoverListener",
-        "type": "boolean",
-        "default": "false",
-        "description": "Desactiva la apertura al pasar el raton, util cuando quieres mostrarlo solo por foco o de forma controlada."
+        "name": "className",
+        "type": "string",
+        "default": "",
+        "description": "Clases extra sobre el envoltorio, que es un inline-flex."
       }
     ]
   },
   "card": {
     "id": "card",
     "name": "Card",
-    "import": "@mui/material",
-    "builtOn": "Paper -> <div>",
-    "description": "Contenedor de superficie elevada que agrupa contenido y acciones relacionadas dentro de una tarjeta. Se combina con CardContent para el cuerpo y CardActions para los botones al pie.",
-    "whenToUse": "Usa Card para agrupar la informacion de una entidad con contenido y acciones; usa Paper si solo necesitas una superficie simple sin esa estructura.",
+    "import": "@components/ui",
+    "builtOn": "Paper variant=\"outlined\" -> <div>, con rounded-card y la escala de elevacion e1..e5",
+    "description": "Superficie base del producto: borde, radio del token y relleno ya resueltos. La sombra sale de la escala e1..e5 y no de un valor a ojo, para que dos pantallas hermanas no se vean a distinta profundidad. Al aplicarse como clase (y no por sx) se puede sustituir desde fuera, que es lo que necesitan las tarjetas con estado activo o hover propio.",
+    "whenToUse": "Agrupa contenido relacionado dentro de una pantalla. Para un bloque de formulario con titulo y descripcion usa FormSection, y para un aviso puntual, Alert o Callout. CardHeader, CardTitle y CardDescription montan el encabezado con el ritmo correcto.",
     "props": [
       {
-        "name": "variant",
-        "type": "'elevation' | 'outlined'",
-        "default": "'elevation'",
-        "description": "Define si la tarjeta usa sombra (elevation) o un borde plano sin sombra (outlined)."
+        "name": "shadow",
+        "type": "'none' | 'e1' | 'e2' | 'e3' | 'e4' | 'e5'",
+        "default": "'e2'",
+        "description": "Paso de la escala de elevacion. Si le anades un hover, subelo desde el paso en reposo (e2 -> e3): mezclar la escala con una sombra suelta deja las dos clases en el elemento y gana la que el CSS escriba ultima."
       },
       {
-        "name": "elevation",
-        "type": "number",
-        "default": "1",
-        "description": "Nivel de sombra (0-24) cuando variant es 'elevation'. A mayor valor, mayor profundidad aparente."
-      },
-      {
-        "name": "raised",
-        "type": "boolean",
-        "default": "false",
-        "description": "Muestra la tarjeta con una elevacion mayor de forma permanente, util para destacarla."
-      },
-      {
-        "name": "square",
-        "type": "boolean",
-        "default": "false",
-        "description": "Si es true elimina el redondeado de las esquinas."
-      },
-      {
-        "name": "component",
-        "type": "ElementType",
-        "default": "'div'",
-        "description": "Elemento o componente raiz que se renderiza, para cambiar la semantica del contenedor."
+        "name": "className",
+        "type": "string",
+        "default": "",
+        "description": "Clases extra. Sustituyen a las del componente cuando chocan (tailwind-merge), por ejemplo para cambiar el relleno."
       },
       {
         "name": "children",
         "type": "ReactNode",
         "default": "",
-        "description": "Contenido de la tarjeta, normalmente CardHeader, CardMedia, CardContent y CardActions."
+        "description": "Contenido de la tarjeta."
       },
       {
-        "name": "sx",
-        "type": "SxProps<Theme>",
+        "name": "onClick",
+        "type": "(e) => void",
         "default": "",
-        "description": "Estilos rapidos con acceso al tema (ancho, margenes, colores, etc.)."
+        "description": "Como cualquier atributo de <div>, se reenvia tal cual. Si la tarjeta entera es pulsable, pon dentro un enlace o boton real en vez de depender de este manejador."
       }
     ]
   },

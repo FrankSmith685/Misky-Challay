@@ -1,18 +1,32 @@
-import { cn } from '@lib/cn';
+import { AlertTriangle } from 'lucide-react';
+import { Badge } from '@components/ui/Badge';
+import { StatusBadge, type StatusMap } from '@components/ui/StatusBadge';
 
-/** Un color por estado del reclamo, con el mismo patron de pill que OrderStatusBadge. */
-const STATUS: Record<string, { label: string; className: string }> = {
-  RECEIVED: { label: 'Recibido', className: 'bg-surface-muted text-ink-muted' },
-  IN_PROGRESS: { label: 'En proceso', className: 'bg-amber-50 text-amber-700' },
-  RESOLVED: { label: 'Atendido', className: 'bg-brand-600 text-white' },
+/** Un color por estado del reclamo (Libro de Reclamaciones). */
+export const COMPLAINT_STATUS: StatusMap = {
+  RECEIVED: { label: 'Recibido', variant: 'neutral' },
+  IN_PROGRESS: { label: 'En proceso', variant: 'warning' },
+  RESOLVED: { label: 'Atendido', variant: 'solid' },
 };
 
-export const ComplaintStatusBadge = ({ status }: { status: string }) => {
-  const entry = STATUS[status] ?? { label: status, className: 'bg-surface-muted text-ink-muted' };
+export const ComplaintStatusBadge = ({ status }: { status: string }) => (
+  <StatusBadge status={status} map={COMPLAINT_STATUS} />
+);
 
-  return (
-    <span className={cn('rounded-full px-2.5 py-1 text-xs font-medium', entry.className)}>
-      {entry.label}
-    </span>
-  );
-};
+/**
+ * Un reclamo esta vencido si paso su plazo legal y aun no se responde.
+ *
+ * Vive aqui, junto a la insignia, porque la misma condicion la evalua el servidor
+ * para el contador global y para el filtro "Vencidos": si la tabla, las tarjetas
+ * de movil y el banner la reimplementaran cada una por su cuenta, el numero del
+ * banner y las filas en rojo acabarian discrepando.
+ */
+export const isComplaintOverdue = (row: { status: string; dueAt: string }): boolean =>
+  row.status !== 'RESOLVED' && new Date(row.dueAt).getTime() < Date.now();
+
+/** Marca de plazo vencido. Lleva icono: el rojo solo no basta para quien no lo distingue. */
+export const ComplaintOverdueBadge = ({ className }: { className?: string }) => (
+  <Badge variant="danger" className={className}>
+    <AlertTriangle className="size-3" /> Vencido
+  </Badge>
+);

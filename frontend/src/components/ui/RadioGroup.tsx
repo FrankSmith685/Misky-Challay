@@ -1,4 +1,9 @@
-import { cn } from '@lib/cn';
+import FormControl from '@mui/material/FormControl';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import FormLabel from '@mui/material/FormLabel';
+import Radio from '@mui/material/Radio';
+import MuiRadioGroup from '@mui/material/RadioGroup';
+import Typography from '@mui/material/Typography';
 
 export interface RadioOption {
   value: string;
@@ -12,34 +17,61 @@ interface RadioGroupProps {
   onChange: (value: string) => void;
   options: RadioOption[];
   className?: string;
+  label?: string;
+  row?: boolean;
+  disabled?: boolean;
 }
 
-/** Grupo de opciones excluyentes (elige solo una). */
-export const RadioGroup = ({ name, value, onChange, options, className }: RadioGroupProps) => (
-  <div className={cn('space-y-2', className)} role="radiogroup">
-    {options.map((option) => (
-      <label
-        key={option.value}
-        className="flex cursor-pointer items-start gap-2 text-sm text-ink"
-      >
-        <span className="relative mt-0.5 inline-flex size-4 shrink-0">
-          <input
-            type="radio"
-            name={name}
-            value={option.value}
-            checked={value === option.value}
-            onChange={() => onChange(option.value)}
-            className="peer size-4 appearance-none rounded-full border border-line bg-surface transition-colors checked:border-brand-600 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand-600"
-          />
-          <span className="pointer-events-none absolute left-1/2 top-1/2 size-2 -translate-x-1/2 -translate-y-1/2 scale-0 rounded-full bg-brand-600 transition-transform peer-checked:scale-100" />
-        </span>
-        <span>
-          <span className="font-medium">{option.label}</span>
-          {option.description && (
-            <span className="block text-xs text-ink-muted">{option.description}</span>
-          )}
-        </span>
-      </label>
-    ))}
-  </div>
+/** Grupo excluyente personalizado sobre RadioGroup de MUI. */
+export const RadioGroup = ({
+  name,
+  value,
+  onChange,
+  options,
+  className,
+  label,
+  row = false,
+  disabled = false,
+}: RadioGroupProps) => (
+  <FormControl className={className} component="fieldset" fullWidth disabled={disabled}>
+    {label && <FormLabel component="legend">{label}</FormLabel>}
+    <MuiRadioGroup
+      name={name}
+      value={value}
+      row={row}
+      onChange={(_, nextValue) => onChange(nextValue)}
+      sx={{ gap: row ? 1 : 1.25 }}
+    >
+      {options.map((option) => (
+        <FormControlLabel
+          key={option.value}
+          value={option.value}
+          control={<Radio />}
+          sx={{
+            alignItems: 'flex-start',
+            m: 0,
+            px: 1.25,
+            py: .75,
+            border: '1px solid',
+            borderColor: value === option.value ? 'primary.main' : 'divider',
+            bgcolor: value === option.value ? 'action.hover' : 'background.paper',
+            flex: row ? '1 1 180px' : undefined,
+            '& .MuiRadio-root': { mt: -.5, ml: -.5 },
+          }}
+          label={
+            <>
+              <Typography component="span" variant="body2" sx={{ display: 'block', fontWeight: 700 }}>
+                {option.label}
+              </Typography>
+              {option.description && (
+                <Typography component="span" variant="caption" color="text.secondary" sx={{ display: 'block', mt: .25 }}>
+                  {option.description}
+                </Typography>
+              )}
+            </>
+          }
+        />
+      ))}
+    </MuiRadioGroup>
+  </FormControl>
 );

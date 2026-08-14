@@ -4,6 +4,7 @@ import { router, type Href } from 'expo-router';
 import { useCallback, useMemo, useRef, useState, type ReactElement } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { EmptyState } from '../src/components/EmptyState';
+import { CoverageSummaryCard } from '../src/components/CoverageSummaryCard';
 import { PrimaryButton } from '../src/components/PrimaryButton';
 import { ScreenScaffold } from '../src/components/ScreenScaffold';
 import { Skeleton } from '../src/components/Skeleton';
@@ -43,8 +44,6 @@ const MODES: ModeOption[] = [
     copy: 'Comes con nosotros',
   },
 ];
-
-const money = (value: number): string => `S/ ${value.toFixed(2)}`;
 
 /**
  * Contexto del pedido: modalidad y destino.
@@ -272,30 +271,16 @@ export default function LocationScreen() {
 
           <Text style={styles.coverageCheckingText}>Comprobando cobertura…</Text>
         </View>
-      ) : coverage?.covered ? (
-        <View style={[styles.coverageCard, styles.coverageOk]}>
-          <MaterialCommunityIcons name="truck-check-outline" size={26} color={colors.success} />
-
-          <View style={styles.coverageCopy}>
-            <Text style={styles.coverageTitle}>Sí llegamos</Text>
-
-            <Text style={styles.coverageDetail}>
-              {[
-                coverage.branch?.name,
-                coverage.etaMinutes ? `~${coverage.etaMinutes} min` : null,
-                coverage.zone ? `envío ${money(coverage.zone.deliveryFee)}` : null,
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            </Text>
-
-            {coverage.zone && coverage.zone.minimumOrder > 0 ? (
-              <Text style={styles.coverageNote}>
-                Pedido mínimo {money(coverage.zone.minimumOrder)}
-              </Text>
-            ) : null}
-          </View>
-        </View>
+      ) : coverage ? (
+        <CoverageSummaryCard
+          result={coverage}
+          onSelectPickup={(pickup) => {
+            setMode('PICKUP');
+            setBranchId(pickup.id);
+            setCoverageError('');
+            toast.show({ message: `Recojo seleccionado en ${pickup.name}.`, tone: 'success' });
+          }}
+        />
       ) : coverageError ? (
         <View style={[styles.coverageCard, styles.coverageBad]}>
           <MaterialCommunityIcons name="map-marker-off-outline" size={26} color={colors.danger} />
@@ -304,6 +289,7 @@ export default function LocationScreen() {
             <Text style={styles.coverageTitle}>Fuera de cobertura</Text>
 
             <Text style={styles.coverageDetail}>{coverageError}</Text>
+
           </View>
         </View>
       ) : null}
@@ -703,9 +689,6 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     ...shadow.sm,
   },
-  coverageOk: {
-    backgroundColor: colors.brand50,
-  },
   coverageBad: {
     backgroundColor: '#fff0f0',
   },
@@ -721,11 +704,6 @@ const styles = StyleSheet.create({
     ...type.bodySm,
     color: colors.inkMuted,
     marginTop: 3,
-  },
-  coverageNote: {
-    ...type.caption,
-    color: colors.brand700,
-    marginTop: spacing.xs,
   },
   links: {
     gap: spacing.sm,

@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  FlatList,
   Pressable,
   RefreshControl,
   ScrollView,
+  SectionList,
   StyleSheet,
   Text,
   TextInput,
   View,
-  type ListRenderItemInfo,
+  useWindowDimensions,
+  type SectionListRenderItemInfo,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import {
   CatalogFilters,
@@ -19,10 +20,12 @@ import {
   countCatalogFilters,
   type CatalogFilterState,
 } from '../../src/components/CatalogFilters';
+import { AppImage } from '../../src/components/AppImage';
+import { BrandLogo } from '../../src/components/BrandLogo';
+import { CartAccessory } from '../../src/components/CartAccessory';
 import { Chip } from '../../src/components/Chip';
 import { EmptyState } from '../../src/components/EmptyState';
-import { LocationBar } from '../../src/components/LocationBar';
-import { ProductCard } from '../../src/components/ProductCard';
+import { MenuProductRow } from '../../src/components/MenuProductRow';
 import { ScreenScaffold } from '../../src/components/ScreenScaffold';
 import { Skeleton } from '../../src/components/Skeleton';
 import { useResource } from '../../src/hooks/useResource';
@@ -35,7 +38,7 @@ import { mobileAnalytics } from '../../src/services/analytics';
 import { accountApi } from '../../src/services/api/account.service';
 import { catalogApi } from '../../src/services/api/catalog.service';
 import { customizationApi } from '../../src/services/api/customization.service';
-import { colors, layout, radius, spacing, type } from '../../src/theme/tokens';
+import { colors, layout, radius, shadow, spacing, type } from '../../src/theme/tokens';
 import type {
   Allergen,
   Category,
@@ -53,6 +56,7 @@ const PAGE_SIZE = 8;
 const SEARCH_DEBOUNCE_MS = 350;
 /** El catálogo cambia poco: no vale la pena revalidarlo en cada visita. */
 const CATALOG_CACHE_MS = 10 * 60_000;
+type MenuMode = 'ALL' | 'CUSTOM' | 'READY';
 
 const toLabels = (rows: Array<{ code: string; name: string }>): Record<string, string> => {
   const labels: Record<string, string> = {};
@@ -63,22 +67,37 @@ const toLabels = (rows: Array<{ code: string; name: string }>): Record<string, s
 };
 
 export default function MenuScreen() {
-  const { branch } = usePurchase();
+  const params = useLocalSearchParams<{ mode?: string }>();
+  const { branch, address, serviceMode } = usePurchase();
+  const { width } = useWindowDimensions();
   const { status } = useSession();
   const favorites = useFavorites();
-  const { addItem } = useCart();
+  const { addItem, units } = useCart();
   const toast = useToast();
 
   const branchId = branch?.id ?? null;
+  const locationTitle = serviceMode === 'DELIVERY' ? 'Delivery' : 'Recojo en local';
+  const locationDetail = serviceMode === 'DELIVERY'
+    ? (address?.line1 ?? 'Elige tu dirección')
+    : (branch?.name ?? 'Elige local');
 
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [categoryId, setCategoryId] = useState<number | null>(null);
+  const [menuMode, setMenuMode] = useState<MenuMode>('ALL');
   const [onlyFavorites, setOnlyFavorites] = useState(false);
   const [filters, setFilters] = useState<CatalogFilterState>(EMPTY_CATALOG_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [addingId, setAddingId] = useState<number | null>(null);
+
+  useEffect(() => {
+    const requested = params.mode?.toUpperCase();
+    if (requested !== 'CUSTOM' && requested !== 'READY' && requested !== 'ALL') return;
+    setMenuMode(requested);
+    setCategoryId(null);
+    setOnlyFavorites(false);
+  }, [params.mode]);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search.trim()), SEARCH_DEBOUNCE_MS);
@@ -175,22 +194,57 @@ export default function MenuScreen() {
       }),
   });
 
+  // La configuración personalizable se mantiene visible aunque el perfil
+  // alimentario filtre las recetas listas del backend.
+  const baseCatalog = useResource<Product[]>({
+    key: `catalog:products:base:${branchId ?? 'sin-sede'}`,
+    fetcher: () => catalogApi.products({ branchId }),
+    cacheMs: CATALOG_CACHE_MS,
+  });
+
   // Cambiar de consulta devuelve el scroll al principio de la paginación.
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
-  }, [listKey, onlyFavorites]);
+  }, [listKey, menuMode, onlyFavorites]);
 
   useEffect(() => {
     void mobileAnalytics.track('MENU_VIEW', { branchId: branchId ?? 0 }, branchId);
   }, [branchId]);
 
-  const products = useMemo(() => menu.data ?? [], [menu.data]);
+  const builderProduct = useMemo(
+    () => baseCatalog.data?.find((item) => item.type === 'CUSTOMIZABLE') ?? null,
+    [baseCatalog.data],
+  );
+  const products = useMemo(() => {
+    const rows = [...(menu.data ?? [])];
+    if (!builderProduct || rows.some((item) => item.id === builderProduct.id)) return rows;
+
+    const matchesCategory = categoryId === null || builderProduct.categoryId === categoryId;
+    const term = debouncedSearch.toLocaleLowerCase('es-PE');
+    const matchesSearch =
+      !term ||
+      menuMode === 'CUSTOM' ||
+      `${builderProduct.name} ${builderProduct.description ?? ''}`
+        .toLocaleLowerCase('es-PE')
+        .includes(term);
+    return matchesCategory && matchesSearch ? [builderProduct, ...rows] : rows;
+  }, [builderProduct, categoryId, debouncedSearch, menu.data, menuMode]);
   const favoriteIds = favorites.ids;
 
-  const visibleProducts = useMemo(
-    () => (onlyFavorites ? products.filter((item) => favoriteIds.has(item.id)) : products),
-    [favoriteIds, onlyFavorites, products],
-  );
+  const visibleProducts = useMemo(() => {
+    const byMode = products.filter((item) => {
+      if (menuMode === 'CUSTOM') return item.type === 'CUSTOMIZABLE';
+      if (menuMode === 'READY') return item.type !== 'CUSTOMIZABLE';
+      return true;
+    });
+
+    // El constructor forma parte del catálogo: en "Todo el menú" se presenta
+    // primero, con la misma jerarquía que cualquier otro producto.
+    const ordered = [...byMode].sort(
+      (left, right) => Number(right.type === 'CUSTOMIZABLE') - Number(left.type === 'CUSTOMIZABLE'),
+    );
+    return onlyFavorites ? ordered.filter((item) => favoriteIds.has(item.id)) : ordered;
+  }, [favoriteIds, menuMode, onlyFavorites, products]);
   const page = useMemo(
     () => visibleProducts.slice(0, visibleCount),
     [visibleCount, visibleProducts],
@@ -301,22 +355,19 @@ export default function MenuScreen() {
   );
 
   const renderItem = useCallback(
-    ({ item }: ListRenderItemInfo<Product>) => (
-      <View style={styles.row}>
-        <ProductCard
-          compact
-          product={item}
-          isFavorite={favoriteIds.has(item.id)}
-          busy={addingId === item.id}
-          tagLabels={tagLabels}
-          allergenLabels={allergenLabels}
-          alertAllergens={alertAllergens}
-          onPress={openProduct}
-          onToggleFavorite={toggleFavorite}
-          onQuickAdd={handleQuickAdd}
-          onNotifyAvailability={openAvailabilityAlert}
-        />
-      </View>
+    ({ item }: SectionListRenderItemInfo<Product>) => (
+      <MenuProductRow
+        product={item}
+        isFavorite={favoriteIds.has(item.id)}
+        busy={addingId === item.id}
+        tagLabels={tagLabels}
+        allergenLabels={allergenLabels}
+        alertAllergens={alertAllergens}
+        onPress={openProduct}
+        onToggleFavorite={toggleFavorite}
+        onQuickAdd={handleQuickAdd}
+        onNotifyAvailability={openAvailabilityAlert}
+      />
     ),
     [
       addingId,
@@ -333,7 +384,11 @@ export default function MenuScreen() {
 
   const dietaryCount = countCatalogFilters(filters);
   const hasAnyFilter =
-    dietaryCount > 0 || categoryId !== null || debouncedSearch.length > 0 || onlyFavorites;
+    dietaryCount > 0 ||
+    categoryId !== null ||
+    menuMode !== 'ALL' ||
+    debouncedSearch.length > 0 ||
+    onlyFavorites;
 
   const clearAll = () => {
     // Se suelta también la siembra: «quitar todo» no puede dejar el prefiltro
@@ -341,6 +396,7 @@ export default function MenuScreen() {
     seededRef.current = null;
     setFilters(EMPTY_CATALOG_FILTERS);
     setCategoryId(null);
+    setMenuMode('ALL');
     setOnlyFavorites(false);
     setSearch('');
   };
@@ -409,128 +465,144 @@ export default function MenuScreen() {
 
   const showSkeleton = menu.loading && products.length === 0;
   const failed = menu.error !== null && products.length === 0;
+  const readyProduct = useMemo(
+    () => baseCatalog.data?.find((item) => item.type !== 'CUSTOMIZABLE') ?? null,
+    [baseCatalog.data],
+  );
 
-  const header = (
-    <View>
-      <View style={styles.hero}>
-        <Text style={styles.eyebrow}>MENÚ VERDE BOWL</Text>
-        <Text style={styles.title}>¿Qué te provoca hoy?</Text>
-        <Text style={styles.subtitle}>
-          Busca, compara y revisa la disponibilidad de la cocina que te atiende.
-        </Text>
-        <LocationBar />
+  const chooseBuilder = useCallback(() => {
+    void Haptics.selectionAsync();
+    if (builderProduct) {
+      router.push({ pathname: '/builder/[productId]', params: { productId: String(builderProduct.id) } });
+      return;
+    }
+    setMenuMode('CUSTOM');
+    setCategoryId(null);
+    setOnlyFavorites(false);
+  }, [builderProduct]);
+
+  const chooseReady = useCallback(() => {
+    void Haptics.selectionAsync();
+    setMenuMode('READY');
+    setCategoryId(null);
+    setOnlyFavorites(false);
+  }, []);
+
+  const discoverHeader = (
+    <View style={styles.discover}>
+      <View style={styles.discoverHeading}>
+        <View>
+          <Text style={styles.eyebrow}>ELIGE CÓMO EMPEZAR</Text>
+          <Text style={styles.discoverTitle}>Menú</Text>
+        </View>
+        {!showSkeleton && !failed ? (
+          <Text style={styles.resultText}>{visibleProducts.length} opciones</Text>
+        ) : null}
       </View>
 
-      <View style={styles.toolbar}>
-        <View style={styles.searchRow}>
-          <View style={styles.search}>
-            <MaterialCommunityIcons name="magnify" size={21} color={colors.inkMuted} />
-            <TextInput
-              value={search}
-              onChangeText={setSearch}
-              placeholder="Buscar bowls, proteínas…"
-              placeholderTextColor="#7d8a84"
-              style={styles.searchInput}
-              returnKeyType="search"
-              accessibilityLabel="Buscar en el menú"
-            />
-            {search.length > 0 && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Borrar la búsqueda"
-                hitSlop={layout.iconHitSlop}
-                onPress={() => setSearch('')}
-              >
-                <MaterialCommunityIcons name="close-circle" size={20} color="#8f9a94" />
-              </Pressable>
-            )}
+      <View style={styles.bento}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Arma tu bowl"
+          onPress={chooseBuilder}
+          style={({ pressed }) => [styles.bentoBuilder, shadow.sm, pressed && styles.bentoPressed]}
+        >
+          <View style={styles.bentoCopy}>
+            <Text style={styles.bentoBuilderTitle}>Arma tu bowl</Text>
+            <Text style={styles.bentoBuilderText}>Elige tus bases, proteínas y más</Text>
+            <View style={styles.bentoArrowLight}>
+              <MaterialCommunityIcons name="arrow-right" size={19} color={colors.brand900} />
+            </View>
           </View>
+          <AppImage
+            uri={builderProduct?.imageUrl}
+            style={styles.bentoBuilderImage}
+            fallbackIconSize={42}
+          />
+        </Pressable>
 
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={
-              dietaryCount > 0
-                ? `Filtros dietéticos, ${dietaryCount} activos`
-                : 'Abrir filtros dietéticos'
-            }
-            onPress={() => setFiltersOpen(true)}
-            style={({ pressed }) => [
-              styles.filterButton,
-              dietaryCount > 0 && styles.filterButtonActive,
-              pressed && styles.pressed,
-            ]}
-          >
-            <MaterialCommunityIcons
-              name="tune-variant"
-              size={22}
-              color={dietaryCount > 0 ? colors.surface : colors.brand700}
-            />
-            {dietaryCount > 0 && (
-              <View style={styles.filterBadge}>
-                <Text style={styles.filterBadgeText}>{dietaryCount}</Text>
-              </View>
-            )}
-          </Pressable>
-        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Ver recetas listas"
+          onPress={chooseReady}
+          style={({ pressed }) => [styles.bentoReady, pressed && styles.bentoPressed]}
+        >
+          <Text style={styles.bentoReadyTitle}>Recetas listas</Text>
+          <Text style={styles.bentoReadyText}>Favoritos de la casa</Text>
+          <AppImage
+            uri={readyProduct?.imageUrl}
+            style={styles.bentoReadyImage}
+            fallbackIconSize={32}
+          />
+          <View style={styles.bentoArrowDark}>
+            <MaterialCommunityIcons name="arrow-right" size={18} color={colors.surface} />
+          </View>
+        </Pressable>
+      </View>
+    </View>
+  );
 
+  const categoryHeader = (
+    <View style={styles.categoryHeader}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.categories}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Chip
+          label="Todos"
+          selected={categoryId === null && menuMode === 'ALL' && !onlyFavorites}
+          onPress={() => {
+            setCategoryId(null);
+            setMenuMode('ALL');
+            setOnlyFavorites(false);
+          }}
+        />
+        {status === 'authenticated' ? (
+          <Chip
+            icon={onlyFavorites ? 'heart' : 'heart-outline'}
+            label="Favoritos"
+            badge={favoriteIds.size}
+            tone="danger"
+            selected={onlyFavorites}
+            onPress={() => setOnlyFavorites((value) => !value)}
+          />
+        ) : null}
+        {(categories.data ?? []).map((category) => (
+          <Chip
+            key={category.id}
+            label={category.name}
+            selected={menuMode === 'ALL' && categoryId === category.id && !onlyFavorites}
+            onPress={() => {
+              setMenuMode('ALL');
+              setOnlyFavorites(false);
+              setCategoryId(category.id);
+            }}
+          />
+        ))}
+      </ScrollView>
+
+      {activeChips.length > 0 ? (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chips}
+          contentContainerStyle={styles.activeChips}
           keyboardShouldPersistTaps="handled"
         >
-          <Chip label="Todo" selected={categoryId === null} onPress={() => setCategoryId(null)} />
-
-          {status === 'authenticated' && (
+          {activeChips.map((chip) => (
             <Chip
-              icon={onlyFavorites ? 'heart' : 'heart-outline'}
-              label="Favoritos"
-              badge={favoriteIds.size}
-              tone="danger"
-              selected={onlyFavorites}
-              onPress={() => setOnlyFavorites((value) => !value)}
-            />
-          )}
-
-          {(categories.data ?? []).map((category) => (
-            <Chip
-              key={category.id}
-              label={category.name}
-              selected={categoryId === category.id}
-              onPress={() => setCategoryId(category.id)}
+              key={chip.id}
+              size="sm"
+              icon="close"
+              label={chip.label}
+              tone={chip.danger ? 'danger' : 'brand'}
+              onPress={chip.remove}
             />
           ))}
+          <Chip size="sm" icon="broom" label="Limpiar todo" onPress={clearAll} />
         </ScrollView>
-
-        {activeChips.length > 0 && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.chips}
-            keyboardShouldPersistTaps="handled"
-          >
-            {activeChips.map((chip) => (
-              <Chip
-                key={chip.id}
-                size="sm"
-                icon="close"
-                label={chip.label}
-                tone={chip.danger ? 'danger' : 'brand'}
-                onPress={chip.remove}
-              />
-            ))}
-            <Chip size="sm" icon="broom" label="Limpiar todo" onPress={clearAll} />
-          </ScrollView>
-        )}
-
-        {!showSkeleton && !failed && (
-          <Text style={styles.results}>
-            {visibleProducts.length}{' '}
-            {visibleProducts.length === 1 ? 'opción encontrada' : 'opciones encontradas'}
-            {branch ? ` en ${branch.name}` : ''}
-          </Text>
-        )}
-      </View>
+      ) : null}
     </View>
   );
 
@@ -574,12 +646,86 @@ export default function MenuScreen() {
       background={colors.surface}
       edges={['top', 'left', 'right']}
     >
-      <FlatList
+      <View style={styles.topBar}>
+        <BrandLogo compact={width < 430} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Cambiar local o modalidad"
+          onPress={() => router.push('/location')}
+          style={({ pressed }) => [styles.location, pressed && styles.pressed]}
+        >
+          <MaterialCommunityIcons name="map-marker-outline" size={18} color={colors.brand700} />
+          <View style={styles.locationCopy}>
+            <Text numberOfLines={1} style={styles.locationLabel}>{locationTitle}</Text>
+            <Text numberOfLines={1} style={styles.locationText}>{locationDetail}</Text>
+          </View>
+          <MaterialCommunityIcons name="chevron-down" size={18} color={colors.inkMuted} />
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={units > 0 ? `Abrir carrito, ${units} productos` : 'Abrir carrito vacío'}
+          onPress={() => router.push('/(tabs)/cart')}
+          style={({ pressed }) => [styles.headerAction, pressed && styles.pressed]}
+        >
+          <MaterialCommunityIcons name="shopping-outline" size={23} color={colors.ink} />
+          {units > 0 ? (
+            <View style={styles.cartBadge}><Text style={styles.cartBadgeText}>{units > 99 ? '99+' : units}</Text></View>
+          ) : null}
+        </Pressable>
+      </View>
+
+      <View style={styles.searchToolbar}>
+        <View style={styles.search}>
+          <MaterialCommunityIcons name="magnify" size={21} color={colors.inkMuted} />
+          <TextInput
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Buscar en el menú"
+            placeholderTextColor="#7d8a84"
+            style={styles.searchInput}
+            returnKeyType="search"
+            accessibilityLabel="Buscar en el menú"
+          />
+          {search.length > 0 ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Borrar la búsqueda"
+              hitSlop={layout.iconHitSlop}
+              onPress={() => setSearch('')}
+            >
+              <MaterialCommunityIcons name="close-circle" size={20} color={colors.inkMuted} />
+            </Pressable>
+          ) : null}
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={dietaryCount > 0 ? `Filtros, ${dietaryCount} activos` : 'Abrir filtros'}
+          onPress={() => setFiltersOpen(true)}
+          style={({ pressed }) => [
+            styles.filterButton,
+            dietaryCount > 0 && styles.filterButtonActive,
+            pressed && styles.pressed,
+          ]}
+        >
+          <MaterialCommunityIcons
+            name="tune-variant"
+            size={22}
+            color={dietaryCount > 0 ? colors.surface : colors.brand700}
+          />
+          {dietaryCount > 0 ? (
+            <View style={styles.filterBadge}><Text style={styles.filterBadgeText}>{dietaryCount}</Text></View>
+          ) : null}
+        </Pressable>
+      </View>
+
+      <SectionList
         style={styles.list}
-        data={showSkeleton || failed ? [] : page}
+        sections={[{ title: 'catalog', data: showSkeleton || failed ? [] : page }]}
         renderItem={renderItem}
+        renderSectionHeader={() => categoryHeader}
+        stickySectionHeadersEnabled
         keyExtractor={(item) => String(item.id)}
-        ListHeaderComponent={header}
+        ListHeaderComponent={discoverHeader}
         ListEmptyComponent={empty}
         ListFooterComponent={
           remaining > 0 ? (
@@ -602,7 +748,7 @@ export default function MenuScreen() {
             colors={[colors.brand600]}
           />
         }
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: units > 0 ? 88 : spacing.xl }]}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         showsVerticalScrollIndicator={false}
@@ -610,6 +756,8 @@ export default function MenuScreen() {
         windowSize={7}
         removeClippedSubviews
       />
+
+      <CartAccessory style={styles.cartDock} />
 
       <CatalogFilters
         visible={filtersOpen}
@@ -647,48 +795,86 @@ function MenuSkeleton() {
 const styles = StyleSheet.create({
   list: {
     flex: 1,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: colors.surface,
   },
   content: {
-    paddingBottom: spacing.xl,
+    flexGrow: 1,
   },
-  hero: {
-    backgroundColor: colors.surface,
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
-  },
-  eyebrow: {
-    ...type.label,
-    color: colors.brand600,
-    letterSpacing: 1.2,
-  },
-  title: {
-    ...type.display,
-    color: colors.ink,
-    marginTop: 4,
-  },
-  subtitle: {
-    ...type.bodySm,
-    color: colors.inkMuted,
-    marginTop: 6,
-    marginBottom: spacing.md,
-  },
-  toolbar: {
-    backgroundColor: colors.surface,
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.sm + spacing.xs,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.line,
-  },
-  searchRow: {
+  topBar: {
+    minHeight: 58,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm + spacing.xs,
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.lineSoft,
+    zIndex: 3,
+  },
+  location: {
+    minWidth: 0,
+    minHeight: layout.minTouch,
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: 3,
+  },
+  locationCopy: {
+    minWidth: 0,
+    flex: 1,
+  },
+  locationLabel: {
+    ...type.caption,
+    color: colors.brand700,
+    fontSize: 10,
+    lineHeight: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  locationText: {
+    ...type.bodySm,
+    minWidth: 0,
+    color: colors.ink,
+    fontWeight: '800',
+  },
+  headerAction: {
+    width: layout.minTouch,
+    height: layout.minTouch,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
+  },
+  cartBadge: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent500,
+    paddingHorizontal: 4,
+  },
+  cartBadgeText: {
+    ...type.caption,
+    color: colors.surface,
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  searchToolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    zIndex: 2,
   },
   search: {
     flex: 1,
-    height: 52,
+    height: 50,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm + 2,
@@ -704,8 +890,8 @@ const styles = StyleSheet.create({
     color: colors.ink,
   },
   filterButton: {
-    width: 52,
-    height: 52,
+    width: 50,
+    height: 50,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: radius.md,
@@ -732,19 +918,140 @@ const styles = StyleSheet.create({
     color: colors.surface,
     textAlign: 'center',
   },
-  chips: {
-    gap: spacing.sm,
-    paddingTop: spacing.sm + spacing.xs,
-    paddingBottom: spacing.xs,
+  discover: {
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
   },
-  results: {
+  discoverHeading: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    marginBottom: spacing.sm + 2,
+  },
+  eyebrow: {
+    ...type.caption,
+    color: colors.brand600,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  discoverTitle: {
+    ...type.title,
+    color: colors.ink,
+    marginTop: 2,
+  },
+  resultText: {
     ...type.caption,
     color: colors.inkMuted,
-    marginTop: spacing.sm,
+    paddingBottom: 3,
   },
-  row: {
+  bento: {
+    minHeight: 184,
+    flexDirection: 'row',
+    gap: spacing.sm + 2,
+  },
+  bentoBuilder: {
+    minWidth: 0,
+    flex: 1.3,
+    overflow: 'hidden',
+    borderRadius: radius.lg,
+    backgroundColor: colors.brand900,
+  },
+  bentoCopy: {
+    width: '64%',
+    zIndex: 2,
+    padding: spacing.md,
+  },
+  bentoBuilderTitle: {
+    ...type.heading,
+    color: colors.onDark,
+  },
+  bentoBuilderText: {
+    ...type.caption,
+    color: colors.onDarkMuted,
+    marginTop: spacing.xs,
+  },
+  bentoArrowLight: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    marginTop: spacing.md,
+  },
+  bentoBuilderImage: {
+    position: 'absolute',
+    right: -30,
+    bottom: -20,
+    width: 150,
+    height: 150,
+    borderRadius: radius.pill,
+  },
+  bentoReady: {
+    minWidth: 0,
+    flex: 0.95,
+    overflow: 'hidden',
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.lineSoft,
+    backgroundColor: '#f4f1e9',
+    padding: spacing.md,
+  },
+  bentoReadyTitle: {
+    ...type.heading,
+    color: colors.ink,
+    zIndex: 2,
+  },
+  bentoReadyText: {
+    ...type.caption,
+    width: '72%',
+    color: colors.inkMuted,
+    marginTop: spacing.xs,
+    zIndex: 2,
+  },
+  bentoReadyImage: {
+    position: 'absolute',
+    right: -34,
+    bottom: -30,
+    width: 124,
+    height: 124,
+    borderRadius: radius.pill,
+  },
+  bentoArrowDark: {
+    position: 'absolute',
+    left: spacing.md,
+    bottom: spacing.md,
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    backgroundColor: colors.brand700,
+  },
+  bentoPressed: {
+    opacity: 0.88,
+    transform: [{ scale: 0.99 }],
+  },
+  categoryHeader: {
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.lineSoft,
+    paddingBottom: spacing.xs,
+  },
+  categories: {
+    gap: spacing.sm,
     paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm + spacing.xs,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xs,
+  },
+  activeChips: {
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.xs,
   },
   footerHint: {
     alignItems: 'center',
@@ -755,18 +1062,17 @@ const styles = StyleSheet.create({
     color: colors.inkMuted,
   },
   skeleton: {
-    paddingHorizontal: spacing.md,
     paddingTop: spacing.sm + spacing.xs,
-    gap: spacing.sm + spacing.xs,
   },
   skeletonRow: {
+    minHeight: 132,
     flexDirection: 'row',
     gap: spacing.sm + spacing.xs,
     backgroundColor: colors.surfaceRaised,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.lineSoft,
-    overflow: 'hidden',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.lineSoft,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   skeletonBody: {
     flex: 1,
@@ -781,5 +1087,11 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.85,
+  },
+  cartDock: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
 });

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Keyboard,
-  Platform,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -13,7 +12,6 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppImage } from '../../src/components/AppImage';
 import { BottomSheet } from '../../src/components/BottomSheet';
 import { EmptyState } from '../../src/components/EmptyState';
@@ -43,7 +41,6 @@ const formatDate = (value: string | null): string =>
   value ? `Entregado el ${new Date(value).toLocaleDateString('es-PE')}` : 'Pedido entregado';
 
 export default function ReviewsScreen() {
-  const insets = useSafeAreaInsets();
   const { status } = useSession();
   const toast = useToast();
 
@@ -56,27 +53,6 @@ export default function ReviewsScreen() {
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState('');
   const [saving, setSaving] = useState(false);
-
-  /**
-   * En iOS un Modal no se redimensiona con el teclado: sin esto el comentario y
-   * los botones quedaban debajo del teclado y la hoja era un callejón sin salida.
-   * En Android la ventana ya se redimensiona sola, así que no hay que empujar nada.
-   */
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-
-  useEffect(() => {
-    if (Platform.OS !== 'ios') return;
-
-    const show = Keyboard.addListener('keyboardWillShow', (event) => {
-      setKeyboardHeight(event.endCoordinates.height);
-    });
-    const hide = Keyboard.addListener('keyboardWillHide', () => setKeyboardHeight(0));
-
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
 
   useEffect(() => {
     if (status === 'anonymous') {
@@ -226,8 +202,18 @@ export default function ReviewsScreen() {
         title={selected?.productName ?? 'Tu opinión'}
         subtitle="Compra verificada"
         dismissible={!saving}
+        footer={
+          <View style={styles.sheetFooter}>
+            <PrimaryButton
+              label="Publicar opinión"
+              loading={saving}
+              onPress={() => void submit()}
+            />
+            <PrimaryButton label="Ahora no" variant="ghost" disabled={saving} onPress={close} />
+          </View>
+        }
       >
-        <View style={{ paddingBottom: Math.max(0, keyboardHeight - insets.bottom) }}>
+        <View>
           <Text style={styles.question}>¿Cuántas estrellas le das?</Text>
 
           <View style={styles.stars}>
@@ -262,39 +248,22 @@ export default function ReviewsScreen() {
           />
 
           <View style={styles.commentBar}>
-            {keyboardHeight > 0 ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Cerrar el teclado"
-                hitSlop={layout.iconHitSlop}
-                onPress={() => Keyboard.dismiss()}
-                style={({ pressed }) => [styles.done, pressed && styles.pressed]}
-              >
-                <MaterialCommunityIcons
-                  name="keyboard-close"
-                  size={17}
-                  color={colors.brand700}
-                />
-
-                <Text style={styles.doneText}>Listo</Text>
-              </Pressable>
-            ) : (
-              <View />
-            )}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Cerrar el teclado"
+              hitSlop={layout.iconHitSlop}
+              onPress={() => Keyboard.dismiss()}
+              style={({ pressed }) => [styles.done, pressed && styles.pressed]}
+            >
+              <MaterialCommunityIcons name="keyboard-close" size={17} color={colors.brand700} />
+              <Text style={styles.doneText}>Listo</Text>
+            </Pressable>
 
             <Text style={styles.counter}>
               {comment.length}/{MAX_COMMENT}
             </Text>
           </View>
 
-          <PrimaryButton
-            label="Publicar opinión"
-            loading={saving}
-            onPress={() => void submit()}
-            style={styles.submit}
-          />
-
-          <PrimaryButton label="Ahora no" variant="ghost" disabled={saving} onPress={close} />
         </View>
       </BottomSheet>
     </ScreenScaffold>
@@ -302,6 +271,7 @@ export default function ReviewsScreen() {
 }
 
 const styles = StyleSheet.create({
+  sheetFooter: { gap: spacing.xs },
   skeleton: {
     paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,

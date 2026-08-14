@@ -49,6 +49,8 @@ export class KitchenTicket extends Model<
   declare startedAt: CreationOptional<Date | null>;
   declare readyAt: CreationOptional<Date | null>;
   declare dispatchedAt: CreationOptional<Date | null>;
+  /** Primera alerta de que nadie acepto la comanda dentro del SLA. */
+  declare escalatedAt: CreationOptional<Date | null>;
   /** Minutos reales entre aceptado y listo: alimenta los reportes de tiempos. */
   declare prepMinutesActual: CreationOptional<number | null>;
   declare notes: CreationOptional<string | null>;
@@ -74,6 +76,7 @@ KitchenTicket.init(
     startedAt: { type: DataTypes.DATE, allowNull: true },
     readyAt: { type: DataTypes.DATE, allowNull: true },
     dispatchedAt: { type: DataTypes.DATE, allowNull: true },
+    escalatedAt: { type: DataTypes.DATE, allowNull: true },
     prepMinutesActual: { type: DataTypes.INTEGER, allowNull: true },
     notes: { type: DataTypes.STRING(255), allowNull: true },
     createdAt: DataTypes.DATE,

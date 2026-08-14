@@ -27,7 +27,7 @@ export const Tooltip = ({
     <span
       role="tooltip"
       className={cn(
-        'pointer-events-none absolute z-50 hidden whitespace-nowrap rounded-lg bg-ink px-2 py-1 text-xs font-medium text-white shadow-md',
+        'pointer-events-none absolute z-50 hidden whitespace-nowrap rounded-lg bg-ink px-2 py-1 text-xs font-medium text-white shadow-e4',
         'group-hover:block group-focus-within:block',
         POSITION[side],
       )}

@@ -41,6 +41,9 @@ export class UserPlan extends Model<InferAttributes<UserPlan>, InferCreationAttr
   declare expiresAt: CreationOptional<Date | null>;
   declare activatedAt: CreationOptional<Date | null>;
   declare expiredAt: CreationOptional<Date | null>;
+  /** Evidencia de aceptación de las reglas específicas de saldo de esta compra. */
+  declare termsAcceptedAt: CreationOptional<Date | null>;
+  declare termsVersion: CreationOptional<string | null>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
 
@@ -73,6 +76,8 @@ UserPlan.init(
     expiresAt: { type: DataTypes.DATE, allowNull: true },
     activatedAt: { type: DataTypes.DATE, allowNull: true },
     expiredAt: { type: DataTypes.DATE, allowNull: true },
+    termsAcceptedAt: { type: DataTypes.DATE, allowNull: true },
+    termsVersion: { type: DataTypes.STRING(20), allowNull: true },
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,
   },

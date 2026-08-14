@@ -1,22 +1,17 @@
-import { cn } from '@lib/cn';
+import { StatusBadge, type StatusMap } from '@components/ui/StatusBadge';
 
-const STATUS: Record<string, { label: string; className: string }> = {
-  PENDING_PAYMENT: { label: 'Esperando pago', className: 'bg-accent-400/15 text-accent-500' },
-  CONFIRMED: { label: 'Confirmado', className: 'bg-brand-50 text-brand-700' },
-  PREPARING: { label: 'En preparacion', className: 'bg-brand-100 text-brand-800' },
-  READY: { label: 'Listo', className: 'bg-brand-100 text-brand-800' },
-  OUT_FOR_DELIVERY: { label: 'En camino', className: 'bg-brand-200 text-brand-900' },
-  DELIVERED: { label: 'Entregado', className: 'bg-brand-600 text-white' },
-  CANCELLED: { label: 'Cancelado', className: 'bg-red-50 text-red-700' },
-  REFUNDED: { label: 'Reembolsado', className: 'bg-surface-muted text-ink-muted' },
+/** Estados de un pedido, del más temprano al entregado (la progresión de color lo refleja). */
+export const ORDER_STATUS: StatusMap = {
+  PENDING_PAYMENT: { label: 'Esperando pago', variant: 'accent' },
+  CONFIRMED: { label: 'Confirmado', variant: 'brand' },
+  PREPARING: { label: 'En preparación', variant: 'success' },
+  READY: { label: 'Listo', variant: 'success' },
+  OUT_FOR_DELIVERY: { label: 'En camino', variant: 'strong' },
+  DELIVERED: { label: 'Entregado', variant: 'solid' },
+  CANCELLED: { label: 'Cancelado', variant: 'danger' },
+  REFUNDED: { label: 'Reembolsado', variant: 'neutral' },
 };
 
-export const OrderStatusBadge = ({ status }: { status: string }) => {
-  const entry = STATUS[status] ?? { label: status, className: 'bg-surface-muted text-ink-muted' };
-
-  return (
-    <span className={cn('rounded-full px-2.5 py-1 text-xs font-medium', entry.className)}>
-      {entry.label}
-    </span>
-  );
-};
+export const OrderStatusBadge = ({ status }: { status: string }) => (
+  <StatusBadge status={status} map={ORDER_STATUS} />
+);

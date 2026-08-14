@@ -43,7 +43,7 @@ export const Dropdown = ({ trigger, items, align = 'left', className }: Dropdown
         onClick={() => setOpen((value) => !value)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-2 text-sm text-ink hover:border-brand-300"
+        className="inline-flex items-center gap-1.5 rounded-field border border-line px-3 py-2 text-sm text-ink hover:border-brand-300"
       >
         {trigger}
       </button>
@@ -52,7 +52,7 @@ export const Dropdown = ({ trigger, items, align = 'left', className }: Dropdown
         <div
           role="menu"
           className={cn(
-            'absolute z-50 mt-2 min-w-44 overflow-hidden rounded-xl border border-line bg-surface p-1 shadow-xl',
+            'absolute z-50 mt-2 min-w-44 overflow-hidden rounded-xl border border-line bg-surface p-1 shadow-e4',
             align === 'right' ? 'right-0' : 'left-0',
           )}
         >

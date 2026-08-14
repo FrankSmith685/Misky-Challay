@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { validate } from '@middlewares/validate.middleware';
-import { optionalAuth } from '@middlewares/auth.middleware';
+import { authenticate, optionalAuth } from '@middlewares/auth.middleware';
 import { couponLimiter, quoteLimiter } from '@middlewares/rateLimit.middleware';
 import { checkoutController } from './checkout.controller';
 import { placeSchema, quoteSchema } from './checkout.validation';
@@ -9,8 +9,13 @@ import { placeSchema, quoteSchema } from './checkout.validation';
  * Modulo CHECKOUT (M08).
  * Prefijo: /api/v1/checkout
  *
- * optionalAuth: se puede comprar como invitado; si hay sesion, el pedido queda
- * asociado al cliente y aparece en "Mis pedidos".
+ * Cotizar es abierto: el visitante ve precio, delivery y tiempo antes de decidir
+ * si se registra, y con sesion ademas se le aplican cupones y saldo.
+ *
+ * Confirmar EXIGE sesion. Un pedido sin cliente no tiene a quien notificar el
+ * estado, ni donde aparecer en "Mis pedidos", ni contra quien validar el limite
+ * de usos de un cupon o el saldo de la billetera. Es tambien lo que permite
+ * reclamar despues: el Libro de Reclamaciones necesita saber de quien es el pedido.
  */
 const router = Router();
 
@@ -22,6 +27,6 @@ router.post(
   validate(quoteSchema),
   checkoutController.quote,
 );
-router.post('/place', couponLimiter, optionalAuth, validate(placeSchema), checkoutController.place);
+router.post('/place', couponLimiter, authenticate, validate(placeSchema), checkoutController.place);
 
 export default router;

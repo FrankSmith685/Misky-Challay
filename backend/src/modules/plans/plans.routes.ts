@@ -24,6 +24,11 @@ router.post(
       body: z.object({
         planCode: z.string().min(2).max(40),
         idempotencyKey: z.string().min(8).max(80),
+        termsAccepted: z.literal(true, {
+          errorMap: () => ({ message: 'Debes aceptar las condiciones del plan' }),
+        }),
+        termsVersion: z.string().min(8).max(20),
+        client: z.enum(['WEB', 'MOBILE']).default('WEB'),
       }),
     }),
   ),

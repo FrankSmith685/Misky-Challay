@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { isValidDni, isValidRuc } from '@shared/utils/peruDocs';
+import { coordinatePairIssue, hasCoordinatePair } from '@shared/utils/coordinates';
 
 const itemSchema = z.object({
   productId: z.coerce.number().int().positive(),
@@ -24,7 +25,10 @@ const addressSchema = z.object({
   districtId: z.coerce.number().int().positive().optional(),
   latitude: z.coerce.number().min(-90).max(90).optional(),
   longitude: z.coerce.number().min(-180).max(180).optional(),
-});
+}).refine(
+  hasCoordinatePair,
+  coordinatePairIssue,
+);
 
 /**
  * Datos del comprobante (SUNAT). BOLETA no exige nada (se emite al consumidor con lo
@@ -62,8 +66,14 @@ const checkoutBody = z
     couponCode: z.string().max(40).optional(),
     /** El cliente decide si gasta el saldo de su plan en este pedido. */
     useWallet: z.boolean().optional(),
-    /** ONLINE = tarjeta/pasarela; CASH = pago contra entrega (efectivo al recibir). */
-    paymentMethod: z.enum(['ONLINE', 'CASH']).default('ONLINE'),
+    /** ONLINE = tarjeta; CASH = contra entrega; YAPE/PLIN esperan validacion de Caja. */
+    paymentMethod: z.enum(['ONLINE', 'CASH', 'YAPE', 'PLIN']).default('ONLINE'),
+    mobilePayment: z.object({
+      operationCode: z.string().trim().regex(/^[A-Za-z0-9-]{6,24}$/, 'Codigo de operacion invalido'),
+      payerPhone: z.string().trim().regex(/^\d{9}$/, 'Ingresa los 9 digitos del celular').optional(),
+    }).optional(),
+    /** Canal controlado: decide el retorno del proveedor sin aceptar URLs externas. */
+    client: z.enum(['WEB', 'MOBILE']).default('WEB'),
     /** Comprobante: boleta (por defecto) o factura con RUC. */
     billing: billingSchema.optional(),
     contactName: z.string().max(120).optional(),
@@ -89,7 +99,15 @@ export const placeSchema = z.object({
       /** RN-015: el frontend genera esta clave UNA vez por intento de compra. */
       idempotencyKey: z.string().min(8).max(80),
     }),
-  ),
+  ).superRefine((value, context) => {
+    if ((value.paymentMethod === 'YAPE' || value.paymentMethod === 'PLIN') && !value.mobilePayment) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['mobilePayment', 'operationCode'],
+        message: 'Ingresa el codigo de operacion despues de pagar',
+      });
+    }
+  }),
 });
 
 export type CheckoutBody = z.infer<typeof checkoutBody>;

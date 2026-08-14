@@ -5,9 +5,9 @@ import { getDoc, type PropDoc } from './componentDocs';
 
 /** Cabecera de una seccion de la documentacion. */
 export const SectionHeader: FC<{ title: string; description: string }> = ({ title, description }) => (
-  <div className="mb-6 border-b border-line pb-4">
+  <div className="mb-8 border-b border-line pb-5">
     <h2 className="text-2xl font-bold text-ink">{title}</h2>
-    <p className="mt-1 text-ink-muted">{description}</p>
+    <p className="mt-2 max-w-3xl leading-relaxed text-ink-muted">{description}</p>
   </div>
 );
 
@@ -22,7 +22,7 @@ export const Label: FC<{ children: ReactNode }> = ({ children }) => (
 const PropsTable: FC<{ props: PropDoc[] }> = ({ props }) => (
   <div>
     <Label>Props principales</Label>
-    <div className="overflow-x-auto rounded-xl border border-line">
+    <div className="overflow-x-auto rounded-card border border-line">
       <table className="w-full min-w-[520px] border-collapse text-left text-sm">
         <thead>
           <tr className="bg-surface-muted text-xs uppercase tracking-wide text-ink-muted">
@@ -94,10 +94,10 @@ export const ComponentDoc: FC<ComponentDocProps> = ({
     <article
       id={docId ? `component-${docId}` : undefined}
       data-component-id={docId}
-      className="scroll-mt-6 overflow-hidden rounded-card border border-line bg-surface"
+      className="scroll-mt-6 overflow-hidden rounded-card border border-line bg-surface shadow-e2"
     >
       {/* Cabecera */}
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-5 py-4">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-line bg-surface-muted/35 px-5 py-5 sm:px-6">
         <div className="min-w-0">
           <div className="flex flex-wrap items-baseline gap-2">
             <h3 className="text-base font-semibold text-ink">{title}</h3>
@@ -110,13 +110,13 @@ export const ComponentDoc: FC<ComponentDocProps> = ({
           {desc && <p className="mt-1 text-sm text-ink-muted">{desc}</p>}
         </div>
         {meta?.builtOn && (
-          <span className="shrink-0 rounded-full border border-line bg-surface-muted px-2.5 py-1 text-[11px] text-ink-muted">
+          <span className="shrink-0 rounded-pill border border-line bg-surface-muted px-2.5 py-1 text-[11px] text-ink-muted">
             construido sobre <span className="font-medium text-ink">{meta.builtOn}</span>
           </span>
         )}
       </div>
 
-      <div className="space-y-4 p-5">
+      <div className="grid gap-6 p-5 sm:p-6">
         {meta?.whenToUse && (
           <p className="text-sm text-ink-muted">
             <span className="font-medium text-ink">Cuando usarlo:</span> {meta.whenToUse}
@@ -128,7 +128,7 @@ export const ComponentDoc: FC<ComponentDocProps> = ({
           <Label>Vista previa</Label>
           <div
             className={cn(
-              'flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface-muted p-5',
+              'flex flex-wrap items-center gap-4 rounded-card border border-line bg-surface-muted/70 p-5 sm:p-6',
               canvasClassName,
             )}
           >

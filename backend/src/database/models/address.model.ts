@@ -15,6 +15,10 @@ export class Address extends Model<InferAttributes<Address>, InferCreationAttrib
   declare line1: string;
   declare reference: CreationOptional<string | null>;
   declare districtId: CreationOptional<number | null>;
+  declare ubigeoCode: CreationOptional<string | null>;
+  declare departmentName: CreationOptional<string | null>;
+  declare provinceName: CreationOptional<string | null>;
+  declare districtName: CreationOptional<string | null>;
   declare latitude: CreationOptional<number | null>;
   declare longitude: CreationOptional<number | null>;
   declare isDefault: CreationOptional<boolean>;
@@ -31,6 +35,10 @@ Address.init(
     line1: { type: DataTypes.STRING(200), allowNull: false },
     reference: { type: DataTypes.STRING(200), allowNull: true },
     districtId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true },
+    ubigeoCode: { type: DataTypes.STRING(6), allowNull: true },
+    departmentName: { type: DataTypes.STRING(100), allowNull: true },
+    provinceName: { type: DataTypes.STRING(100), allowNull: true },
+    districtName: { type: DataTypes.STRING(100), allowNull: true },
     latitude: { type: DataTypes.DECIMAL(10, 7), allowNull: true },
     longitude: { type: DataTypes.DECIMAL(10, 7), allowNull: true },
     isDefault: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
@@ -43,7 +51,7 @@ Address.init(
     modelName: 'Address',
     tableName: 'addresses',
     paranoid: true,
-    indexes: [{ fields: ['user_id'] }],
+    indexes: [{ fields: ['user_id'] }, { fields: ['ubigeo_code'] }],
   },
 );
 

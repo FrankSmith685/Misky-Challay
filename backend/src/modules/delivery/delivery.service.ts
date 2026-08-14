@@ -17,11 +17,48 @@ import { DELIVERY_TYPE, ORDER_STATUS } from '@config/constants';
 import { ApiError } from '@shared/errors/ApiError';
 import type { BranchScopeCheck } from '@shared/utils/scope';
 import { ordersService } from '@modules/orders/orders.service';
+import { operationsService } from '@modules/operations/operations.service';
 
 /** El estado del reparto arrastra al del pedido. */
 const ORDER_STATUS_FOR_DELIVERY: Partial<Record<DeliveryStatus, string>> = {
   ON_ROUTE: ORDER_STATUS.OUT_FOR_DELIVERY,
   DELIVERED: ORDER_STATUS.DELIVERED,
+};
+
+/** Estados en los que todavia tiene sentido cambiar de repartidor. */
+const REASSIGNABLE: DeliveryStatus[] = [
+  DELIVERY_STATUS.ASSIGNED,
+  DELIVERY_STATUS.PICKED_UP,
+  DELIVERY_STATUS.ON_ROUTE,
+];
+
+/** Un reparto cuenta como carga del repartidor mientras no se cierre. */
+const OPEN_FOR_DRIVER: DeliveryStatus[] = [
+  DELIVERY_STATUS.ASSIGNED,
+  DELIVERY_STATUS.PICKED_UP,
+  DELIVERY_STATUS.ON_ROUTE,
+];
+
+/**
+ * Devuelve al repartidor a AVAILABLE, pero solo si no le queda ningun otro reparto
+ * abierto: liberarlo a ciegas lo marcaba libre teniendo todavia dos entregas encima.
+ * OFFLINE no se pisa nunca, porque eso lo decide el repartidor al cerrar turno.
+ *
+ * Quien llama tiene que haber guardado antes el reparto que acaba de cerrar o
+ * reasignar: el recuento lee la tabla y ese ya no debe contarse.
+ */
+const releaseDriver = async (driverId: number, transaction: Transaction): Promise<void> => {
+  const driver = await Driver.findByPk(driverId, { transaction });
+  if (!driver || driver.status === DRIVER_STATUS.OFFLINE) return;
+
+  const stillOpen = await Delivery.count({
+    where: { driverId, status: { [Op.in]: OPEN_FOR_DRIVER } },
+    transaction,
+  });
+  if (stillOpen > 0) return;
+
+  driver.status = DRIVER_STATUS.AVAILABLE;
+  await driver.save({ transaction });
 };
 
 export const deliveryService = {
@@ -51,8 +88,16 @@ export const deliveryService = {
     return delivery;
   },
 
-  /** Repartos pendientes o en curso de una sucursal (vista del despachador). */
-  async board(branchId: number) {
+  /**
+   * Repartos pendientes o en curso de una sucursal (vista del despachador).
+   *
+   * `onlyDriverIds` acota el tablero al repartidor de calle. Sin ese filtro, el
+   * tablero entregaba a cualquiera con `delivery.read` el nombre, el telefono, la
+   * direccion exacta y el importe de TODOS los clientes de la sucursal, y ademas
+   * permitia cerrar el reparto del companero. Un array vacio (cuenta de repartidor
+   * sin fila en `drivers`) no devuelve nada, que es justo lo correcto.
+   */
+  async board(branchId: number, options: { onlyDriverIds?: number[] } = {}) {
     const deliveries = await Delivery.findAll({
       where: {
         branchId,
@@ -64,12 +109,25 @@ export const deliveryService = {
             DELIVERY_STATUS.ON_ROUTE,
           ],
         },
+        ...(options.onlyDriverIds ? { driverId: { [Op.in]: options.onlyDriverIds } } : {}),
       },
       include: [
         {
           model: Order,
           as: 'order',
-          attributes: ['id', 'orderNumber', 'status', 'contactName', 'contactPhone', 'addressSnapshotJson', 'grandTotal'],
+          // `notes` es donde el cliente escribe "timbre malogrado, tocar la puerta":
+          // sin ella el repartidor toca un timbre que no suena. La REFERENCIA, que
+          // en Peru es lo que hace entregable el pedido, ya viaja dentro del snapshot.
+          attributes: [
+            'id',
+            'orderNumber',
+            'status',
+            'contactName',
+            'contactPhone',
+            'notes',
+            'addressSnapshotJson',
+            'grandTotal',
+          ],
         },
         { model: Driver, as: 'driver', attributes: ['id', 'fullName', 'phone', 'vehicle'] },
       ],
@@ -86,12 +144,38 @@ export const deliveryService = {
     });
   },
 
-  /** Asigna un repartidor propio. El pedido debe estar listo o en preparacion. */
+  /**
+   * Filas de `drivers` vinculadas a una cuenta (una por sucursal como mucho).
+   *
+   * `drivers.userId` es el UNICO vinculo entre la persona que inicia sesion y la
+   * fila de la flota: sin el no se le puede asignar un reparto ni se puede saber
+   * cuales son suyos. Lo puebla `accessService` al conceder el rol de repartidor;
+   * mientras una cuenta no lo tenga, el tablero le sale vacio en vez de mostrarle
+   * los repartos de los demas.
+   */
+  async driverIdsForUser(userId: number, branchId?: number): Promise<number[]> {
+    const rows = await Driver.findAll({
+      where: { userId, isActive: true, ...(branchId ? { branchId } : {}) },
+      attributes: ['id'],
+    });
+    return rows.map((row) => row.id);
+  },
+
+  /**
+   * Asigna —o REASIGNA— un repartidor propio.
+   *
+   * La reasignacion no puede pasar por `changeStatus`: `DELIVERY_FLOW.ASSIGNED` no
+   * admite ASSIGNED, asi que cambiar de repartidor devolvia 422 y con la moto
+   * pinchada el pedido se quedaba clavado en ese repartidor el resto del turno.
+   * Aqui el estado NO se toca (sigue asignado, recogido o en ruta): lo que cambia
+   * es quien lo lleva, y eso se registra como evento propio con su motivo.
+   */
   async assignDriver(
     deliveryId: number,
     driverId: number,
     actorId: number,
     scope?: BranchScopeCheck,
+    reason?: string,
   ) {
     const delivery = await Delivery.findByPk(deliveryId);
     if (!delivery) throw ApiError.notFound('Reparto no encontrado');
@@ -105,14 +189,57 @@ export const deliveryService = {
       throw ApiError.unprocessable('Ese repartidor no esta disponible');
     }
 
+    // Idempotente: reenviar la misma asignacion no genera evento ni toca a nadie.
+    if (delivery.driverId === driverId && delivery.status !== DELIVERY_STATUS.PENDING) {
+      return delivery;
+    }
+
+    const isReassignment = delivery.status !== DELIVERY_STATUS.PENDING;
+    if (isReassignment && !REASSIGNABLE.includes(delivery.status)) {
+      throw ApiError.unprocessable('Ese reparto ya esta cerrado: no se puede cambiar de repartidor');
+    }
+
     return sequelize.transaction(async (transaction) => {
-      await deliveryService.changeStatus(delivery, DELIVERY_STATUS.ASSIGNED, actorId, transaction, {
-        driverId,
-        comment: `Asignado a ${driver.fullName}`,
-      });
+      const previousDriverId = delivery.driverId;
+
+      if (isReassignment) {
+        delivery.driverId = driverId;
+        // Pasar a flota propia: si venia de un proveedor externo, ya no lo lleva el.
+        delivery.carrier = DELIVERY_CARRIER.OWN;
+        delivery.assignedAt = new Date(); // el reloj de la entrega arranca de nuevo
+        await delivery.save({ transaction });
+
+        await DeliveryEvent.create(
+          {
+            deliveryId: delivery.id,
+            fromStatus: delivery.status,
+            toStatus: delivery.status,
+            actorId,
+            comment: `Reasignado a ${driver.fullName}${reason ? `: ${reason}` : ''}`.slice(0, 255),
+          },
+          { transaction },
+        );
+      } else {
+        await deliveryService.changeStatus(
+          delivery,
+          DELIVERY_STATUS.ASSIGNED,
+          actorId,
+          transaction,
+          {
+            driverId,
+            comment: `Asignado a ${driver.fullName}${reason ? `: ${reason}` : ''}`.slice(0, 255),
+          },
+        );
+      }
 
       driver.status = DRIVER_STATUS.BUSY;
       await driver.save({ transaction });
+
+      // El anterior deja de cargar con este reparto. Se libera despues de guardar
+      // el cambio, para que el recuento de `releaseDriver` ya no lo vea suyo.
+      if (previousDriverId && previousDriverId !== driverId) {
+        await releaseDriver(previousDriverId, transaction);
+      }
 
       return delivery;
     });
@@ -151,7 +278,8 @@ export const deliveryService = {
   async changeStatus(
     delivery: Delivery,
     next: DeliveryStatus,
-    actorId: number,
+    /** Null cuando el cambio no lo pide una persona (cancelacion del pedido). */
+    actorId: number | null,
     externalTransaction?: Transaction,
     options: {
       driverId?: number;
@@ -169,6 +297,25 @@ export const deliveryService = {
 
     const run = async (transaction: Transaction) => {
       const now = new Date();
+      let order: Order | null = null;
+
+      // Asignar un repartidor mientras Cocina prepara sirve para ganar tiempo,
+      // pero el retiro fisico solo puede ocurrir cuando el pedido esta READY.
+      // La interfaz tambien lo bloquea; esta comprobacion es la frontera real para
+      // clientes antiguos, integraciones o llamadas directas al endpoint.
+      if (next === DELIVERY_STATUS.PICKED_UP) {
+        order = await Order.findByPk(delivery.orderId, { transaction });
+        if (!order) throw ApiError.notFound('El pedido del reparto no existe');
+        if (order.status !== ORDER_STATUS.READY) {
+          throw ApiError.unprocessable('Cocina todavia no ha marcado el pedido como listo');
+        }
+        await operationsService.dispatchTicketForOrder(
+          order.id,
+          actorId,
+          'Pedido entregado a Reparto',
+          transaction,
+        );
+      }
 
       if (options.driverId) delivery.driverId = options.driverId;
       if (next === DELIVERY_STATUS.ASSIGNED) delivery.assignedAt = now;
@@ -200,16 +347,12 @@ export const deliveryService = {
         (next === DELIVERY_STATUS.DELIVERED || next === DELIVERY_STATUS.FAILED) &&
         delivery.driverId
       ) {
-        const driver = await Driver.findByPk(delivery.driverId, { transaction });
-        if (driver) {
-          driver.status = DRIVER_STATUS.AVAILABLE;
-          await driver.save({ transaction });
-        }
+        await releaseDriver(delivery.driverId, transaction);
       }
 
       const nextOrderStatus = ORDER_STATUS_FOR_DELIVERY[next];
       if (nextOrderStatus) {
-        const order = await Order.findByPk(delivery.orderId, { transaction });
+        order ??= await Order.findByPk(delivery.orderId, { transaction });
         if (order) {
           await ordersService.changeStatus(order, nextOrderStatus as never, {
             actorId,
@@ -227,18 +370,77 @@ export const deliveryService = {
     return delivery;
   },
 
+  /**
+   * Avance pedido desde la calle.
+   *
+   * `onlyDriverIds` es el blindaje por PROPIEDAD: el alcance por sucursal no basta,
+   * porque todos los repartidores de una cocina comparten sucursal y bastaba iterar
+   * el id de la URL para marcar "Entregado" el reparto de otro.
+   */
   async advance(
     deliveryId: number,
     next: DeliveryStatus,
     actorId: number,
     comment?: string,
     scope?: BranchScopeCheck,
+    options: { onlyDriverIds?: number[] } = {},
   ) {
     const delivery = await Delivery.findByPk(deliveryId);
     if (!delivery) throw ApiError.notFound('Reparto no encontrado');
     scope?.(delivery.branchId);
-    return deliveryService.changeStatus(delivery, next, actorId, undefined, { comment });
+
+    if (
+      options.onlyDriverIds &&
+      (delivery.driverId === null || !options.onlyDriverIds.includes(delivery.driverId))
+    ) {
+      throw ApiError.forbidden('Ese reparto esta asignado a otro repartidor');
+    }
+
+    return deliveryService.changeStatus(delivery, next, actorId, undefined, {
+      comment,
+      // El motivo es lo UNICO que explica por que no se pudo entregar. Viajaba solo
+      // como comentario del evento y `failureReason` se quedaba en el texto por
+      // defecto, asi que la ficha del reparto no decia nada util.
+      failureReason: next === DELIVERY_STATUS.FAILED ? comment : undefined,
+    });
+  },
+
+  /**
+   * Cierra el reparto de un pedido que se cancela. Lo llama el modulo de pedidos
+   * dentro de SU transaccion (paquete F).
+   *
+   * IDEMPOTENTE: sin reparto, o ya cerrado, no hace nada y no lanza. Cancelar dos
+   * veces el mismo pedido no puede reventar ni liberar dos veces al repartidor.
+   *
+   * FAILED no arrastra el estado del pedido (no esta en ORDER_STATUS_FOR_DELIVERY),
+   * asi que llamarlo desde la cancelacion del pedido no reentra en
+   * `ordersService.changeStatus`.
+   */
+  async abortForOrder(orderId: number, reason: string, transaction?: Transaction): Promise<void> {
+    const run = async (t: Transaction) => {
+      const delivery = await Delivery.findOne({ where: { orderId }, transaction: t });
+      if (!delivery) return;
+
+      // DELIVERED y FAILED son terminales: no hay nada que abortar.
+      const current: DeliveryStatus = delivery.status;
+      if (!(DELIVERY_FLOW[current] ?? []).includes(DELIVERY_STATUS.FAILED)) return;
+
+      await deliveryService.changeStatus(delivery, DELIVERY_STATUS.FAILED, null, t, {
+        comment: reason,
+        failureReason: reason,
+      });
+    };
+
+    if (transaction) await run(transaction);
+    else await sequelize.transaction(run);
   },
 };
 
 export type DeliveryService = typeof deliveryService;
+
+/**
+ * Contrato compartido con el modulo de pedidos, tambien como export suelto: al
+ * cancelar un pedido hay que cerrar su reparto SIEMPRE, y una importacion directa
+ * deja claro que es una dependencia del flujo de cancelacion y no una opcion.
+ */
+export const abortForOrder = deliveryService.abortForOrder;

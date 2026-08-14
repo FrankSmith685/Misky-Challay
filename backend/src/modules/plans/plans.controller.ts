@@ -24,6 +24,8 @@ export const plansController = {
       requireUser(req),
       req.body.planCode,
       req.body.idempotencyKey,
+      req.body.termsVersion,
+      req.body.client,
     );
 
     const payload = {

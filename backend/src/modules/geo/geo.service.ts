@@ -7,11 +7,18 @@ import {
   District,
   DeliverySlot,
   Order,
+  ZoneBranch,
 } from '@database/models';
 import type { GeoPoint } from '@database/models/coverageZone.model';
 import { ApiError } from '@shared/errors/ApiError';
-import { defaultTimeZone, zonedParts } from '@shared/utils/datetime';
+import { addDaysToIsoDate, defaultTimeZone, zonedParts } from '@shared/utils/datetime';
 import { routingService } from './routing.service';
+import {
+  selectBestBranch,
+  shortlistBranches,
+  type BranchRouteEstimate,
+  type BranchSelectionCandidate,
+} from './branchSelection';
 
 export interface CoverageQuery {
   cityId?: number;
@@ -38,7 +45,6 @@ export interface CoverageResult {
     prepMinutes: number;
     isOpenNow: boolean;
   };
-  /** Preparacion + reparto estimado, para mostrar "llega en ~X min". */
   etaMinutes?: number;
   demandLevel?: 'LOW' | 'MEDIUM' | 'HIGH';
   etaSource?: 'LIVE_ROUTE' | 'ESTIMATE';
@@ -79,6 +85,27 @@ const toMinutes = (value: string): number => {
   return hours * 60 + mins;
 };
 
+const ruleFor = (
+  schedules: BranchSchedule[],
+  isoDate: string,
+  weekday: number,
+): BranchSchedule | null =>
+  schedules.find((schedule) => schedule.exceptionDate === isoDate)
+  ?? schedules.find(
+    (schedule) => schedule.exceptionDate === null && schedule.weekday === weekday,
+  )
+  ?? null;
+
+/** Evalua el tramo del mismo dia; los horarios nocturnos terminan al dia siguiente. */
+const coversMinute = (rule: BranchSchedule, minutes: number): boolean => {
+  const opens = toMinutes(rule.opensAt);
+  const closes = toMinutes(rule.closesAt);
+
+  if (closes > opens) return minutes >= opens && minutes < closes;
+  if (closes < opens) return minutes >= opens;
+  return false;
+};
+
 /**
  * RN-003: la sucursal debe estar abierta en la fecha/hora solicitada.
  * Fecha, dia de la semana y hora se leen del mismo instante y en la zona horaria de
@@ -91,12 +118,16 @@ const isBranchOpenAt = (
 ): boolean => {
   const { isoDate, weekday, minutes } = zonedParts(when, timeZone);
 
-  const exception = schedules.find((schedule) => schedule.exceptionDate === isoDate);
-  const rule = exception ?? schedules.find((schedule) => schedule.weekday === weekday);
+  const today = ruleFor(schedules, isoDate, weekday);
+  if (today && !today.isClosed && coversMinute(today, minutes)) return true;
 
-  if (!rule || rule.isClosed) return false;
+  // En la madrugada puede seguir vigente el turno nocturno del dia anterior.
+  const yesterday = ruleFor(schedules, addDaysToIsoDate(isoDate, -1), (weekday + 6) % 7);
+  if (!yesterday || yesterday.isClosed) return false;
 
-  return minutes >= toMinutes(rule.opensAt) && minutes < toMinutes(rule.closesAt);
+  const opens = toMinutes(yesterday.opensAt);
+  const closes = toMinutes(yesterday.closesAt);
+  return closes < opens && minutes < closes;
 };
 
 const distanceKm = (latitude: number, longitude: number, branch: Branch) => {
@@ -120,7 +151,7 @@ const findNearestPickup = async (query: CoverageQuery, when: Date) => {
     .filter((branch) => branch.latitude != null && branch.longitude != null)
     .map((branch) => ({ branch, distanceKm: distanceKm(query.latitude!, query.longitude!, branch) }))
     .sort((a, b) => a.distanceKm - b.distanceKm)[0];
-  if (!located) return undefined;
+  if (!located || located.distanceKm > 50) return undefined;
   const schedules = (located.branch.get('schedules') as BranchSchedule[] | undefined) ?? [];
   return {
     id: located.branch.id,
@@ -180,8 +211,7 @@ export const geoService = {
           where: { id: district.coverageZoneId, isActive: true },
         });
         const districtHasExactPolygon = Array.isArray(districtZone?.polygon) && districtZone.polygon.length >= 3;
-        // Si la zona del distrito tiene poligono, unas coordenadas fuera de el no
-        // deben quedar cubiertas solo por haber elegido el distrito correcto.
+        // Las coordenadas exactas prevalecen sobre la cobertura general del distrito.
         if (!(query.latitude !== undefined && query.longitude !== undefined && districtHasExactPolygon)) {
           zone = districtZone;
         }
@@ -207,28 +237,63 @@ export const geoService = {
       polygon: zone.polygon,
     };
 
-    // Sucursal elegible: activa, que acepte delivery y este asignada a la zona.
     const branches = await Branch.findAll({
       where: { isActive: true, acceptsDelivery: true },
       include: [
-        { model: CoverageZone, as: 'zones', where: { id: zone.id }, through: { attributes: [] } },
+        {
+          model: CoverageZone,
+          as: 'zones',
+          where: { id: zone.id },
+          through: { attributes: ['priority', 'isActive'], where: { isActive: true } },
+        },
         { model: BranchSchedule, as: 'schedules' },
       ],
     });
 
-    const scoredBranches = await Promise.all(branches.map(async (candidate) => {
+    const candidateRows = await Promise.all(branches.map(async (candidate) => {
       const schedules = (candidate.get('schedules') as BranchSchedule[] | undefined) ?? [];
       const open = isBranchOpenAt(schedules, when);
       const activeOrders = await Order.count({
         where: { branchId: candidate.id, status: { [Op.in]: ['PENDING_PAYMENT', 'CONFIRMED', 'PREPARING'] } },
       });
-      const travelPenalty = query.latitude !== undefined && query.longitude !== undefined && candidate.latitude != null && candidate.longitude != null
-        ? distanceKm(query.latitude, query.longitude, candidate) * 3
-        : 0;
-      return { candidate, open, activeOrders, score: (open ? 0 : 10_000) + candidate.prepMinutes + activeOrders * 4 + travelPenalty };
+      const linkedZone = ((candidate.get('zones') as CoverageZone[] | undefined) ?? [])[0];
+      const link = linkedZone?.get('ZoneBranch') as ZoneBranch | undefined;
+      const selection: BranchSelectionCandidate = {
+        id: candidate.id,
+        isOpen: open,
+        prepMinutes: candidate.prepMinutes,
+        activeOrders,
+        priority: Math.max(1, Number(link?.priority ?? 1)),
+        distanceKm: query.latitude !== undefined
+          && query.longitude !== undefined
+          && candidate.latitude != null
+          && candidate.longitude != null
+          ? distanceKm(query.latitude, query.longitude, candidate)
+          : null,
+      };
+      return { branch: candidate, schedules, selection };
     }));
-    const selected = scoredBranches.sort((a, b) => a.score - b.score)[0];
-    const branch = selected?.candidate;
+
+    const shortlist = shortlistBranches(candidateRows.map((row) => row.selection), 2);
+    const shortlistedRows = shortlist
+      .map((candidate) => candidateRows.find((row) => row.selection.id === candidate.id))
+      .filter((row): row is (typeof candidateRows)[number] => Boolean(row));
+    const routeEntries = await Promise.all(shortlistedRows.map(async (row) => {
+      const liveRoute = query.latitude !== undefined
+        && query.longitude !== undefined
+        && row.branch.latitude != null
+        && row.branch.longitude != null
+        ? await routingService.route(
+          { latitude: Number(row.branch.latitude), longitude: Number(row.branch.longitude) },
+          { latitude: query.latitude, longitude: query.longitude },
+        )
+        : null;
+      return [row.branch.id, liveRoute] as const;
+    }));
+    const routes = new Map<number, BranchRouteEstimate | null>(routeEntries);
+    const selectedCandidate = selectBestBranch(shortlist, routes, zone.estimatedMinutes);
+    const selected = candidateRows.find((row) => row.selection.id === selectedCandidate?.id);
+    const branch = selected?.branch;
     if (!branch) {
       return {
         covered: false,
@@ -237,14 +302,9 @@ export const geoService = {
       };
     }
 
-    const schedules = (branch.get('schedules') as BranchSchedule[] | undefined) ?? [];
-    const demandDelay = Math.min(25, (selected?.activeOrders ?? 0) * 2);
-    const liveRoute = query.latitude !== undefined && query.longitude !== undefined && branch.latitude != null && branch.longitude != null
-      ? await routingService.route(
-        { latitude: Number(branch.latitude), longitude: Number(branch.longitude) },
-        { latitude: query.latitude, longitude: query.longitude },
-      )
-      : null;
+    const schedules = selected.schedules;
+    const demandDelay = Math.min(25, selected.selection.activeOrders * 2);
+    const liveRoute = routes.get(branch.id) ?? null;
 
     return {
       covered: true,
@@ -257,8 +317,8 @@ export const geoService = {
         isOpenNow: isBranchOpenAt(schedules, when),
       },
       etaMinutes: branch.prepMinutes + (liveRoute?.minutes ?? zone.estimatedMinutes) + demandDelay,
-      demandLevel: (selected?.activeOrders ?? 0) >= 8 ? 'HIGH' : (selected?.activeOrders ?? 0) >= 4 ? 'MEDIUM' : 'LOW',
-      etaSource: liveRoute?.source ?? 'ESTIMATE',
+      demandLevel: selected.selection.activeOrders >= 8 ? 'HIGH' : selected.selection.activeOrders >= 4 ? 'MEDIUM' : 'LOW',
+      etaSource: liveRoute ? 'LIVE_ROUTE' : 'ESTIMATE',
       routeDistanceKm: liveRoute?.distanceKm,
     };
   },

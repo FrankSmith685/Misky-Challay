@@ -26,10 +26,13 @@ export class MockProvider implements PaymentProvider {
 
   async createCheckout(input: CreateCheckoutInput): Promise<CreateCheckoutResult> {
     const providerReference = `mock_cs_${crypto.randomUUID()}`;
+    // El simulador debe abrirse en el mismo origen del retorno. En móvil ese origen
+    // puede ser una IP LAN o un dominio público, nunca localhost del teléfono.
+    const simulatorOrigin = new URL(input.successUrl).origin;
 
     return {
       providerReference,
-      checkoutUrl: `${env.FRONTEND_URL}/checkout/simulador?ref=${providerReference}&total=${input.amount}&pedido=${input.orderNumber}`,
+      checkoutUrl: `${simulatorOrigin}/checkout/simulador?ref=${providerReference}&total=${input.amount}&pedido=${input.orderNumber}&retorno=${encodeURIComponent(input.successUrl)}`,
       safeResponse: { id: providerReference, amount: input.amount, currency: input.currency },
     };
   }

@@ -12,6 +12,7 @@ export const ENDPOINTS = {
     logout: '/auth/logout',
     me: '/auth/me',
     forgotPassword: '/auth/forgot-password',
+    resetPassword: '/auth/reset-password',
   },
 
   settings: {
@@ -57,6 +58,7 @@ export const ENDPOINTS = {
 
   account: {
     profile: '/account/profile',
+    profileAvatar: '/account/profile/avatar',
     password: '/account/password',
     notifications: '/account/notifications',
     notificationsRead: '/account/notifications/read',

@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -22,6 +20,7 @@ import { QuantityStepper } from '../../src/components/QuantityStepper';
 import { ScreenScaffold } from '../../src/components/ScreenScaffold';
 import { Skeleton } from '../../src/components/Skeleton';
 import { invalidateResource, useResource } from '../../src/hooks/useResource';
+import { money } from '../../src/lib/format';
 import { useCart } from '../../src/providers/CartProvider';
 import { usePurchase } from '../../src/providers/PurchaseProvider';
 import { useSession } from '../../src/providers/SessionProvider';
@@ -154,7 +153,6 @@ const applyRecipe = (
   return { map, dropped };
 };
 
-const money = (value: number): string => `S/ ${value.toFixed(2)}`;
 
 /* ------------------------------------------------------------------ */
 /* Pantalla                                                            */
@@ -554,20 +552,19 @@ export default function BuilderScreen() {
     track('ADD_TO_CART', { metadata: { unitPrice: quoted.unitPrice, edicion: isEditing } });
     setSummaryOpen(false);
 
-    // Editando se vuelve al carrito, que es de donde vino y donde está la línea
-    // que acaba de cambiar. Armando de cero se queda aquí: puede montar otro bowl
-    // sin salir del constructor.
+    setSummaryOpen(false);
+
+    // El constructor es un flujo de alta intención: después de confirmar, el
+    // cliente necesita revisar cantidades y continuar, no quedarse en una receta
+    // que ya terminó. Tanto al crear como al editar se vuelve al carrito.
     if (isEditing) {
       toast.show({ tone: 'success', message: 'Actualizamos tu bowl en el carrito.' });
-      router.back();
+      router.replace('/(tabs)/cart' as Href);
       return;
     }
 
-    toast.show({
-      tone: 'success',
-      message: 'Tu bowl está en el carrito.',
-      action: { label: 'Ver carrito', onPress: () => router.push('/(tabs)/cart' as Href) },
-    });
+    toast.show({ tone: 'success', message: 'Tu bowl está listo para revisar.' });
+    router.replace('/(tabs)/cart' as Href);
   }, [addItem, data, isEditing, quoted, toast, track]);
 
   const openSave = useCallback(() => {
@@ -950,6 +947,16 @@ export default function BuilderScreen() {
         onClose={() => setSummaryOpen(false)}
         title="Así queda tu bowl"
         subtitle={quoted?.description}
+        footer={
+          quoted ? (
+            <PrimaryButton
+              label={isEditing ? 'Guardar y volver al carrito' : 'Agregar y revisar carrito'}
+              icon="shopping-outline"
+              trailingIcon="arrow-right"
+              onPress={confirmAdd}
+            />
+          ) : undefined
+        }
       >
         {quoted && (
           <View>
@@ -1010,11 +1017,6 @@ export default function BuilderScreen() {
               </Text>
             </View>
 
-            <PrimaryButton
-              label={isEditing ? 'Guardar cambios' : 'Agregar al carrito'}
-              onPress={confirmAdd}
-              style={styles.sheetCta}
-            />
           </View>
         )}
       </BottomSheet>
@@ -1024,8 +1026,25 @@ export default function BuilderScreen() {
         onClose={() => !saving && setSaveOpen(false)}
         title="Guardar esta receta"
         subtitle="La encontrarás en Mi cuenta › Bowls guardados, lista para repetir."
+        footer={
+          <View style={styles.saveFooter}>
+            {savedBowlId !== null ? (
+              <PrimaryButton
+                label="Actualizar la receta abierta"
+                loading={saving}
+                onPress={() => void persistRecipe('update')}
+              />
+            ) : null}
+            <PrimaryButton
+              label={savedBowlId === null ? 'Guardar receta' : 'Guardar como una nueva'}
+              variant={savedBowlId === null ? 'primary' : 'secondary'}
+              loading={saving}
+              onPress={() => void persistRecipe('create')}
+            />
+          </View>
+        }
       >
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View>
           <Text style={styles.fieldLabel}>Nombre de la receta</Text>
           <TextInput
             value={recipeName}
@@ -1043,23 +1062,7 @@ export default function BuilderScreen() {
           <Text style={saveError ? styles.fieldError : styles.fieldHint}>
             {saveError || `${recipeName.trim().length}/80 caracteres`}
           </Text>
-
-          {savedBowlId !== null && (
-            <PrimaryButton
-              label="Actualizar la receta abierta"
-              loading={saving}
-              onPress={() => void persistRecipe('update')}
-              style={styles.sheetCta}
-            />
-          )}
-          <PrimaryButton
-            label={savedBowlId === null ? 'Guardar receta' : 'Guardar como una nueva'}
-            variant={savedBowlId === null ? 'primary' : 'secondary'}
-            loading={saving}
-            onPress={() => void persistRecipe('create')}
-            style={styles.sheetCta}
-          />
-        </KeyboardAvoidingView>
+        </View>
       </BottomSheet>
     </ScreenScaffold>
   );
@@ -1290,6 +1293,7 @@ function OptionRow({
 /* ------------------------------------------------------------------ */
 
 const styles = StyleSheet.create({
+  saveFooter: { gap: spacing.sm },
   skeleton: {
     paddingTop: spacing.sm,
   },
@@ -1298,20 +1302,21 @@ const styles = StyleSheet.create({
   },
   list: {
     paddingHorizontal: spacing.md,
-    paddingBottom: spacing.xl,
+    paddingBottom: spacing.xxxl,
+    backgroundColor: '#f3f7f4',
   },
   hero: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    backgroundColor: colors.surfaceDark,
-    borderRadius: radius.lg,
-    padding: spacing.md,
+    backgroundColor: colors.brand950,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
   },
   heroImage: {
-    width: 92,
-    height: 92,
-    borderRadius: radius.md,
+    width: 112,
+    height: 112,
+    borderRadius: radius.lg,
   },
   heroCopy: {
     flex: 1,
@@ -1334,13 +1339,13 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   progressTrack: {
-    height: 8,
+    height: 10,
     borderRadius: radius.pill,
     backgroundColor: colors.line,
     overflow: 'hidden',
   },
   progressFill: {
-    height: 8,
+    height: 10,
     borderRadius: radius.pill,
     backgroundColor: colors.brand600,
   },
@@ -1364,7 +1369,7 @@ const styles = StyleSheet.create({
     minHeight: 88,
     justifyContent: 'center',
     backgroundColor: colors.surfaceRaised,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.line,
     padding: spacing.sm + spacing.xs,
@@ -1401,10 +1406,10 @@ const styles = StyleSheet.create({
     paddingRight: spacing.md,
   },
   preset: {
-    width: 196,
-    minHeight: 132,
-    backgroundColor: '#fff8e8',
-    borderRadius: radius.md,
+    width: 214,
+    minHeight: 144,
+    backgroundColor: colors.accent50,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: '#f4e0bb',
     padding: spacing.md,
@@ -1463,9 +1468,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm + spacing.xs,
-    minHeight: 84,
+    minHeight: 94,
     backgroundColor: colors.surfaceRaised,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.line,
     padding: spacing.sm + spacing.xs,
@@ -1474,15 +1479,17 @@ const styles = StyleSheet.create({
   optionSelected: {
     borderColor: colors.brand600,
     backgroundColor: colors.brand50,
+    borderWidth: 2,
+    ...shadow.sm,
   },
   optionSoldOut: {
     backgroundColor: colors.surfaceMuted,
     borderStyle: 'dashed',
   },
   optionImage: {
-    width: 58,
-    height: 58,
-    borderRadius: radius.sm + 2,
+    width: 68,
+    height: 68,
+    borderRadius: radius.md,
   },
   optionCopy: {
     flex: 1,
@@ -1619,9 +1626,9 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   macroCard: {
-    backgroundColor: colors.surfaceDark,
-    borderRadius: radius.md,
-    padding: spacing.md,
+    backgroundColor: colors.brand950,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
     marginTop: spacing.md,
   },
   macroLabel: {

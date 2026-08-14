@@ -112,6 +112,8 @@ export interface QuoteLine {
 export interface QuoteResult {
   productId: number;
   variantId: number;
+  /** Nombre corto de la presentación: Regular, Grande, etc. */
+  variantName: string;
   quantity: number;
   basePrice: number;
   extrasTotal: number;
@@ -335,6 +337,7 @@ export const customizationService = {
       return {
         productId: product.id,
         variantId: variant.id,
+        variantName: variant.name,
         quantity,
         basePrice,
         extrasTotal: 0,
@@ -467,6 +470,7 @@ export const customizationService = {
     return {
       productId: product.id,
       variantId: variant.id,
+      variantName: variant.name,
       quantity,
       basePrice,
       extrasTotal: round2(extrasTotal),

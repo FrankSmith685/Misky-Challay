@@ -5,6 +5,22 @@ import { ApiError } from '@shared/errors/ApiError';
 import { logger } from '@config/logger';
 import { isProduction } from '@config/env';
 
+/**
+ * Que decirle al cliente segun QUE dato esta repetido.
+ *
+ * Un choque de unicidad respondia siempre "El registro ya existe". En un
+ * formulario de registro con un email nuevo pero un telefono ya usado, eso se lee
+ * como un fallo del sistema: el dato que el cliente ve en pantalla no existe, y
+ * el que sobra no se nombra. Los servicios deberian anticiparse a estos casos,
+ * pero cuando alguno se escapa la respuesta tiene que seguir siendo util.
+ */
+const DUPLICATE_MESSAGES: Record<string, string> = {
+  email: 'Ese email ya esta registrado',
+  phone: 'Ese telefono ya esta registrado en otra cuenta',
+  slug: 'Ya existe un registro con ese identificador',
+  code: 'Ya existe un registro con ese codigo',
+};
+
 /** Convierte cualquier excepcion en la respuesta estandar { success:false, ... } */
 export const errorHandler = (
   error: unknown,
@@ -33,9 +49,13 @@ export const errorHandler = (
     }));
   } else if (error instanceof UniqueConstraintError) {
     status = 409;
-    message = 'El registro ya existe';
     code = 'DUPLICATED';
     details = error.errors.map((e) => ({ field: e.path, message: e.message }));
+
+    const field = error.errors.find((e) => typeof e.path === 'string' && e.path)?.path;
+    message = field
+      ? (DUPLICATE_MESSAGES[field] ?? `Ya existe un registro con ese ${field}`)
+      : 'El registro ya existe';
   } else if (error instanceof ValidationError) {
     status = 400;
     message = error.errors[0]?.path
@@ -53,6 +73,11 @@ export const errorHandler = (
 
   if (status >= 500) {
     logger.error(`${req.method} ${req.originalUrl} -> ${status}`, error);
+  } else if (status === 403) {
+    // El 403 dejo de nombrar el permiso en pantalla (era jerga interna y publicaba
+    // el mapa de permisos). Si tampoco quedara aqui, un "no me deja" del operario
+    // seria indiagnosticable: el codigo exacto vive en el log, no en la respuesta.
+    logger.warn(`403 ${req.method} ${req.originalUrl} usuario=${req.user?.sub ?? 'anonimo'}`, details);
   }
 
   res.status(status).json({

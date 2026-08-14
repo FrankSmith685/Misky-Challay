@@ -2,7 +2,27 @@ import path from 'node:path';
 import dotenv from 'dotenv';
 import { z } from 'zod';
 
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+/**
+ * El backend puede arrancarse desde el workspace raiz o desde /backend.
+ * Resolver el archivo desde este modulo evita que `process.cwd()` haga que se
+ * lea accidentalmente un .env distinto y se active el simulador de pagos.
+ */
+const backendEnvPath = path.resolve(__dirname, '../../.env');
+dotenv.config({ path: backendEnvPath });
+
+// Acepta tambien la nomenclatura SMTP_* usada habitualmente en paneles de hosting.
+// MAIL_* sigue siendo el nombre interno para no romper instalaciones existentes.
+const smtpAliases: Record<string, string> = {
+  SMTP_HOST: 'MAIL_HOST',
+  SMTP_PORT: 'MAIL_PORT',
+  SMTP_USER: 'MAIL_USER',
+  SMTP_PASSWORD: 'MAIL_PASSWORD',
+  SMTP_FROM_EMAIL: 'MAIL_FROM',
+  SMTP_FROM_NAME: 'MAIL_FROM_NAME',
+};
+for (const [alias, canonical] of Object.entries(smtpAliases)) {
+  if (!process.env[canonical] && process.env[alias]) process.env[canonical] = process.env[alias];
+}
 
 /** Convierte "true"/"false" de las variables de entorno en boolean real. */
 const booleanFromString = (defaultValue: boolean) =>
@@ -54,12 +74,38 @@ const envSchema = z.object({
 
   // URL publica del frontend: se usa en los enlaces de retorno del pago.
   FRONTEND_URL: z.string().url().default('http://localhost:5173'),
+  // Origen web accesible desde el celular para volver de la pasarela a la app.
+  // Si no se define, se reutiliza FRONTEND_URL.
+  MOBILE_RETURN_BASE_URL: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.string().url().optional(),
+  ),
 
-  // Geocodificacion. Geoapify habilita sugerencias reales mientras se escribe.
-  // Sin clave se conserva una sugerencia contextual y Nominatim solo se consulta
-  // cuando el usuario confirma explicitamente que desea ubicarla en el mapa.
+  // --- App movil: compuerta de version y mantenimiento -----------------------
+  // Los mandos que dejan sacar de circulacion una version rota o cortar el
+  // servicio sin publicar nada. Todos opcionales y SIN guarda de produccion: una
+  // variable mal escrita no puede dejar sin servicio a todos los telefonos, asi
+  // que settings.service valida ademas el formato y, ante la duda, no bloquea.
+  MOBILE_MIN_SUPPORTED_VERSION: z.string().optional(),
+  MOBILE_LATEST_VERSION: z.string().optional(),
+  MOBILE_UPDATE_URL: z.string().optional(),
+  MOBILE_UPDATE_URL_ANDROID: z.string().optional(),
+  MOBILE_UPDATE_URL_IOS: z.string().optional(),
+  MOBILE_MAINTENANCE: booleanFromString(false),
+  MOBILE_MAINTENANCE_MESSAGE: z.string().optional(),
+
+  // Web Push del KDS. En desarrollo se generan claves efimeras si estan vacias;
+  // produccion exige un par persistente para no invalidar los dispositivos.
+  VAPID_PUBLIC_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().optional(),
+  VAPID_SUBJECT: z.string().default('mailto:operaciones@verdebowl.com'),
+
+  // Geocodificacion. Geoapify es el proveedor recomendado para producción.
+  // Photon permite autocompletar en desarrollo sin enviar cada tecla a Nominatim;
+  // Nominatim se reserva para resolver selecciones y hacer geocodificación inversa.
   GEOAPIFY_API_KEY: z.string().optional(),
   GEOAPIFY_BASE_URL: z.string().url().default('https://api.geoapify.com/v1/geocode'),
+  PHOTON_BASE_URL: z.string().url().default('https://photon.komoot.io'),
   NOMINATIM_BASE_URL: z.string().url().default('https://nominatim.openstreetmap.org'),
   ROUTING_BASE_URL: z.string().url().optional(),
 
@@ -113,6 +159,8 @@ const envSchema = z.object({
   MAIL_PASSWORD: z.string().optional(),
   MAIL_FROM: z.string().email().default('hola@verdebowl.com'),
   MAIL_FROM_NAME: z.string().default('Verde Bowl'),
+  /** Clave del servidor para cifrar secretos SMTP guardados desde el superadmin. */
+  SETTINGS_ENCRYPTION_KEY: z.string().min(32).optional(),
 });
 
 /**
@@ -123,10 +171,31 @@ const envSchema = z.object({
  * Aqui se convierte "arranca inseguro" en "no arranca".
  */
 const productionGuard = (value: z.infer<typeof envSchema>, ctx: z.RefinementCtx): void => {
-  if (value.NODE_ENV !== 'production') return;
-
   const fail = (path: string, message: string) =>
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
+
+  if (value.STRIPE_SECRET_KEY) {
+    if (!/^sk_(test|live)_/.test(value.STRIPE_SECRET_KEY)) {
+      fail('STRIPE_SECRET_KEY', 'debe comenzar con sk_test_ o sk_live_');
+    }
+    if (!value.STRIPE_WEBHOOK_SECRET) {
+      fail(
+        'STRIPE_WEBHOOK_SECRET',
+        'es obligatoria cuando Stripe está activo; sin webhook el pago no acreditará saldo',
+      );
+    }
+  }
+  if (value.STRIPE_WEBHOOK_SECRET && !value.STRIPE_WEBHOOK_SECRET.startsWith('whsec_')) {
+    fail('STRIPE_WEBHOOK_SECRET', 'debe comenzar con whsec_');
+  }
+  if (value.NODE_ENV !== 'production' && value.STRIPE_SECRET_KEY?.startsWith('sk_live_')) {
+    fail(
+      'STRIPE_SECRET_KEY',
+      'no uses una clave live fuera de producción: podría realizar cobros reales durante pruebas',
+    );
+  }
+
+  if (value.NODE_ENV !== 'production') return;
 
   if (value.DB_ALTER) fail('DB_ALTER', 'debe ser false en produccion: usa migraciones');
   if (value.DB_SYNC) fail('DB_SYNC', 'debe ser false en produccion: usa migraciones');
@@ -158,13 +227,21 @@ const productionGuard = (value: z.infer<typeof envSchema>, ctx: z.RefinementCtx)
   if (value.CORS_ORIGIN.trim() === '*') fail('CORS_ORIGIN', 'no puede ser * con credentials: true');
   if (/localhost|127\.0\.0\.1/i.test(value.FRONTEND_URL))
     fail('FRONTEND_URL', 'apunta a localhost: los enlaces de pago y correo quedarian rotos');
+  if (value.MOBILE_RETURN_BASE_URL && /localhost|127\.0\.0\.1/i.test(value.MOBILE_RETURN_BASE_URL))
+    fail('MOBILE_RETURN_BASE_URL', 'debe ser accesible desde el telefono y no puede apuntar a localhost');
+  if (!value.VAPID_PUBLIC_KEY) fail('VAPID_PUBLIC_KEY', 'es obligatoria para alertas push del KDS');
+  if (!value.VAPID_PRIVATE_KEY) fail('VAPID_PRIVATE_KEY', 'es obligatoria para alertas push del KDS');
 
   if (!value.STRIPE_SECRET_KEY)
     fail('STRIPE_SECRET_KEY', 'es obligatoria en produccion: sin ella se usaria el simulador');
+  if (value.STRIPE_SECRET_KEY && !value.STRIPE_SECRET_KEY.startsWith('sk_live_'))
+    fail('STRIPE_SECRET_KEY', 'producción requiere una clave sk_live_, no una clave de prueba');
   if (!value.STRIPE_WEBHOOK_SECRET)
     fail('STRIPE_WEBHOOK_SECRET', 'es obligatoria: sin firma no se puede confirmar un pago');
   if (!value.MAIL_HOST)
     fail('MAIL_HOST', 'es obligatoria en produccion: los correos se perderian en la consola');
+  if (!value.SETTINGS_ENCRYPTION_KEY)
+    fail('SETTINGS_ENCRYPTION_KEY', 'es obligatoria para cifrar credenciales gestionadas desde el panel');
 
   if (value.TRUST_PROXY === 0)
     fail(

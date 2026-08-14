@@ -105,6 +105,29 @@ export function CartProvider({ children }: { children: ReactNode }) {
         return next;
       }
 
+      // Un plato fijo agregado varias veces desde la lista rápida conserva una
+      // sola línea y aumenta su cantidad. Las recetas personalizadas nunca se
+      // fusionan: dos bowls pueden parecer iguales y aun así ser intencionales.
+      if (incoming.selections.length === 0) {
+        const fixedIndex = current.findIndex(
+          (row) =>
+            row.productId === incoming.productId &&
+            row.variantId === incoming.variantId &&
+            row.selections.length === 0,
+        );
+        if (fixedIndex >= 0) {
+          const existing = current[fixedIndex];
+          const quantity = Math.min(MAX_QUANTITY, existing.quantity + incoming.quantity);
+          const next = [...current];
+          next[fixedIndex] = {
+            ...existing,
+            quantity,
+            lineTotal: lineTotalFor(existing.unitPrice, quantity),
+          };
+          return next;
+        }
+      }
+
       return [...current, { ...incoming, id: itemId() }];
     });
 

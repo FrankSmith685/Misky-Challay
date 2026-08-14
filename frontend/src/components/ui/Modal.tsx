@@ -1,6 +1,7 @@
 import { useId, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
 import IconButton from '@mui/material/IconButton';
@@ -18,20 +19,82 @@ interface ModalProps {
   maxWidth?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   icon?: LucideIcon;
   eyebrow?: string;
+  actions?: ReactNode;
+  /** Cambia la lectura visual del encabezado sin obligar a cada pantalla a
+   * reconstruir el dialogo. `danger` se reserva para acciones destructivas. */
+  tone?: 'brand' | 'danger' | 'neutral';
+  /** Foto, mini resumen o estado que ayuda a reconocer el elemento antes de
+   * editarlo. En movil baja debajo del titulo para no comprimir el texto. */
+  headerAside?: ReactNode;
+  /**
+   * Ignora el clic en el fondo. Por defecto `false` para no cambiarle el
+   * comportamiento a nadie: se activa donde el modal contiene un formulario
+   * largo, porque ahi un toque fuera se lleva quince campos sin preguntar.
+   * La tecla Escape y la X siguen cerrando: bloquear tambien la salida por
+   * teclado dejaria el dialogo sin escape accesible.
+   */
+  disableBackdropClose?: boolean;
 }
 
+/* Por debajo de 600px el diálogo va a pantalla completa, así que su último
+ * elemento aterriza justo sobre el indicador de inicio del iPhone. `max()` deja
+ * el relleno normal donde no hay recorte y lo sustituye por el del sistema donde
+ * lo hay. Requiere `viewport-fit=cover` en el <meta viewport>. */
+const SAFE_BOTTOM = 'max(20px, env(safe-area-inset-bottom, 0px))';
+const SAFE_BOTTOM_PLUS = 'calc(20px + env(safe-area-inset-bottom, 0px))';
+
 /** Diálogo personalizado con foco, teclado, portal y bloqueo de scroll provistos por MUI. */
-export const Modal = ({ isOpen, onClose, title, description, children, maxWidth = 'sm', icon: Icon = LayoutPanelTop, eyebrow }: ModalProps) => {
+export const Modal = ({
+  isOpen,
+  onClose,
+  title,
+  description,
+  children,
+  maxWidth = 'sm',
+  icon: Icon = LayoutPanelTop,
+  eyebrow,
+  actions,
+  tone = 'brand',
+  headerAside,
+  disableBackdropClose = false,
+}: ModalProps) => {
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
   const generatedId = useId().replace(/:/g, '');
   const titleId = `app-dialog-title-${generatedId}`;
   const descriptionId = `app-dialog-description-${generatedId}`;
+  const toneStyles = {
+    brand: {
+      background: 'linear-gradient(135deg, rgba(232,247,238,.98) 0%, rgba(248,252,249,.98) 58%, rgba(255,246,225,.92) 100%)',
+      iconBg: 'primary.main',
+      iconColor: 'primary.contrastText',
+      accent: 'linear-gradient(90deg, var(--color-brand-700), var(--color-brand-400), var(--color-accent-400))',
+    },
+    danger: {
+      background: 'linear-gradient(135deg, rgba(254,242,242,.98) 0%, rgba(255,255,255,.98) 62%, rgba(255,247,237,.92) 100%)',
+      iconBg: 'error.main',
+      iconColor: 'error.contrastText',
+      accent: 'linear-gradient(90deg, #b91c1c, #ef4444, #fb923c)',
+    },
+    neutral: {
+      background: 'linear-gradient(135deg, rgba(246,248,247,.98) 0%, rgba(255,255,255,.98) 100%)',
+      iconBg: 'text.primary',
+      iconColor: 'background.paper',
+      accent: 'linear-gradient(90deg, #33443a, #718078, #a7b0aa)',
+    },
+  }[tone];
+
+  /* MUI informa del MOTIVO del cierre y aqui se descartaba: `onClose` iba directo
+   * al Dialog, asi que un clic fuera pesaba lo mismo que pulsar Cancelar. */
+  const handleClose = (_event: unknown, reason: 'backdropClick' | 'escapeKeyDown') => {
+    if (disableBackdropClose && reason === 'backdropClick') return;
+    onClose();
+  };
 
   return (
     <Dialog
       open={isOpen}
-      onClose={onClose}
+      onClose={handleClose}
       fullWidth
       fullScreen={fullScreen}
       maxWidth={maxWidth}
@@ -42,9 +105,15 @@ export const Modal = ({ isOpen, onClose, title, description, children, maxWidth 
           overflow: 'hidden',
           border: { xs: 0, sm: '1px solid' },
           borderColor: 'divider',
-          borderRadius: { xs: 0, sm: 4.5 },
-          boxShadow: '0 32px 90px rgba(13, 45, 28, .22)',
+          borderRadius: 'var(--radius-card)',
+          // La sombra la pone el tema (MuiDialog): aqui vivia otra tinta verdosa
+          // distinta de la escala, y eran dos verdades para la misma superficie.
           maxHeight: { xs: '100%', sm: 'calc(100% - 48px)' },
+          boxShadow: 'var(--shadow-e5)',
+        },
+        '& .app-modal-body, & .app-modal-body > *': {
+          minWidth: 0,
+          maxWidth: '100%',
         },
         '& .MuiBackdrop-root': { backgroundColor: 'rgba(9, 25, 16, .62)', backdropFilter: 'blur(5px)' },
       }}
@@ -55,14 +124,33 @@ export const Modal = ({ isOpen, onClose, title, description, children, maxWidth 
           position: 'relative',
           borderBottom: '1px solid',
           borderColor: 'divider',
-          background: 'linear-gradient(135deg, rgba(237,249,242,.95), rgba(255,255,255,.98))',
+          background: toneStyles.background,
           px: { xs: 2.25, sm: 3.25 },
           py: { xs: 2, sm: 2.5 },
-          pr: 7,
+          pr: { xs: 7, sm: 8 },
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            inset: '0 0 auto 0',
+            height: 4,
+            background: toneStyles.accent,
+          },
+          '&::after': {
+            content: '""',
+            position: 'absolute',
+            width: 150,
+            height: 150,
+            right: -52,
+            top: -78,
+            borderRadius: '50%',
+            border: '24px solid rgba(255,255,255,.42)',
+            pointerEvents: 'none',
+          },
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
-          <Box sx={{ mt: .15, display: 'grid', width: 40, height: 40, flexShrink: 0, placeItems: 'center', borderRadius: 2.5, bgcolor: 'primary.main', color: 'primary.contrastText', boxShadow: '0 8px 22px rgba(33,131,90,.22)' }}>
+        <Box sx={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'stretch', sm: 'center' }, justifyContent: 'space-between', gap: 2 }}>
+          <Box sx={{ display: 'flex', minWidth: 0, alignItems: 'flex-start', gap: 1.5 }}>
+          <Box sx={{ mt: .15, display: 'grid', width: 44, height: 44, flexShrink: 0, placeItems: 'center', borderRadius: 'var(--radius-card)', bgcolor: toneStyles.iconBg, color: toneStyles.iconColor, boxShadow: 'var(--shadow-e2)', border: '1px solid rgba(255,255,255,.5)' }}>
             <Icon size={19} />
           </Box>
           <Box sx={{ minWidth: 0 }}>
@@ -76,16 +164,68 @@ export const Modal = ({ isOpen, onClose, title, description, children, maxWidth 
               </Typography>
             )}
           </Box>
+          </Box>
+          {headerAside && (
+            <Box sx={{ minWidth: 0, flexShrink: 0, pr: { sm: 1 } }}>
+              {headerAside}
+            </Box>
+          )}
         </Box>
         <IconButton aria-label="Cerrar" onClick={onClose} sx={{ position: 'absolute', right: 14, top: 14 }}>
           <X size={19} />
         </IconButton>
       </DialogTitle>
-      <DialogContent sx={{ maxHeight: { xs: 'none', sm: '78vh' }, overflowY: 'auto', bgcolor: '#f7faf8', px: { xs: 2, sm: 3 }, py: { xs: 2.25, sm: 3 } }}>
-        <Box className="app-modal-body" sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 3.25, bgcolor: 'background.paper', p: { xs: 2, sm: 2.5 }, boxShadow: '0 8px 28px rgba(20, 55, 37, .045)' }}>
+      <DialogContent
+        sx={{
+          maxHeight: { xs: 'none', sm: '78vh' },
+          overflowY: 'auto',
+          // El gris de fondo es el del token, no un cuarto verdoso casi igual.
+          backgroundColor: 'background.default',
+          backgroundImage: 'radial-gradient(circle at 100% 0%, rgba(31,122,74,.055), transparent 30%), radial-gradient(circle at 0% 100%, rgba(245,158,11,.035), transparent 28%)',
+          px: { xs: 2, sm: 3.5 },
+          pt: { xs: 2.5, sm: 3.5 },
+          // Con pie de acciones el safe-area lo pone el pie; sin él, el último
+          // control del formulario es lo que queda bajo el indicador de inicio.
+          pb: { xs: actions ? 2.5 : SAFE_BOTTOM_PLUS, sm: 3.5 },
+        }}
+      >
+        <Box
+          className="app-modal-body shadow-e2"
+          sx={{
+            border: '1px solid',
+            borderColor: 'divider',
+            borderRadius: 'var(--radius-card)',
+            bgcolor: 'background.paper',
+            p: { xs: 2.5, sm: 3.5 },
+          }}
+        >
           {children}
         </Box>
       </DialogContent>
+      {/* El pie no scrollea con el contenido: en pantalla completa el CTA tiene que
+          seguir alcanzable con el pulgar sin recorrer un formulario largo. */}
+      {actions && (
+        <DialogActions
+          sx={{
+            position: 'sticky',
+            bottom: 0,
+            zIndex: 1,
+            flexShrink: 0,
+            bgcolor: 'background.paper',
+            borderTop: '1px solid',
+            borderColor: 'divider',
+            px: { xs: 2, sm: 3.5 },
+            pt: { xs: 1.5, sm: 2 },
+            pb: { xs: SAFE_BOTTOM, sm: '22px' },
+            gap: 1.25,
+            '& > :not(style)': { m: 0 },
+            flexDirection: { xs: 'column-reverse', sm: 'row' },
+            '& .MuiButton-root': { width: { xs: '100%', sm: 'auto' }, minHeight: 44 },
+          }}
+        >
+          {actions}
+        </DialogActions>
+      )}
     </Dialog>
   );
 };

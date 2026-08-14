@@ -27,7 +27,14 @@ export const authApi = {
   async forgotPassword(email: string): Promise<string> {
     const response = await apiCall<null>(ENDPOINTS.auth.forgotPassword, {
       method: 'POST',
-      body: { email },
+      body: { email, client: 'MOBILE' },
+    });
+    return response.message;
+  },
+  async resetPassword(token: string, password: string): Promise<string> {
+    const response = await apiCall<null>(ENDPOINTS.auth.resetPassword, {
+      method: 'POST',
+      body: { token, password },
     });
     return response.message;
   },

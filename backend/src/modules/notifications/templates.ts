@@ -9,6 +9,10 @@ import { env } from '@config/env';
 
 const money = (value: number): string => `S/ ${value.toFixed(2)}`;
 
+const escapeHtml = (value: string): string => value.replace(/[&<>"']/g, (character) => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;',
+})[character] ?? character);
+
 const layout = (title: string, body: string, cta?: { label: string; url: string }): string => `
 <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#14201a">
   <div style="background:#237c52;padding:20px;text-align:center">
@@ -39,13 +43,17 @@ export interface OrderEmailData {
   items: Array<{ quantity: number; name: string }>;
   /** Pago contra entrega: monto en efectivo a cobrar al recibir. */
   cashDue?: number | null;
+  supportEmail?: string;
 }
 
 export interface PlanEmailData {
   customerName: string | null;
   planName: string;
   credit: number;
+  paidCredit: number;
+  bonusCredit: number;
   expiresAt: Date | null;
+  paidExpiresAt: Date | null;
 }
 
 export interface ComplaintEmailData {
@@ -72,6 +80,32 @@ const orderUrl = (orderNumber: string): string =>
   `${env.FRONTEND_URL}/cuenta/pedidos/${orderNumber}`;
 
 export const TEMPLATES = {
+  PRODUCT_AVAILABLE: (data: {
+    productName: string;
+    branchName: string;
+    productSlug: string;
+    subjectTemplate?: string;
+    bodyTemplate?: string;
+  }) => {
+    const replaceVariables = (template: string) => template
+      .replaceAll('{{product}}', data.productName)
+      .replaceAll('{{branch}}', data.branchName);
+    const subject = replaceVariables(data.subjectTemplate ?? '{{product}} volvio a estar disponible');
+    const body = replaceVariables(
+      data.bodyTemplate
+        ?? 'El plato {{product}} ya esta disponible nuevamente en {{branch}}. Puedes pedirlo antes de que se agote.',
+    );
+    return {
+      subject,
+      text: `${body} ${env.FRONTEND_URL}/menu/${data.productSlug}`,
+      html: layout(
+        'Tu plato volvio',
+        `<p>${escapeHtml(body).replaceAll('\n', '<br/>')}</p><p style="color:#5d6b64">Este aviso se envia una sola vez por solicitud.</p>`,
+        { label: 'Ver el plato', url: `${env.FRONTEND_URL}/menu/${data.productSlug}` },
+      ),
+    };
+  },
+
   ORDER_CONFIRMED: (data: OrderEmailData) => {
     const isCash = data.cashDue != null && data.cashDue > 0;
     return {
@@ -132,7 +166,7 @@ export const TEMPLATES = {
       `<p>Tu pedido <strong>${data.orderNumber}</strong> fue cancelado.</p>
        ${data.reason ? `<p style="color:#5d6b64">Motivo: ${data.reason}</p>` : ''}
        <p>Si usaste saldo de tu plan o un cupon, ya estan disponibles de nuevo en tu cuenta.</p>
-       <p style="color:#5d6b64">Si pagaste con tarjeta, escribenos a ${env.MAIL_FROM} con el numero de tu pedido y gestionamos la devolucion.</p>`,
+       <p style="color:#5d6b64">Si pagaste con tarjeta, escribenos a ${data.supportEmail ?? 'nuestro canal de soporte'} con el numero de tu pedido y gestionamos la devolucion.</p>`,
       { label: 'Volver al menu', url: `${env.FRONTEND_URL}/menu` },
     ),
   }),
@@ -150,16 +184,14 @@ export const TEMPLATES = {
 
   PLAN_ACTIVATED: (data: PlanEmailData) => ({
     subject: `Tu ${data.planName} esta activo`,
-    text: `Tu plan ${data.planName} esta activo con ${money(data.credit)} de saldo.`,
+    text: `Tu plan ${data.planName} está activo con ${money(data.credit)} de saldo: ${money(data.paidCredit)} pagados y ${money(data.bonusCredit)} de bono.`,
     html: layout(
       'Tu plan esta activo',
       `<p>Hola${data.customerName ? ` <strong>${data.customerName}</strong>` : ''}, tu <strong>${data.planName}</strong> ya esta activo.</p>
        <p style="font-size:24px;color:#237c52;font-weight:bold;margin:16px 0">${money(data.credit)} de saldo</p>
-       ${
-         data.expiresAt
-           ? `<p style="color:#5d6b64">Vence el ${data.expiresAt.toLocaleDateString('es-PE')}. El saldo que no uses se pierde.</p>`
-           : ''
-       }`,
+       <p style="color:#5d6b64"><strong>${money(data.paidCredit)}</strong> corresponden a dinero pagado${data.paidExpiresAt ? ` y vencen el ${data.paidExpiresAt.toLocaleDateString('es-PE')}` : ''}.</p>
+       <p style="color:#5d6b64"><strong>${money(data.bonusCredit)}</strong> son bono promocional${data.expiresAt ? ` y vencen el ${data.expiresAt.toLocaleDateString('es-PE')}, junto con los beneficios` : ''}.</p>
+       <p style="color:#5d6b64">Tus pedidos usarán primero el saldo que venza antes. Consulta cada lote en Mi saldo.</p>`,
       { label: 'Ver mi saldo', url: `${env.FRONTEND_URL}/cuenta/saldo` },
     ),
   }),

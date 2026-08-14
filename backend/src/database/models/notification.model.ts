@@ -34,9 +34,11 @@ export class Notification extends Model<
   declare providerMessageId: CreationOptional<string | null>;
   declare errorMessage: CreationOptional<string | null>;
   declare orderId: CreationOptional<number | null>;
+  declare actionUrl: CreationOptional<string | null>;
   /** Evita mandar el mismo aviso dos veces (ej. reintento del webhook). */
   declare idempotencyKey: string;
   declare sentAt: CreationOptional<Date | null>;
+  declare readAt: CreationOptional<Date | null>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
 }
@@ -58,8 +60,10 @@ Notification.init(
     providerMessageId: { type: DataTypes.STRING(255), allowNull: true },
     errorMessage: { type: DataTypes.STRING(500), allowNull: true },
     orderId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
+    actionUrl: { type: DataTypes.STRING(255), allowNull: true },
     idempotencyKey: { type: DataTypes.STRING(120), allowNull: false },
     sentAt: { type: DataTypes.DATE, allowNull: true },
+    readAt: { type: DataTypes.DATE, allowNull: true },
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,
   },

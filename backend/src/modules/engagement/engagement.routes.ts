@@ -1,19 +1,34 @@
 import { Router } from 'express';
-import { engagementController } from './engagement.controller';
-import { z } from 'zod';
+import { authenticate, optionalAuth } from '@middlewares/auth.middleware';
 import { validate } from '@middlewares/validate.middleware';
-import { optionalAuth } from '@middlewares/auth.middleware';
-import { UX_EVENT_TYPES } from '@database/models/uxEvent.model';
+import { engagementController } from './engagement.controller';
+import {
+  createReviewSchema,
+  favoriteProductSchema,
+  favoritesQuerySchema,
+  newsletterSchema,
+  recommendationsSchema,
+  reviewsQuerySchema,
+  trackEventSchema,
+  updateReviewSchema,
+} from './engagement.validation';
 
-/**
- * Modulo ENGAGEMENT - Favoritos, resenas, notificaciones, newsletter y soporte.
- * Prefijo: /api/v1/engagement
- * Pendiente: Fase 4 del roadmap.
- */
+/** Fase 6: fidelización, prueba social, consentimiento y señales de producto. */
 const router = Router();
 
-router.post('/events', optionalAuth, validate(z.object({ body: z.object({ sessionId: z.string().uuid(), eventType: z.enum(UX_EVENT_TYPES), metadata: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional() }) })), engagementController.track);
+router.post('/events', optionalAuth, validate(trackEventSchema), engagementController.track);
+router.get('/recommendations', optionalAuth, validate(recommendationsSchema), engagementController.recommendations);
 
-router.get('/', engagementController.placeholder);
+router.get('/favorites', authenticate, validate(favoritesQuerySchema), engagementController.favorites);
+router.post('/favorites/:productId', authenticate, validate(favoriteProductSchema), engagementController.addFavorite);
+router.delete('/favorites/:productId', authenticate, validate(favoriteProductSchema), engagementController.removeFavorite);
+
+router.get('/reviews/pending', authenticate, engagementController.pendingReviews);
+router.post('/reviews', authenticate, validate(createReviewSchema), engagementController.createReview);
+router.put('/reviews/:reviewId', authenticate, validate(updateReviewSchema), engagementController.updateReview);
+router.get('/products/:productId/reviews', validate(reviewsQuerySchema), engagementController.productReviews);
+
+router.get('/newsletter', authenticate, engagementController.newsletterStatus);
+router.put('/newsletter', authenticate, validate(newsletterSchema), engagementController.newsletter);
 
 export default router;

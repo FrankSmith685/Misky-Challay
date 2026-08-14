@@ -1,0 +1,657 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Informe integral del sistema web Verde Bowl V3</title>
+  <style>
+    :root {
+      --green-950:#0b2f25; --green-900:#123f31; --green-800:#176044;
+      --green-700:#21845b; --green-600:#2fa36f; --green-100:#e7f5ed;
+      --green-50:#f4faf6; --orange:#f49a22; --orange-100:#fff1db;
+      --red:#c93636; --red-100:#fde8e8; --amber:#9a5c00; --amber-100:#fff4d6;
+      --ink:#17221d; --muted:#5f6d66; --line:#dce5df; --paper:#ffffff;
+    }
+    * { box-sizing: border-box; }
+    html { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    body { margin:0; color:var(--ink); background:#edf3ef; font-family: "Segoe UI", Arial, sans-serif; font-size:9.25pt; line-height:1.48; }
+    main { width: 210mm; margin: 0 auto; background:var(--paper); box-shadow:0 12px 45px rgba(13,55,39,.12); }
+    @page { size:A4; margin:14mm 14mm 17mm; }
+    @media print {
+      body, main { width:auto; margin:0; background:#fff; box-shadow:none; }
+      .cover { margin:-14mm -14mm -17mm; height:297mm; }
+      a { color:inherit; text-decoration:none; }
+    }
+    h1,h2,h3,h4 { color:var(--green-950); margin:0 0 3mm; line-height:1.15; }
+    h1 { font-size:31pt; letter-spacing:-1.2px; }
+    h2 { font-size:20pt; letter-spacing:-.4px; border-bottom:1px solid var(--line); padding-bottom:3mm; }
+    h3 { font-size:13pt; margin-top:5mm; }
+    h4 { font-size:10pt; margin-top:3mm; }
+    p { margin:0 0 3mm; }
+    ul,ol { margin:1.5mm 0 3mm 5mm; padding-left:4mm; }
+    li { margin:1mm 0; }
+    strong { color:var(--green-950); }
+    code { font-family:Consolas, monospace; font-size:8.2pt; color:var(--green-800); background:var(--green-50); padding:.3mm 1mm; border-radius:1mm; }
+    .chapter { break-before:page; padding-top:1mm; }
+    .avoid { break-inside:avoid; }
+    .keep-next { break-after:avoid; }
+    .eyebrow { text-transform:uppercase; letter-spacing:1.4px; font-size:7.5pt; font-weight:800; color:var(--green-700); margin-bottom:2.5mm; }
+    .lead { font-size:12pt; color:#33463d; line-height:1.55; }
+    .muted { color:var(--muted); }
+    .small { font-size:7.5pt; }
+    .number { color:var(--orange); font-weight:900; }
+    .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:4mm; }
+    .grid-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:3mm; }
+    .grid-4 { display:grid; grid-template-columns:repeat(4,1fr); gap:2.5mm; }
+    .card { border:1px solid var(--line); border-radius:3mm; padding:4mm; background:#fff; break-inside:avoid; }
+    .card.soft { background:var(--green-50); }
+    .card.dark { background:var(--green-950); color:#fff; border-color:var(--green-950); }
+    .card.dark h3,.card.dark strong { color:#fff; }
+    .metric { min-height:25mm; }
+    .metric b { display:block; color:var(--green-900); font-size:19pt; line-height:1; margin-bottom:2mm; }
+    .metric span { color:var(--muted); font-size:8pt; }
+    .tag { display:inline-block; border-radius:10mm; padding:1mm 2.5mm; font-size:7.2pt; font-weight:800; margin:.5mm; }
+    .done { background:var(--green-100); color:var(--green-800); }
+    .config { background:var(--orange-100); color:#8b5300; }
+    .external { background:#eef0ff; color:#3f4991; }
+    .future { background:#edf0ee; color:#58655f; }
+    .risk { background:var(--red-100); color:var(--red); }
+    .callout { border-left:4px solid var(--green-700); background:var(--green-50); padding:3.5mm 4mm; margin:4mm 0; break-inside:avoid; }
+    .callout.warn { border-color:var(--orange); background:var(--orange-100); }
+    .callout.danger { border-color:var(--red); background:var(--red-100); }
+    .callout h3 { margin-top:0; }
+    table { width:100%; border-collapse:collapse; margin:3mm 0 5mm; font-size:8pt; break-inside:auto; }
+    thead { display:table-header-group; }
+    tr { break-inside:avoid; }
+    th { text-align:left; background:var(--green-900); color:white; padding:2.3mm; font-weight:700; }
+    td { border-bottom:1px solid var(--line); padding:2.1mm 2.3mm; vertical-align:top; }
+    tbody tr:nth-child(even) { background:#f8faf9; }
+    .flow { display:flex; align-items:stretch; gap:2mm; margin:4mm 0; break-inside:avoid; }
+    .flow .node { flex:1; border:1px solid #bcd4c5; background:var(--green-50); border-radius:2.5mm; padding:3mm 2.2mm; text-align:center; min-height:18mm; display:flex; flex-direction:column; justify-content:center; }
+    .flow .node strong { font-size:8.5pt; }
+    .flow .node span { color:var(--muted); font-size:7pt; margin-top:1mm; }
+    .flow .arrow { align-self:center; color:var(--green-700); font-size:14pt; font-weight:900; }
+    .stack { display:flex; flex-direction:column; gap:2mm; margin:4mm 0; }
+    .stack .layer { padding:3mm 4mm; border-radius:2.5mm; color:#fff; display:grid; grid-template-columns:38mm 1fr; gap:3mm; break-inside:avoid; }
+    .stack .layer:nth-child(1){background:#0b2f25}.stack .layer:nth-child(2){background:#176044}.stack .layer:nth-child(3){background:#21845b}.stack .layer:nth-child(4){background:#579a73}.stack .layer:nth-child(5){background:#789b86}
+    .tree { border:1px solid var(--line); border-radius:3mm; padding:4mm; background:#f9fbfa; font-family:Consolas, monospace; white-space:pre; font-size:8pt; line-height:1.6; break-inside:avoid; }
+    .state { display:grid; grid-template-columns:repeat(4,1fr); gap:2.5mm; margin:3mm 0; }
+    .state div { border-radius:2mm; padding:2.5mm; text-align:center; font-weight:800; font-size:7.5pt; border:1px solid var(--line); }
+    .state .ok { background:var(--green-100); color:var(--green-900); }
+    .state .wait { background:var(--orange-100); color:#7d4b00; }
+    .state .stop { background:var(--red-100); color:var(--red); }
+    .screenshot-frame { background:#edf3ef; border:1px solid var(--line); border-radius:3mm; padding:2mm; margin:3mm 0 1.5mm; break-inside:avoid; overflow:hidden; }
+    .screenshot { display:block; width:100%; max-height:143mm; object-fit:contain; object-position:top; border-radius:2mm; }
+    .screenshot.crop { height:110mm; object-fit:cover; object-position:top; }
+    figcaption { color:var(--muted); font-size:7.2pt; margin-bottom:3mm; }
+    .toc { columns:2; column-gap:10mm; margin-top:5mm; }
+    .toc div { display:flex; gap:2mm; margin:2mm 0; break-inside:avoid; border-bottom:1px dotted #bdc9c2; }
+    .toc span:first-child { font-weight:700; color:var(--green-900); }
+    .toc span:last-child { margin-left:auto; color:var(--muted); }
+    .cover { position:relative; overflow:hidden; color:#fff; background:linear-gradient(145deg,#092c22 0%,#176044 58%,#2b8b60 100%); padding:25mm 22mm; }
+    .cover:before { content:""; position:absolute; width:145mm; height:145mm; border:1px solid rgba(255,255,255,.14); border-radius:50%; right:-55mm; top:-40mm; box-shadow:0 0 0 18mm rgba(255,255,255,.035),0 0 0 40mm rgba(255,255,255,.025); }
+    .cover:after { content:""; position:absolute; width:95mm; height:95mm; border-radius:28mm; background:rgba(244,154,34,.14); right:-25mm; bottom:-26mm; transform:rotate(25deg); }
+    .logo { display:flex; align-items:center; gap:4mm; font-size:17pt; font-weight:900; position:relative; z-index:1; }
+    .logo-mark { width:13mm; height:13mm; border-radius:3mm; display:grid; place-items:center; color:var(--green-950); background:#d7f4e2; font-size:20pt; }
+    .cover-body { position:absolute; left:22mm; right:22mm; top:77mm; z-index:1; }
+    .cover h1 { color:#fff; font-size:35pt; max-width:155mm; }
+    .cover .subtitle { font-size:15pt; color:#d5eadf; max-width:150mm; margin-top:6mm; }
+    .cover-meta { position:absolute; left:22mm; bottom:22mm; z-index:1; display:grid; grid-template-columns:1fr 1fr; gap:22mm; width:145mm; padding-top:5mm; border-top:1px solid rgba(255,255,255,.25); font-size:9pt; }
+    .cover-meta span { display:block; color:#b8d8c6; font-size:7pt; text-transform:uppercase; letter-spacing:1px; }
+    .page-note { font-size:7pt; color:var(--muted); padding-top:2mm; border-top:1px solid var(--line); }
+    .domain-map { display:grid; grid-template-columns:repeat(4,1fr); gap:2mm; margin:4mm 0; }
+    .domain-map div { min-height:18mm; padding:2.5mm; border-radius:2mm; border:1px solid var(--line); background:#fff; }
+    .domain-map b { display:block; color:var(--green-800); margin-bottom:1mm; }
+    .domain-map small { color:var(--muted); }
+    .api { font-family:Consolas,monospace; color:var(--green-800); font-size:7.4pt; }
+    .checklist li::marker { color:var(--green-700); }
+  </style>
+</head>
+<body>
+<main>
+  <section class="cover">
+    <div class="logo"><div class="logo-mark">◒</div> Verde Bowl</div>
+    <div class="cover-body">
+      <div class="eyebrow" style="color:#a8d9bd">DOCUMENTO TÉCNICO · FUNCIONAL · OPERATIVO</div>
+      <h1>Informe integral del sistema web Verde Bowl V3</h1>
+      <p class="subtitle">Qué hace la plataforma, cómo funciona cada módulo y cómo se conecta el recorrido del cliente con la operación de cada restaurante.</p>
+      <div style="margin-top:9mm">
+        <span class="tag" style="background:#d7f4e2;color:#0b2f25">Arquitectura</span>
+        <span class="tag" style="background:#fff1db;color:#754500">Experiencia de usuario</span>
+        <span class="tag" style="background:#e4ecff;color:#33418a">Operación</span>
+        <span class="tag" style="background:#f7e8f1;color:#7c315e">Seguridad y datos</span>
+      </div>
+    </div>
+    <div class="cover-meta">
+      <div><span>Versión del informe</span>1.0 · 9 de agosto de 2026</div>
+      <div><span>Base de análisis</span>Código fuente y documentación del proyecto</div>
+      <div><span>Alcance actual</span>Una marca · múltiples sucursales</div>
+      <div><span>Estado</span>Implementación validada; integraciones externas pendientes</div>
+    </div>
+  </section>
+
+  <section class="chapter">
+    <div class="eyebrow">Cómo leer este documento</div>
+    <h2>Propósito, alcance y nivel de certeza</h2>
+    <p class="lead">Este informe explica el sistema desde tres perspectivas: qué recibe el cliente, cómo trabaja el restaurante y cómo está construido técnicamente. Está pensado para propietarios, analistas, diseñadores, desarrolladores, operaciones y posibles socios tecnológicos.</p>
+    <div class="grid-4" style="margin-top:6mm">
+      <div class="card metric"><b>72</b><span>modelos de datos Sequelize registrados</span></div>
+      <div class="card metric"><b>21</b><span>archivos de rutas del backend</span></div>
+      <div class="card metric"><b>38</b><span>permisos atómicos con paridad front/backend</span></div>
+      <div class="card metric"><b>50</b><span>pruebas del backend aprobadas en la revisión</span></div>
+    </div>
+    <h3>Leyenda de estado</h3>
+    <p><span class="tag done">IMPLEMENTADO</span> Existe en el código y forma parte del flujo. <span class="tag config">REQUIERE CONFIGURACIÓN</span> Está construido, pero necesita claves, datos o infraestructura. <span class="tag external">INTEGRACIÓN EXTERNA</span> Depende de un proveedor. <span class="tag future">EVOLUCIÓN</span> Recomendación, no capacidad actual.</p>
+    <div class="callout warn">
+      <strong>Fotografía del sistema, no promesa comercial.</strong> La documentación diferencia expresamente el código disponible de lo que aún requiere migraciones, credenciales, pruebas operativas o una integración contratada. Los datos mostrados en capturas son demostrativos.
+    </div>
+    <h3>Índice general</h3>
+    <div class="toc">
+      <div><span>01</span> Resumen ejecutivo</div><div><span>02</span> Alcance del producto</div>
+      <div><span>03</span> Arquitectura</div><div><span>04</span> Usuarios y roles</div>
+      <div><span>05</span> Experiencia del cliente</div><div><span>06</span> Cobertura y sucursales</div>
+      <div><span>07</span> Catálogo y constructor</div><div><span>08</span> Carrito, precios y checkout</div>
+      <div><span>09</span> Pagos y comprobantes</div><div><span>10</span> Pedidos</div>
+      <div><span>11</span> Panel administrativo</div><div><span>12</span> Cocina KDS</div>
+      <div><span>13</span> Salón y comandas</div><div><span>14</span> Caja y rendimiento</div>
+      <div><span>15</span> Inventario</div><div><span>16</span> Reparto</div>
+      <div><span>17</span> Negocio y contenido</div><div><span>18</span> Seguridad y auditoría</div>
+      <div><span>19</span> Datos y API</div><div><span>20</span> Despliegue y operación</div>
+      <div><span>21</span> Multisucursal vs. multirrestaurante</div><div><span>22</span> Riesgos y hoja de ruta</div>
+      <div><span>A</span> Matriz de módulos</div><div><span>B</span> Glosario</div>
+    </div>
+  </section>
+
+  <section class="chapter">
+    <div class="eyebrow">01 · Resumen ejecutivo</div>
+    <h2>Una plataforma de venta y operación gastronómica</h2>
+    <p class="lead">Verde Bowl V3 conecta la compra digital con la cocina y la administración del local. No es únicamente una tienda: administra cobertura, carta, personalización, pagos, pedidos, salón, caja, inventario, reparto, planes, usuarios y auditoría.</p>
+    <div class="flow">
+      <div class="node"><strong>Cliente</strong><span>elige ubicación y modalidad</span></div><div class="arrow">→</div>
+      <div class="node"><strong>Venta</strong><span>catálogo, bowl, precio y pago</span></div><div class="arrow">→</div>
+      <div class="node"><strong>Sucursal</strong><span>se fija en el pedido</span></div><div class="arrow">→</div>
+      <div class="node"><strong>Operación</strong><span>cocina, stock, salón o reparto</span></div><div class="arrow">→</div>
+      <div class="node"><strong>Control</strong><span>caja, métricas y auditoría</span></div>
+    </div>
+    <div class="grid-2">
+      <div class="card soft"><h3>Valor para el cliente</h3><ul><li>Compra según cobertura y disponibilidad real.</li><li>Personaliza bowls con precio y nutrición recalculados.</li><li>Paga en línea, con efectivo o saldo de planes, según el canal.</li><li>Consulta pedidos, direcciones, favoritos, bowls guardados y saldo.</li></ul></div>
+      <div class="card soft"><h3>Valor para el restaurante</h3><ul><li>La comanda llega a la cocina correcta.</li><li>El stock se reserva, consume o libera automáticamente.</li><li>Las ventas de salón, recojo y delivery convergen en caja.</li><li>Permisos y sucursales limitan lo que cada empleado puede hacer.</li></ul></div>
+    </div>
+    <figure class="screenshot-frame"><img class="screenshot" src="../test-results/admin-panel-audit/desktop-resumen.png" alt="Panel de resumen administrativo" /></figure>
+    <figcaption>Vista general del negocio: ventas, ticket promedio, cancelaciones, tiempos y ranking. Los valores son datos de demostración.</figcaption>
+  </section>
+
+  <section class="chapter">
+    <div class="eyebrow">02 · Alcance del producto</div>
+    <h2>Qué es hoy y qué no es todavía</h2>
+    <div class="grid-2">
+      <div class="card"><h3><span class="tag done">ACTUAL</span> Plataforma de una marca</h3><p>Una organización comercial administra varias sucursales. Las operaciones sensibles usan <code>branchId</code> para separar cocina, inventario, caja, salón, reparto y empleados.</p></div>
+      <div class="card"><h3><span class="tag future">EVOLUCIÓN</span> SaaS multirrestaurante</h3><p>Para vender el sistema a restaurantes independientes hace falta una entidad superior <code>restaurantId</code> o <code>tenantId</code> y aplicar ese aislamiento a todas las tablas y consultas.</p></div>
+    </div>
+    <div class="tree">SITUACIÓN ACTUAL
+Plataforma Verde Bowl
+├── Sucursal Miraflores
+├── Sucursal San Isidro
+└── Sucursal Surco
+
+EVOLUCIÓN MULTIRRESTAURANTE
+Plataforma
+├── Restaurante A
+│   ├── Local Miraflores
+│   └── Local Surco
+└── Restaurante B
+    ├── Local San Miguel
+    └── Local Callao</div>
+    <h3>Canales de atención</h3>
+    <table><thead><tr><th>Canal</th><th>Origen</th><th>Cómo se selecciona el local</th><th>Salida operacional</th></tr></thead><tbody>
+      <tr><td>Delivery</td><td>Web</td><td>Dirección → zona de cobertura → sucursal elegible</td><td>Cocina + reparto</td></tr>
+      <tr><td>Recojo</td><td>Web</td><td>El cliente selecciona una sucursal habilitada</td><td>Cocina + entrega en mostrador</td></tr>
+      <tr><td>Salón</td><td>POS / panel</td><td>El mozo trabaja en su sucursal y abre una mesa local</td><td>Cocina + cobro y liberación de mesa</td></tr>
+    </tbody></table>
+    <div class="callout"><strong>Regla central:</strong> una vez determinado, el <code>branchId</code> se congela en el pedido. Esa misma sucursal gobierna la comanda, el stock, el KDS, la caja, el reparto y el alcance del personal.</div>
+  </section>
+
+  <section class="chapter">
+    <div class="eyebrow">03 · Arquitectura</div>
+    <h2>Diseño técnico de extremo a extremo</h2>
+    <div class="stack">
+      <div class="layer"><strong>Experiencia</strong><span>React 18 · TypeScript · Vite · Tailwind · Material UI · diseño responsive y PWA</span></div>
+      <div class="layer"><strong>Estado y navegación</strong><span>React Router · Redux Toolkit · Context de compra · localStorage · carga diferida por pantalla</span></div>
+      <div class="layer"><strong>API</strong><span>Express · Zod · JWT · RBAC · respuestas uniformes · rate limiting · correlación por petición</span></div>
+      <div class="layer"><strong>Dominio</strong><span>Auth · cobertura · catálogo · personalización · precios · checkout · pagos · operación · administración</span></div>
+      <div class="layer"><strong>Persistencia</strong><span>Sequelize · MySQL 8 · migraciones · seeders idempotentes · 72 modelos</span></div>
+    </div>
+    <h3>Componentes de infraestructura</h3>
+    <div class="flow">
+      <div class="node"><strong>Navegador / PWA</strong><span>HTTPS</span></div><div class="arrow">→</div>
+      <div class="node"><strong>Nginx / proxy</strong><span>web + /api</span></div><div class="arrow">→</div>
+      <div class="node"><strong>API Node</strong><span>reglas y permisos</span></div><div class="arrow">→</div>
+      <div class="node"><strong>MySQL</strong><span>estado transaccional</span></div>
+    </div>
+    <div class="grid-3">
+      <div class="card"><h3>Tiempo real</h3><p>SSE autenticado para cocina, con sondeo periódico como respaldo.</p></div>
+      <div class="card"><h3>Integraciones</h3><p>Adaptadores para Stripe, correo SMTP y Web Push VAPID.</p></div>
+      <div class="card"><h3>Archivos</h3><p>Biblioteca de medios en disco/volumen; para múltiples nodos se recomienda almacenamiento de objetos.</p></div>
+    </div>
+    <h3>Principios aplicados</h3>
+    <ul class="checklist"><li>El navegador nunca decide el precio final ni la sucursal de delivery.</li><li>El webhook firmado es la fuente de verdad del pago en línea.</li><li>Las acciones se autorizan en backend aunque la interfaz oculte los botones.</li><li>Las operaciones de dinero, cupos y stock usan transacciones y/o bloqueos.</li><li>Los módulos se cargan de forma diferida para reducir el peso inicial.</li></ul>
+  </section>
+
+  <section class="chapter">
+    <div class="eyebrow">04 · Usuarios, roles y permisos</div>
+    <h2>Un único panel, distintas llaves</h2>
+    <p>Todos los empleados entran a <code>/admin</code>. El menú, la pantalla inicial y las acciones disponibles se derivan de sus permisos. La autorización combina dos dimensiones:</p>
+    <div class="flow"><div class="node"><strong>Permiso</strong><span>qué puede hacer</span></div><div class="arrow">+</div><div class="node"><strong>Alcance</strong><span>sobre qué sucursal</span></div><div class="arrow">=</div><div class="node"><strong>Autorización efectiva</strong><span>endpoint permitido o 403</span></div></div>
+    <table><thead><tr><th>Perfil</th><th>Responsabilidad</th><th>Acceso típico</th><th>Restricción principal</th></tr></thead><tbody>
+      <tr><td>Superadmin</td><td>Gobierno total</td><td>Todo el sistema y configuración legal</td><td>No se puede eliminar al último</td></tr>
+      <tr><td>Administrador general</td><td>Gestión de la marca</td><td>Operación, negocio y reportes globales</td><td>No nombra superadmins</td></tr>
+      <tr><td>Administrador de sucursal</td><td>Resultado del local</td><td>Pedidos, caja, salón, cocina, inventario</td><td>Solo sucursales asignadas</td></tr>
+      <tr><td>Mozo</td><td>Atención en mesa</td><td>Mesas y comandas</td><td>No administra dinero global ni catálogo</td></tr>
+      <tr><td>Cajero</td><td>Cobro local</td><td>Caja, pedidos y cierre de mesas</td><td>Solo su local</td></tr>
+      <tr><td>Cocina</td><td>Preparación</td><td>KDS y lectura operativa de stock</td><td>Sin acceso financiero</td></tr>
+      <tr><td>Despachador / repartidor</td><td>Entrega</td><td>Asignación o avance de reparto</td><td>Separación entre asignar y operar</td></tr>
+      <tr><td>Gestor / nutricionista</td><td>Carta o información alimentaria</td><td>Campos específicos de catálogo</td><td>Nutrición no puede editar precios</td></tr>
+      <tr><td>Soporte / auditor</td><td>Incidencias o control</td><td>Pedidos, reclamos o bitácora</td><td>Auditor es lectura</td></tr>
+    </tbody></table>
+    <div class="callout warn"><strong>Alcance global actual:</strong> un rol sin sucursal asignada tiene alcance global. En un modelo SaaS esto debe quedar además limitado por restaurante; de lo contrario, “global” abarcaría organizaciones distintas.</div>
+  </section>
+
+  <section class="chapter">
+    <div class="eyebrow">05 · Experiencia del cliente</div>
+    <h2>Recorrido público y cuenta personal</h2>
+    <div class="flow">
+      <div class="node"><strong>Descubre</strong><span>inicio, menú y planes</span></div><div class="arrow">→</div>
+      <div class="node"><strong>Ubica</strong><span>dirección o recojo</span></div><div class="arrow">→</div>
+      <div class="node"><strong>Elige</strong><span>producto o bowl</span></div><div class="arrow">→</div>
+      <div class="node"><strong>Confirma</strong><span>carrito y checkout</span></div><div class="arrow">→</div>
+      <div class="node"><strong>Sigue</strong><span>estado del pedido</span></div>
+    </div>
+    <div class="domain-map">
+      <div><b>Inicio</b><small>Propuesta de valor, productos, beneficios y llamadas a la acción.</small></div>
+      <div><b>Menú</b><small>Búsqueda, categorías, dietas, nutrición y alérgenos.</small></div>
+      <div><b>Producto</b><small>Variantes, composición, nutrición y disponibilidad.</small></div>
+      <div><b>Constructor</b><small>Selección guiada, precio y macros en vivo.</small></div>
+      <div><b>Cobertura</b><small>Dirección, mapa, distrito, zona y sucursal.</small></div>
+      <div><b>Carrito</b><small>Cantidades, resumen y recuperación del pedido pendiente.</small></div>
+      <div><b>Checkout</b><small>Modalidad, franja, pago, cupón, saldo y comprobante.</small></div>
+      <div><b>Cuenta</b><small>Perfil, pedidos, saldo, direcciones, favoritos y bowls.</small></div>
+    </div>
+    <h3>Persistencia de la experiencia</h3>
+    <table><thead><tr><th>Mecanismo</th><th>Qué conserva</th><th>Finalidad</th></tr></thead><tbody>
+      <tr><td>Estado local</td><td>Inputs, modales, acordeones</td><td>Interacción de una pantalla</td></tr>
+      <tr><td>Contexto de compra</td><td>Ciudad, dirección, sucursal, modalidad</td><td>Mantener coherencia entre menú y checkout</td></tr>
+      <tr><td>Redux + almacenamiento local</td><td>Sesión, carrito, catálogo y UI global</td><td>Continuidad al navegar o recargar</td></tr>
+      <tr><td>Cuenta backend</td><td>Direcciones, pedidos, saldo, favoritos, bowls</td><td>Continuidad entre dispositivos</td></tr>
+    </tbody></table>
+  </section>
+
+  <section class="chapter">
+    <div class="eyebrow">06 · Cobertura y sucursales</div>
+    <h2>Cómo decide el sistema qué local atiende</h2>
+    <div class="flow">
+      <div class="node"><strong>Dirección</strong><span>texto + pin + UBIGEO</span></div><div class="arrow">→</div>
+      <div class="node"><strong>Zona</strong><span>polígono o distrito</span></div><div class="arrow">→</div>
+      <div class="node"><strong>Candidatas</strong><span>sucursales asignadas</span></div><div class="arrow">→</div>
+      <div class="node"><strong>Validaciones</strong><span>activa, horario, prioridad</span></div><div class="arrow">→</div>
+      <div class="node"><strong>Resultado</strong><span>local, costo, mínimo, ETA</span></div>
+    </div>
+    <p>Para delivery, el cliente no puede imponer un <code>branchId</code>: el backend resuelve la cobertura. Para recojo, el cliente elige un local activo que acepte esa modalidad. Para salón, la sucursal procede del alcance operativo del mozo.</p>
+    <div class="grid-3">
+      <div class="card"><h3>Geografía</h3><p>Ciudades, maestro nacional UBIGEO, distritos, coordenadas y polígonos.</p></div>
+      <div class="card"><h3>Reglas</h3><p>Tarifa, pedido mínimo, ETA, prioridad, horarios y excepciones.</p></div>
+      <div class="card"><h3>Capacidad</h3><p>Franjas programadas con cupos y hora límite de reserva.</p></div>
+    </div>
+    <h3>Administración de cobertura</h3>
+    <ul><li>Crear y editar sucursales, teléfonos, coordenadas y modalidades aceptadas.</li><li>Definir horarios semanales, incluidos turnos que cruzan medianoche.</li><li>Crear zonas y polígonos, vincular distritos y priorizar cocinas.</li><li>Generar franjas futuras con capacidad y anticipación mínima.</li><li>Homologar direcciones contra la jerarquía oficial del Perú.</li></ul>
+    <div class="callout"><strong>Separación operativa:</strong> el pedido conserva la sucursal resuelta. El KDS, el inventario, la caja, las mesas, el delivery y las notificaciones filtran por esa misma llave.</div>
+  </section>
+
+  <section class="chapter">
+    <div class="eyebrow">07 · Catálogo y constructor</div>
+    <h2>Productos configurables y bowls personalizados</h2>
+    <div class="grid-2">
+      <div class="card"><h3>Catálogo</h3><ul><li>Categorías y productos fijos o personalizables.</li><li>Variantes y precios.</li><li>Nutrición, alérgenos y etiquetas dietarias.</li><li>Estado borrador, activo o inactivo.</li><li>Disponibilidad por sucursal.</li></ul></div>
+      <div class="card"><h3>Constructor</h3><ul><li>Grupos con selección única o múltiple.</li><li>Mínimos, máximos y cantidades incluidas.</li><li>Suplementos cobrados siempre.</li><li>Incompatibilidades y máximo por ingrediente.</li><li>Presets, imágenes, nutrición y stock vinculado.</li></ul></div>
+    </div>
+    <h3>Cálculo de una personalización</h3>
+    <div class="flow"><div class="node"><strong>Variante base</strong><span>precio y nutrición</span></div><div class="arrow">+</div><div class="node"><strong>Opciones</strong><span>cantidad × suplemento</span></div><div class="arrow">−</div><div class="node"><strong>Incluidas</strong><span>según reglas del grupo</span></div><div class="arrow">=</div><div class="node"><strong>Cotización</strong><span>precio + macros + descripción</span></div></div>
+    <p>El navegador envía identificadores y cantidades. El backend vuelve a cargar la configuración, valida límites, incompatibilidades y disponibilidad, y devuelve la cotización válida. Esto evita que se modifiquen precios desde el cliente.</p>
+    <h3>Gobierno de contenido</h3>
+    <table><thead><tr><th>Responsable</th><th>Puede editar</th><th>No puede editar</th></tr></thead><tbody>
+      <tr><td>Gestor de catálogo</td><td>Nombre, precio, publicación, opciones, orden, imágenes</td><td>Campos restringidos si no tiene permisos nutricionales</td></tr>
+      <tr><td>Nutricionista</td><td>Calorías, proteínas, carbohidratos, grasas, alérgenos, etiquetas</td><td>Precio, stock, publicación y reglas comerciales</td></tr>
+    </tbody></table>
+  </section>
+
+  <section class="chapter">
+    <div class="eyebrow">08 · Carrito, precios y checkout</div>
+    <h2>El servidor vuelve a validar toda la compra</h2>
+    <div class="flow">
+      <div class="node"><strong>Carrito</strong><span>intención del cliente</span></div><div class="arrow">→</div>
+      <div class="node"><strong>Destino</strong><span>delivery, recojo o salón</span></div><div class="arrow">→</div>
+      <div class="node"><strong>Disponibilidad</strong><span>stock + sucursal + cupo</span></div><div class="arrow">→</div>
+      <div class="node"><strong>Pricing</strong><span>precios, cupón, plan, delivery</span></div><div class="arrow">→</div>
+      <div class="node"><strong>Pedido</strong><span>snapshot inmutable</span></div>
+    </div>
+    <h3>Conceptos del total</h3>
+    <table><thead><tr><th>Componente</th><th>Regla</th></tr></thead><tbody>
+      <tr><td>Subtotal</td><td>Variantes y personalizaciones recalculadas desde la base.</td></tr>
+      <tr><td>Cupón</td><td>Valida vigencia, monto mínimo, límites globales y por usuario; se reserva hasta pagar.</td></tr>
+      <tr><td>Beneficios de plan</td><td>Aplica el mejor beneficio activo por tipo, con topes por pedido.</td></tr>
+      <tr><td>Delivery</td><td>Proviene de la zona; puede quedar en cero por cupón o plan.</td></tr>
+      <tr><td>Saldo</td><td>Puede cubrir todo o parte; se consume por lotes FEFO.</td></tr>
+      <tr><td>IGV</td><td>Se extrae del precio final, no se suma por encima.</td></tr>
+    </tbody></table>
+    <div class="callout"><strong>Snapshot del pedido:</strong> nombres, precios, personalizaciones, dirección y datos de facturación quedan congelados. Si el catálogo cambia después, la compra conserva exactamente lo vendido.</div>
+    <h3>Protecciones transaccionales</h3>
+    <ul><li>Idempotencia para evitar pedidos duplicados.</li><li>Reserva de cupones, cupos, saldo e inventario.</li><li>Liberación automática si el pago falla o el pedido se cancela.</li><li>Bloqueo de billetera para evitar doble gasto concurrente.</li></ul>
+  </section>
+
+  <section class="chapter">
+    <div class="eyebrow">09 · Pagos y comprobantes</div>
+    <h2>Cobro desacoplado y trazable</h2>
+    <div class="grid-3">
+      <div class="card"><h3>Stripe</h3><p>Checkout alojado. Los datos de tarjeta no pasan por esta aplicación.</p><span class="tag config">CLAVES REQUERIDAS</span></div>
+      <div class="card"><h3>Billetera</h3><p>Pago total o mixto con saldo de planes, sin invocar Stripe cuando cubre todo.</p><span class="tag done">IMPLEMENTADO</span></div>
+      <div class="card"><h3>Efectivo / POS</h3><p>Comandas de salón y pedidos configurados para cobro físico.</p><span class="tag done">IMPLEMENTADO</span></div>
+    </div>
+    <h3>Flujo seguro del pago en línea</h3>
+    <div class="flow"><div class="node"><strong>Pedido pendiente</strong><span>recursos reservados</span></div><div class="arrow">→</div><div class="node"><strong>Proveedor</strong><span>autoriza o rechaza</span></div><div class="arrow">→</div><div class="node"><strong>Webhook firmado</strong><span>fuente de verdad</span></div><div class="arrow">→</div><div class="node"><strong>Confirmación</strong><span>ticket + notificación</span></div></div>
+    <p>La página de éxito nunca confirma el pago. Solo consulta al backend. Los eventos se deduplican por identificador para soportar reintentos del proveedor.</p>
+    <h3>Boleta y factura</h3>
+    <p>El checkout captura tipo de comprobante, documento y razón social. La interfaz puede presentar e imprimir la representación del pedido con desglose de IGV.</p>
+    <div class="callout danger"><strong>Limitación legal actual:</strong> la emisión electrónica real ante SUNAT/OSE todavía no está integrada. El comprobante nace con estado <code>PENDING</code>; no debe presentarse como aceptado por SUNAT hasta disponer de XML, firma, envío y CDR.</div>
+    <figure class="screenshot-frame"><img class="screenshot" src="../test-results/admin-order-experience/desktop-comprobante.png" alt="Vista previa de boleta" /></figure>
+    <figcaption>Vista previa operativa del comprobante. La propia interfaz advierte cuando la emisión electrónica sigue pendiente.</figcaption>
+  </section>
+
+  <section class="chapter">
+    <div class="eyebrow">10 · Pedidos y estados</div>
+    <h2>Una venta, varios subflujos coordinados</h2>
+    <div class="state"><div class="wait">PENDIENTE DE PAGO</div><div class="ok">CONFIRMADO</div><div class="ok">PREPARANDO</div><div class="ok">LISTO</div><div class="ok">EN REPARTO</div><div class="ok">ENTREGADO</div><div class="stop">CANCELADO</div><div class="stop">REEMBOLSADO</div></div>
+    <p>Las transiciones válidas están definidas en el dominio. Un operador no puede saltar arbitrariamente entre estados, y cada cambio genera historial con actor, fecha y origen.</p>
+    <table><thead><tr><th>Estado del pedido</th><th>Qué ocurre</th><th>Subflujo relacionado</th></tr></thead><tbody>
+      <tr><td>PENDING_PAYMENT</td><td>Reservas temporales; espera confirmación</td><td>Pago, cupón, franja, saldo</td></tr>
+      <tr><td>CONFIRMED</td><td>Venta válida; se genera operación</td><td>Ticket de cocina, reserva de stock</td></tr>
+      <tr><td>PREPARING</td><td>Cocina inició; consumo definitivo</td><td>KDS e inventario</td></tr>
+      <tr><td>READY</td><td>Plato terminado</td><td>Recojo, salón o asignación de entrega</td></tr>
+      <tr><td>OUT_FOR_DELIVERY</td><td>Pedido en ruta</td><td>Delivery y notificaciones</td></tr>
+      <tr><td>DELIVERED</td><td>Ciclo comercial completado</td><td>Caja, métricas y comunicación</td></tr>
+      <tr><td>CANCELLED / REFUNDED</td><td>Se detiene y se revierten recursos según corresponda</td><td>Inventario, cupón, saldo, pago</td></tr>
+    </tbody></table>
+    <h3>Panel de pedidos</h3>
+    <ul><li>Filtros por sucursal, estado, fechas y búsqueda por número o cliente.</li><li>Detalle de productos, personalizaciones, destino, pago e historial.</li><li>Acciones contextuales que muestran el siguiente paso esperado.</li><li>Cancelación con motivo y permiso independiente.</li><li>Acceso al comprobante y reembolso cuando el rol lo permite.</li></ul>
+  </section>
+
+  <section class="chapter">
+    <div class="eyebrow">11 · Panel administrativo</div>
+    <h2>Centro de control modular y responsive</h2>
+    <p>El panel se organiza en Vista general, Operación, Negocio y Administración. La navegación es una única fuente de verdad compartida por menú, rutas y pantalla de aterrizaje.</p>
+    <div class="domain-map">
+      <div><b>Resumen</b><small>KPIs, ventas, tiempos, cobertura y fricción.</small></div>
+      <div><b>Pedidos</b><small>Seguimiento, detalle, cancelación y comprobante.</small></div>
+      <div><b>Caja</b><small>Ingresos, canales, ranking y demanda horaria.</small></div>
+      <div><b>Salón</b><small>Mesas, comandas, servicio y cobro.</small></div>
+      <div><b>Cocina</b><small>KDS en tiempo real y escalamiento.</small></div>
+      <div><b>Reparto</b><small>Asignación y estados de entrega.</small></div>
+      <div><b>Inventario</b><small>Disponibilidad, mínimos y movimientos.</small></div>
+      <div><b>Catálogo</b><small>Productos, precios, nutrición y publicación.</small></div>
+      <div><b>Constructor</b><small>Pasos, ingredientes, presets y reglas.</small></div>
+      <div><b>Medios</b><small>Imágenes y selección visual reutilizable.</small></div>
+      <div><b>Cupones / planes</b><small>Promoción, saldo y beneficios.</small></div>
+      <div><b>Cobertura</b><small>Locales, zonas, horarios y franjas.</small></div>
+      <div><b>Usuarios / roles</b><small>Personal, permisos y alcance.</small></div>
+      <div><b>Reclamaciones</b><small>Libro y seguimiento del caso.</small></div>
+      <div><b>Bitácora</b><small>Cambios sensibles con antes/después.</small></div>
+      <div><b>Datos del negocio</b><small>Identidad, SMTP y comunicación.</small></div>
+    </div>
+    <h3>Criterios de experiencia de usuario</h3>
+    <ul><li>Componentes reutilizables para tablas, filtros, estados, modales, formularios, vacíos y errores.</li><li>Acciones principales visibles y acciones destructivas con contexto o confirmación.</li><li>Responsive: tablas adaptadas, tarjetas, drawers y acciones accesibles en móvil.</li><li>Estados de carga, reconexión, datos desactualizados y permisos insuficientes.</li><li>Formularios agrupados por intención, carga multimedia ordenada y ayudas operativas.</li></ul>
+  </section>
+
+  <section class="chapter">
+    <div class="eyebrow">12 · Cocina KDS</div>
+    <h2>Una pantalla de producción, no una página que el cocinero deba revisar</h2>
+    <div class="flow"><div class="node"><strong>Nuevo ticket</strong><span>SSE + respaldo</span></div><div class="arrow">→</div><div class="node"><strong>Aceptar</strong><span>responsabilidad visible</span></div><div class="arrow">→</div><div class="node"><strong>Preparar</strong><span>consume stock</span></div><div class="arrow">→</div><div class="node"><strong>Listo</strong><span>avisa al siguiente canal</span></div><div class="arrow">→</div><div class="node"><strong>Despachar</strong><span>cierra cocina</span></div></div>
+    <div class="grid-3">
+      <div class="card"><h3>Dispositivo dedicado</h3><p>Modo <code>?kds=1</code>, pantalla completa, Wake Lock e instalación PWA.</p></div>
+      <div class="card"><h3>Alertas</h3><p>Sonido, vibración, resaltado, Web Push e indicador de conexión.</p></div>
+      <div class="card"><h3>Respaldo</h3><p>Sondeo cada 30 segundos si SSE se interrumpe; aviso por datos antiguos.</p></div>
+    </div>
+    <h3>Escalamiento operativo</h3>
+    <p>Si un ticket permanece sin aceptar durante dos minutos, un proceso lo reclama de forma atómica, lo marca como escalado y notifica a los dispositivos suscritos de la sucursal. A los cinco minutos la urgencia visual aumenta.</p>
+    <h3>Impresión térmica</h3>
+    <p>Cada tarjeta permite imprimir una comanda de 80 mm con productos, cantidades, personalizaciones, alérgenos y notas. La autoimpresión puede activarse; la impresión silenciosa exige un equipo dedicado iniciado con política de kiosco.</p>
+    <figure class="screenshot-frame"><img class="screenshot" src="../test-results/kds-audit/desktop-kds.png" alt="Tablero KDS de cocina" /></figure>
+    <figcaption>KDS de escritorio: columnas de producción, alerta por demora y controles del equipo.</figcaption>
+  </section>
+
+  <section class="chapter">
+    <div class="eyebrow">13 · Salón y comandas</div>
+    <h2>Atención dentro del restaurante</h2>
+    <div class="flow"><div class="node"><strong>Mesa disponible</strong><span>mozo abre comanda</span></div><div class="arrow">→</div><div class="node"><strong>Pedido POS</strong><span>servidor recalcula</span></div><div class="arrow">→</div><div class="node"><strong>Cocina local</strong><span>KDS de la sucursal</span></div><div class="arrow">→</div><div class="node"><strong>Lista</strong><span>servir y cobrar</span></div><div class="arrow">→</div><div class="node"><strong>Mesa libre</strong><span>venta registrada</span></div></div>
+    <p>La comanda usa <code>deliveryType = DINE_IN</code> y <code>source = POS</code>. Nunca abre un reparto. La mesa pertenece a una sucursal, y el backend valida que la comanda, el mozo y la operación coincidan con ese local.</p>
+    <h3>Reglas principales</h3>
+    <ul><li>El mozo selecciona productos, cantidades, personalizaciones y notas.</li><li>La aplicación no confía en el total del navegador: recalcula precio y stock.</li><li>La mesa muestra disponible, ocupada, en preparación o lista para cobrar.</li><li>No se puede cerrar la mesa antes de que cocina marque la comanda como lista.</li><li>Al cobrar en efectivo o tarjeta se registra la venta y se libera la mesa.</li></ul>
+    <figure class="screenshot-frame"><img class="screenshot" src="../test-results/admin-restaurant-operations/desktop-salon.png" alt="Panel de salón y comandas" /></figure>
+    <figcaption>Tablero del salón: estado de mesas, comanda activa, responsable y acción de cobro.</figcaption>
+  </section>
+
+  <section class="chapter">
+    <div class="eyebrow">14 · Caja y rendimiento</div>
+    <h2>Lectura comercial por sucursal y periodo</h2>
+    <div class="grid-4">
+      <div class="card metric"><b>Venta</b><span>importe comercial completo</span></div>
+      <div class="card metric"><b>Cobrado</b><span>pagos confirmados por método</span></div>
+      <div class="card metric"><b>Pendiente</b><span>efectivo aún por recaudar</span></div>
+      <div class="card metric"><b>Ranking</b><span>unidades e ingreso por producto</span></div>
+    </div>
+    <h3>Preguntas que responde</h3>
+    <ul><li>¿Cuánto vendió el local en el periodo?</li><li>¿Cuál es el ticket promedio y cómo cambia frente al periodo anterior?</li><li>¿Qué productos funcionan y cuáles no?</li><li>¿Qué porcentaje proviene de delivery, recojo o salón?</li><li>¿En qué horas existe mayor demanda?</li><li>¿Cuánto se descontó y cuántos pedidos se cancelaron?</li></ul>
+    <div class="callout"><strong>Regla contable de lectura:</strong> “venta registrada” y “dinero cobrado” no son sinónimos. Un pedido pagado con saldo sigue siendo una venta, aunque no produzca un nuevo cobro de tarjeta en ese momento.</div>
+    <p>Los cálculos respetan la zona horaria de Lima y pueden filtrarse por sucursal. Los usuarios sin permiso financiero pueden recibir únicamente métricas operativas.</p>
+  </section>
+
+  <section class="chapter">
+    <div class="eyebrow">15 · Inventario</div>
+    <h2>Stock físico, reservado y disponible</h2>
+    <div class="flow"><div class="node"><strong>Stock físico</strong><span>on hand</span></div><div class="arrow">−</div><div class="node"><strong>Reservado</strong><span>pedidos confirmados</span></div><div class="arrow">=</div><div class="node"><strong>Disponible</strong><span>lo que puede venderse</span></div></div>
+    <h3>Ciclo automático</h3>
+    <div class="flow"><div class="node"><strong>Pago confirmado</strong><span>RESERVE</span></div><div class="arrow">→</div><div class="node"><strong>Preparación</strong><span>CONSUME</span></div><div class="arrow">↘</div><div class="node"><strong>Cancelación</strong><span>RELEASE</span></div></div>
+    <table><thead><tr><th>Clasificación</th><th>Condición orientativa</th><th>Acción esperada</th></tr></thead><tbody>
+      <tr><td><span class="tag risk">AGOTADO</span></td><td>Disponible ≤ 0</td><td>Bloquear opciones o productos afectados en esa sucursal.</td></tr>
+      <tr><td><span class="tag risk">CRÍTICO</span></td><td>Hasta la mitad del mínimo o cerca de un día</td><td>Reposición inmediata.</td></tr>
+      <tr><td><span class="tag config">BAJO</span></td><td>Debajo del mínimo o cerca de tres días</td><td>Incluir en próxima compra.</td></tr>
+      <tr><td><span class="tag done">SALUDABLE</span></td><td>Por encima de mínimos y cobertura</td><td>Sin acción urgente.</td></tr>
+    </tbody></table>
+    <h3>Movimientos soportados</h3>
+    <p>Compra, reserva, liberación, consumo, merma y ajuste. El ajuste puede ser positivo o negativo y exige un motivo. El historial funciona como libro de movimientos; no se reemplaza silenciosamente el stock.</p>
+    <p>La compra sugerida considera mínimo, consumo reciente y cobertura aproximada. Las recetas relacionan platos fijos con insumos; las opciones del constructor pueden descontar directamente un ingrediente.</p>
+    <figure class="screenshot-frame"><img class="screenshot crop" src="../test-results/admin-panel-audit/desktop-inventario.png" alt="Panel de inventario" /></figure>
+    <figcaption>Inventario por cocina con existencias, reservas, disponible, cobertura y estado.</figcaption>
+  </section>
+
+  <section class="chapter">
+    <div class="eyebrow">16 · Reparto</div>
+    <h2>Entrega propia o con proveedor externo</h2>
+    <div class="state"><div class="wait">PENDIENTE</div><div class="ok">ASIGNADO</div><div class="ok">RECOGIDO</div><div class="ok">EN RUTA</div><div class="ok">ENTREGADO</div></div>
+    <p>Los pedidos delivery abren un registro de entrega vinculado a la misma sucursal. El despachador puede asignar un repartidor propio o registrar una referencia externa. Al asignar un conductor se controla su disponibilidad; al terminar vuelve a quedar libre.</p>
+    <h3>Coordinación de estados</h3>
+    <table><thead><tr><th>Acción de reparto</th><th>Efecto relacionado</th></tr></thead><tbody>
+      <tr><td>Asignar</td><td>Conductor ocupado; pedido listo para recojo.</td></tr>
+      <tr><td>Recoger / iniciar ruta</td><td>Pedido pasa a <code>OUT_FOR_DELIVERY</code>; se notifica al cliente.</td></tr>
+      <tr><td>Entregar</td><td>Pedido pasa a <code>DELIVERED</code>; conductor disponible; comunicación final.</td></tr>
+    </tbody></table>
+    <div class="callout warn"><strong>Integraciones pendientes:</strong> guardar una referencia externa no equivale a integrar un operador logístico. Tampoco existe todavía prueba de entrega mediante foto, firma o PIN.</div>
+  </section>
+
+  <section class="chapter">
+    <div class="eyebrow">17 · Gestión del negocio y contenido</div>
+    <h2>Configuración sin modificar el código</h2>
+    <div class="grid-2">
+      <div class="card"><h3>Productos y multimedia</h3><p>ABM de productos, variantes, precios, nutrición, publicación, disponibilidad e imágenes reutilizables.</p></div>
+      <div class="card"><h3>Promociones</h3><p>Cupones porcentuales, fijos o delivery gratuito, con vigencia y límites.</p></div>
+      <div class="card"><h3>Planes y billetera</h3><p>Precio, crédito otorgado, vigencia, descuentos y delivery gratuito.</p></div>
+      <div class="card"><h3>Datos empresariales</h3><p>Razón social, RUC, contacto, dirección, remitente, SMTP y canales de notificación.</p></div>
+    </div>
+    <h3>Planes con saldo</h3>
+    <p>Un plan es una compra de crédito con beneficios, no una suscripción renovable automáticamente. La activación solo se produce al confirmar el pago. El saldo vive en un libro mayor y se distribuye en lotes:</p>
+    <table><thead><tr><th>Lote</th><th>Origen</th><th>Vencimiento</th></tr></thead><tbody>
+      <tr><td>PAID</td><td>Capital pagado por el cliente</td><td>Política actual: 180 días</td></tr>
+      <tr><td>BONUS</td><td>Bonificación comercial</td><td>Vence con el plan</td></tr>
+      <tr><td>REFUND</td><td>Devolución de un consumo</td><td>Según política del capital</td></tr>
+      <tr><td>LEGACY</td><td>Saldo anterior a la migración por lotes</td><td>No se recorta al migrar</td></tr>
+    </tbody></table>
+    <h3>Notificaciones</h3>
+    <p>El sistema registra comunicaciones y puede enviar correos para confirmación, preparación, salida, entrega, cancelación y activación de planes. La contraseña SMTP se cifra y no se devuelve al navegador. El envío ocurre en segundo plano para no bloquear la operación.</p>
+  </section>
+
+  <section class="chapter">
+    <div class="eyebrow">18 · Seguridad, privacidad y auditoría</div>
+    <h2>Controles incorporados</h2>
+    <div class="grid-3">
+      <div class="card"><h3>Identidad</h3><p>JWT de acceso y renovación, contraseñas con hash, recuperación y estados de usuario.</p></div>
+      <div class="card"><h3>Autorización</h3><p>RBAC por endpoint, permisos granulares y alcance por sucursal.</p></div>
+      <div class="card"><h3>Entrada</h3><p>Zod, límites de tamaño, Helmet, CORS y rate limiting.</p></div>
+      <div class="card"><h3>Pagos</h3><p>Webhook firmado, deduplicación e idempotencia.</p></div>
+      <div class="card"><h3>Trazabilidad</h3><p>Correlation ID, logs y bitácora de cambios sensibles.</p></div>
+      <div class="card"><h3>Secretos</h3><p>Variables de entorno y cifrado de configuración sensible.</p></div>
+    </div>
+    <h3>Bitácora de auditoría</h3>
+    <p>Registra actor, acción, entidad, identificador, valores anteriores y posteriores, IP, agente del navegador y momento. Se usa en roles, catálogo, pedidos, salón, cobertura y otras acciones administrativas.</p>
+    <h3>Privacidad y aspectos peruanos</h3>
+    <ul><li>Existen páginas de términos, privacidad y cookies.</li><li>Existe Libro de Reclamaciones público y administración de casos.</li><li>Se validan DNI y RUC a nivel de formato/dígito verificador cuando corresponde.</li><li>La plataforma debe acompañarse de políticas reales, consentimiento, conservación de datos y contratos con encargados.</li></ul>
+    <div class="callout danger"><strong>No sustituye una auditoría legal o de seguridad.</strong> Antes de producción deben realizarse pruebas de penetración, revisión de protección de datos personales, políticas de retención, contratos con proveedores y validación tributaria.</div>
+  </section>
+
+  <section class="chapter">
+    <div class="eyebrow">19 · Datos y API</div>
+    <h2>Mapa de dominios persistentes</h2>
+    <p>El proyecto registra 72 modelos. Para comprenderlos se agrupan por responsabilidad:</p>
+    <table><thead><tr><th>Dominio</th><th>Entidades principales</th></tr></thead><tbody>
+      <tr><td>Identidad y acceso</td><td>users, roles, permissions, user_roles, role_permissions, preferences, purchase_context</td></tr>
+      <tr><td>Geografía</td><td>cities, districts, coverage_zones, branches, zone_branches, schedules, delivery_slots, addresses</td></tr>
+      <tr><td>Catálogo</td><td>categories, products, variants, nutrition, allergens, dietary_tags, availability, media_assets</td></tr>
+      <tr><td>Constructor</td><td>customization_groups/options, product_groups, incompatibilities, presets, builder_events</td></tr>
+      <tr><td>Venta</td><td>orders, items, customizations, discounts, status_history, coupons, redemptions</td></tr>
+      <tr><td>Pagos</td><td>payments, attempts, refunds, webhook_events</td></tr>
+      <tr><td>Planes</td><td>plans, benefits, user_plans, wallets, transactions, credit_lots, allocations</td></tr>
+      <tr><td>Operación</td><td>kitchen_tickets/events, dining_tables, inventory, movements, recipes, deliveries, drivers</td></tr>
+      <tr><td>Gobierno</td><td>audit_logs, complaints, notifications, settings, drafts, ux_events</td></tr>
+    </tbody></table>
+    <h3>Familias de API</h3>
+    <div class="domain-map">
+      <div><b class="api">/auth</b><small>Sesión y recuperación.</small></div><div><b class="api">/account</b><small>Perfil, direcciones y alertas.</small></div>
+      <div><b class="api">/locations</b><small>UBIGEO, locales y cobertura.</small></div><div><b class="api">/catalog</b><small>Menú y disponibilidad.</small></div>
+      <div><b class="api">/customizations</b><small>Configuración y cotización.</small></div><div><b class="api">/pricing</b><small>Precio explicado.</small></div>
+      <div><b class="api">/plans</b><small>Planes, saldo y movimientos.</small></div><div><b class="api">/cart</b><small>Validaciones de carrito.</small></div>
+      <div><b class="api">/checkout</b><small>Cotizar y crear pedido.</small></div><div><b class="api">/orders</b><small>Historial del cliente.</small></div>
+      <div><b class="api">/payments</b><small>Sesiones, webhooks y reembolsos.</small></div><div><b class="api">/operations</b><small>Cocina, salón e inventario.</small></div>
+      <div><b class="api">/delivery</b><small>Tablero y conductores.</small></div><div><b class="api">/admin</b><small>Pedidos, reportes y ABM.</small></div>
+      <div><b class="api">/access</b><small>Usuarios, roles y permisos.</small></div><div><b class="api">/settings</b><small>Datos legales y comunicación.</small></div>
+    </div>
+    <h3>Contrato transversal</h3>
+    <p>Las respuestas usan un envoltorio uniforme con <code>success</code>, <code>message</code>, <code>data</code> y, cuando aplica, <code>meta</code>. Los errores pasan por un manejador central y cada petición recibe un identificador de correlación.</p>
+  </section>
+
+  <section class="chapter">
+    <div class="eyebrow">20 · Despliegue y continuidad</div>
+    <h2>Operación de la plataforma</h2>
+    <div class="flow"><div class="node"><strong>Base sana</strong><span>MySQL healthy</span></div><div class="arrow">→</div><div class="node"><strong>Migraciones</strong><span>servicio previo</span></div><div class="arrow">→</div><div class="node"><strong>API</strong><span>/live y /ready</span></div><div class="arrow">←</div><div class="node"><strong>Web</strong><span>Nginx / frontend</span></div></div>
+    <h3>Entornos</h3>
+    <table><thead><tr><th>Entorno</th><th>Esquema</th><th>Recomendación</th></tr></thead><tbody>
+      <tr><td>Desarrollo</td><td>Sincronización de modelos opcional</td><td>Base desechable y datos demo.</td></tr>
+      <tr><td>Pruebas / staging</td><td>Migraciones iguales a producción</td><td>Ensayar Stripe, SMTP, Push, impresión y restauración.</td></tr>
+      <tr><td>Producción</td><td>Solo migraciones; sync/alter/force desactivados</td><td>HTTPS, secretos fuertes, backups externos, observabilidad.</td></tr>
+    </tbody></table>
+    <h3>Salud y recuperación</h3>
+    <ul><li><code>/live</code> responde si el proceso está vivo; no consulta la base.</li><li><code>/ready</code> confirma que la instancia puede atender tráfico y que MySQL responde.</li><li>Los respaldos deben validarse, rotarse solo después de una copia correcta y enviarse fuera del servidor.</li><li>La restauración debe ensayarse en una base alternativa y medirse.</li><li>Las imágenes requieren volumen persistente; con varios nodos conviene S3/R2/Cloudinary.</li></ul>
+    <div class="callout warn"><strong>Estado de esta entrega:</strong> la nueva migración de alertas KDS existe, pero no se aplicó a la base analizada. La cadena pendiente incluye una normalización irreversible de teléfonos; se requiere respaldo y autorización antes de ejecutarla.</div>
+  </section>
+
+  <section class="chapter">
+    <div class="eyebrow">21 · Multisucursal y multirrestaurante</div>
+    <h2>La decisión arquitectónica más importante</h2>
+    <p class="lead">Reutilizar la misma lógica para restaurantes distintos es correcto; compartir sus datos no lo es. La evolución recomendada incorpora un “inquilino” o restaurante propietario por encima de cada sucursal.</p>
+    <div class="flow"><div class="node"><strong>Plataforma</strong><span>gobierno técnico</span></div><div class="arrow">→</div><div class="node"><strong>Restaurante / tenant</strong><span>marca y datos aislados</span></div><div class="arrow">→</div><div class="node"><strong>Sucursal</strong><span>distrito y cobertura</span></div><div class="arrow">→</div><div class="node"><strong>Operación</strong><span>pedido, stock, caja, KDS</span></div></div>
+    <h3>Qué debe quedar aislado por restaurante</h3>
+    <div class="grid-3">
+      <div class="card"><h3>Identidad comercial</h3><p>Nombre, logo, dominio, RUC, dirección, SMTP y pasarela.</p></div>
+      <div class="card"><h3>Venta</h3><p>Catálogo, precios, cupones, planes, clientes, pedidos y comprobantes.</p></div>
+      <div class="card"><h3>Operación</h3><p>Sucursales, cobertura, mesas, stock, cocina, caja y repartidores.</p></div>
+    </div>
+    <h3>Cambios mínimos recomendados</h3>
+    <ol><li>Crear entidad <code>restaurants</code> o <code>tenants</code>.</li><li>Relacionar sucursales, personal, configuración y todos los agregados comerciales.</li><li>Incluir <code>tenantId</code> en el token y resolverlo desde dominio/subdominio o contexto.</li><li>Aplicar filtros obligatorios en cada consulta y claves únicas compuestas por tenant.</li><li>Aislar archivos, Web Push, jobs, caché, auditoría y exportaciones.</li><li>Ejecutar pruebas automáticas de acceso cruzado entre dos restaurantes.</li></ol>
+    <div class="callout danger"><strong>No usar sucursales como restaurantes independientes.</strong> El alcance por <code>branchId</code> protege locales dentro de la misma marca, pero hay configuraciones y maestros globales. Sin <code>tenantId</code>, dos empresas podrían compartir o exponer datos que deberían estar separados.</div>
+  </section>
+
+  <section class="chapter">
+    <div class="eyebrow">22 · Riesgos y hoja de ruta</div>
+    <h2>Prioridades antes de una operación comercial real</h2>
+    <table><thead><tr><th>Prioridad</th><th>Tema</th><th>Situación</th><th>Acción recomendada</th></tr></thead><tbody>
+      <tr><td>P0</td><td>Migraciones</td><td>Cambios pendientes y una transformación irreversible</td><td>Backup, staging, autorización y verificación posterior.</td></tr>
+      <tr><td>P0</td><td>Multitenencia</td><td>No implementada</td><td>Completar antes de incorporar restaurantes independientes.</td></tr>
+      <tr><td>P0</td><td>SUNAT</td><td>Solo vista previa / estado pendiente</td><td>Contratar OSE/PSE e implementar XML, firma, envío y CDR.</td></tr>
+      <tr><td>P1</td><td>Pagos reales</td><td>Adaptador listo; credenciales/prueba necesarias</td><td>Certificar Stripe o elegir pasarela local y probar webhooks.</td></tr>
+      <tr><td>P1</td><td>Observabilidad</td><td>Logs disponibles; sin plataforma de errores</td><td>Sentry/APM, alertas y métricas de pagos, API y jobs.</td></tr>
+      <tr><td>P1</td><td>Alta disponibilidad</td><td>Jobs internos y archivos locales</td><td>Locks distribuidos, cola de trabajos y almacenamiento de objetos.</td></tr>
+      <tr><td>P1</td><td>Seguridad</td><td>Controles de aplicación presentes</td><td>Pen test, escaneo continuo y actualización de dependencias.</td></tr>
+      <tr><td>P2</td><td>Delivery externo</td><td>Referencia, no integración completa</td><td>Adaptador de proveedor, tracking y prueba de entrega.</td></tr>
+      <tr><td>P2</td><td>Analítica</td><td>KPIs internos y eventos UX</td><td>Embudo, cohortes, retención, margen y desperdicio.</td></tr>
+    </tbody></table>
+    <h3>Estado de calidad observado</h3>
+    <ul><li>Compilación de producción frontend y backend: correcta.</li><li>TypeScript y lint: sin errores; advertencias no bloqueantes de Fast Refresh en archivos preexistentes.</li><li>50 pruebas backend aprobadas, incluida separación de eventos de cocina por sucursal.</li><li>Auditorías visuales disponibles en desktop y móvil para panel, modales, operación y KDS.</li><li>Auditoría npm completa: cero vulnerabilidades conocidas después de actualizar React Router, UUID y las dependencias transitivas afectadas.</li></ul>
+  </section>
+
+  <section class="chapter">
+    <div class="eyebrow">Anexo A · Matriz funcional</div>
+    <h2>Módulos, actores y evidencia</h2>
+    <table><thead><tr><th>Módulo</th><th>Actor principal</th><th>Entrada</th><th>Resultado</th><th>Estado</th></tr></thead><tbody>
+      <tr><td>Autenticación</td><td>Cliente / personal</td><td>Credenciales</td><td>Sesión y permisos</td><td><span class="tag done">Implementado</span></td></tr>
+      <tr><td>Cobertura</td><td>Cliente / geo admin</td><td>Dirección o local</td><td>Sucursal, tarifa y ETA</td><td><span class="tag done">Implementado</span></td></tr>
+      <tr><td>Catálogo</td><td>Cliente / gestor</td><td>Filtros y contenido</td><td>Menú vendible por sucursal</td><td><span class="tag done">Implementado</span></td></tr>
+      <tr><td>Constructor</td><td>Cliente / gestor / nutrición</td><td>Selecciones</td><td>Precio, macros y descripción</td><td><span class="tag done">Implementado</span></td></tr>
+      <tr><td>Checkout</td><td>Cliente</td><td>Carrito, modalidad y pago</td><td>Pedido pendiente o confirmado</td><td><span class="tag done">Implementado</span></td></tr>
+      <tr><td>Stripe</td><td>Cliente / proveedor</td><td>Sesión de pago</td><td>Webhook de confirmación</td><td><span class="tag config">Configurar</span></td></tr>
+      <tr><td>Comprobante SUNAT</td><td>Caja / cliente</td><td>Datos fiscales</td><td>Vista previa pendiente</td><td><span class="tag external">Integrar OSE</span></td></tr>
+      <tr><td>Pedidos</td><td>Soporte / operación</td><td>Venta confirmada</td><td>Historial y acciones</td><td><span class="tag done">Implementado</span></td></tr>
+      <tr><td>KDS</td><td>Cocina</td><td>Ticket por sucursal</td><td>Preparación coordinada</td><td><span class="tag config">Migrar + VAPID</span></td></tr>
+      <tr><td>Salón</td><td>Mozo / caja</td><td>Mesa y productos</td><td>Comanda, cobro y liberación</td><td><span class="tag done">Implementado</span></td></tr>
+      <tr><td>Inventario</td><td>Almacén / cocina</td><td>Compras y consumo</td><td>Disponible y alertas</td><td><span class="tag done">Implementado</span></td></tr>
+      <tr><td>Reparto</td><td>Despachador / conductor</td><td>Pedido listo</td><td>Entrega y trazabilidad</td><td><span class="tag done">Núcleo</span></td></tr>
+      <tr><td>Caja</td><td>Cajero / gerente</td><td>Ventas del periodo</td><td>KPIs y ranking</td><td><span class="tag done">Implementado</span></td></tr>
+      <tr><td>Planes</td><td>Cliente / comercial</td><td>Compra de crédito</td><td>Saldo y beneficios</td><td><span class="tag done">Implementado</span></td></tr>
+      <tr><td>Notificaciones</td><td>Cliente / cocina</td><td>Eventos de dominio</td><td>Email, in-app y push</td><td><span class="tag config">Configurar proveedores</span></td></tr>
+      <tr><td>Multirrestaurante</td><td>Plataforma SaaS</td><td>Tenant</td><td>Aislamiento empresarial</td><td><span class="tag future">Pendiente</span></td></tr>
+    </tbody></table>
+  </section>
+
+  <section class="chapter">
+    <div class="eyebrow">Anexo B · Glosario</div>
+    <h2>Términos esenciales</h2>
+    <table><thead><tr><th>Término</th><th>Significado en el sistema</th></tr></thead><tbody>
+      <tr><td>Branch / sucursal</td><td>Local físico que atiende, cocina, mantiene stock y registra ventas.</td></tr>
+      <tr><td>Tenant / restaurante</td><td>Empresa propietaria de una o más sucursales; todavía no modelada como entidad independiente.</td></tr>
+      <tr><td>Cobertura</td><td>Reglas geográficas y operativas que determinan si una dirección puede atenderse.</td></tr>
+      <tr><td>KDS</td><td>Kitchen Display System: pantalla dedicada que organiza las comandas de cocina.</td></tr>
+      <tr><td>Comanda</td><td>Pedido operativo, especialmente el originado en una mesa del salón.</td></tr>
+      <tr><td>Snapshot</td><td>Copia inmutable de datos comerciales al momento de comprar.</td></tr>
+      <tr><td>RBAC</td><td>Control de acceso basado en roles formados por permisos.</td></tr>
+      <tr><td>SSE</td><td>Canal de eventos servidor → navegador usado por el KDS.</td></tr>
+      <tr><td>VAPID</td><td>Claves que identifican al servidor para enviar Web Push.</td></tr>
+      <tr><td>Webhook</td><td>Notificación firmada de un proveedor hacia el backend.</td></tr>
+      <tr><td>Idempotencia</td><td>Garantía de que repetir la misma operación no crea un resultado duplicado.</td></tr>
+      <tr><td>FEFO</td><td>Consumir primero el lote que vence antes.</td></tr>
+      <tr><td>OSE/PSE</td><td>Proveedor autorizado que participa en la emisión electrónica ante SUNAT.</td></tr>
+      <tr><td>CDR</td><td>Constancia de recepción de SUNAT/OSE que acredita la respuesta tributaria.</td></tr>
+    </tbody></table>
+    <div class="card dark" style="margin-top:10mm;padding:8mm">
+      <h3>Conclusión</h3>
+      <p>Verde Bowl V3 ya articula una operación gastronómica omnicanal: transforma la ubicación y la intención de compra en un pedido asignado, una comanda visible, un movimiento de inventario, un cobro y una métrica de negocio.</p>
+      <p>Su siguiente salto no consiste en repetir el código para cada restaurante, sino en incorporar aislamiento multitenant, completar las integraciones externas y operar la plataforma con controles de producción.</p>
+    </div>
+    <p class="page-note" style="margin-top:10mm">Documento generado a partir del repositorio Verde Bowl V3. La implementación debe contrastarse siempre con el entorno desplegado, sus migraciones aplicadas, variables y servicios contratados.</p>
+  </section>
+</main>
+</body>
+</html>

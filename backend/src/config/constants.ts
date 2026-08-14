@@ -27,8 +27,16 @@ export const ORDER_STATUS_FLOW: Record<OrderStatus, OrderStatus[]> = {
   REFUNDED: [],
 };
 
-export const DELIVERY_TYPE = { DELIVERY: 'DELIVERY', PICKUP: 'PICKUP' } as const;
+export const DELIVERY_TYPE = {
+  DELIVERY: 'DELIVERY',
+  PICKUP: 'PICKUP',
+  /** Consumo dentro del local: se asigna a una mesa y nunca abre reparto. */
+  DINE_IN: 'DINE_IN',
+} as const;
 export type DeliveryType = (typeof DELIVERY_TYPE)[keyof typeof DELIVERY_TYPE];
+
+export const ORDER_SOURCE = { WEB: 'WEB', POS: 'POS' } as const;
+export type OrderSource = (typeof ORDER_SOURCE)[keyof typeof ORDER_SOURCE];
 
 /**
  * Comprobante de pago (SUNAT). BOLETA al consumidor final; FACTURA a una empresa
@@ -76,6 +84,8 @@ export const PAYMENT_PROVIDER = {
   STRIPE: 'stripe',
   WALLET: 'wallet',
   CASH: 'cash',
+  YAPE: 'yape',
+  PLIN: 'plin',
 } as const;
 export type PaymentProviderName = (typeof PAYMENT_PROVIDER)[keyof typeof PAYMENT_PROVIDER];
 
@@ -83,6 +93,8 @@ export type PaymentProviderName = (typeof PAYMENT_PROVIDER)[keyof typeof PAYMENT
 export const PAYMENT_METHOD = {
   ONLINE: 'ONLINE',
   CASH: 'CASH',
+  YAPE: 'YAPE',
+  PLIN: 'PLIN',
 } as const;
 export type PaymentMethod = (typeof PAYMENT_METHOD)[keyof typeof PAYMENT_METHOD];
 
@@ -94,6 +106,31 @@ export const WALLET_TX_TYPE = {
   REFUND: 'REFUND',
 } as const;
 export type WalletTxType = (typeof WALLET_TX_TYPE)[keyof typeof WALLET_TX_TYPE];
+
+/** Origen y tratamiento de cada lote de saldo de la billetera. */
+export const WALLET_LOT_KIND = {
+  /** Dinero efectivamente pagado por el cliente al comprar un plan. */
+  PAID: 'PAID',
+  /** Crédito adicional entregado gratuitamente por una promoción o plan. */
+  BONUS: 'BONUS',
+  /** Saldo restituido por la cancelación de un pedido. */
+  REFUND: 'REFUND',
+  /** Saldo anterior a la introducción del control por lotes. No se recorta al migrar. */
+  LEGACY: 'LEGACY',
+} as const;
+export type WalletLotKind = (typeof WALLET_LOT_KIND)[keyof typeof WALLET_LOT_KIND];
+
+export const WALLET_LOT_STATUS = {
+  ACTIVE: 'ACTIVE',
+  EXHAUSTED: 'EXHAUSTED',
+  EXPIRED: 'EXPIRED',
+} as const;
+export type WalletLotStatus = (typeof WALLET_LOT_STATUS)[keyof typeof WALLET_LOT_STATUS];
+
+/** Política comercial: el capital pagado y los reembolsos pueden usarse por 180 días. */
+export const PAID_CREDIT_VALIDITY_DAYS = 180;
+/** Versión de las condiciones específicas aceptadas al adquirir un plan. */
+export const PLAN_TERMS_VERSION = '2026-08-02';
 
 export const USER_STATUS = {
   PENDING: 'PENDING',
@@ -107,6 +144,8 @@ export type UserStatus = (typeof USER_STATUS)[keyof typeof USER_STATUS];
 export const ROLES = {
   CUSTOMER: 'customer',
   KITCHEN: 'kitchen',
+  WAITER: 'waiter',
+  CASHIER: 'cashier',
   DISPATCHER: 'dispatcher',
   DRIVER: 'driver',
   SUPPORT: 'support',
@@ -157,6 +196,10 @@ export const PERMISSIONS = {
   KITCHEN_READ: 'kitchen.read',
   KITCHEN_OPERATE: 'kitchen.operate',
 
+  // --- Salón y comandas ---
+  DINING_READ: 'dining.read',
+  DINING_OPERATE: 'dining.operate',
+
   // --- Inventario ---
   INVENTORY_READ: 'inventory.read',
   INVENTORY_MANAGE: 'inventory.manage',
@@ -168,6 +211,8 @@ export const PERMISSIONS = {
 
   // --- Pagos ---
   PAYMENT_READ: 'payment.read',
+  PAYMENT_VERIFY: 'payment.verify',
+  INVOICE_MANAGE: 'invoice.manage',
   PAYMENT_REFUND: 'payment.refund',
 
   // --- Planes y promociones ---
@@ -247,6 +292,14 @@ export const PERMISSION_CATALOG: Array<{
     ],
   },
   {
+    module: 'dining',
+    label: 'Salón y comandas',
+    permissions: [
+      { code: PERMISSIONS.DINING_READ, label: 'Ver mesas y comandas' },
+      { code: PERMISSIONS.DINING_OPERATE, label: 'Abrir, cobrar y cerrar comandas' },
+    ],
+  },
+  {
     module: 'inventory',
     label: 'Inventario',
     permissions: [
@@ -268,6 +321,8 @@ export const PERMISSION_CATALOG: Array<{
     label: 'Pagos',
     permissions: [
       { code: PERMISSIONS.PAYMENT_READ, label: 'Ver pagos' },
+      { code: PERMISSIONS.PAYMENT_VERIFY, label: 'Validar pagos Yape y Plin' },
+      { code: PERMISSIONS.INVOICE_MANAGE, label: 'Registrar comprobantes emitidos' },
       { code: PERMISSIONS.PAYMENT_REFUND, label: 'Emitir reembolsos' },
     ],
   },
@@ -302,6 +357,61 @@ export const PERMISSION_CATALOG: Array<{
     ],
   },
 ];
+
+/**
+ * COMPUERTA DE VERSION DE LA APP MOVIL
+ * ---------------------------------------------------------------------------
+ * La app pregunta estos valores al arrancar (GET /settings/public) y decide sola:
+ * si su version es menor que la minima soportada, bloquea y lleva a la tienda.
+ *
+ * Es la unica pieza que NO se puede anadir de forma retroactiva: una instalacion
+ * que ya esta en el telefono de un cliente solo obedece lo que su primera version
+ * sabia consultar. Por eso el bloque viaja desde el primer dia, aunque hoy no
+ * bloquee a nadie.
+ *
+ * Los valores por defecto son deliberadamente permisivos (nadie queda fuera y el
+ * mantenimiento esta apagado). Se ajustan por variables de entorno, sin publicar
+ * codigo nuevo: MOBILE_MIN_SUPPORTED_VERSION, MOBILE_LATEST_VERSION,
+ * MOBILE_UPDATE_URL, MOBILE_UPDATE_URL_ANDROID, MOBILE_UPDATE_URL_IOS,
+ * MOBILE_MAINTENANCE y MOBILE_MAINTENANCE_MESSAGE.
+ */
+export const MOBILE_APP = {
+  /** Mientras nadie configure otra cosa, ninguna instalacion queda bloqueada. */
+  MIN_SUPPORTED_VERSION: '0.0.0',
+  /** '0.0.0' significa "no hay novedad publicada": la app no propone actualizar. */
+  LATEST_VERSION: '0.0.0',
+  /** Identificador de la app en ambas tiendas (mobile/app.json). */
+  BUNDLE_ID: 'com.verdebowl.app',
+  MAINTENANCE_MESSAGE: 'Estamos haciendo mejoras en el servicio. Vuelve a intentarlo en unos minutos.',
+} as const;
+
+/** Version de la app movil: MAYOR.MENOR.PARCHE. Lo que no encaje aqui se ignora. */
+export const MOBILE_VERSION_PATTERN = /^\d{1,4}\.\d{1,4}\.\d{1,4}$/;
+
+/**
+ * Canales de aviso del telefono. Android los lista por separado en los ajustes del
+ * sistema: asi el cliente puede silenciar los avisos de disponibilidad sin perder
+ * el estado de su pedido. Los mismos identificadores deben existir en la app; si
+ * falta uno, Android muestra el aviso en su canal de respaldo (no se pierde).
+ */
+export const PUSH_CHANNEL = {
+  ORDER_UPDATES: 'order-updates',
+  KITCHEN_OPERATIONS: 'kitchen-operations',
+  PLAN_UPDATES: 'plan-updates',
+  AVAILABILITY: 'availability-alerts',
+  SUPPORT: 'support-updates',
+} as const;
+export type PushChannelId = (typeof PUSH_CHANNEL)[keyof typeof PUSH_CHANNEL];
+
+/** Plantilla con la que se registra cada aviso push en `notifications`. */
+export const PUSH_TEMPLATE = {
+  ORDER_STATUS: 'ORDER_STATUS_PUSH',
+  KITCHEN_OPERATION: 'KITCHEN_OPERATION_PUSH',
+  PLAN_ACTIVATED: 'PLAN_ACTIVATED_PUSH',
+  PRODUCT_AVAILABLE: 'PRODUCT_AVAILABLE_PUSH',
+  COMPLAINT_RESPONDED: 'COMPLAINT_RESPONDED_PUSH',
+} as const;
+export type PushTemplate = (typeof PUSH_TEMPLATE)[keyof typeof PUSH_TEMPLATE];
 
 export const CURRENCY = 'PEN';
 export const DEFAULT_PAGE_SIZE = 20;

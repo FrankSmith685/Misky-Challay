@@ -4,8 +4,10 @@ import {
   InferAttributes,
   InferCreationAttributes,
   Model,
+  NonAttribute,
 } from 'sequelize';
 import { sequelize } from '../connection';
+import type { User } from './user.model';
 
 export const DRIVER_STATUS = {
   AVAILABLE: 'AVAILABLE',
@@ -17,6 +19,15 @@ export type DriverStatus = (typeof DRIVER_STATUS)[keyof typeof DRIVER_STATUS];
 /** Tabla `drivers`: repartidores de la flota propia (decision de Fase 0). */
 export class Driver extends Model<InferAttributes<Driver>, InferCreationAttributes<Driver>> {
   declare id: CreationOptional<number>;
+  /**
+   * Cuenta con la que ese repartidor inicia sesion. Es el UNICO vinculo entre la
+   * persona y la fila de la flota, y de el dependen dos cosas: que el tablero le
+   * muestre SUS repartos y no los de sus companeros, y que se le pueda asignar uno.
+   *
+   * Nullable porque la flota puede existir antes que las cuentas (los repartidores
+   * sembrados no tienen usuario). Lo rellena `accessService` al conceder el rol de
+   * repartidor: mientras siga en null, esa cuenta no vera ningun reparto.
+   */
   declare userId: CreationOptional<number | null>;
   declare branchId: number;
   declare fullName: string;
@@ -26,6 +37,8 @@ export class Driver extends Model<InferAttributes<Driver>, InferCreationAttribut
   declare isActive: CreationOptional<boolean>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
+
+  declare user?: NonAttribute<User>;
 }
 
 Driver.init(

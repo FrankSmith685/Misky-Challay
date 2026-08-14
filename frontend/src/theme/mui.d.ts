@@ -7,6 +7,13 @@
  */
 import '@mui/material/styles';
 
+/**
+ * Paradas numericas de rampa (ver theme/colorUtils.ts). MUI solo tipa
+ * main/light/dark/contrastText; buildTheme publica ademas la rampa completa
+ * para que rutas como `bgcolor: 'primary.50'` resuelvan a un color real.
+ */
+type RampStops = Partial<Record<50 | 100 | 200 | 300 | 400 | 500 | 600 | 700 | 800 | 900, string>>;
+
 declare module '@mui/material/styles' {
   interface Palette {
     tertiary: Palette['primary'];
@@ -14,6 +21,8 @@ declare module '@mui/material/styles' {
   interface PaletteOptions {
     tertiary?: PaletteOptions['primary'];
   }
+  interface PaletteColor extends RampStops {}
+  interface SimplePaletteColorOptions extends RampStops {}
 }
 
 declare module '@mui/material/Button' {

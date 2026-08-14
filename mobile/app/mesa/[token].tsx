@@ -20,6 +20,7 @@ import { QuantityStepper } from '../../src/components/QuantityStepper';
 import { ScreenScaffold } from '../../src/components/ScreenScaffold';
 import { Skeleton } from '../../src/components/Skeleton';
 import { useResource } from '../../src/hooks/useResource';
+import { money } from '../../src/lib/format';
 import { useToast } from '../../src/providers/ToastProvider';
 import { diningApi, type DiningOrderInput } from '../../src/services/api/dining.service';
 import { colors, layout, radius, shadow, spacing, type } from '../../src/theme/tokens';
@@ -27,7 +28,6 @@ import type { DiningProduct, PublicDiningTable } from '../../src/types/domain';
 
 const MAX_UNITS_PER_DISH = 20;
 
-const money = (value: number): string => `S/ ${value.toFixed(2)}`;
 
 type DiningOrderItem = DiningOrderInput['items'][number];
 

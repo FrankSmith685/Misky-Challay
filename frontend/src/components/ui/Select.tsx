@@ -10,7 +10,7 @@ interface SelectProps extends Omit<TextFieldProps, 'select' | 'error' | 'helperT
 
 /** Selector de producto sobre MUI: accesibilidad, foco, menu y tema centralizados. */
 export const Select = forwardRef<HTMLDivElement, SelectProps>(
-  ({ label, error, hint, fullWidth = true, size = 'small', children, ...props }, ref) => (
+  ({ label, error, hint, fullWidth = true, size = 'medium', children, ...props }, ref) => (
     <TextField
       select
       inputRef={ref}

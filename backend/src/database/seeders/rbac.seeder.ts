@@ -31,7 +31,19 @@ const ROLE_DEFINITIONS: Array<{
     code: ROLES.KITCHEN,
     name: 'Operador de cocina',
     description: 'Ve la cola de tickets y los avanza.',
-    permissions: [P.KITCHEN_READ, P.KITCHEN_OPERATE, P.ORDER_READ, P.INVENTORY_READ],
+    permissions: [P.KITCHEN_READ, P.KITCHEN_OPERATE, P.INVENTORY_READ],
+  },
+  {
+    code: ROLES.WAITER,
+    name: 'Mozo',
+    description: 'Abre comandas, atiende mesas y consulta su avance en cocina.',
+    permissions: [P.DINING_READ, P.DINING_OPERATE],
+  },
+  {
+    code: ROLES.CASHIER,
+    name: 'Cajero',
+    description: 'Cobra y cierra mesas, consulta ventas y pagos de su local.',
+    permissions: [P.DINING_READ, P.DINING_OPERATE, P.ORDER_READ, P.PAYMENT_READ, P.PAYMENT_VERIFY, P.INVOICE_MANAGE, P.REPORT_SALES_READ],
   },
   {
     code: ROLES.DISPATCHER,
@@ -41,8 +53,6 @@ const ROLE_DEFINITIONS: Array<{
       P.DELIVERY_READ,
       P.DELIVERY_ASSIGN,
       P.DELIVERY_OPERATE,
-      P.ORDER_READ,
-      P.KITCHEN_READ,
     ],
   },
   {
@@ -54,7 +64,8 @@ const ROLE_DEFINITIONS: Array<{
   {
     code: ROLES.SUPPORT,
     name: 'Soporte',
-    description: 'Atiende incidencias: consulta pedidos, cancela y reembolsa.',
+    description:
+      'Atiende incidencias: consulta pedidos, cancela, reembolsa y responde el Libro de Reclamaciones.',
     permissions: [
       P.ORDER_READ,
       P.ORDER_CANCEL,
@@ -62,6 +73,9 @@ const ROLE_DEFINITIONS: Array<{
       P.PAYMENT_READ,
       P.PAYMENT_REFUND,
       P.PLAN_READ,
+      // Quien atiende al consumidor tiene que poder responderle: el reclamo corre
+      // con plazo legal y hasta ahora solo el administrador general podia contestarlo.
+      P.COMPLAINT_MANAGE,
     ],
   },
   {
@@ -101,6 +115,8 @@ const ROLE_DEFINITIONS: Array<{
       P.ORDER_CANCEL,
       P.KITCHEN_READ,
       P.KITCHEN_OPERATE,
+      P.DINING_READ,
+      P.DINING_OPERATE,
       P.DELIVERY_READ,
       P.DELIVERY_ASSIGN,
       P.DELIVERY_OPERATE,
@@ -108,6 +124,10 @@ const ROLE_DEFINITIONS: Array<{
       P.INVENTORY_MANAGE,
       P.CATALOG_PRODUCT_READ,
       P.CATALOG_AVAILABILITY_WRITE,
+      P.PAYMENT_READ,
+      P.PAYMENT_VERIFY,
+      P.INVOICE_MANAGE,
+      P.REPORT_SALES_READ,
       P.REPORT_OPERATIONS_READ,
     ],
   },
@@ -139,6 +159,17 @@ const ROLE_DEFINITIONS: Array<{
     ],
   },
 ];
+
+/**
+ * Permisos historicos que hacian que cada puesto viera modulos ajenos a su
+ * estacion. Se retiran de forma dirigida; los demas ajustes manuales de roles se
+ * siguen respetando.
+ */
+const DEPRECATED_OPERATION_PERMISSIONS: Partial<Record<string, string[]>> = {
+  [ROLES.KITCHEN]: [P.ORDER_READ],
+  [ROLES.WAITER]: [P.ORDER_READ, P.KITCHEN_READ],
+  [ROLES.DISPATCHER]: [P.ORDER_READ, P.KITCHEN_READ],
+};
 
 export const seedRbac = async (): Promise<void> => {
   // 1) Permisos: los define el codigo, se sincronizan en cada arranque.
@@ -175,6 +206,11 @@ export const seedRbac = async (): Promise<void> => {
         isSystem: true,
       },
     });
+
+    for (const permissionCode of DEPRECATED_OPERATION_PERMISSIONS[definition.code] ?? []) {
+      const permissionId = permissionByCode.get(permissionCode);
+      if (permissionId) await RolePermission.destroy({ where: { roleId: role.id, permissionId } });
+    }
 
     // El seeder solo AGREGA permisos nuevos: si un admin quito uno a mano desde
     // el panel, no se lo devolvemos por la fuerza en cada reinicio.

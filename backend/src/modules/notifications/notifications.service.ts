@@ -8,16 +8,29 @@ import {
   Role,
   User,
   UserPlan,
+  Product,
 } from '@database/models';
 import { createHash } from 'node:crypto';
-import { businessInfo } from '@config/business';
+import { Op } from 'sequelize';
+import { settingsService } from '@modules/settings/settings.service';
 import { NOTIFICATION_STATUS } from '@database/models/notification.model';
 import { PAYABLE_TYPE } from '@database/models/payment.model';
-import { ORDER_STATUS, PAYMENT_PROVIDER, PAYMENT_STATUS, type OrderStatus } from '@config/constants';
+import {
+  ORDER_STATUS,
+  PAID_CREDIT_VALIDITY_DAYS,
+  PAYMENT_PROVIDER,
+  PAYMENT_STATUS,
+  PUSH_CHANNEL,
+  PUSH_TEMPLATE,
+  type OrderStatus,
+  type PushChannelId,
+  type PushTemplate,
+} from '@config/constants';
 import { env } from '@config/env';
 import { logger } from '@config/logger';
 import { getMailProvider } from '@integrations/mail';
 import { TEMPLATES, type OrderEmailData } from './templates';
+import { mobilePushService } from './mobilePush.service';
 
 /** Que estado del pedido dispara que correo. Los que no estan aqui no avisan. */
 const TEMPLATE_BY_STATUS: Partial<Record<OrderStatus, keyof typeof TEMPLATES>> = {
@@ -33,8 +46,23 @@ const escapeHtml = (value: string): string =>
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;',
   })[character] ?? character);
 
+type NotificationCategory = 'ORDER' | 'PLAN' | 'STAFF' | 'COMPLAINT' | 'SECURITY' | 'AVAILABILITY';
+
+const eventIsEnabled = (
+  category: NotificationCategory,
+  settings: Awaited<ReturnType<typeof settingsService.getCommunicationSettings>>,
+): boolean => {
+  if (category === 'ORDER') return settings.orderUpdatesEnabled;
+  if (category === 'PLAN') return settings.planUpdatesEnabled;
+  if (category === 'STAFF') return settings.staffAccessEnabled;
+  if (category === 'AVAILABILITY') return settings.availabilityAlertsEnabled;
+  // Reclamos y recuperacion de cuenta son comunicaciones esenciales.
+  return true;
+};
+
 /** Nunca lanza: que falle un correo no puede tumbar un pedido pagado. */
 const deliver = async (input: {
+  category: NotificationCategory;
   template: string;
   to: string;
   subject: string;
@@ -43,15 +71,65 @@ const deliver = async (input: {
   userId?: number | null;
   orderId?: number | null;
   idempotencyKey: string;
-}): Promise<void> => {
+  actionUrl?: string | null;
+  sendEmail?: boolean;
+  createInApp?: boolean;
+}): Promise<boolean> => {
   try {
-    // Idempotencia: el mismo aviso no se manda dos veces (RN-015 aplicado al correo).
-    const existing = await Notification.findOne({
+    const settings = await settingsService.getCommunicationSettings();
+    if (!eventIsEnabled(input.category, settings)) return false;
+
+    const isEssentialEmail = input.category === 'COMPLAINT' || input.category === 'SECURITY';
+    const shouldSendEmail = input.sendEmail !== false
+      && Boolean(input.to)
+      && (settings.emailNotificationsEnabled || isEssentialEmail);
+    const shouldCreateInApp = input.createInApp !== false
+      && Boolean(input.userId)
+      && settings.inAppNotificationsEnabled;
+    if (!shouldSendEmail && !shouldCreateInApp) return false;
+
+    // Compatibilidad con avisos creados antes de separar correo y campana.
+    const legacy = await Notification.findOne({
       where: { idempotencyKey: input.idempotencyKey },
     });
-    if (existing) return;
+    if (legacy) return legacy.status === NOTIFICATION_STATUS.SENT;
 
-    const provider = getMailProvider();
+    let delivered = false;
+
+    if (shouldCreateInApp) {
+      const inAppKey = `${input.idempotencyKey}:in-app`;
+      const existingInApp = await Notification.findOne({ where: { idempotencyKey: inAppKey } });
+      if (existingInApp?.status === NOTIFICATION_STATUS.SENT) delivered = true;
+      else if (!existingInApp) {
+        await Notification.create({
+          userId: input.userId ?? null,
+          orderId: input.orderId ?? null,
+          channel: 'IN_APP',
+          template: input.template,
+          recipient: `user:${input.userId}`,
+          subject: input.subject,
+          actionUrl: input.actionUrl ?? null,
+          status: NOTIFICATION_STATUS.SENT,
+          provider: 'in_app',
+          idempotencyKey: inAppKey,
+          sentAt: new Date(),
+        });
+        delivered = true;
+      }
+    }
+
+    if (!shouldSendEmail) return delivered;
+
+    const provider = getMailProvider({
+      host: settings.smtpHost,
+      port: settings.smtpPort,
+      secure: settings.smtpSecure,
+      user: settings.smtpUser || undefined,
+      password: settings.smtpPassword,
+      fromEmail: settings.fromEmail,
+      fromName: settings.fromName,
+      replyToEmail: settings.replyToEmail || undefined,
+    });
 
     try {
       const result = await provider.send({
@@ -61,41 +139,161 @@ const deliver = async (input: {
         text: input.text,
       });
 
-      await Notification.create({
-        userId: input.userId ?? null,
+      const emailKey = `${input.idempotencyKey}:email`;
+      const existingEmail = await Notification.findOne({ where: { idempotencyKey: emailKey } });
+      if (existingEmail?.status === NOTIFICATION_STATUS.SENT) return true;
+
+      const notificationValues = {
+        userId: null,
         orderId: input.orderId ?? null,
+        channel: 'EMAIL',
         template: input.template,
         recipient: input.to,
         subject: input.subject,
+        actionUrl: input.actionUrl ?? null,
         status: NOTIFICATION_STATUS.SENT,
         provider: provider.name,
         providerMessageId: result.messageId,
-        idempotencyKey: input.idempotencyKey,
+        errorMessage: null,
+        idempotencyKey: emailKey,
         sentAt: new Date(),
-      });
+      } as const;
+      if (existingEmail) await existingEmail.update(notificationValues);
+      else await Notification.create(notificationValues);
+      return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Error al enviar';
-
-      await Notification.create({
-        userId: input.userId ?? null,
+      const emailKey = `${input.idempotencyKey}:email`;
+      const existingEmail = await Notification.findOne({ where: { idempotencyKey: emailKey } });
+      const notificationValues = {
+        userId: null,
         orderId: input.orderId ?? null,
+        channel: 'EMAIL',
         template: input.template,
         recipient: input.to,
         subject: input.subject,
+        actionUrl: input.actionUrl ?? null,
         status: NOTIFICATION_STATUS.FAILED,
         provider: provider.name,
         errorMessage: message,
-        idempotencyKey: input.idempotencyKey,
-      });
+        idempotencyKey: emailKey,
+      } as const;
+      if (existingEmail) await existingEmail.update(notificationValues);
+      else await Notification.create(notificationValues);
 
       logger.error(`No se pudo enviar el correo ${input.template} a ${input.to}`, error);
+      return delivered;
     }
   } catch (error) {
     logger.error('Fallo el registro de la notificacion', error);
+    return false;
   }
 };
 
+/**
+ * Aviso en la pantalla del telefono.
+ *
+ * Nunca lanza y respeta el mismo interruptor por categoria que el correo. El
+ * consentimiento del cliente es el propio dispositivo registrado: la app lo crea
+ * al activar las notificaciones y lo da de baja al desactivarlas, asi que aqui
+ * solo hay que decidir si el negocio quiere mandar ese tipo de aviso.
+ *
+ * Devuelve si el aviso llego a algun telefono, para no repetirlo por otra via.
+ */
+const pushToPhone = async (input: {
+  category: NotificationCategory;
+  userId: number | null;
+  title: string;
+  body: string;
+  actionUrl: string;
+  channel: PushChannelId;
+  template: PushTemplate;
+  orderId?: number | null;
+  idempotencyKey: string;
+}): Promise<boolean> => {
+  // Pedido de invitado o reclamo sin cuenta: no hay dispositivos a los que avisar.
+  if (!input.userId) return false;
+  try {
+    const settings = await settingsService.getCommunicationSettings();
+    if (!eventIsEnabled(input.category, settings)) return false;
+
+    return await mobilePushService.sendToUser({
+      userId: input.userId,
+      title: input.title,
+      body: input.body,
+      actionUrl: input.actionUrl,
+      channel: input.channel,
+      template: input.template,
+      orderId: input.orderId ?? null,
+      idempotencyKey: input.idempotencyKey,
+    });
+  } catch (error) {
+    logger.error('Fallo el aviso push movil', error);
+    return false;
+  }
+};
+
+const money = (value: number): string => `S/ ${value.toFixed(2)}`;
+
 export const notificationsService = {
+  async notifyProductAvailable(input: {
+    subscriptionId: number;
+    userId: number;
+    productId: number;
+    branchName: string;
+    email: string;
+    notifyEmail: boolean;
+    notifyInApp: boolean;
+  }): Promise<boolean> {
+    const [product, settings] = await Promise.all([
+      Product.findByPk(input.productId),
+      settingsService.getCommunicationSettings(),
+    ]);
+    if (!product) return false;
+
+    const content = TEMPLATES.PRODUCT_AVAILABLE({
+      productName: product.name,
+      productSlug: product.slug,
+      branchName: input.branchName,
+      subjectTemplate: settings.availabilityEmailSubject,
+      bodyTemplate: settings.availabilityEmailBody,
+    });
+
+    const delivered = await deliver({
+      category: 'AVAILABILITY',
+      template: 'PRODUCT_AVAILABLE',
+      to: input.email,
+      subject: content.subject,
+      html: content.html,
+      text: content.text,
+      userId: input.userId,
+      idempotencyKey: `availability-${input.subscriptionId}`,
+      actionUrl: `/menu/${product.slug}`,
+      sendEmail: input.notifyEmail,
+      createInApp: input.notifyInApp,
+    });
+
+    // El push es la version movil del aviso dentro de la app: sale si el cliente
+    // pidio ese canal, nunca si eligio solo el correo. La ruta es la de la app,
+    // distinta de la ruta web que guarda el aviso de la campana.
+    const pushed = input.notifyInApp
+      ? await pushToPhone({
+        category: 'AVAILABILITY',
+        userId: input.userId,
+        title: content.subject,
+        body: `${product.name} volvió a estar disponible en ${input.branchName}. Pídelo antes de que se agote.`,
+        actionUrl: `/product/${product.slug}`,
+        channel: PUSH_CHANNEL.AVAILABILITY,
+        template: PUSH_TEMPLATE.PRODUCT_AVAILABLE,
+        idempotencyKey: `availability-${input.subscriptionId}`,
+      })
+      : false;
+
+    // Si el telefono ya recibio el aviso, la suscripcion esta cumplida aunque el
+    // correo haya fallado: quien llama la cierra y no la reintenta.
+    return delivered || pushed;
+  },
+
   /** Bienvenida del personal: explica por donde entra y con que alcance trabajara. */
   async notifyStaffAccess(input: {
     userId: number;
@@ -132,6 +330,7 @@ export const notificationsService = {
     ].join('\n');
 
     await deliver({
+      category: 'STAFF',
       template: 'STAFF_ACCESS_CREATED',
       to: user.email,
       subject: 'Tu acceso al panel de Verde Bowl',
@@ -162,6 +361,8 @@ export const notificationsService = {
   async notifyOrderStatus(orderId: number, status: OrderStatus): Promise<void> {
     const templateName = TEMPLATE_BY_STATUS[status];
     if (!templateName) return;
+    const communicationSettings = await settingsService.getCommunicationSettings();
+    if (!communicationSettings.orderUpdatesEnabled) return;
 
     const order = await Order.findByPk(orderId, {
       include: [
@@ -175,7 +376,7 @@ export const notificationsService = {
     // Sin correo no hay a quien avisar (checkout de invitado sin cuenta).
     const user = order.userId ? await User.findByPk(order.userId) : null;
     const email = user?.email;
-    if (!email) return;
+    if (!user) return;
 
     // Pago contra entrega: el correo de confirmacion no puede decir "recibimos tu
     // pago" si el efectivo aun no se cobro. Se anota cuanto queda por pagar al recibir.
@@ -192,6 +393,9 @@ export const notificationsService = {
       if (cash) cashDue = Number(cash.amount);
     }
 
+    const businessInfo = status === ORDER_STATUS.CANCELLED
+      ? await settingsService.getBusinessInfo()
+      : null;
     const data: OrderEmailData & { reason?: string | null; cashDue?: number | null } = {
       orderNumber: order.orderNumber,
       customerName: order.contactName ?? user.firstName,
@@ -203,19 +407,34 @@ export const notificationsService = {
       })),
       reason: order.cancelReason,
       cashDue,
+      supportEmail: businessInfo?.supportEmail,
     };
 
     const content = TEMPLATES[templateName](data as never);
 
+    const actionUrl = `/order/${order.orderNumber}`;
     await deliver({
+      category: 'ORDER',
       template: templateName,
-      to: email,
+      to: email ?? '',
       subject: content.subject,
       html: content.html,
       text: content.text,
       userId: order.userId,
       orderId: order.id,
       // Un aviso por pedido y estado: aunque el estado se toque dos veces, se manda uno.
+      idempotencyKey: `order-${order.id}-${status}`,
+      actionUrl,
+    });
+    await pushToPhone({
+      category: 'ORDER',
+      userId: user.id,
+      title: content.subject,
+      body: content.text,
+      actionUrl,
+      channel: PUSH_CHANNEL.ORDER_UPDATES,
+      template: PUSH_TEMPLATE.ORDER_STATUS,
+      orderId: order.id,
       idempotencyKey: `order-${order.id}-${status}`,
     });
   },
@@ -226,23 +445,44 @@ export const notificationsService = {
     if (!userPlan) return;
 
     const user = await User.findByPk(userPlan.userId);
-    if (!user?.email) return;
+    if (!user) return;
 
+    const credit = Number(userPlan.creditSnapshot);
     const content = TEMPLATES.PLAN_ACTIVATED({
       customerName: user.firstName,
       planName: userPlan.planNameSnapshot,
-      credit: Number(userPlan.creditSnapshot),
+      credit,
+      paidCredit: Number(userPlan.priceSnapshot),
+      bonusCredit: Math.max(0, credit - Number(userPlan.priceSnapshot)),
       expiresAt: userPlan.expiresAt,
+      paidExpiresAt: userPlan.activatedAt
+        ? new Date(userPlan.activatedAt.getTime() + PAID_CREDIT_VALIDITY_DAYS * 24 * 60 * 60 * 1000)
+        : null,
     });
 
+    const idempotencyKey = `plan-${userPlan.id}-activated`;
     await deliver({
+      category: 'PLAN',
       template: 'PLAN_ACTIVATED',
-      to: user.email,
+      to: user.email ?? '',
       subject: content.subject,
       html: content.html,
       text: content.text,
       userId: user.id,
-      idempotencyKey: `plan-${userPlan.id}-activated`,
+      idempotencyKey,
+    });
+
+    // El plan se activa al confirmarse el pago, muchas veces con la app cerrada:
+    // sin este aviso el cliente no sabe que su saldo ya esta disponible.
+    await pushToPhone({
+      category: 'PLAN',
+      userId: user.id,
+      title: content.subject,
+      body: `Ya tienes ${money(credit)} de saldo en tu billetera para tus próximos pedidos.`,
+      actionUrl: '/wallet',
+      channel: PUSH_CHANNEL.PLAN_UPDATES,
+      template: PUSH_TEMPLATE.PLAN_ACTIVATED,
+      idempotencyKey,
     });
   },
 
@@ -252,6 +492,7 @@ export const notificationsService = {
    * alguien lo atienda dentro del plazo.
    */
   async notifyComplaintReceived(complaint: Complaint): Promise<void> {
+    const businessInfo = await settingsService.getBusinessInfo();
     const content = TEMPLATES.COMPLAINT_RECEIVED({
       code: complaint.code ?? '',
       type: complaint.type,
@@ -260,6 +501,7 @@ export const notificationsService = {
     });
 
     await deliver({
+      category: 'COMPLAINT',
       template: 'COMPLAINT_RECEIVED',
       to: complaint.email,
       subject: content.subject,
@@ -272,6 +514,7 @@ export const notificationsService = {
     // Aviso interno al buzon de reclamos: el consumidor no debe esperar a que alguien
     // mire el panel por casualidad.
     await deliver({
+      category: 'COMPLAINT',
       template: 'COMPLAINT_RECEIVED_INTERNAL',
       to: businessInfo.supportEmail,
       subject: `Nuevo ${complaint.type === 'QUEJA' ? 'queja' : 'reclamo'} ${complaint.code}`,
@@ -292,25 +535,47 @@ export const notificationsService = {
       response: complaint.response,
     });
 
+    // La clave incluye respondedAt: si se responde otra vez (correccion), se reenvia.
+    const idempotencyKey = `complaint-${complaint.id}-responded-${complaint.respondedAt?.getTime() ?? 'x'}`;
     await deliver({
+      category: 'COMPLAINT',
       template: 'COMPLAINT_RESPONDED',
       to: complaint.email,
       subject: content.subject,
       html: content.html,
       text: content.text,
       userId: complaint.userId,
-      // La clave incluye respondedAt: si se responde otra vez (correccion), se reenvia.
-      idempotencyKey: `complaint-${complaint.id}-responded-${complaint.respondedAt?.getTime() ?? 'x'}`,
+      idempotencyKey,
+    });
+
+    // Un reclamo tiene plazo legal de respuesta: el consumidor tiene que enterarse
+    // el mismo dia, no cuando se le ocurra revisar el correo.
+    await pushToPhone({
+      category: 'COMPLAINT',
+      userId: complaint.userId,
+      title: content.subject,
+      body: `Ya respondimos tu ${complaint.type === 'QUEJA' ? 'queja' : 'reclamo'} ${complaint.code ?? ''}. Entra a la app para leer la respuesta completa.`,
+      actionUrl: '/support',
+      channel: PUSH_CHANNEL.SUPPORT,
+      template: PUSH_TEMPLATE.COMPLAINT_RESPONDED,
+      idempotencyKey,
     });
   },
 
   /** Enlace de recuperacion de contrasena. El token en claro solo viaja en este correo. */
-  async notifyPasswordReset(userId: number, rawToken: string, ttlMinutes: number): Promise<void> {
+  async notifyPasswordReset(
+    userId: number,
+    rawToken: string,
+    ttlMinutes: number,
+    client: 'WEB' | 'MOBILE' = 'WEB',
+  ): Promise<void> {
     const user = await User.findByPk(userId);
     if (!user?.email) return;
 
     const base = env.FRONTEND_URL.replace(/\/$/, '');
-    const resetUrl = `${base}/restablecer-clave?token=${rawToken}`;
+    const resetUrl = client === 'MOBILE'
+      ? `${base}/restablecer-clave/movil?token=${rawToken}`
+      : `${base}/restablecer-clave?token=${rawToken}`;
     const content = TEMPLATES.PASSWORD_RESET({
       customerName: user.firstName,
       resetUrl,
@@ -318,6 +583,7 @@ export const notificationsService = {
     });
 
     await deliver({
+      category: 'SECURITY',
       template: 'PASSWORD_RESET',
       to: user.email,
       subject: content.subject,
@@ -330,14 +596,24 @@ export const notificationsService = {
     });
   },
 
-  /** Historial de lo que se le mando a un cliente (soporte lo consulta). */
+  /**
+   * Avisos que ve el cliente en su campana (web y movil).
+   *
+   * Se deja fuera el canal PUSH: cada aviso push guarda una fila por telefono para
+   * no repetir el envio, pero es el mismo aviso que ya figura como IN_APP. Sin este
+   * filtro, quien tenga dos telefonos ve el mismo texto tres veces.
+   */
   async listForUser(userId: number) {
     return Notification.findAll({
-      where: { userId },
+      where: { userId, channel: { [Op.ne]: 'PUSH' } },
       include: [{ model: Order, as: 'order', attributes: ['orderNumber', 'status'] }],
       order: [['id', 'DESC']],
       limit: 50,
     });
+  },
+
+  async markAllRead(userId: number): Promise<void> {
+    await Notification.update({ readAt: new Date() }, { where: { userId, readAt: null } });
   },
 };
 

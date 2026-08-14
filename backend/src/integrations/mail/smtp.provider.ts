@@ -1,6 +1,5 @@
 import nodemailer, { type Transporter } from 'nodemailer';
-import { env } from '@config/env';
-import type { MailMessage, MailProvider } from './mail.provider';
+import type { MailMessage, MailProvider, MailTransportSettings } from './mail.provider';
 
 /**
  * SMTP real (Gmail, SendGrid, Resend, Mailgun... todos hablan SMTP).
@@ -11,22 +10,25 @@ export class SmtpMailProvider implements MailProvider {
   readonly isLive = true;
 
   private readonly transporter: Transporter;
+  private readonly settings: MailTransportSettings;
 
-  constructor() {
+  constructor(settings: MailTransportSettings) {
+    this.settings = settings;
     this.transporter = nodemailer.createTransport({
-      host: env.MAIL_HOST,
-      port: env.MAIL_PORT,
-      secure: env.MAIL_PORT === 465,
+      host: settings.host,
+      port: settings.port,
+      secure: settings.secure,
       auth:
-        env.MAIL_USER && env.MAIL_PASSWORD
-          ? { user: env.MAIL_USER, pass: env.MAIL_PASSWORD }
+        settings.user && settings.password
+          ? { user: settings.user, pass: settings.password }
           : undefined,
     });
   }
 
   async send(message: MailMessage): Promise<{ messageId: string }> {
     const info = await this.transporter.sendMail({
-      from: `${env.MAIL_FROM_NAME} <${env.MAIL_FROM}>`,
+      from: `${this.settings.fromName} <${this.settings.fromEmail}>`,
+      replyTo: this.settings.replyToEmail || undefined,
       to: message.to,
       subject: message.subject,
       text: message.text,

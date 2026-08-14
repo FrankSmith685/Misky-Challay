@@ -16,8 +16,21 @@
   --color-brand-800: #194e37;
   --color-brand-900: #16412f;
 
+  /* Acento calido. Se ancla en el 500 (no en el 600 como brand), por eso las
+     paradas oscuras arrancan ahi. La rampa va COMPLETA a proposito: Tailwind v4
+     solo genera las utilidades de las paradas declaradas, y con solo 400/500 los
+     avisos de bg-accent-50 / border-accent-300 / text-accent-700 se pintaban
+     transparentes. */
+  --color-accent-50: #fff8ea;
+  --color-accent-100: #fdedcc;
+  --color-accent-200: #fbdb9a;
+  --color-accent-300: #f8c162;
   --color-accent-400: #f5a524;
   --color-accent-500: #e8940f;
+  --color-accent-600: #a76b0b;
+  --color-accent-700: #825308;
+  --color-accent-800: #644006;
+  --color-accent-900: #4d3105;
 
   /* Tercer color de marca (gestionable desde el editor de tema). */
   --color-tertiary-50: #f3f2fd;
@@ -38,7 +51,32 @@
   --color-ink-muted: #5d6b64;
 
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
-  --radius-card: 1rem;
+
+  /* Radio rectangular único: ningún componente supera 5px. */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 5px;
+  --radius-lg: 5px;
+  --radius-xl: 5px;
+  --radius-2xl: 5px;
+  --radius-3xl: 5px;
+  --radius-4xl: 5px;
+  --radius-field: 5px;
+  --radius-card: 5px;
+  --radius-pill: 5px;
+
+  /* Escala de ELEVACION (sombras tintadas de marca). Genera shadow-e1 .. shadow-e5. */
+  --shadow-e1: 0 1px 2px rgba(20, 32, 26, 0.04);
+  --shadow-e2: 0 1px 2px rgba(20, 32, 26, 0.025), 0 10px 30px rgba(20, 32, 26, 0.04);
+  --shadow-e3: 0 8px 28px rgba(20, 32, 26, 0.08);
+  --shadow-e4: 0 16px 48px rgba(20, 32, 26, 0.12);
+  --shadow-e5: 0 24px 70px rgba(20, 32, 26, 0.18);
+
+  /* Escala de MOVIMIENTO. Genera ease-standard; las duraciones se usan como var(--duration-*). */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-fast: 150ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
 }
 
 @layer base {
@@ -80,7 +118,7 @@
   left: 1rem;
   top: -4rem;
   z-index: 9999;
-  border-radius: .75rem;
+  border-radius: 5px;
   background: var(--color-brand-800);
   color: white;
   padding: .65rem 1rem;
@@ -91,7 +129,7 @@
 
 .skip-link:focus { top: 1rem; }
 
-.public-shell main { background: linear-gradient(180deg, #fff 0%, #f8fbf9 100%); }
+.public-shell main { background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-muted) 100%); }
 
 .public-shell main { min-height: 55vh; }
 
@@ -99,6 +137,7 @@ img { max-width: 100%; }
 
 /* Los paneles de datos siguen siendo utilizables en pantallas estrechas. */
 .admin-shell main { container-type: inline-size; }
+.admin-shell main { overflow-x: clip; }
 .admin-shell main .overflow-x-auto { scrollbar-width: thin; scrollbar-color: var(--color-brand-200) transparent; }
 
 .admin-shell main {
@@ -108,21 +147,33 @@ img { max-width: 100%; }
 }
 
 .admin-shell main > * { animation: ds-fade-in .22s ease-out; }
+.public-shell main > * { animation: ds-fade-in .28s ease-out; }
 
 /* Controles nativos heredados conservan una apariencia coherente hasta migrarlos. */
 .admin-shell main select,
 .public-shell main select {
   min-height: 44px;
   border-color: var(--color-line);
-  border-radius: .75rem;
+  border-radius: 5px;
   background-color: var(--color-surface);
 }
 
+/* iOS acerca la pagina cuando enfoca un campo de menos de 16px, y al salir no la
+ * devuelve: el panel se queda ampliado el resto de la sesion. La regla colgaba de
+ * `.admin-shell main`, pero los dialogos y los cajones de MUI se renderizan en un
+ * portal de document.body, fuera de ese arbol, asi que ningun campo dentro de un
+ * modal estaba cubierto. De ahi que los contenedores portalados se nombren aparte. */
 @media (max-width: 639px) {
   .admin-shell main table { min-width: 640px; }
   .admin-shell main input,
   .admin-shell main select,
-  .admin-shell main textarea { font-size: 16px; }
+  .admin-shell main textarea,
+  .MuiDialog-root input,
+  .MuiDialog-root select,
+  .MuiDialog-root textarea,
+  .MuiDrawer-root input,
+  .MuiDrawer-root select,
+  .MuiDrawer-root textarea { font-size: 16px; }
 }
 
 .public-shell main > div:not(.admin-shell) h1,
@@ -148,9 +199,40 @@ img { max-width: 100%; }
   animation: ds-fade-in 0.25s ease-out;
 }
 
+/* Micro-rebote (badge del carrito al añadir, etc.). */
+@keyframes vb-bump {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.28); }
+  60% { transform: scale(0.92); }
+  100% { transform: scale(1); }
+}
+
+.animate-bump {
+  animation: vb-bump 0.32s ease;
+}
+
+/* Las tarjetas del hero conservan movimiento sutil sin distraer del CTA. */
+@keyframes home-hero-float {
+  0%, 100% { transform: translateY(0) rotate(-0.35deg); }
+  50% { transform: translateY(-7px) rotate(0.35deg); }
+}
+
+.home-hero-float {
+  animation: home-hero-float 5.2s ease-in-out infinite;
+}
+
+.home-hero-float-delayed {
+  animation: home-hero-float 5.8s .8s ease-in-out infinite;
+}
+
 .admin-shell main table tbody tr { transition: background-color 160ms ease; }
 .admin-shell main table tbody tr:hover { background: color-mix(in srgb, var(--color-brand-50) 45%, white); }
 .admin-scrollbar { scrollbar-width: thin; scrollbar-color: var(--color-brand-200) transparent; }
+
+/* El KDS ocupa su propio viewport: evita que el panel administrativo que queda
+   detrás siga desplazándose con gestos de la pantalla táctil. */
+body.kds-active { overflow: hidden; overscroll-behavior: none; }
+body.kds-active [id^='kitchen-ticket-'] { font-size: 1.02rem; }
 
 @media (prefers-reduced-motion: reduce) {
   html {
@@ -167,7 +249,28 @@ img { max-width: 100%; }
   }
 
   .animate-fade-in,
-  .admin-shell main > * {
+  .admin-shell main > *,
+  .public-shell main > * {
     animation: none;
   }
+}
+
+/* Impresión del comprobante desde la ficha administrativa. El resto del panel se
+ * oculta, pero la vista sigue siendo HTML accesible antes de abrir el diálogo de
+ * impresión del navegador. */
+@media print {
+  body.admin-receipt-printing * { visibility: hidden !important; }
+  body.admin-receipt-printing [data-admin-receipt],
+  body.admin-receipt-printing [data-admin-receipt] * { visibility: visible !important; }
+  body.admin-receipt-printing [data-admin-receipt] {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 80mm;
+    max-width: none;
+    padding: 3mm;
+    color: #111;
+  }
+  body.admin-receipt-printing [data-admin-receipt][data-paper-width="58"] { width: 58mm; }
+  body.admin-receipt-printing { background: white !important; }
+  @page { size: 80mm auto; margin: 0; }
 }

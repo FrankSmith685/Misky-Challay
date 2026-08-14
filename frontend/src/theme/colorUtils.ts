@@ -66,6 +66,25 @@ export const rampFromHex = (hex: string): ColorRamp => ({
   900: shade(hex, 0.48),
 });
 
+/**
+ * Variante anclada en el stop 500. El acento de marca vive ahi (accent-500), no
+ * en 600, asi que generar su rampa con `rampFromHex` desplazaria el color
+ * elegido. Las paradas 600..900 bajan lo suficiente para que `text-accent-600`
+ * y `text-accent-700` sean legibles sobre blanco y sobre accent-100.
+ */
+export const rampFromHexAt500 = (hex: string): ColorRamp => ({
+  50: tint(hex, 0.94),
+  100: tint(hex, 0.87),
+  200: tint(hex, 0.72),
+  300: tint(hex, 0.5),
+  400: tint(hex, 0.18),
+  500: hex,
+  600: shade(hex, 0.28),
+  700: shade(hex, 0.44),
+  800: shade(hex, 0.57),
+  900: shade(hex, 0.67),
+});
+
 /** Luminancia relativa sRGB (0 = negro, 1 = blanco). */
 const luminance = (hex: string): number => {
   const { r, g, b } = hexToRgb(hex);
