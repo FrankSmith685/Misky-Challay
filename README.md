@@ -101,6 +101,9 @@ Lo que evita que el híbrido se rompa es el **chequeo de deriva**: levanta dos b
 
 Mientras `STRIPE_SECRET_KEY` esté vacía, el sistema usa un **simulador local**: mismo ciclo, mismo webhook firmado, misma confirmación por evento. Al pagar te lleva a `/checkout/simulador`, donde eliges "pago aprobado" o "tarjeta rechazada".
 
+La guía completa de cuenta, pruebas, tarjetas, webhooks y paso a producción está
+en [docs/STRIPE.md](docs/STRIPE.md).
+
 Para enchufar Stripe de verdad:
 
 ```bash
@@ -125,15 +128,21 @@ Reglas implementadas y probadas:
 
 ## 6. Notificaciones por email
 
-Mientras `MAIL_HOST` esté vacía, los correos **se imprimen en la consola** en vez de enviarse. Así ves exactamente qué recibiría el cliente sin configurar nada.
+El superadmin administra los datos del negocio, SMTP, remitente, canales y eventos desde
+`/admin/configuracion-negocio`. Los valores `MAIL_*` funcionan como respaldo de la primera
+instalación; después de guardar en el panel, los cambios se aplican sin reiniciar el servidor.
+La contraseña SMTP se cifra en la base de datos y nunca vuelve al navegador.
 
-Para enviar de verdad (Gmail, SendGrid, Resend, Mailgun... todos hablan SMTP):
+Mientras no exista servidor SMTP, los correos se imprimen en la consola en desarrollo. También
+puedes configurar Gmail, SendGrid, Resend, Mailgun u otro proveedor compatible desde el panel o
+inicialmente con:
 
 ```env
 MAIL_HOST=smtp.gmail.com
 MAIL_PORT=587
 MAIL_USER=tu@gmail.com
 MAIL_PASSWORD=tu-app-password
+SETTINGS_ENCRYPTION_KEY=un-secreto-aleatorio-de-32-o-mas-caracteres
 ```
 
 Correos que ya se disparan solos:
@@ -287,7 +296,7 @@ Reglas del dinero, todas implementadas y probadas:
 - La billetera se **bloquea durante cada movimiento**: dos pedidos simultáneos no pueden gastar el mismo saldo.
 - El saldo se **debita al crear el pedido** y se **devuelve** si el pago falla o el pedido se cancela.
 - Si el saldo cubre todo el pedido, **no se pasa por Stripe**: se registra un pago `wallet` y se confirma internamente.
-- Al vencer el plan, un job anula el saldo restante (`EXPIRATION`) y los beneficios dejan de aplicarse.
+- El saldo se administra por lotes FEFO: el bono y los beneficios vencen con el plan; el dinero pagado conserva 180 días. Un vencimiento nunca recorta otra compra.
 
 Los planes y sus beneficios son **datos**: cambiar precios, bonificaciones o porcentajes no requiere tocar código.
 
@@ -302,3 +311,4 @@ Los planes y sus beneficios son **datos**: cambiar precios, bonificaciones o por
 ## 12. Siguientes pasos
 
 Ver [docs/ROADMAP.md](docs/ROADMAP.md): tareas ordenadas por fases, derivadas del análisis funcional.
+"# Verde_bowl" 
