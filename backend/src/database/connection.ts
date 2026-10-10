@@ -2,6 +2,14 @@ import { Sequelize } from 'sequelize';
 import { env } from '@config/env';
 import { logger } from '@config/logger';
 
+/** Opciones TLS compartidas por Sequelize y la conexion que crea la base (bootstrap). */
+export const databaseSsl = env.DB_SSL
+  ? {
+      rejectUnauthorized: true,
+      ...(env.DB_SSL_CA ? { ca: env.DB_SSL_CA.replace(/\\n/g, '\n') } : {}),
+    }
+  : undefined;
+
 /**
  * Instancia unica de Sequelize.
  * Los modelos se registran en src/database/models/index.ts
@@ -21,6 +29,7 @@ export const sequelize = new Sequelize(env.DB_NAME, env.DB_USER, env.DB_PASSWORD
   dialectOptions: {
     decimalNumbers: true, // decimal como number y no como string
     dateStrings: false,
+    ssl: databaseSsl,
   },
   pool: {
     max: 10,

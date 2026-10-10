@@ -1,7 +1,7 @@
 import mysql from 'mysql2/promise';
 import { env } from '@config/env';
 import { logger } from '@config/logger';
-import { sequelize } from './connection';
+import { databaseSsl, sequelize } from './connection';
 import { registerModels } from './models';
 import { runSeeders } from './seeders';
 
@@ -28,6 +28,7 @@ const ensureDatabaseExists = async (): Promise<void> => {
     port: env.DB_PORT,
     user: env.DB_USER,
     password: env.DB_PASSWORD,
+    ssl: databaseSsl,
   });
 
   try {

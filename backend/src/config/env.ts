@@ -53,6 +53,14 @@ const envSchema = z.object({
   DB_NAME: z.string().default('verde_bowl_v3'),
   DB_USER: z.string().default('root'),
   DB_PASSWORD: z.string().default(''),
+  /**
+   * TLS hacia MySQL. Las bases gestionadas (Aiven, TiDB Cloud...) rechazan conexiones
+   * sin cifrar. El certificado del servidor siempre se verifica: DB_SSL_CA es el CA en
+   * PEM para proveedores con CA propio (Aiven); admite los saltos de linea escritos
+   * como \n para poder pegarlo en un panel de una sola linea.
+   */
+  DB_SSL: booleanFromString(false),
+  DB_SSL_CA: z.string().optional(),
   DB_LOGGING: booleanFromString(false),
   DB_AUTO_CREATE: booleanFromString(true),
 
