@@ -19,7 +19,7 @@ export const CoverageProgress = ({ steps }: CoverageProgressProps) => {
       </div>
       <div className="mx-4 mt-2 h-1.5 overflow-hidden rounded-pill bg-neutral-100 sm:mx-5">
         <div
-          className="h-full rounded-pill bg-gradient-to-r from-brand-600 to-emerald-400 transition-[width] duration-500"
+          className="h-full rounded-pill bg-gradient-to-r from-brand-600 to-brand-400 transition-[width] duration-500"
           style={{ width: `${percentage}%` }}
         />
       </div>

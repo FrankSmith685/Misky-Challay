@@ -30,7 +30,7 @@ export const Drawer = ({ isOpen, onClose, title, description, side = 'right', ch
       ModalProps={{ keepMounted: true }}
       slotProps={{
         backdrop: {
-          sx: { backgroundColor: 'rgba(9,25,16,.56)', backdropFilter: 'blur(4px)' },
+          sx: { backgroundColor: 'rgba(28,10,28,.56)', backdropFilter: 'blur(4px)' },
         },
       }}
       sx={{
@@ -50,7 +50,7 @@ export const Drawer = ({ isOpen, onClose, title, description, side = 'right', ch
           py: { xs: 2.25, sm: 2.75 },
           borderBottom: '1px solid',
           borderColor: 'divider',
-          background: 'linear-gradient(135deg, rgba(237,249,242,.95), rgba(255,255,255,.98))',
+          background: 'linear-gradient(135deg, rgba(248,241,248,.95), rgba(255,255,255,.98))',
         }}
       >
         <Box sx={{ minWidth: 0 }}>

@@ -258,7 +258,7 @@ export const AdminLayout = () => {
   );
 
   return (
-    <div className="admin-shell flex min-h-screen bg-[radial-gradient(circle_at_100%_0%,rgba(35,124,82,.055),transparent_28%),#f5f7f5]">
+    <div className="admin-shell flex min-h-screen bg-[radial-gradient(circle_at_100%_0%,rgba(96,32,96,.055),transparent_28%),#f8f6f8]">
       <RouteEffects />
       <a href="#admin-content" className="skip-link">Saltar al contenido</a>
       {/* Barra lateral: desde 900 px (tablet horizontal), en iconos hasta 1024. */}

@@ -22,7 +22,7 @@ export const PlansHero = ({ planCount, featuredPlan }: PlansHeroProps) => {
     : 0;
 
   return (
-    <section className="relative isolate overflow-hidden bg-[#103e2b] text-white">
+    <section className="relative isolate overflow-hidden bg-[#2a0e2a] text-white">
       <div className="pointer-events-none absolute inset-0 opacity-25 [background-image:linear-gradient(rgba(255,255,255,.08)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.08)_1px,transparent_1px)] [background-size:42px_42px]" />
       <div className="pointer-events-none absolute -left-24 top-1/2 size-72 -translate-y-1/2 rounded-full bg-brand-400/20 blur-3xl" />
 

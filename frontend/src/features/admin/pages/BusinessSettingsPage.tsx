@@ -622,7 +622,7 @@ const BusinessSettingsPage = () => {
                     <p>{item.provider ?? 'Sin proveedor'} · {item.channel.replaceAll('_', ' + ')}</p>
                     <p>{formatStamp(item.sentAt ?? item.createdAt)}</p>
                   </div>
-                  <span className={cn('w-fit rounded-pill px-2 py-1 text-xs font-bold', item.status === 'SENT' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800')}>
+                  <span className={cn('w-fit rounded-pill px-2 py-1 text-xs font-bold', item.status === 'SENT' ? 'bg-brand-50 text-brand-800' : 'bg-red-50 text-red-800')}>
                     {item.status === 'SENT' ? 'Enviado' : 'Falló'}
                   </span>
                 </article>
@@ -637,7 +637,7 @@ const BusinessSettingsPage = () => {
 
 const StatusCard = ({ icon: Icon, label, value, tone }: { icon: typeof Building2; label: string; value: string; tone: 'success' | 'warning' }) => (
   <div className="flex items-center gap-3 rounded-card border border-line bg-white p-3.5">
-    <span className={cn('grid size-9 shrink-0 place-items-center rounded-card', tone === 'success' ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700')}><Icon className="size-4" /></span>
+    <span className={cn('grid size-9 shrink-0 place-items-center rounded-card', tone === 'success' ? 'bg-brand-50 text-brand-700' : 'bg-amber-50 text-amber-700')}><Icon className="size-4" /></span>
     <div className="min-w-0"><p className="text-xs text-ink-muted">{label}</p><p className="truncate text-sm font-extrabold text-ink">{value}</p></div>
   </div>
 );
@@ -645,7 +645,7 @@ const StatusCard = ({ icon: Icon, label, value, tone }: { icon: typeof Building2
 const MetricCard = ({ icon: Icon, label, value, tone }: { icon: typeof Building2; label: string; value: number; tone: 'success' | 'danger' }) => (
   <div className="flex items-center justify-between rounded-card border border-line bg-white p-4">
     <div><p className="text-xs font-medium text-ink-muted">{label}</p><p className="mt-1 text-2xl font-black text-ink">{value}</p></div>
-    <Icon className={cn('size-6', tone === 'success' ? 'text-green-700' : 'text-red-700')} />
+    <Icon className={cn('size-6', tone === 'success' ? 'text-brand-700' : 'text-red-700')} />
   </div>
 );
 

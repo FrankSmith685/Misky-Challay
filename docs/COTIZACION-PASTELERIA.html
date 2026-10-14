@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Propuesta económica - Plataforma digital para pastelería</title>
+  <style>
+    @page { size: A4; margin: 18mm 16mm 16mm; }
+    :root { --green:#155b42; --dark:#17352b; --muted:#63746d; --line:#dce8e2; --soft:#eff7f2; --gold:#b47b26; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--dark); font: 10.5pt/1.45 Arial, Helvetica, sans-serif; }
+    h1,h2,h3,p { margin:0; }
+    .top { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:3px solid var(--green); padding-bottom:12px; }
+    .eyebrow { color:var(--green); font-size:9pt; font-weight:700; letter-spacing:1.6px; text-transform:uppercase; }
+    h1 { margin-top:5px; font-size:25pt; line-height:1.05; letter-spacing:-.5px; }
+    .date { text-align:right; color:var(--muted); font-size:9pt; }
+    .hero { margin:20px 0 16px; display:grid; grid-template-columns:1.6fr .9fr; gap:16px; align-items:stretch; }
+    .intro { padding:2px 0; }
+    .intro p { margin-top:8px; color:#40564e; }
+    .price { background:var(--green); color:#fff; border-radius:12px; padding:17px 18px; }
+    .price .label { color:#cde6d9; font-size:9pt; text-transform:uppercase; letter-spacing:1px; font-weight:700; }
+    .price .amount { font-size:27pt; font-weight:800; margin:4px 0; }
+    .price small { color:#e3f2eb; }
+    h2 { color:var(--green); font-size:14pt; margin:18px 0 8px; }
+    h3 { font-size:10.5pt; }
+    table { width:100%; border-collapse:collapse; }
+    th { background:var(--soft); color:var(--green); text-align:left; font-size:9pt; padding:9px 10px; }
+    td { border-bottom:1px solid var(--line); padding:9px 10px; vertical-align:top; }
+    td:last-child, th:last-child { text-align:right; white-space:nowrap; }
+    .total td { border-top:2px solid var(--green); border-bottom:0; font-size:13pt; font-weight:800; color:var(--green); padding-top:13px; }
+    .cards { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .card { border:1px solid var(--line); border-radius:9px; padding:11px 12px; }
+    .card p { color:#4c6259; margin-top:4px; font-size:9.5pt; }
+    ul { margin:6px 0 0 18px; padding:0; }
+    li { margin:3px 0; }
+    .terms { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-top:8px; }
+    .term { background:#fafcfb; border:1px solid var(--line); border-radius:8px; padding:9px; }
+    .term b { display:block; color:var(--green); }
+    .note { background:#fff8e9; border-left:4px solid var(--gold); padding:10px 12px; margin-top:13px; color:#5a4828; }
+    .footer { margin-top:20px; padding-top:10px; border-top:1px solid var(--line); color:var(--muted); font-size:8.5pt; display:flex; justify-content:space-between; }
+    .page-break { break-before: page; }
+    @media print { .hero, .cards, .terms { break-inside:avoid; } table { break-inside:avoid; } }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div>
+      <div class="eyebrow">Propuesta económica</div>
+      <h1>Plataforma digital<br/>para pastelería</h1>
+    </div>
+    <div class="date"><b>Fecha</b><br/>13 de octubre de 2026<br/><br/><b>Validez</b><br/>15 días</div>
+  </header>
+
+  <section class="hero">
+    <div class="intro">
+      <h2 style="margin-top:0">Implementación sobre el proyecto existente</h2>
+      <p>Adaptación de la plataforma web, panel administrativo y aplicación Android para una pastelería con catálogo, personalización de productos, pedidos, pagos y seguimiento operativo.</p>
+      <p>La solución parte de una base funcional ya construida, por lo que el presupuesto contempla adaptación, pruebas y puesta en marcha; no el desarrollo desde cero.</p>
+    </div>
+    <div class="price">
+      <div class="label">Inversión recomendada</div>
+      <div class="amount">S/ 18,000</div>
+      <small>Precio referencial de implementación</small>
+    </div>
+  </section>
+
+  <h2>Alcance y presupuesto</h2>
+  <table>
+    <thead><tr><th>Componente</th><th>Incluye</th><th>Importe</th></tr></thead>
+    <tbody>
+      <tr><td><b>Marca y catálogo</b></td><td>Colores, textos, categorías, productos, imágenes proporcionadas por el cliente y configuración comercial de la pastelería.</td><td>S/ 3,000</td></tr>
+      <tr><td><b>Funciones de pastelería</b></td><td>Variantes de tamaño, sabor, relleno y decoración; notas del pedido; fecha y franja de entrega o recojo; disponibilidad por sede.</td><td>S/ 5,000</td></tr>
+      <tr><td><b>Web y panel</b></td><td>Flujo de catálogo, carrito, checkout, pedidos, cocina, inventario básico, usuarios y configuración administrativa.</td><td>S/ 3,500</td></tr>
+      <tr><td><b>Aplicación Android</b></td><td>Adaptación de la app existente, conexión con el mismo backend, pruebas en dispositivo y generación de APK de prueba y AAB para tienda.</td><td>S/ 4,000</td></tr>
+      <tr><td><b>Calidad y puesta en marcha</b></td><td>Pruebas funcionales, configuración de producción, capacitación inicial y correcciones de defectos del alcance acordado.</td><td>S/ 2,500</td></tr>
+      <tr class="total"><td colspan="2">TOTAL ESTIMADO</td><td>S/ 18,000</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Entregables principales</h2>
+  <div class="cards">
+    <div class="card"><h3>Cliente final</h3><p>Menú, detalle del producto, personalización, carrito, dirección, delivery o recojo, pago, historial y seguimiento.</p></div>
+    <div class="card"><h3>Operación</h3><p>Panel para gestionar productos, precios, pedidos, horarios, disponibilidad y estados de preparación.</p></div>
+    <div class="card"><h3>Aplicación móvil</h3><p>Build Android instalable para pruebas y build de producción preparado para Google Play.</p></div>
+    <div class="card"><h3>Entrega técnica</h3><p>Configuración de variables, guía de uso y capacitación inicial para el personal designado.</p></div>
+  </div>
+
+  <h2>Forma de pago sugerida</h2>
+  <div class="terms">
+    <div class="term"><b>40% · S/ 7,200</b>Inicio del trabajo y configuración.</div>
+    <div class="term"><b>40% · S/ 7,200</b>Entrega funcional para pruebas.</div>
+    <div class="term"><b>20% · S/ 3,600</b>Entrega final y publicación/configuración.</div>
+  </div>
+
+  <h2>Condiciones y exclusiones</h2>
+  <ul>
+    <li>Tiempo estimado: <b>5 a 8 semanas</b> desde la entrega de contenidos, accesos y definiciones del negocio.</li>
+    <li>Incluye 30 días de corrección de defectos del alcance aprobado.</li>
+    <li>El dominio, hosting, servicios de mapas, proveedor de pagos, mensajería y comisiones de terceros se pagan aparte.</li>
+    <li>La cuenta de Google Play y su registro corresponden al cliente. La publicación requiere un AAB; el APK se usa para instalación y pruebas.</li>
+    <li>La emisión electrónica SUNAT/OSE, logística de terceros, diseño de logo desde cero, fotografías profesionales y versión iOS no están incluidos.</li>
+    <li>El tratamiento del IGV se define según la modalidad de contratación y el comprobante emitido.</li>
+  </ul>
+  <div class="note"><b>Observación comercial:</b> este importe corresponde a una implementación para un cliente. La cesión exclusiva del código fuente, la prohibición de reutilizar la base tecnológica o la venta de propiedad intelectual exclusiva requieren una adenda y una valorización adicional.</div>
+
+  <div class="note" style="background:#eef7ff;border-left-color:#2b6ca3;color:#24445e"><b>Referencia de presupuesto:</b> si la cifra de S/ 500 era el presupuesto disponible, no alcanza para entregar este alcance completo con web, panel y APK. Ese monto podría destinarse a una maqueta o diagnóstico inicial; la adaptación funcional estimada para este proyecto es de <b>S/ 18,000</b>.</div>
+
+  <footer class="footer"><span>Documento referencial sujeto a levantamiento final de requerimientos.</span><span>Plataforma digital para pastelería</span></footer>
+</body>
+</html>

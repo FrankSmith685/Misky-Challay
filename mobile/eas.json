@@ -23,6 +23,14 @@
         "buildType": "apk"
       }
     },
+    "demo": {
+      "extends": "preview",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://verde-bowl.onrender.com/api/v1",
+        "EXPO_PUBLIC_WEB_URL": "https://verde-bowl-zeta.vercel.app",
+        "EXPO_PUBLIC_EAS_PROJECT_ID": "bd694d85-89e8-4e4d-bd68-a041d1bcbd26"
+      }
+    },
     "production": {
       "autoIncrement": true
     }

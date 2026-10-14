@@ -532,7 +532,7 @@ const KitchenPage = () => {
   }
 
   return (
-    <div className={cn(kdsMode && 'fixed inset-0 z-[1400] overflow-y-auto bg-[#f5f8f6] p-3 sm:p-5')}>
+    <div className={cn(kdsMode && 'fixed inset-0 z-[1400] overflow-y-auto bg-[#f8f5f8] p-3 sm:p-5')}>
       <div className={cn('mb-5 flex flex-wrap items-end justify-between gap-4', kdsMode && 'hidden')}>
         <PageHeader className="mb-0" eyebrow={kdsMode ? `KDS · ${activeBranchName ?? 'Cocina'}` : 'Producción'} icon={Utensils} title="Tablero de cocina" description="Pedidos instantáneos · sondeo de respaldo cada 30 segundos." />
 

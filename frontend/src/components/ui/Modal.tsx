@@ -65,7 +65,7 @@ export const Modal = ({
   const descriptionId = `app-dialog-description-${generatedId}`;
   const toneStyles = {
     brand: {
-      background: 'linear-gradient(135deg, rgba(232,247,238,.98) 0%, rgba(248,252,249,.98) 58%, rgba(255,246,225,.92) 100%)',
+      background: 'linear-gradient(135deg, rgba(248,241,248,.98) 0%, rgba(252,249,252,.98) 58%, rgba(255,246,225,.92) 100%)',
       iconBg: 'primary.main',
       iconColor: 'primary.contrastText',
       accent: 'linear-gradient(90deg, var(--color-brand-700), var(--color-brand-400), var(--color-accent-400))',
@@ -77,10 +77,10 @@ export const Modal = ({
       accent: 'linear-gradient(90deg, #b91c1c, #ef4444, #fb923c)',
     },
     neutral: {
-      background: 'linear-gradient(135deg, rgba(246,248,247,.98) 0%, rgba(255,255,255,.98) 100%)',
+      background: 'linear-gradient(135deg, rgba(248,246,248,.98) 0%, rgba(255,255,255,.98) 100%)',
       iconBg: 'text.primary',
       iconColor: 'background.paper',
-      accent: 'linear-gradient(90deg, #33443a, #718078, #a7b0aa)',
+      accent: 'linear-gradient(90deg, #3b143b, #76647a, #b9a9ba)',
     },
   }[tone];
 
@@ -115,7 +115,7 @@ export const Modal = ({
           minWidth: 0,
           maxWidth: '100%',
         },
-        '& .MuiBackdrop-root': { backgroundColor: 'rgba(9, 25, 16, .62)', backdropFilter: 'blur(5px)' },
+        '& .MuiBackdrop-root': { backgroundColor: 'rgba(28, 10, 28, .62)', backdropFilter: 'blur(5px)' },
       }}
     >
       <DialogTitle
@@ -181,7 +181,7 @@ export const Modal = ({
           overflowY: 'auto',
           // El gris de fondo es el del token, no un cuarto verdoso casi igual.
           backgroundColor: 'background.default',
-          backgroundImage: 'radial-gradient(circle at 100% 0%, rgba(31,122,74,.055), transparent 30%), radial-gradient(circle at 0% 100%, rgba(245,158,11,.035), transparent 28%)',
+          backgroundImage: 'radial-gradient(circle at 100% 0%, rgba(96,32,96,.055), transparent 30%), radial-gradient(circle at 0% 100%, rgba(245,158,11,.035), transparent 28%)',
           px: { xs: 2, sm: 3.5 },
           pt: { xs: 2.5, sm: 3.5 },
           // Con pie de acciones el safe-area lo pone el pie; sin él, el último

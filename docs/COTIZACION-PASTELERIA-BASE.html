@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cotización comercial - Reconfiguración para pastelería</title>
+  <style>
+    @page { size: A4; margin: 16mm 15mm 15mm; }
+    :root { --pink:#a83d63; --dark:#321d27; --muted:#755f68; --line:#eadbe1; --soft:#fff3f7; --gold:#bb7a2c; --blue:#285d8c; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--dark); font: 10.5pt/1.45 Arial, Helvetica, sans-serif; }
+    h1,h2,h3,p { margin: 0; }
+    .top { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:3px solid var(--pink); padding-bottom:12px; }
+    .eyebrow { color:var(--pink); font-size:9pt; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; }
+    h1 { margin-top:5px; font-size:24pt; line-height:1.08; letter-spacing:-.4px; }
+    .date { text-align:right; color:var(--muted); font-size:9pt; }
+    .hero { margin:18px 0 15px; display:grid; grid-template-columns:1.55fr .9fr; gap:15px; align-items:stretch; }
+    .intro p { margin-top:8px; color:#58434d; }
+    .price { background:var(--pink); color:#fff; border-radius:12px; padding:16px 18px; }
+    .price .label { color:#ffe3ed; font-size:9pt; text-transform:uppercase; letter-spacing:1px; font-weight:700; }
+    .price .amount { font-size:27pt; font-weight:800; margin:4px 0; }
+    .price small { color:#fff0f5; }
+    h2 { color:var(--pink); font-size:14pt; margin:17px 0 8px; }
+    h3 { font-size:10.5pt; }
+    table { width:100%; border-collapse:collapse; }
+    th { background:var(--soft); color:var(--pink); text-align:left; font-size:9pt; padding:8px 9px; }
+    td { border-bottom:1px solid var(--line); padding:8px 9px; vertical-align:top; }
+    td:last-child, th:last-child { text-align:right; white-space:nowrap; }
+    .total td { border-top:2px solid var(--pink); border-bottom:0; font-size:13pt; font-weight:800; color:var(--pink); padding-top:11px; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
+    .card { border:1px solid var(--line); border-radius:9px; padding:10px 11px; }
+    .card p { color:#624d57; margin-top:4px; font-size:9.5pt; }
+    .checklist { margin:6px 0 0 18px; padding:0; }
+    .checklist li { margin:3px 0; }
+    .terms { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
+    .term { background:#fffafd; border:1px solid var(--line); border-radius:8px; padding:9px; }
+    .term b { display:block; color:var(--pink); }
+    .optional { background:#f2f8ff; border-left:4px solid var(--blue); padding:10px 12px; margin-top:10px; color:#294a63; }
+    .note { background:#fff8e9; border-left:4px solid var(--gold); padding:10px 12px; margin-top:11px; color:#5a4828; }
+    .footer { margin-top:18px; padding-top:9px; border-top:1px solid var(--line); color:var(--muted); font-size:8.5pt; display:flex; justify-content:space-between; }
+    @media print { .hero, .grid, .terms, table { break-inside:avoid; } }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div>
+      <div class="eyebrow">Cotización comercial</div>
+      <h1>Reconfiguración de plataforma<br/>para pastelería</h1>
+    </div>
+    <div class="date"><b>Fecha</b><br/>13 de octubre de 2026<br/><br/><b>Validez</b><br/>15 días</div>
+  </header>
+
+  <section class="hero">
+    <div class="intro">
+      <h2 style="margin-top:0">Implementación sobre la plataforma existente</h2>
+      <p>Se conserva la lógica actual del sistema web, panel administrativo y aplicación Android. El trabajo se concentra en configurar la nueva marca, catálogo, contenido y operación comercial de la pastelería.</p>
+      <p>Esta cotización corresponde al escenario base, sin desarrollar módulos funcionales nuevos.</p>
+    </div>
+    <div class="price">
+      <div class="label">Inversión base</div>
+      <div class="amount">S/ 10,000</div>
+      <small>Incluye web, panel y APK Android</small>
+    </div>
+  </section>
+
+  <h2>Desglose de inversión</h2>
+  <table>
+    <thead><tr><th>Componente</th><th>Alcance incluido</th><th>Importe</th></tr></thead>
+    <tbody>
+      <tr><td><b>Marca y catálogo</b></td><td>Colores, textos, logo entregado por el cliente, categorías, productos, precios e imágenes de la pastelería.</td><td>S/ 2,500</td></tr>
+      <tr><td><b>Sistema web y panel</b></td><td>Reconfiguración de pantallas, navegación, contenido, usuarios, pedidos y parámetros administrativos existentes.</td><td>S/ 2,000</td></tr>
+      <tr><td><b>Aplicación Android</b></td><td>Aplicación móvil con la nueva identidad y catálogo, conexión al backend actual, APK de prueba y AAB preparado para publicación.</td><td>S/ 2,000</td></tr>
+      <tr><td><b>Carga y configuración</b></td><td>Carga inicial de información entregada por el cliente, horarios, sedes y parámetros comerciales.</td><td>S/ 1,500</td></tr>
+      <tr><td><b>Pruebas y puesta en marcha</b></td><td>Pruebas funcionales, corrección de defectos del alcance, despliegue y capacitación inicial.</td><td>S/ 2,000</td></tr>
+      <tr class="total"><td colspan="2">TOTAL DE IMPLEMENTACIÓN</td><td>S/ 10,000</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Qué conserva la solución</h2>
+  <div class="grid">
+    <div class="card"><h3>Cliente final</h3><p>Registro, inicio de sesión, catálogo, carrito, checkout, pago, historial y seguimiento de pedidos.</p></div>
+    <div class="card"><h3>Operación</h3><p>Panel de productos, precios, pedidos, usuarios, horarios, disponibilidad y estados de atención.</p></div>
+    <div class="card"><h3>Aplicación móvil</h3><p>La misma conexión con el backend, navegación Android, sesión, compras y consultas de pedidos.</p></div>
+    <div class="card"><h3>Entrega</h3><p>APK instalable para pruebas, AAB para tienda, configuración de producción y capacitación inicial.</p></div>
+  </div>
+
+  <h2>Forma de pago</h2>
+  <div class="terms">
+    <div class="term"><b>40% · S/ 4,000</b>Inicio y configuración.</div>
+    <div class="term"><b>40% · S/ 4,000</b>Entrega funcional para pruebas.</div>
+    <div class="term"><b>20% · S/ 2,000</b>Entrega final y publicación/configuración.</div>
+  </div>
+
+  <div class="optional"><b>Funciones opcionales de pastelería:</b> personalización avanzada de tamaño, bizcocho, relleno y decoración; pedidos con fecha futura y franjas de entrega; recetas, consumo de insumos e inventario especializado; reportes nuevos. Estas funciones se cotizan aparte, con una ampliación referencial de <b>S/ 4,000 a S/ 8,000</b>.</div>
+
+  <h2>Condiciones</h2>
+  <ul class="checklist">
+    <li>Tiempo estimado: <b>3 a 5 semanas</b> desde la entrega de contenidos, accesos y definiciones.</li>
+    <li>Incluye 30 días de corrección de defectos del alcance aprobado.</li>
+    <li>El cliente entrega logo, fotografías, textos, precios y datos comerciales.</li>
+    <li>Hosting, dominio, Google Play, pasarela de pagos, mapas, mensajería y comisiones de terceros se pagan aparte.</li>
+    <li>No incluye iOS, emisión electrónica SUNAT/OSE, fotografía profesional ni desarrollo de módulos nuevos.</li>
+    <li>El tratamiento del IGV se define según la modalidad de contratación y el comprobante emitido.</li>
+  </ul>
+
+  <div class="note"><b>Alcance comercial:</b> el precio de S/ 10,000 aplica a una marca de pastelería y a la reutilización de la lógica actual. Cualquier cambio funcional que requiera nuevas reglas, pantallas o integraciones se presenta como adicional antes de ejecutarse.</div>
+
+  <footer class="footer"><span>Documento referencial sujeto a levantamiento final de requerimientos.</span><span>Reconfiguración para pastelería</span></footer>
+</body>
+</html>

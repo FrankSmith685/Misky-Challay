@@ -105,7 +105,7 @@ export const CoverageResultCard = ({
           <div className="flex items-start gap-2 rounded-card bg-white px-3 py-2.5 text-xs text-ink-muted ring-1 ring-brand-100">
             <span
               className={`mt-1 size-2 shrink-0 rounded-full ${
-                result.branch.isOpenNow ? 'bg-emerald-500' : 'bg-amber-500'
+                result.branch.isOpenNow ? 'bg-brand-500' : 'bg-amber-500'
               }`}
             />
             <span>

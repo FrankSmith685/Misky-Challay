@@ -113,7 +113,7 @@ export const ProductCard = ({ product, allergenAlerts }: ProductCardProps) => {
             sx={{
               position: 'absolute',
               inset: 0,
-              background: 'linear-gradient(180deg, transparent 58%, rgba(10,30,20,.28) 100%)',
+              background: 'linear-gradient(180deg, transparent 58%, rgba(28,10,28,.28) 100%)',
               pointerEvents: 'none',
             }}
           />

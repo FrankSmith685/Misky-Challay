@@ -263,7 +263,7 @@ export const AddressAutocomplete = ({
               borderRadius: 'var(--radius-field)',
               px: 1.25,
               py: 1,
-              '&[aria-selected="true"]': { bgcolor: 'rgba(33,131,90,.1)' },
+              '&[aria-selected="true"]': { bgcolor: 'rgba(96,32,96,.1)' },
             },
           },
         },

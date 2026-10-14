@@ -97,7 +97,7 @@ export const StickyActionBar = ({
         /* Unica sombra fuera de la escala e1..e5: proyecta hacia ARRIBA. Cualquier
          * paso de la escala caeria por debajo del borde de la pantalla y no se
          * veria, que es justo la separacion que esta barra necesita del contenido. */
-        'fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white/95 px-4 pt-3 shadow-[0_-12px_32px_rgba(20,55,37,.12)] backdrop-blur',
+        'fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white/95 px-4 pt-3 shadow-[0_-12px_32px_rgba(60,20,60,.12)] backdrop-blur',
         HIDE_FROM[hideFrom],
         className,
       )}

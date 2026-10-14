@@ -1,4 +1,4 @@
-const CACHE = 'verde-bowl-shell-v1';
+const CACHE = 'verde-bowl-shell-v4';
 const SHELL = ['/', '/favicon.svg', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
@@ -32,11 +32,19 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Los estilos y modulos de Vite cambian sin cambiar de URL. Con cache-first,
+  // el navegador seguia mostrando el tema verde aunque el servidor ya enviaba
+  // los nuevos archivos morados. Usar la red primero conserva el respaldo offline.
   event.respondWith(
-    caches.match(request).then((cached) => cached || fetch(request).then((response) => {
-      if (response.ok) caches.open(CACHE).then((cache) => cache.put(request, response.clone()));
-      return response;
-    })),
+    fetch(request)
+      .then((response) => {
+        if (response.ok) {
+          const copy = response.clone();
+          event.waitUntil(caches.open(CACHE).then((cache) => cache.put(request, copy)));
+        }
+        return response;
+      })
+      .catch(async () => (await caches.match(request)) || Response.error()),
   );
 });
 

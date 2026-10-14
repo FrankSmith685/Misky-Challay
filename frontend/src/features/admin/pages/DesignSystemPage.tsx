@@ -101,7 +101,7 @@ import { getDoc } from '../designSystem/componentDocs';
  * FUNDAMENTOS
  * ========================================================================== */
 const PRINCIPLES = [
-  { icon: Boxes, title: 'Material, con tu marca', text: 'Componentes de MUI con un tema propio: verde de Verde Bowl, fuente Inter y bordes redondeados.' },
+  { icon: Boxes, title: 'Material, con tu marca', text: 'Componentes de MUI con un tema propio: morado de Verde Bowl, fuente Inter y bordes redondeados.' },
   { icon: Palette, title: 'Tema gestionable', text: 'El look sale de theme/. Desde la seccion Tema cambias primary, secondary o tertiary y se actualiza toda la app.' },
   { icon: ShieldCheck, title: 'Accesible', text: 'MUI trae foco, teclado y ARIA de fabrica en dialogos, menus y formularios.' },
   { icon: Feather, title: 'Consistente', text: 'Mismos colores, radios y tipografia que el resto de la app.' },
@@ -164,10 +164,10 @@ const STOPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900] as const;
 
 const NEUTRALS = [
   { token: 'surface', hex: '#ffffff' },
-  { token: 'surface-muted', hex: '#f6f8f7' },
-  { token: 'line', hex: '#e3e8e5' },
-  { token: 'ink-muted', hex: '#5d6b64' },
-  { token: 'ink', hex: '#14201a' },
+  { token: 'surface-muted', hex: '#f8f6f8' },
+  { token: 'line', hex: '#e7e0e7' },
+  { token: 'ink-muted', hex: '#675d68' },
+  { token: 'ink', hex: '#201820' },
 ];
 
 const rampToSwatches = (name: string, ramp: ColorRamp) =>

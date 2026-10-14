@@ -62,7 +62,7 @@ const MenuPage = () => {
       <MenuHero />
 
       <section id="catalogo" className="relative scroll-mt-20 overflow-hidden bg-surface-muted pb-24 pt-10 sm:pt-12 lg:pb-28 lg:pt-16">
-        <div className="pointer-events-none absolute inset-0 opacity-45 [background-image:linear-gradient(rgba(35,124,82,.045)_1px,transparent_1px)] [background-size:100%_48px]" />
+        <div className="pointer-events-none absolute inset-0 opacity-45 [background-image:linear-gradient(rgba(96,32,96,.045)_1px,transparent_1px)] [background-size:100%_48px]" />
         <div className="relative z-10 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <header className="mb-7 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
             <div>

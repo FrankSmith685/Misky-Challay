@@ -33,7 +33,9 @@ export default defineConfig(({ mode }) => {
       // El frontend llama a /api/... y Vite lo redirige al backend: sin CORS en desarrollo.
       proxy: {
         '/api': {
-          target: env.VITE_API_PROXY_TARGET || 'http://localhost:4000',
+          // En Windows, `localhost` puede resolver a IPv6 e IPv4 a la vez y
+          // Node lo reporta como AggregateError si el backend aun arranca.
+          target: env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:4000',
           changeOrigin: true,
           // El backend tarda ~40s en arrancar (sync BD + seeders). En esa ventana el
           // puerto aun no escucha: evitamos el volcado de AggregateError [ECONNREFUSED]

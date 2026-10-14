@@ -14,11 +14,11 @@ export const exportBowlCard = async (
   if (!context) throw new Error('Tu navegador no permite crear la imagen');
 
   const gradient = context.createLinearGradient(0, 0, 1080, 1080);
-  gradient.addColorStop(0, '#eaf7ef');
+  gradient.addColorStop(0, '#f8f1f8');
   gradient.addColorStop(1, '#fff6e5');
   context.fillStyle = gradient;
   context.fillRect(0, 0, 1080, 1080);
-  context.fillStyle = '#174f35';
+  context.fillStyle = '#4e1a4e';
   context.font = '700 34px Arial';
   context.fillText('VERDE BOWL', 70, 90);
   context.font = '900 68px Arial';
@@ -27,7 +27,7 @@ export const exportBowlCard = async (
   context.beginPath();
   context.arc(540, 540, 330, 0, Math.PI * 2);
   context.fill();
-  context.strokeStyle = '#c9e6d4';
+  context.strokeStyle = '#ddbadf';
   context.lineWidth = 28;
   context.stroke();
 
@@ -57,7 +57,7 @@ export const exportBowlCard = async (
     }),
   );
 
-  context.fillStyle = '#14201a';
+  context.fillStyle = '#201820';
   context.font = '700 30px Arial';
   context.fillText(
     options
@@ -68,7 +68,7 @@ export const exportBowlCard = async (
     70,
     950,
   );
-  context.fillStyle = '#1c6243';
+  context.fillStyle = '#4e1a4e';
   context.font = '900 42px Arial';
   context.fillText(formatCurrency(total), 70, 1010);
 

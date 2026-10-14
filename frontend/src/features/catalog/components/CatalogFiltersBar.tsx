@@ -51,11 +51,11 @@ export const CatalogFiltersBar = () => {
         position: 'relative',
         overflow: 'hidden',
         borderRadius: 'var(--radius-card)',
-        borderColor: 'rgba(142,209,172,.65)',
+        borderColor: 'rgba(200,141,201,.65)',
         boxShadow: 'var(--shadow-e2)',
         '&::before': {
           content: '""', position: 'absolute', inset: '0 0 auto', height: 3,
-          background: 'linear-gradient(90deg, #237c52 0 68%, #f5a524 68%)',
+          background: 'linear-gradient(90deg, #602060 0 68%, #f5a524 68%)',
         },
       }}
     >
@@ -203,7 +203,7 @@ export const CatalogFiltersBar = () => {
             gap: { xs: 2.5, sm: 3 },
             borderTop: '1px solid',
             borderColor: 'divider',
-            bgcolor: 'rgba(232,246,238,.55)',
+            bgcolor: 'rgba(245,237,245,.65)',
             p: { xs: 2, sm: 2.75 },
           }}
         >

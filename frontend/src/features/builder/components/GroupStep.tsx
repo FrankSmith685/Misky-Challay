@@ -204,7 +204,7 @@ export const GroupStep = ({
                         height={208}
                         className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                         style={{ objectPosition: option.imagePosition || `${15 + ((optionIndex * 23) % 70)}% 50%` }}
-                      /> : <span className="grid h-full min-h-[104px] place-items-center bg-[linear-gradient(145deg,#edf9f2,#fff8ec)] text-brand-500" title="Imagen pendiente"><ImageOff className="size-5" /></span>}
+                      /> : <span className="grid h-full min-h-[104px] place-items-center bg-[linear-gradient(145deg,#f8f1f8,#fff8ec)] text-brand-500" title="Imagen pendiente"><ImageOff className="size-5" /></span>}
                   </div>
                 )}
 

@@ -241,7 +241,7 @@ const ProductPage = () => {
 
   return (
     <>
-      <div className="bg-[linear-gradient(180deg,#f5f9f6_0%,#ffffff_52%)] pb-36 sm:pb-28 lg:pb-16">
+      <div className="bg-[linear-gradient(180deg,#f8f5f8_0%,#ffffff_52%)] pb-36 sm:pb-28 lg:pb-16">
         <div className="mx-auto max-w-7xl px-4 pb-12 pt-7 sm:px-6 lg:px-8 lg:pt-9">
           <Breadcrumbs
             items={[

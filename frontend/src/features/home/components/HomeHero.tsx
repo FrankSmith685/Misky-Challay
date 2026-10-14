@@ -27,8 +27,8 @@ const INGREDIENTS = [
 
 /** Primera impresión editorial: explica el producto y lleva a comprar sin pasos ambiguos. */
 export const HomeHero = () => (
-  <section className="relative isolate overflow-hidden border-b border-brand-200 bg-[#edf5ef]">
-    <div className="pointer-events-none absolute inset-0 opacity-55 [background-image:linear-gradient(rgba(35,124,82,.055)_1px,transparent_1px),linear-gradient(90deg,rgba(35,124,82,.055)_1px,transparent_1px)] [background-size:48px_48px]" />
+  <section className="relative isolate overflow-hidden border-b border-brand-200 bg-[#f8f1f8]">
+    <div className="pointer-events-none absolute inset-0 opacity-55 [background-image:linear-gradient(rgba(96,32,96,.055)_1px,transparent_1px),linear-gradient(90deg,rgba(96,32,96,.055)_1px,transparent_1px)] [background-size:48px_48px]" />
     <div className="pointer-events-none absolute -left-24 top-20 size-72 bg-brand-200/55 blur-[90px]" />
     <div className="pointer-events-none absolute -right-24 bottom-0 size-80 bg-accent-400/15 blur-[100px]" />
 

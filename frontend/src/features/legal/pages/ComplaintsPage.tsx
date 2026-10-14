@@ -110,7 +110,7 @@ const ComplaintsPage = () => {
     return (
       <Container maxWidth="sm" sx={{ py: { xs: 6, md: 9 } }}>
         <Paper variant="outlined" sx={{ p: { xs: 3, md: 5 }, textAlign: 'center', borderRadius: 'var(--radius-card)' }}>
-          <CheckCircle2 size={44} color="#237c52" />
+          <CheckCircle2 size={44} color="#602060" />
           <Typography variant="h5" sx={{ mt: 2, fontWeight: 800 }}>
             Registramos tu {type === 'QUEJA' ? 'queja' : 'reclamo'}
           </Typography>
@@ -140,7 +140,7 @@ const ComplaintsPage = () => {
   return (
     <Container maxWidth="md" sx={{ py: { xs: 5, md: 8 } }}>
       <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', mb: 1 }}>
-        <BookText size={26} color="#237c52" />
+        <BookText size={26} color="#602060" />
         <Typography variant="h4" sx={{ fontWeight: 800 }}>
           Libro de Reclamaciones
         </Typography>

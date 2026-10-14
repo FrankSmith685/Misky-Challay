@@ -10,7 +10,7 @@ const openPrint = (title: string, body: string) => {
   const popup = window.open('', '_blank', 'width=520,height=760');
   if (!popup) throw new Error('Permite las ventanas emergentes para imprimir');
   popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>
-    *{box-sizing:border-box}body{font:14px system-ui;margin:0;padding:28px;color:#12251c}h1{font-size:22px;margin:0}h2{font-size:14px;margin:4px 0 24px;color:#52645a}.row{display:flex;justify-content:space-between;gap:16px;padding:8px 0;border-bottom:1px dashed #ccd7d0}.muted{color:#62736a;font-size:12px}.total{font-size:20px;font-weight:800;border-top:2px solid #183f2c;margin-top:12px;padding-top:12px}.center{text-align:center}.tag{display:inline-block;padding:5px 9px;background:#e5f5ec;border-radius:99px;font-size:11px;font-weight:700}@media print{body{padding:0}}
+    *{box-sizing:border-box}body{font:14px system-ui;margin:0;padding:28px;color:#201820}h1{font-size:22px;margin:0}h2{font-size:14px;margin:4px 0 24px;color:#675d68}.row{display:flex;justify-content:space-between;gap:16px;padding:8px 0;border-bottom:1px dashed #d8cfd9}.muted{color:#746a75;font-size:12px}.total{font-size:20px;font-weight:800;border-top:2px solid #4e1a4e;margin-top:12px;padding-top:12px}.center{text-align:center}.tag{display:inline-block;padding:5px 9px;background:#f1e4f1;border-radius:99px;font-size:11px;font-weight:700}@media print{body{padding:0}}
   </style></head><body>${body}<script>window.onload=()=>{window.print()}</script></body></html>`);
   popup.document.close();
 };

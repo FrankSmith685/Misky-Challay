@@ -96,7 +96,7 @@ const luminance = (hex: string): number => {
 };
 
 /** Devuelve el color de texto legible (tinta oscura o blanco) sobre un fondo. */
-export const readableText = (hex: string, dark = '#14201a', light = '#ffffff'): string =>
+export const readableText = (hex: string, dark = '#201820', light = '#ffffff'): string =>
   luminance(hex) > 0.42 ? dark : light;
 
 /** Valida si una cadena es un hex de 3 o 6 digitos con '#'. */

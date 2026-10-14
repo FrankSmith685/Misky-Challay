@@ -21,7 +21,8 @@ export type ThemeTokens = {
 
 /** Valores por defecto. Coinciden con styles/index.css para no alterar el look inicial. */
 export const DEFAULT_TOKENS: ThemeTokens = {
-  primary: '#237c52', // brand-600
+  // Morado mora: tomado de los tonos profundos de la referencia visual.
+  primary: '#602060', // brand-600
   secondary: '#e8940f', // accent-500
   tertiary: '#6d5ae8', // NUEVO: violeta de marca
   radius: 5,
@@ -32,16 +33,16 @@ export const DEFAULT_TOKENS: ThemeTokens = {
  * usuario no ha tocado el primary, para que el arranque sea pixel-identico.
  */
 export const DEFAULT_BRAND_RAMP: ColorRamp = {
-  50: '#f0f9f4',
-  100: '#dcf2e4',
-  200: '#bbe5cd',
-  300: '#8ed1ac',
-  400: '#5ab585',
-  500: '#369a68',
-  600: '#237c52',
-  700: '#1c6243',
-  800: '#194e37',
-  900: '#16412f',
+  50: '#f8f1f8',
+  100: '#eddaed',
+  200: '#ddbadf',
+  300: '#c88dc9',
+  400: '#aa62ad',
+  500: '#813b86',
+  600: '#602060',
+  700: '#4e1a4e',
+  800: '#3b143b',
+  900: '#2a0e2a',
 };
 
 /**
@@ -82,14 +83,14 @@ export const DEFAULT_ERROR_RAMP: ColorRamp = {
 /**
  * Superficies y tintas neutras. Espejo en JS de los tokens --color-surface,
  * --color-line y --color-ink de styles/index.css, para que el tema de MUI y
- * Tailwind pinten EL MISMO gris verdoso en lugar de cuatro casi identicos.
+ * Tailwind pinten EL MISMO neutro morado en lugar de cuatro casi identicos.
  */
 export const SURFACE = {
   base: '#ffffff',
-  muted: '#f6f8f7',
-  line: '#e3e8e5',
-  ink: '#14201a',
-  inkMuted: '#5d6b64',
+  muted: '#f8f6f8',
+  line: '#e7e0e7',
+  ink: '#201820',
+  inkMuted: '#675d68',
 } as const;
 
 /** Rampas completas 50..900 derivadas de los tokens gestionables. */
@@ -115,7 +116,10 @@ export const rampsFromTokens = (tokens: ThemeTokens): ThemeRamps => ({
 /** Limites del control de radio (px). */
 export const RADIUS_RANGE = { min: 0, max: 5 } as const;
 
-const STORAGE_KEY = 'vb.theme.tokens.v1';
+// v3 reinicia el color por defecto para que el cambio de identidad visual se
+// aplique también a navegadores que ya guardaron los tokens verdes anteriores.
+// La clave nueva evita que un tema verde guardado vuelva a pintar la app.
+const STORAGE_KEY = 'vb.theme.tokens.v3';
 
 /** Lee los tokens guardados y los combina con los valores por defecto. */
 export const loadTokens = (): ThemeTokens => {

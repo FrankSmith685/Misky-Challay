@@ -59,7 +59,7 @@ const LIMA_CENTER: [number, number] = [-12.04527778, -77.03083333];
 
 const pinIcon = divIcon({
   className: 'verde-map-pin',
-  html: '<span style="display:grid;width:42px;height:42px;place-items:center;border:4px solid white;border-radius:50% 50% 50% 8px;background:linear-gradient(135deg,#2a9669,#176441);box-shadow:0 12px 30px rgba(18,83,55,.38);transform:rotate(-45deg)"><span style="width:10px;height:10px;border-radius:999px;background:white;box-shadow:0 0 0 4px rgba(255,255,255,.2)"></span></span>',
+  html: '<span style="display:grid;width:42px;height:42px;place-items:center;border:4px solid white;border-radius:50% 50% 50% 8px;background:linear-gradient(135deg,#813b86,#4e1a4e);box-shadow:0 12px 30px rgba(59,20,59,.38);transform:rotate(-45deg)"><span style="width:10px;height:10px;border-radius:999px;background:white;box-shadow:0 0 0 4px rgba(255,255,255,.2)"></span></span>',
   iconSize: [42, 42],
   iconAnchor: [21, 40],
 });
@@ -375,7 +375,7 @@ export const AddressMapPicker = ({
               position: 'fixed',
               inset: 0,
               zIndex: 1500,
-              bgcolor: '#f6faf8',
+              bgcolor: '#faf7fa',
               p: { xs: 1.5, sm: 3 },
               display: 'flex',
               flexDirection: 'column',
@@ -454,21 +454,21 @@ export const AddressMapPicker = ({
           borderRadius: 'var(--radius-card)',
           border: '1px solid',
           borderColor: value ? 'primary.light' : 'divider',
-          bgcolor: '#dbece5',
+          bgcolor: '#eddaed',
           position: 'relative',
           boxShadow: value ? 'var(--shadow-e3)' : 'var(--shadow-e2)',
           '& .leaflet-container': {
             height: '100%',
             width: '100%',
             fontFamily: 'inherit',
-            background: '#dbece5',
+            background: '#eddaed',
           },
           '& .leaflet-tile-pane': {
             filter: 'saturate(.82) contrast(1.04) brightness(1.02)',
           },
           '& .leaflet-control-zoom a': {
-            color: '#176441',
-            borderColor: '#dfe8e3',
+            color: '#4e1a4e',
+            borderColor: '#e7dfe8',
           },
           '& .leaflet-control-attribution': {
             fontSize: 9,
@@ -526,7 +526,7 @@ export const AddressMapPicker = ({
               gap: 0.75,
               whiteSpace: 'nowrap',
               borderRadius: 'var(--radius-pill)',
-              bgcolor: 'rgba(19,55,37,.86)',
+              bgcolor: 'rgba(59,20,59,.86)',
               color: 'white',
               px: 1.5,
               py: 0.8,
@@ -563,8 +563,8 @@ export const AddressMapPicker = ({
                 center={[contextCenter.latitude, contextCenter.longitude]}
                 radius={450}
                 pathOptions={{
-                  color: '#2a9669',
-                  fillColor: '#55b884',
+                  color: '#813b86',
+                  fillColor: '#c88dc9',
                   fillOpacity: 0.05,
                   weight: 2,
                   dashArray: '6 7',
@@ -575,7 +575,7 @@ export const AddressMapPicker = ({
                 radius={7}
                 pathOptions={{
                   color: '#ffffff',
-                  fillColor: '#21835a',
+                  fillColor: '#602060',
                   fillOpacity: 1,
                   weight: 4,
                 }}
@@ -590,8 +590,8 @@ export const AddressMapPicker = ({
             <Polygon
               positions={coveragePolygon.map((point) => [point.lat, point.lng])}
               pathOptions={{
-                color: '#21835a',
-                fillColor: '#55b884',
+                color: '#602060',
+                fillColor: '#c88dc9',
                 fillOpacity: 0.14,
                 weight: 2,
               }}
@@ -623,8 +623,8 @@ export const AddressMapPicker = ({
           bgcolor: locationError
             ? 'error.50'
             : resolvedAddress
-              ? 'rgba(237,249,242,.72)'
-              : 'rgba(247,250,248,.82)',
+              ? 'rgba(248,241,248,.72)'
+              : 'rgba(250,247,250,.82)',
           px: 1.5,
           py: 1.25,
         }}

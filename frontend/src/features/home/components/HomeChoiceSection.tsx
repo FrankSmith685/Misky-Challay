@@ -44,7 +44,7 @@ export const HomeChoiceSection = () => (
             <img src="/images/builder/toppings.jpg" alt="" loading="lazy" width={600} height={600} className="size-full object-cover transition-transform duration-700 group-hover:scale-[1.04]" />
             <img src="/images/builder/proteins.jpg" alt="" loading="lazy" width={600} height={600} className="size-full object-cover transition-transform duration-700 group-hover:scale-[1.04]" />
           </div>
-          <div className="absolute inset-0 bg-gradient-to-t from-[#0e2f22] via-brand-900/70 to-brand-900/10" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#2a0e2a] via-brand-900/70 to-brand-900/10" />
           <div className="absolute inset-x-0 bottom-0 p-6 sm:p-7">
             <span className="inline-flex items-center gap-2 rounded-pill bg-accent-500 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider"><Sparkles className="size-3.5" /> Constructor guiado</span>
             <h3 className="mt-4 text-2xl font-black tracking-tight sm:text-3xl">Hazlo realmente tuyo</h3>

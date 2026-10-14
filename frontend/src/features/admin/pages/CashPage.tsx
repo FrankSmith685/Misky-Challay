@@ -164,7 +164,7 @@ const CashPage = () => {
           <Badge variant={mobilePayments.length ? 'warning' : 'success'}>{mobilePayments.length ? `${mobilePayments.length} pendiente${mobilePayments.length === 1 ? '' : 's'}` : 'Todo conciliado'}</Badge>
         </div>
         {mobilePayments.length === 0 ? (
-          <div className="flex items-center gap-3 p-5 text-sm text-ink-muted"><CheckCircle2 className="size-5 text-green-700" /> No hay pagos móviles esperando revisión.</div>
+          <div className="flex items-center gap-3 p-5 text-sm text-ink-muted"><CheckCircle2 className="size-5 text-brand-700" /> No hay pagos móviles esperando revisión.</div>
         ) : (
           <div className="divide-y divide-line">
             {mobilePayments.map((row) => (

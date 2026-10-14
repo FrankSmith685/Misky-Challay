@@ -9,7 +9,7 @@
     <!-- La tienda es solo modo claro. Sin declararlo, los webviews con oscuro forzado
          invierten por su cuenta selects, barras de scroll y demas controles nativos. -->
     <meta name="color-scheme" content="light" />
-    <meta name="theme-color" content="#237c52" />
+    <meta name="theme-color" content="#602060" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Verde Bowl" />
@@ -42,6 +42,30 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Limpia una vez las caches de versiones anteriores para que el cambio
+      // global de identidad visual no siga cargando el tema verde antiguo.
+      (() => {
+        try {
+          const key = 'verde-bowl:theme-cache-v4';
+          if (localStorage.getItem(key) === 'done') return;
+          localStorage.setItem(key, 'done');
+          localStorage.removeItem('vb.theme.tokens.v1');
+          localStorage.removeItem('vb.theme.tokens.v2');
+          localStorage.removeItem('vb.theme.tokens.v3');
+        } catch {
+          return;
+        }
+        const workers = 'serviceWorker' in navigator
+          ? navigator.serviceWorker.getRegistrations().then((registrations) =>
+              Promise.all(registrations.map((registration) => registration.unregister())))
+          : Promise.resolve();
+        const storedCaches = 'caches' in window
+          ? caches.keys().then((keys) => Promise.all(keys.map((cache) => caches.delete(cache))))
+          : Promise.resolve();
+        Promise.all([workers, storedCaches]).finally(() => window.location.reload());
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
