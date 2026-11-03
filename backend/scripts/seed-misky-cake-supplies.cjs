@@ -10,7 +10,9 @@ const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const mysql = require('mysql2/promise');
-const { supplies } = require('../../scripts/cake-supply-catalog.cjs');
+// El servicio puede desplegarse con `backend` como directorio raíz. Mantén
+// una copia local del catálogo de insumos y usa la de la raíz en desarrollo.
+const { supplies } = require('./cake-supply-catalog.cjs');
 
 require('dotenv').config({ path: path.resolve(__dirname, '../.env'), quiet: true });
 
@@ -18,6 +20,7 @@ const sourceDir = path.resolve(__dirname, '../../frontend/public/images/ingredie
 const targetDir = path.resolve(__dirname, '../uploads/media');
 const backupDir = path.resolve(__dirname, '../../backups');
 const execute = process.argv.includes('--execute');
+const remoteTestSeed = process.env.SEED_MISKY_CATALOG === 'true';
 
 const query = async (db, sql, values = []) => {
   const [result] = await db.execute(sql, values);
@@ -66,7 +69,12 @@ const createBackup = () => {
 
 const copyMedia = async (db, ownerId, supply) => {
   const source = path.join(sourceDir, supply.image);
-  if (!fs.existsSync(source)) throw new Error(`Falta la imagen ${source}`);
+  // Las imágenes son opcionales para la prueba remota: el catálogo puede usar
+  // la imagen compartida de la categoría y no debe caerse por un asset local.
+  if (!fs.existsSync(source)) {
+    if (remoteTestSeed) return null;
+    throw new Error(`Falta la imagen ${source}`);
+  }
   fs.mkdirSync(targetDir, { recursive: true });
   const filename = assetFilename(supply.code);
   const destination = path.join(targetDir, filename);
@@ -145,6 +153,7 @@ async function main() {
     const branches = await query(db, 'SELECT id, name FROM branches WHERE is_active=1 ORDER BY id');
     if (!branches.length) throw new Error('No hay sedes activas para habilitar el inventario');
     for (const supply of supplies) {
+      if (remoteTestSeed) continue;
       if (!fs.existsSync(path.join(sourceDir, supply.image))) throw new Error(`Falta la imagen ${supply.image}`);
     }
 

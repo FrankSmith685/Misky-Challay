@@ -19,7 +19,7 @@ const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const mysql = require('mysql2/promise');
-const { supplies } = require('../../scripts/cake-supply-catalog.cjs');
+const { supplies } = require('./cake-supply-catalog.cjs');
 
 require('dotenv').config({ path: path.resolve(__dirname, '../.env'), quiet: true });
 
