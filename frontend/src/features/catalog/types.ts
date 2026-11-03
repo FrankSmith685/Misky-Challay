@@ -34,6 +34,7 @@ export interface Product {
   minLeadHours?: number;
   categoryId: number;
   imageUrl: string | null;
+  categoryImageUrl?: string | null;
   isFeatured: boolean;
   priceFrom: number;
   /** Variante por defecto, para anadir un producto FIJO al carrito desde la grilla. */
@@ -68,6 +69,8 @@ export interface ProductDetail {
   minLeadHours?: number;
   categoryId: number;
   imageUrl: string | null;
+  /** Imagen compartida de la categoría cuando el producto no tiene foto propia. */
+  categoryImageUrl?: string | null;
   isAvailable: boolean;
   cakeSaleMode: 'STANDARD' | 'SEMI_CUSTOM' | 'ADVANCED';
   variants: ProductVariant[];

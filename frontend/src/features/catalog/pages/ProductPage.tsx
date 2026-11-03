@@ -79,6 +79,7 @@ const ProductPage = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
   const loadedSource = useRef('');
+  const displayImage = product?.imageUrl ?? product?.categoryImageUrl ?? null;
   useLiveRefresh(['catalog', 'inventory', 'coverage'], () => setRetryNonce((value) => value + 1));
 
   useEffect(() => {
@@ -141,7 +142,7 @@ const ProductPage = () => {
     const description =
       product.description?.trim() ||
       `Pide ${product.name} en ${BRAND}: ingredientes reales y entrega en tu zona.`;
-    const image = toAbsoluteUrl(product.imageUrl);
+    const image = toAbsoluteUrl(displayImage);
 
     document.title = title;
     const restore = [
@@ -160,7 +161,7 @@ const ProductPage = () => {
     ];
 
     return () => restore.forEach((undo) => undo());
-  }, [product]);
+  }, [displayImage, product]);
 
   if (isLoading) return <PageLoader />;
 
@@ -228,7 +229,7 @@ const ProductPage = () => {
         variantId: variant.id,
         name: product.name,
         variantName: variant.servingSize ? `${variant.name} · ${variant.servingSize} ${variant.servingUnit ?? 'porciones'}` : variant.name,
-        imageUrl: product.imageUrl,
+        imageUrl: displayImage,
         quantity,
         unitPrice: variant.basePrice,
         extrasTotal: 0,
@@ -258,7 +259,7 @@ const ProductPage = () => {
             <section className="min-w-0 lg:sticky lg:top-24 lg:h-fit">
               <div className="relative overflow-hidden rounded-card border border-line bg-white p-2 shadow-e3">
                 <ProductMedia
-                  src={product.imageUrl}
+                  src={displayImage}
                   alt={product.name}
                   priority
                   ratio="4/3"
@@ -300,7 +301,7 @@ const ProductPage = () => {
                     productId: product.id,
                     slug: product.slug,
                     name: product.name,
-                    imageUrl: product.imageUrl,
+                    imageUrl: displayImage,
                     priceFrom: product.variants.length
                       ? Math.min(...product.variants.map((entry) => entry.basePrice))
                       : 0,

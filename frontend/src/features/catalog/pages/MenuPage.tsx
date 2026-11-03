@@ -1,7 +1,7 @@
 import { useLiveRefresh } from '@services/realtime';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
-import { CakeSlice, ChevronDown, Clock3, Cookie, Search, SearchX, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CakeSlice, ChevronDown, Clock3, Cookie, Search, SearchX, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import { ROUTES } from '@constants/routes';
 import { useAppState } from '@context/AppStateContext';
@@ -56,6 +56,7 @@ const MenuPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
+  const categoryRailRef = useRef<HTMLDivElement>(null);
   useLiveRefresh(['catalog', 'inventory', 'coverage'], () => setRetry((value) => value + 1), { enabled: !businessRedirect });
   const updateFilter = (name: string, value: string) => {
     const next = new URLSearchParams(params);
@@ -69,6 +70,16 @@ const MenuPage = () => {
     setParams(next);
   };
   const clearFilters = () => { setParams({}); setSearch(''); };
+  const chooseCategory = (id: number) => {
+    const next = new URLSearchParams(params);
+    next.delete('coleccion');
+    next.delete('modo');
+    next.set('categoria', String(id));
+    setParams(next);
+  };
+  const moveCategories = (direction: 'previous' | 'next') => {
+    categoryRailRef.current?.scrollBy({ left: direction === 'next' ? 280 : -280, behavior: 'smooth' });
+  };
 
   useEffect(() => {
     if (businessRedirect) return;
@@ -98,6 +109,7 @@ const MenuPage = () => {
     .sort((a, b) => sort === 'PRICE' ? a.priceFrom - b.priceFrom
       : sort === 'PRICE_DESC' ? b.priceFrom - a.priceFrom
         : Number(b.isFeatured) - Number(a.isFeatured) || a.name.localeCompare(b.name, 'es')), [products, collection, categoryId, sugarFree, preparation, search, sort]);
+  const categoryCounts = useMemo(() => new Map(categories.map((category) => [category.id, products.filter((product) => product.categoryId === category.id).length])), [categories, products]);
   const hasFilters = collection !== 'ALL' || categoryId !== null || sugarFree || preparation !== '' || search !== '';
   const resultCount = visible.length;
   const extraFilterCount = Number(categoryId !== null) + Number(preparation !== '');
@@ -137,6 +149,33 @@ const MenuPage = () => {
     </div>
 
     {selectedLocation && <div className="mt-5"><BranchPrompt onChooseLocation={openLocationModal} selectedLocation={selectedLocation} /></div>}
+    {categories.length > 0 && <section className="mt-7" aria-labelledby="category-carousel-heading">
+      <div className="mb-3 flex items-end justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-extrabold uppercase tracking-widest text-brand-700">Explora por categoría</p>
+          <h2 id="category-carousel-heading" className="mt-1 text-xl font-black text-ink">Elige algo dulce</h2>
+        </div>
+        <div className="hidden gap-2 sm:flex">
+          <button type="button" aria-label="Categorías anteriores" onClick={() => moveCategories('previous')} className="grid size-10 place-items-center rounded-full border border-line bg-white text-brand-700 transition hover:border-brand-400 hover:bg-brand-50"><ArrowLeft className="size-4" /></button>
+          <button type="button" aria-label="Siguientes categorías" onClick={() => moveCategories('next')} className="grid size-10 place-items-center rounded-full border border-line bg-white text-brand-700 transition hover:border-brand-400 hover:bg-brand-50"><ArrowRight className="size-4" /></button>
+        </div>
+      </div>
+      <div ref={categoryRailRef} className="-mx-4 flex gap-3 overflow-x-auto overscroll-x-contain px-4 pb-2 sm:mx-0 sm:px-0" style={{ scrollbarWidth: 'thin' }}>
+        {categories.map((category) => {
+          const active = categoryId === category.id && collection === 'ALL';
+          const count = categoryCounts.get(category.id) ?? 0;
+          return <button key={category.id} type="button" aria-pressed={active} onClick={() => chooseCategory(category.id)} className={`group relative flex min-w-[205px] shrink-0 items-end overflow-hidden rounded-card border text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:min-w-[230px] ${active ? 'border-brand-700 ring-2 ring-brand-200' : 'border-line'}`}>
+            <div className="absolute inset-0 bg-gradient-to-br from-accent-50 via-surface-muted to-brand-50" />
+            {category.imageUrl && <img src={category.imageUrl} alt="" loading="lazy" className="absolute inset-0 size-full object-cover transition duration-500 group-hover:scale-105" />}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-transparent" />
+            <div className="relative min-h-[118px] w-full p-4 text-white">
+              <p className="text-lg font-black drop-shadow-sm">{category.name}</p>
+              <p className="mt-1 text-xs font-semibold text-white/85">{count} producto{count === 1 ? '' : 's'}</p>
+            </div>
+          </button>;
+        })}
+      </div>
+    </section>}
     {collection === '24H' && <p role="note" className="mt-5 text-sm leading-6 text-ink-muted"><strong className="text-ink">Pide con al menos 24 horas de anticipación.</strong> Confirmaremos la fecha según la capacidad del taller.</p>}
     {sugarFree && <p className="mt-5 text-sm leading-6 text-ink-muted">Selección identificada como «Sin azúcar» por el negocio. Revisa los ingredientes y alérgenos de cada producto.</p>}
     <div className="mb-6 mt-8 flex flex-wrap items-end justify-between gap-5 border-b border-line pb-5 sm:mt-10">

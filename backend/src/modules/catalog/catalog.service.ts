@@ -37,6 +37,7 @@ export interface ProductListItem {
   minLeadHours: number;
   categoryId: number;
   imageUrl: string | null;
+  categoryImageUrl: string | null;
   isFeatured: boolean;
   priceFrom: number;
   /** Variante por defecto: permite anadir un producto FIJO al carrito sin abrir su ficha. */
@@ -54,7 +55,7 @@ const pickDefaultVariant = (variants: ProductVariant[]): ProductVariant | undefi
 
 const includeForProduct = () => [
   { model: CakeProductProfile, as: 'cakeProfile', required: true, where: { isActive: true } },
-  { model: Category, as: 'category', required: true, where: { isActive: true }, attributes: ['id', 'name'] },
+  { model: Category, as: 'category', required: true, where: { isActive: true }, attributes: ['id', 'name', 'imageUrl'] },
   {
     model: ProductVariant,
     as: 'variants',
@@ -149,6 +150,7 @@ export const catalogService = {
       const variant = pickDefaultVariant(variants);
       const tags = (product.get('dietaryTags') as DietaryTag[] | undefined) ?? [];
       const allergens = (product.get('allergens') as Allergen[] | undefined) ?? [];
+      const category = product.get('category') as { imageUrl: string | null } | undefined;
 
       return {
         id: product.id,
@@ -161,6 +163,7 @@ export const catalogService = {
         minLeadHours: (product.get('cakeProfile') as CakeProductProfile).minLeadHours,
         categoryId: product.categoryId,
         imageUrl: product.imageUrl,
+        categoryImageUrl: category?.imageUrl ?? null,
         isFeatured: product.isFeatured,
         priceFrom: variants.length
           ? Math.min(...variants.map((entry) => Number(entry.basePrice)))
@@ -213,6 +216,7 @@ export const catalogService = {
     const variants = product.variants ?? [];
     const tags = (product.get('dietaryTags') as DietaryTag[] | undefined) ?? [];
     const allergens = (product.get('allergens') as Allergen[] | undefined) ?? [];
+    const category = product.get('category') as { imageUrl: string | null } | undefined;
     const readyAvailability = await readyStockAvailability([product], branchId);
     isAvailable = isAvailable && readyAvailability.get(product.id) !== false;
 
@@ -227,6 +231,7 @@ export const catalogService = {
       minLeadHours: (product.get('cakeProfile') as CakeProductProfile).minLeadHours,
       categoryId: product.categoryId,
       imageUrl: product.imageUrl,
+      categoryImageUrl: category?.imageUrl ?? null,
       isAvailable,
       cakeSaleMode: (product.get('cakeProfile') as CakeProductProfile).saleMode,
       variants: variants.map((variant) => ({

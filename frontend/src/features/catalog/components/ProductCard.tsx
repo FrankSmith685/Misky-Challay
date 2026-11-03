@@ -26,6 +26,7 @@ interface ProductCardProps {
 
 export const ProductCard = ({ product, allergenAlerts }: ProductCardProps) => {
   const isBuilder = product.cakeSaleMode === 'SEMI_CUSTOM' || product.cakeSaleMode === 'ADVANCED';
+  const displayImage = product.imageUrl ?? product.categoryImageUrl ?? null;
   // El aviso solo aparece si el plato choca con lo que el cliente declaró; si no, nada cambia.
   const allergenWarnings = (allergenAlerts ?? []).filter((allergen) =>
     product.allergens.includes(allergen.code),
@@ -65,7 +66,7 @@ export const ProductCard = ({ product, allergenAlerts }: ProductCardProps) => {
           productId: product.id,
           slug: product.slug,
           name: product.name,
-          imageUrl: product.imageUrl,
+          imageUrl: displayImage,
           priceFrom: product.priceFrom,
           type: product.type,
         }}
@@ -83,8 +84,8 @@ export const ProductCard = ({ product, allergenAlerts }: ProductCardProps) => {
           justifyContent: 'flex-start',
         }}
       >
-        <ProductMedia src={product.imageUrl} alt={product.name} ratio="4/3" className="shrink-0 bg-surface-muted">
-          {(isBuilder || product.imageUrl?.endsWith('.svg')) && product.imageUrl && <Chip
+        <ProductMedia src={displayImage} alt={product.name} ratio="4/3" className="shrink-0 bg-surface-muted">
+            {(isBuilder || displayImage?.endsWith('.svg')) && displayImage && <Chip
             label="Imagen referencial"
             size="small"
             sx={{ position: 'absolute', top: 12, left: 12, zIndex: 1, bgcolor: 'rgba(255,255,255,.94)', borderRadius: 'var(--radius-pill)', fontWeight: 700 }}
