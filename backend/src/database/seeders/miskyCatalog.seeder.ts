@@ -49,13 +49,15 @@ export const seedMiskyCatalog = async (): Promise<void> => {
   );
   if (complete) {
     logger.info('Catálogo Misky Challay ya existe; se conserva la configuración del panel');
-    return;
+  } else {
+    if (existing) logger.warn('Catálogo Misky Challay incompleto; se ejecutará una carga de reparación');
+    logger.warn('SEED_MISKY_CATALOG activo: cargando el catálogo local de Misky Challay');
+    await runScript('seed-misky-cake-supplies.cjs');
+    await runScript('seed-misky-cake-catalog.cjs');
   }
 
-  if (existing) logger.warn('Catálogo Misky Challay incompleto; se ejecutará una carga de reparación');
-
-  logger.warn('SEED_MISKY_CATALOG activo: cargando el catálogo local de Misky Challay');
-  await runScript('seed-misky-cake-supplies.cjs');
-  await runScript('seed-misky-cake-catalog.cjs');
+  // Se ejecuta también cuando la torta base ya existe para completar categorías
+  // que se agregaron después (turrones, kekes, fatias y bocaditos).
+  await runScript('seed-misky-pastry-catalog.cjs');
   logger.success('Catálogo local de Misky Challay cargado');
 };
