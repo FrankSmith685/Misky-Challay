@@ -38,6 +38,29 @@ const selectionFor = (value: CakeSelection[], config: BuilderConfig): CakeSelect
   });
 };
 
+/**
+ * Recupera las opciones marcadas por el catálogo para una torta nueva.
+ * Solo se usan como inicio cuando no hay una combinación guardada o recibida
+ * desde una edición/enlace compartido.
+ */
+const defaultSelectionsFor = (config: BuilderConfig): CakeSelection[] => config.groups.flatMap((group) => {
+  if (group.minSelection <= 0) return [];
+  const available = group.options.filter((option) => option.isAvailable);
+  const marked = available.filter((option) => option.isDefault);
+  if (!marked.length) return [];
+
+  const selected = group.selectionType === 'SINGLE'
+    ? marked.slice(0, 1)
+    : marked.slice(0, group.maxSelection);
+  // Si una regla exige más de una opción y el catálogo solo marcó una,
+  // completa con las primeras disponibles para que el grupo nazca válido.
+  for (const option of available) {
+    if (selected.length >= group.minSelection || selected.length >= group.maxSelection) break;
+    if (!selected.some((entry) => entry.id === option.id)) selected.push(option);
+  }
+  return selected.slice(0, group.maxSelection).map((option) => ({ optionId: option.id, quantity: 1 }));
+});
+
 const configForVariant = (config: BuilderConfig, variantId: number | null, theme?: CakeTheme | null): BuilderConfig => {
   const rule = theme?.variantRules.find((entry) => entry.variantId === variantId);
   return { ...config, groups: config.groups.filter((group) => (group.variantId === null || group.variantId === variantId) && !rule?.hiddenGroupIds?.includes(group.id))
@@ -99,7 +122,15 @@ export const useCakeBuilder = ({ productId, branchId, enabled = true, initialVar
             ? stored?.variantId
             : preferred?.id ?? null;
         setVariantId(preferredId ?? null);
-        const source = fromDraft ? stored?.selections ?? [] : initialConfigurationKey !== 'default' || initialSelections.length ? initialSelections : stored?.selections ?? [];
+        const source = fromDraft
+          ? stored?.selections ?? []
+          : initialConfigurationKey !== 'default' || initialSelections.length
+            ? initialSelections
+            : stored
+              ? stored.selections?.length
+                ? stored.selections
+                : defaultSelectionsFor(configForVariant(next, preferredId ?? null, theme))
+              : defaultSelectionsFor(configForVariant(next, preferredId ?? null, theme));
         setSelections(selectionFor(source, configForVariant(next, preferredId ?? null, theme)));
         setRestoration({ sourceKey: initialConfigurationKey, fromDraft, requestedServings: fromDraft ? stored?.requestedServings : initialRequestedServings });
       })

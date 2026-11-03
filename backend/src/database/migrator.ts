@@ -70,7 +70,32 @@ const runSqlFile = async (filePath: string): Promise<void> => {
   const transaction = await sequelize.transaction();
   try {
     for (const statement of statements) {
-      await sequelize.query(statement, { transaction });
+      try {
+        await sequelize.query(statement, { transaction });
+      } catch (error) {
+        // El baseline se adopta tambien sobre bases que ya fueron creadas con
+        // `sequelize.sync()`. En ese caso una o mas tablas pueden existir antes
+        // de que Umzug tenga oportunidad de registrar la migracion. DDL de MySQL
+        // hace commit implicito, asi que no podemos convertir el baseline en una
+        // transaccion atomica; si podemos continuar con las tablas que faltan.
+        const details = error as {
+          code?: string;
+          original?: { code?: string; message?: string };
+          parent?: { code?: string; message?: string };
+          message?: string;
+        };
+        const errorCode = details.original?.code ?? details.parent?.code ?? details.code;
+        const errorMessage = details.original?.message ?? details.parent?.message ?? details.message ?? '';
+        const tableAlreadyExists =
+          errorCode === 'ER_TABLE_EXISTS_ERROR' || /table .* already exists/i.test(errorMessage);
+
+        if (filePath.endsWith(BASELINE_NAME) && /^CREATE TABLE\s+/i.test(statement) && tableAlreadyExists) {
+          const tableName = statement.match(/^CREATE TABLE\s+`?([^`\s(]+)`?/i)?.[1] ?? 'desconocida';
+          logger.warn(`La tabla del baseline ya existia; se omite: ${tableName}`);
+          continue;
+        }
+        throw error;
+      }
     }
     await transaction.commit();
   } catch (error) {
@@ -140,11 +165,16 @@ export const adoptExistingSchema = async (): Promise<boolean> => {
   const applied = await migrator.executed();
   if (applied.length > 0) return false;
 
+  // Solo adoptamos una base que tenga el conjunto minimo del esquema original.
+  // Comprobar una unica tabla (`orders`) podia marcar como completo un baseline
+  // interrumpido a mitad de camino y dejar el resto de tablas sin crear.
   const [tables] = await sequelize.query(
-    "SELECT table_name AS name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'orders'",
+    "SELECT table_name AS name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN ('addresses', 'orders', 'products', 'users')",
   );
-
-  if ((tables as unknown[]).length === 0) return false;
+  const existingTables = new Set(
+    (tables as Array<{ name?: unknown }>).map((table) => String(table.name).toLowerCase()),
+  );
+  if (!['addresses', 'orders', 'products', 'users'].every((name) => existingTables.has(name))) return false;
 
   const storage = migrator.options.storage;
   if (!storage) throw new Error('El migrador no tiene almacenamiento configurado');

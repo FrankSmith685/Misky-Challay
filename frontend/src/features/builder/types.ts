@@ -1,6 +1,8 @@
 export interface BuilderOption {
   id: number;
   name: string;
+  /** Se selecciona al abrir un configurador nuevo, si está disponible. */
+  isDefault?: boolean;
   description: string | null;
   imageUrl: string | null;
   imageAlt: string | null;

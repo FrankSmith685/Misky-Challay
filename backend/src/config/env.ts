@@ -65,14 +65,14 @@ const envSchema = z.object({
   DB_SSL: booleanFromString(false),
   DB_SSL_CA: z.string().optional(),
   DB_LOGGING: booleanFromString(false),
-  DB_AUTO_CREATE: booleanFromString(true),
+  DB_AUTO_CREATE: booleanFromString(false),
 
-  DB_SYNC: booleanFromString(true),
-  DB_ALTER: booleanFromString(true),
+  DB_SYNC: booleanFromString(false),
+  DB_ALTER: booleanFromString(false),
   DB_FORCE: booleanFromString(false),
   DB_SEED: booleanFromString(true),
   /** Datos comerciales para revisar la app. Desactivar explícitamente en producción. */
-  SEED_DEMO_DATA: booleanFromString(true),
+  SEED_DEMO_DATA: booleanFromString(false),
 
   JWT_ACCESS_SECRET: z.string().min(10, 'JWT_ACCESS_SECRET es obligatorio'),
   JWT_REFRESH_SECRET: z.string().min(10, 'JWT_REFRESH_SECRET es obligatorio'),

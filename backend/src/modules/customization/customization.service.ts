@@ -24,6 +24,8 @@ import type { CakeThemeSnapshot } from '@database/models/cakeTheme.model';
 export interface OptionDto {
   id: number;
   name: string;
+  /** Opción que se propone al abrir un configurador nuevo. */
+  isDefault: boolean;
   description: string | null;
   imageUrl: string | null;
   imageAlt: string | null;
@@ -247,6 +249,7 @@ const loadGroups = async (productId: number, branchId?: number, variantId?: numb
         return {
           id: option.id,
           name: option.name,
+          isDefault: false,
           description: option.description,
           imageUrl: option.imageUrl,
           imageAlt: option.imageAlt,
@@ -266,6 +269,7 @@ const loadGroups = async (productId: number, branchId?: number, variantId?: numb
           incompatibilities: incompatibilityDetails,
         };
       });
+    const firstAvailableIndex = options.findIndex((option) => option.isAvailable);
 
     return {
       id: group.id,
@@ -278,7 +282,10 @@ const loadGroups = async (productId: number, branchId?: number, variantId?: numb
       maxSelection: rules.maxSelection,
       freeQuantity: rules.freeQuantity,
       sortOrder: rules.sortOrder,
-      options,
+      options: options.map((option, index) => ({
+        ...option,
+        isDefault: index === firstAvailableIndex,
+      })),
     };
   });
 
