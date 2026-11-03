@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { env } from '@config/env';
 import { logger } from '@config/logger';
-import { Product } from '../models';
+import { CakeProductProfile, Product, ProductVariant } from '../models';
 
 /** Ejecuta las cargas reproducibles que alimentan el catálogo local de Misky. */
 const runScript = (scriptName: string): Promise<void> => new Promise((resolve, reject) => {
@@ -31,12 +31,28 @@ export const seedMiskyCatalog = async (): Promise<void> => {
     throw new Error('SEED_MISKY_CATALOG solo se permite en el entorno de pruebas');
   }
 
-  // Evita que un reinicio vuelva a sobrescribir ediciones hechas desde el panel.
+  // Solo conservamos una ficha cuando realmente está completa. Una base puede
+  // tener un producto viejo con este slug, pero sin variantes, perfil activo o
+  // revisión de alérgenos; en ese caso el menú público continúa vacío.
   const existing = await Product.findOne({ where: { slug: 'torta-a-tu-gusto' }, paranoid: false });
-  if (existing) {
+  const variantCount = existing
+    ? await ProductVariant.count({ where: { productId: existing.id, isActive: true } })
+    : 0;
+  const profile = existing ? await CakeProductProfile.findByPk(existing.id) : null;
+  const complete = Boolean(
+    existing
+    && existing.status === 'ACTIVE'
+    && existing.allergensReviewedAt
+    && variantCount >= 3
+    && profile?.isActive
+    && profile.saleMode === 'SEMI_CUSTOM',
+  );
+  if (complete) {
     logger.info('Catálogo Misky Challay ya existe; se conserva la configuración del panel');
     return;
   }
+
+  if (existing) logger.warn('Catálogo Misky Challay incompleto; se ejecutará una carga de reparación');
 
   logger.warn('SEED_MISKY_CATALOG activo: cargando el catálogo local de Misky Challay');
   await runScript('seed-misky-cake-supplies.cjs');
