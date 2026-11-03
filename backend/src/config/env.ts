@@ -73,6 +73,8 @@ const envSchema = z.object({
   DB_SEED: booleanFromString(true),
   /** Datos comerciales para revisar la app. Desactivar explícitamente en producción. */
   SEED_DEMO_DATA: booleanFromString(false),
+  /** Carga inicial del catálogo local de Misky Challay en una base de pruebas. */
+  SEED_MISKY_CATALOG: booleanFromString(false),
 
   JWT_ACCESS_SECRET: z.string().min(10, 'JWT_ACCESS_SECRET es obligatorio'),
   JWT_REFRESH_SECRET: z.string().min(10, 'JWT_REFRESH_SECRET es obligatorio'),
@@ -264,6 +266,8 @@ const productionGuard = (value: z.infer<typeof envSchema>, ctx: z.RefinementCtx)
   if (value.DB_FORCE) fail('DB_FORCE', 'BORRA todas las tablas: jamas en produccion');
   if (value.SEED_DEMO_DATA)
     fail('SEED_DEMO_DATA', 'debe ser false en produccion: inyecta catalogo de prueba');
+  if (value.SEED_MISKY_CATALOG)
+    fail('SEED_MISKY_CATALOG', 'solo se permite en entornos de prueba');
   if (value.DB_AUTO_CREATE)
     fail('DB_AUTO_CREATE', 'debe ser false en produccion: la base se crea con migraciones');
   if (value.ADMIN_PASSWORD_RESET)

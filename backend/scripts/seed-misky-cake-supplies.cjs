@@ -30,11 +30,12 @@ const assetFilename = (code) => {
 };
 
 const assertLocal = () => {
-  if (process.env.NODE_ENV !== 'development'
+  const remoteTestSeed = process.env.SEED_MISKY_CATALOG === 'true';
+  if (!remoteTestSeed && (process.env.NODE_ENV !== 'development'
     || !['localhost', '127.0.0.1', '::1'].includes(process.env.DB_HOST)
     || process.env.DB_NAME !== 'DulceFlow'
     || process.env.SEED_DEMO_DATA !== 'false'
-    || process.env.MERCADOPAGO_MODE === 'live') {
+    || process.env.MERCADOPAGO_MODE === 'live')) {
     throw new Error('Solo se permite en la base DulceFlow local de desarrollo sin pagos reales');
   }
   if (!process.env.ADMIN_EMAIL) throw new Error('Falta ADMIN_EMAIL para verificar al propietario');
@@ -130,7 +131,7 @@ async function main() {
     return;
   }
 
-  const backup = createBackup();
+  const backup = process.env.SEED_MISKY_CATALOG_BACKUP === 'true' ? createBackup() : null;
   const db = await mysql.createConnection({
     host: process.env.DB_HOST,
     port: Number(process.env.DB_PORT),

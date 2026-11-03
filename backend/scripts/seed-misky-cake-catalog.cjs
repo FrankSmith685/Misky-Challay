@@ -85,8 +85,9 @@ const effortFor = (size, mode) => {
 };
 
 function assertLocal() {
-  if (process.env.NODE_ENV !== 'development' || !['localhost', '127.0.0.1', '::1'].includes(process.env.DB_HOST)
-    || process.env.DB_NAME !== 'DulceFlow' || process.env.SEED_DEMO_DATA !== 'false' || process.env.MERCADOPAGO_MODE === 'live') {
+  const remoteTestSeed = process.env.SEED_MISKY_CATALOG === 'true';
+  if (!remoteTestSeed && (process.env.NODE_ENV !== 'development' || !['localhost', '127.0.0.1', '::1'].includes(process.env.DB_HOST)
+    || process.env.DB_NAME !== 'DulceFlow' || process.env.SEED_DEMO_DATA !== 'false' || process.env.MERCADOPAGO_MODE === 'live')) {
     throw new Error('Solo se permite en la base DulceFlow local de desarrollo sin pagos reales');
   }
   if (!process.env.ADMIN_EMAIL) throw new Error('Falta ADMIN_EMAIL para verificar el propietario');
@@ -291,6 +292,11 @@ async function seed(db) {
       ? ['gluten', 'lacteos', 'huevo', ...(classicFlavors.find((entry) => entry.slug === definition.slug)?.nuts ? ['frutos-secos'] : [])]
       : ['gluten', 'lacteos', 'huevo', 'frutos-secos'];
     await writeAllergens(db, productId, allergenCodes);
+    // En la carga remota de pruebas usamos la misma revisión de alérgenos que
+    // ya tiene el catálogo local; sin esta marca el menú público lo filtra.
+    if (process.env.SEED_MISKY_CATALOG === 'true') {
+      await query(db, 'UPDATE products SET allergens_reviewed_at=NOW(), updated_at=NOW() WHERE id=?', [productId]);
+    }
     await writeBranchProductAvailability(db, productId, branches);
     await query(db, 'DELETE FROM product_customization_groups WHERE product_id=?', [productId]);
   }
@@ -333,7 +339,7 @@ async function main() {
   assertLocal();
   const plan = { classicProducts: classicFlavors.length, customProducts: 2, variantsPerProduct: sizes.length, classicFlavorTable: classicFlavors.map((entry) => ({ name: entry.name, surcharge: entry.surcharge })), fillingOptions: fillings.map((entry) => ({ name: entry.name, surcharge: entry.delta })), note: 'Precios base de referencia: confirmar en el panel antes de vender en producción.' };
   if (!execute) { console.log(JSON.stringify({ mode: 'dry-run', plan }, null, 2)); return; }
-  const backup = createBackup();
+  const backup = process.env.SEED_MISKY_CATALOG_BACKUP === 'true' ? createBackup() : null;
   const db = await mysql.createConnection({ host: process.env.DB_HOST, port: Number(process.env.DB_PORT), user: process.env.DB_USER, password: process.env.DB_PASSWORD, database: process.env.DB_NAME });
   try {
     await db.beginTransaction();

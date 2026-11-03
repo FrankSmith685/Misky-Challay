@@ -8,6 +8,7 @@ import { seedCakes } from './cakes.seeder';
 import { seedCoupons } from './coupon.seeder';
 import { seedFoodTaxonomy } from './foodTaxonomy.seeder';
 import { seedSubscriptionPlans } from './subscriptionPlans.seeder';
+import { seedMiskyCatalog } from './miskyCatalog.seeder';
 
 /**
  * Seeders idempotentes: se pueden ejecutar en cada arranque sin duplicar datos.
@@ -28,6 +29,13 @@ export const runSeeders = async (): Promise<void> => {
   } else {
     await seedUbigeo();
     logger.info('Datos demo desactivados: la operación se gestiona desde el panel');
+  }
+
+  if (env.SEED_MISKY_CATALOG) {
+    // El catálogo necesita una sede activa. Esto es independiente de los
+    // bowls de demostración controlados por SEED_DEMO_DATA.
+    await seedGeography();
+    await seedMiskyCatalog();
   }
 
   await seedSubscriptionPlans();

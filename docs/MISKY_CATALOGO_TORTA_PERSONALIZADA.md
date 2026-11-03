@@ -110,4 +110,16 @@ Los precios, porciones, mermas, tiempos y cantidades son valores iniciales de
 referencia. Deben revisarse en el panel con la ficha técnica y el costo real de
 la pastelería antes de vender a clientes.
 
+## Carga en Render (entorno de prueba)
+
+Cuando la base remota está vacía, conserva `SEED_DEMO_DATA=false` y agrega
+`SEED_MISKY_CATALOG=true` en las variables del servicio. En el siguiente
+arranque se crea la sede, el inventario y el mismo catálogo local. El seeder se
+omite automáticamente cuando ya existe `torta-a-tu-gusto`, por lo que los
+cambios posteriores del panel no se sobrescriben.
+
+Después de confirmar que el catálogo aparece, vuelve a dejar
+`SEED_MISKY_CATALOG=false` para que los reinicios futuros sean completamente
+neutros.
+
 
