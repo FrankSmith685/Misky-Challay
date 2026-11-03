@@ -138,9 +138,11 @@ async function ensureProduct(db, definition, categoryId) {
 
 async function ensureProfile(db, productId, mode, leadHours, effort) {
   const found = await query(db, 'SELECT product_id FROM cake_product_profiles WHERE product_id=? LIMIT 1', [productId]);
-  const values = [mode, leadHours, JSON.stringify(effort), JSON.stringify({ DESIGN: 2, BAKING: 1, COOLING: 1, FILLING: 1, DECORATING: 0, QA: 0, DISPATCH: 0 }), productId];
+  const stationOffsets = JSON.stringify({ DESIGN: 2, BAKING: 1, COOLING: 1, FILLING: 1, DECORATING: 0, QA: 0, DISPATCH: 0 });
+  const values = [mode, leadHours, JSON.stringify(effort), stationOffsets, productId];
   if (found.length) return query(db, 'UPDATE cake_product_profiles SET sale_mode=?, min_lead_hours=?, base_effort_json=?, station_offsets_json=?, is_active=1, updated_at=NOW() WHERE product_id=?', values);
-  return query(db, 'INSERT INTO cake_product_profiles (product_id, sale_mode, min_lead_hours, base_effort_json, station_offsets_json, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, NOW(), NOW())', [productId, ...values.slice(0, 4)]);
+  const customServings = JSON.stringify({ enabled: false, baseVariantId: null, minServings: 21, maxServings: 60, pricePerExtraServing: 0 });
+  return query(db, 'INSERT INTO cake_product_profiles (product_id, sale_mode, min_lead_hours, base_effort_json, station_offsets_json, custom_servings_json, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, NOW(), NOW())', [productId, mode, leadHours, JSON.stringify(effort), stationOffsets, customServings]);
 }
 
 async function ensureVariant(db, productId, variant, sku, effort) {
