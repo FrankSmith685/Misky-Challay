@@ -45,6 +45,7 @@ WORKDIR /app
 
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/backend/dist ./backend/dist
+COPY --from=build /app/backend/scripts ./backend/scripts
 COPY --from=build /app/backend/package.json ./backend/
 COPY --from=build /app/package.json ./
 
