@@ -15,6 +15,8 @@ interface PendingOrderBannerProps {
   /** Del hook `usePendingOrder`; si es null, no hay nada que avisar. */
   pending: OrderWithPayment | null;
   onResolved: () => void;
+  recoveryError?: string;
+  onRetry?: () => void;
 }
 
 /**
@@ -27,13 +29,14 @@ interface PendingOrderBannerProps {
  * Da las dos unicas salidas sensatas: terminar de pagarlo o cancelarlo (lo que
  * devuelve todo lo reservado).
  */
-export const PendingOrderBanner = ({ pending, onResolved }: PendingOrderBannerProps) => {
+export const PendingOrderBanner = ({ pending, onResolved, recoveryError, onRetry }: PendingOrderBannerProps) => {
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [resuming, setResuming] = useState(false);
 
-  if (!pending) return null;
+  if (!pending) return recoveryError ? <Card className="mb-5 border-amber-300 bg-amber-50 p-4"><p role="status">{recoveryError}</p><Button className="mt-3" variant="outline" onClick={onRetry}>Reintentar recuperación del pedido</Button></Card> : null;
 
-  const checkoutUrl = pending.payment?.checkoutUrl ?? null;
+  const online = ['mercadopago', 'stripe', 'mock'].includes(pending.payment?.provider ?? '');
 
   const handleCancel = async () => {
     setIsCancelling(true);
@@ -62,19 +65,18 @@ export const PendingOrderBanner = ({ pending, onResolved }: PendingOrderBannerPr
               <p className="mt-1 text-xs leading-5 text-ink-muted sm:text-sm">
                 El pedido <strong>{pending.order.orderNumber}</strong> por{' '}
                 <strong>{formatCurrency(pending.order.grandTotal)}</strong> quedó reservado, pero el
-                pago no se completó. Termínalo o cancélalo para liberar lo que aparta.
+                pago aún no se confirmó. Comprueba su estado para continuarlo o cancelarlo.
               </p>
             </div>
           </div>
 
           <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
-            {checkoutUrl ? (
+            {online ? (
               <Button
                 size="sm"
                 leftIcon={<CreditCard className="size-4" />}
-                onClick={() => {
-                  window.location.href = checkoutUrl;
-                }}
+                isLoading={resuming}
+                onClick={() => { setResuming(true); void checkoutApi.retryPayment(pending.order.orderNumber).then(({ checkoutUrl }) => { if (checkoutUrl) window.location.assign(checkoutUrl); }).catch((error) => toast.error(getApiErrorMessage(error))).finally(() => setResuming(false)); }}
               >
                 Reanudar pago
               </Button>
@@ -108,7 +110,7 @@ export const PendingOrderBanner = ({ pending, onResolved }: PendingOrderBannerPr
             {pending.order.orderNumber} · {formatCurrency(pending.order.grandTotal)}
           </p>
           <p className="mt-1 text-xs leading-5 text-ink-muted">
-            No se te ha cobrado nada. Si prefieres pagarlo, cierra esta ventana y pulsa
+            Comprueba el estado de tu pago. Si prefieres continuarlo, cierra esta ventana y pulsa
             «Reanudar pago».
           </p>
         </div>

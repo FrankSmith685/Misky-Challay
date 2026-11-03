@@ -30,7 +30,7 @@ export function CoverageSummaryCard({ result, onSelectPickup }: CoverageSummaryC
             ? [
                 `Te atenderá ${delivery.branch.name}`,
                 `envío ${money(delivery.zone.deliveryFee)}`,
-                `mínimo ${money(delivery.zone.minimumOrder)}`,
+                delivery.zone.minimumOrder > 0 ? `mínimo ${money(delivery.zone.minimumOrder)}` : 'sin mínimo',
                 result.etaMinutes ? `~${result.etaMinutes} min` : null,
               ]
                 .filter(Boolean)

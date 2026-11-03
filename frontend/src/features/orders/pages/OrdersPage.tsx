@@ -27,6 +27,7 @@ import { getApiErrorMessage } from '@services/api/client';
 import { formatCurrency, formatDate } from '@lib/format';
 import { cn } from '@lib/cn';
 import { ROUTES } from '@constants/routes';
+import { useLiveRefresh } from '@services/realtime';
 import { ordersApi } from '../services/orders.service';
 import { useReorder } from '../hooks/useReorder';
 import { OrderStatusBadge } from '../components/OrderStatusBadge';
@@ -44,6 +45,9 @@ const OrdersPage = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
   const [filter, setFilter] = useState<OrderFilter>('ALL');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [counts, setCounts] = useState({ ALL: 0, ACTIVE: 0, DELIVERED: 0, CANCELLED: 0 });
   const [pendingCancel, setPendingCancel] = useState<OrderDetail | null>(null);
   const [cancellingId, setCancellingId] = useState<number | null>(null);
   /** Que tarjeta lanzo el "Volver a pedir": el spinner va solo en su boton. */
@@ -54,13 +58,13 @@ const OrdersPage = () => {
 
   useEffect(() => {
     let active = true;
-    setIsLoading(true);
+    if (!orders.length) setIsLoading(true);
     setLoadError(null);
 
     ordersApi
-      .list()
-      .then((rows) => {
-        if (active) setOrders(rows);
+      .listPage(page, filter)
+      .then((result) => {
+        if (active) { setOrders(result.orders); setCounts(result.meta.counts); setTotalPages(result.meta.totalPages); }
       })
       .catch((error) => {
         if (!active) return;
@@ -76,14 +80,17 @@ const OrdersPage = () => {
     return () => {
       active = false;
     };
-  }, [retryNonce]);
+  // The cleanup prevents a response for an old filter from replacing the current page.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [retryNonce, page, filter]);
+  useLiveRefresh(['orders', 'payments'], reload);
 
   const handleCancel = async () => {
     if (!pendingCancel) return;
     setCancellingId(pendingCancel.id);
     try {
-      await ordersApi.cancel(pendingCancel.orderNumber, 'Cancelado por el cliente');
-      toast.success('Pedido cancelado');
+      const message = await ordersApi.cancel(pendingCancel.orderNumber, 'Cancelado por el cliente');
+      toast.success(message);
       setPendingCancel(null);
       reload();
     } catch (error) {
@@ -106,18 +113,7 @@ const OrdersPage = () => {
     () => [...orders].sort((a, b) => new Date(b.placedAt).getTime() - new Date(a.placedAt).getTime()),
     [orders],
   );
-  const counts = useMemo(() => ({
-    ALL: orders.length,
-    ACTIVE: orders.filter((order) => ACTIVE.includes(order.status)).length,
-    DELIVERED: orders.filter((order) => order.status === 'DELIVERED').length,
-    CANCELLED: orders.filter((order) => ['CANCELLED', 'REFUNDED'].includes(order.status)).length,
-  }), [orders]);
-  const filteredOrders = useMemo(() => sortedOrders.filter((order) => {
-    if (filter === 'ACTIVE') return ACTIVE.includes(order.status);
-    if (filter === 'DELIVERED') return order.status === 'DELIVERED';
-    if (filter === 'CANCELLED') return ['CANCELLED', 'REFUNDED'].includes(order.status);
-    return true;
-  }), [filter, sortedOrders]);
+  const filteredOrders = sortedOrders;
 
   if (isLoading) return <PageLoader />;
 
@@ -152,7 +148,7 @@ const OrdersPage = () => {
           </p>
           <Button onClick={reload} leftIcon={<RefreshCw className="size-4" />}>Reintentar</Button>
         </div>
-      ) : orders.length === 0 ? (
+      ) : counts.ALL === 0 ? (
         <EmptyState
           icon={PackageOpen}
           title="Todavía no tienes pedidos"
@@ -173,7 +169,7 @@ const OrdersPage = () => {
                 <button
                   key={item.value}
                   type="button"
-                  onClick={() => setFilter(item.value)}
+                  onClick={() => { setPage(1); setFilter(item.value); }}
                   aria-pressed={filter === item.value}
                   className={cn(
                     'relative flex min-h-11 items-center gap-2 px-3 text-sm font-bold transition',
@@ -202,7 +198,7 @@ const OrdersPage = () => {
                 const isActive = ACTIVE.includes(order.status);
                 const destination = order.deliveryType === 'DELIVERY'
                   ? order.addressSnapshotJson?.districtName ?? 'Entrega a domicilio'
-                  : order.branch?.name ?? 'Recojo en tienda';
+                  : order.branch?.name ?? 'Recojo en taller';
 
                 return (
                   <li key={order.id}>
@@ -220,7 +216,7 @@ const OrdersPage = () => {
                             <Link to={ROUTES.accountOrderDetail(order.orderNumber)} className="font-extrabold text-ink transition hover:text-brand-700 hover:underline">
                               Pedido {order.orderNumber}
                             </Link>
-                            <OrderStatusBadge status={order.status} />
+                            <OrderStatusBadge status={order.status} paymentState={order.directPaymentState} />
                           </div>
                           <p className="mt-1 flex items-center gap-1.5 text-xs text-ink-muted">
                             <CalendarDays className="size-3.5 shrink-0" /> {formatDate(order.placedAt)}
@@ -301,6 +297,8 @@ const OrdersPage = () => {
           )}
         </>
       )}
+
+      {!loadError && totalPages > 1 && <div className="mt-5 flex items-center justify-center gap-4"><Button variant="outline" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Anterior</Button><span>{page} / {totalPages}</span><Button variant="outline" disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)}>Siguiente</Button></div>}
 
       <Modal
         isOpen={pendingCancel !== null}

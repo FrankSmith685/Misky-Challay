@@ -57,8 +57,11 @@ export const operationsController = {
     const item = await inventoryService.createItem({
       branchId: resolveBranchId(req, req.body.branchId),
       code: req.body.code,
+      itemType: req.body.itemType,
       name: req.body.name,
       unit: req.body.unit,
+      imageUrl: req.body.imageUrl,
+      allergens: req.body.allergens,
       unitCost: Number(req.body.unitCost),
       minLevel: Number(req.body.minLevel),
       initialStock: Number(req.body.initialStock),
@@ -74,6 +77,8 @@ export const operationsController = {
       inventoryItemId: Number(req.body.inventoryItemId),
       type: req.body.type as MovementType,
       quantity: Number(req.body.quantity),
+      expectedOnHand: req.body.expectedOnHand === undefined ? undefined : Number(req.body.expectedOnHand),
+      expectedReserved: req.body.expectedReserved === undefined ? undefined : Number(req.body.expectedReserved),
       reason: req.body.reason,
       actorId: requireActor(req),
     });

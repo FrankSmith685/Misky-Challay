@@ -1,19 +1,33 @@
+import { processActivityOutbox, enqueueSubscriptionReminders } from '@modules/notifications/activity.service';
+import { processPushQueue } from '@modules/notifications/pushQueue.service';
 import { logger } from '@config/logger';
+import { processCommunicationQueue } from '@modules/communications/communications.queue';
+import { processPaymentReminders } from '@modules/communications/paymentReminders.service';
+import { paymentNotifications } from '@modules/communications/paymentNotifications.service';
+import { PAYMENT_HOLD_MINUTES, PAYMENT_EXPIRED_REASON } from '@modules/communications/paymentFollowup.logic';
 import { plansService } from '@modules/plans/plans.service';
+import { subscriptionsService } from '@modules/subscriptions/subscriptions.service';
 import { Op } from 'sequelize';
-import { AdminDraft, Branch, KitchenTicket, MobilePaymentClaim, Order, Payment, sequelize } from '@database/models';
-import { ORDER_STATUS, PAYMENT_STATUS, PERMISSIONS, PUSH_CHANNEL, PUSH_TEMPLATE } from '@config/constants';
+import { AdminDraft, Branch, CakeProductionTask, KitchenTicket, MobilePaymentClaim, MobilePaymentEvent, Order, Payment, Subscription, sequelize } from '@database/models';
+import { SUBSCRIPTION_STATUS } from '@database/models/subscription.model';
+import { ORDER_STATUS, PAYMENT_PROVIDER, PAYMENT_STATUS, PERMISSIONS, PUSH_CHANNEL, PUSH_TEMPLATE } from '@config/constants';
 import { PAYABLE_TYPE } from '@database/models/payment.model';
 import { MOBILE_PAYMENT_CLAIM_STATUS } from '@database/models/mobilePaymentClaim.model';
+import { holdsDirectReview, isDirectProvider, type DirectPaymentSnapshot } from '@modules/payments/directPayments.logic';
+import { findPaymentExpiryCandidates } from '@modules/payments/paymentExpiry';
 import { env } from '@config/env';
 import { ordersService } from '@modules/orders/orders.service';
+import { paymentsService } from '@modules/payments/payments.service';
 import { inventoryService } from '@modules/operations/inventory.service';
+import { seedCakeCapacities } from '@database/seeders/cakes.seeder';
 import { commercialAdminService } from '@modules/admin/commercialAdmin.service';
 import { TICKET_STATUS } from '@database/models/kitchenTicket.model';
 import { kitchenPushService } from '@modules/operations/kitchenPush.service';
 import { publishKitchenEvent } from '@modules/operations/kitchenEvents';
 import { operationsService } from '@modules/operations/operations.service';
 import { sendMobilePushToStaff } from '@modules/notifications/mobilePush.service';
+import { dayInLima } from '@modules/cakes/cakeProduction.service';
+import { addDaysToIsoDate } from '@shared/utils/datetime';
 
 /**
  * TAREAS PROGRAMADAS
@@ -28,7 +42,7 @@ import { sendMobilePushToStaff } from '@modules/notifications/mobilePush.service
 
 const HOUR = 60 * 60 * 1000;
 const MINUTE = 60 * 1000;
-const PAYMENT_HOLD_MINUTES = 15;
+const PAYMENT_CONFIRMATION_GRACE_MINUTES = 5;
 const KITCHEN_ACCEPT_SLA_MINUTES = 2;
 
 /** Libera comandas programadas solo al comenzar su ventana de preparacion. */
@@ -38,6 +52,40 @@ const releaseScheduledKitchenOrdersJob = async (): Promise<void> => {
     if (released > 0) logger.info(`Pedidos programados enviados a Cocina: ${released}`);
   } catch (error) {
     logger.error('Fallo la liberacion de pedidos programados a Cocina', error);
+  }
+};
+
+/** Avisa una vez por día sobre etapas próximas sin asignar, vencidas o bloqueadas. */
+const notifyCakeProductionJob = async (): Promise<void> => {
+  try {
+    const today = dayInLima(new Date());
+    const tomorrow = addDaysToIsoDate(today, 1);
+    const tasks = await CakeProductionTask.findAll({
+      where: { workDate: { [Op.between]: [addDaysToIsoDate(today, -7), tomorrow] }, status: { [Op.ne]: 'DONE' } },
+      include: [{ model: Order, as: 'order', attributes: ['id', 'orderNumber'], required: true, where: { status: { [Op.notIn]: [ORDER_STATUS.PENDING_PAYMENT, ORDER_STATUS.CANCELLED, ORDER_STATUS.REFUNDED, ORDER_STATUS.DELIVERED] } } }],
+      order: [['workDate', 'ASC'], ['id', 'ASC']],
+      limit: 200,
+    });
+    for (const task of tasks) {
+      if (task.workDate === tomorrow && task.assignedTo && task.status !== 'BLOCKED') continue;
+      const order = task.get('order') as Order | undefined;
+      if (!order) continue;
+      const state = task.status === 'BLOCKED' ? 'bloqueada' : task.workDate < today ? 'atrasada' : task.workDate === today ? 'programada para hoy' : 'sin responsable para mañana';
+      const stationName: Record<string, string> = { DESIGN: 'diseño', BAKING: 'horneado', COOLING: 'enfriado', FILLING: 'relleno', DECORATING: 'decoración', QA: 'calidad', DISPATCH: 'despacho' };
+      await sendMobilePushToStaff({
+        branchId: task.branchId,
+        permission: PERMISSIONS.KITCHEN_READ,
+        title: `Producción de torta ${order.orderNumber}`,
+        body: `Etapa ${stationName[task.station] ?? task.station} ${state}. Revisa el plan y asigna en el panel.`,
+        actionUrl: `/staff/cakes?branchId=${task.branchId}`,
+        channel: PUSH_CHANNEL.KITCHEN_OPERATIONS,
+        template: PUSH_TEMPLATE.KITCHEN_OPERATION,
+        orderId: order.id,
+        idempotencyKey: `cake-task-${task.id}-${today}`,
+      });
+    }
+  } catch (error) {
+    logger.error('Fallo el aviso de etapas de torta pendientes', error);
   }
 };
 
@@ -59,26 +107,58 @@ const expirePlansJob = async (): Promise<void> => {
 const expirePendingPaymentsJob = async (): Promise<void> => {
   try {
     const cutoff = new Date(Date.now() - PAYMENT_HOLD_MINUTES * MINUTE);
-    const pending = await Order.findAll({
-      where: { status: ORDER_STATUS.PENDING_PAYMENT, placedAt: { [Op.lt]: cutoff } },
-      limit: 100,
-      order: [['placedAt', 'ASC']],
-    });
+    const candidates = await findPaymentExpiryCandidates(cutoff);
+    const pending = candidates.length ? await Order.findAll({ where: { id: candidates.map((row) => row.id) }, order: [['placedAt', 'ASC']] }) : [];
     for (const order of pending) {
+      const latestPayment = await Payment.findOne({
+        where: { payableType: PAYABLE_TYPE.ORDER, payableId: order.id }, order: [['id', 'DESC']],
+      });
+      if (latestPayment?.provider === PAYMENT_PROVIDER.MERCADOPAGO) {
+        const declared = latestPayment.safeResponseJson?.expiresAt;
+        const checkoutExpiry = typeof declared === 'number' && Number.isFinite(declared)
+          ? declared * 1000
+          : latestPayment.createdAt.getTime() + 30 * MINUTE;
+        if (Date.now() < checkoutExpiry + PAYMENT_CONFIRMATION_GRACE_MINUTES * MINUTE) continue;
+        try {
+          const outcomes = await paymentsService.reconcileOrderPayments(order.id);
+          if (outcomes.some((outcome) => outcome.kind === 'PAID'
+            || ['order.processing', 'order.action_required', 'order.processed', 'order.refunded'].includes(outcome.eventType))) continue;
+        } catch (error) {
+          logger.error(`No se pudo conciliar el pago del pedido ${order.orderNumber}; se conserva la reserva`, error);
+          continue;
+        }
+      }
       await sequelize.transaction(async (transaction) => {
         const locked = await Order.findByPk(order.id, { transaction, lock: transaction.LOCK.UPDATE });
         if (!locked || locked.status !== ORDER_STATUS.PENDING_PAYMENT) return;
-        locked.cancelReason = 'El tiempo para completar el pago venció';
-        const payment = await Payment.findOne({
-          where: { payableType: PAYABLE_TYPE.ORDER, payableId: locked.id, status: PAYMENT_STATUS.PENDING },
+        const credited = await Payment.count({
+          where: { payableType: PAYABLE_TYPE.ORDER, payableId: locked.id,
+            status: PAYMENT_STATUS.SUCCEEDED },
           transaction,
-          lock: transaction.LOCK.UPDATE,
         });
+        if (credited > 0) {
+          logger.error(`El pedido ${locked.orderNumber} tiene un pago acreditado y sigue pendiente; no se libera su reserva`);
+          return;
+        }
+        const currentPayment = await Payment.findOne({
+          where: { payableType: PAYABLE_TYPE.ORDER, payableId: locked.id },
+          order: [['id', 'DESC']], transaction, lock: transaction.LOCK.UPDATE,
+        });
+        if (currentPayment?.id !== latestPayment?.id) return;
+        if (currentPayment && isDirectProvider(currentPayment.provider)) {
+          const report = await MobilePaymentClaim.findOne({ where: { paymentId: currentPayment.id }, transaction, lock: transaction.LOCK.UPDATE });
+          if (holdsDirectReview(report?.status)) return;
+          const snapshot = currentPayment.safeResponseJson?.directPayment as DirectPaymentSnapshot | undefined;
+          if (snapshot && Date.now() < Date.parse(snapshot.expiresAt)) return;
+        }
+        locked.cancelReason = PAYMENT_EXPIRED_REASON;
+        const payment = currentPayment?.status === PAYMENT_STATUS.PENDING ? currentPayment : null;
         if (payment) {
           payment.status = PAYMENT_STATUS.FAILED;
           payment.failedAt = new Date();
           payment.failureReason = locked.cancelReason;
           await payment.save({ transaction });
+          if (isDirectProvider(payment.provider)) await MobilePaymentEvent.create({ paymentId: payment.id, kind: 'EXPIRED', details: { reason: locked.cancelReason } }, { transaction });
           const claim = await MobilePaymentClaim.findOne({
             where: { paymentId: payment.id, status: MOBILE_PAYMENT_CLAIM_STATUS.PENDING },
             transaction,
@@ -95,13 +175,51 @@ const expirePendingPaymentsJob = async (): Promise<void> => {
         await ordersService.releaseReservations(locked, transaction);
         await ordersService.changeStatus(locked, ORDER_STATUS.CANCELLED, {
           source: 'SYSTEM', comment: locked.cancelReason, transaction,
+          notifyCustomer: !currentPayment,
         });
+        if (currentPayment)
+          await paymentNotifications.record(locked, currentPayment, 'PAYMENT_EXPIRED', transaction);
       });
     }
     if (pending.length) logger.info(`Reservas vencidas liberadas: ${pending.length}`);
   } catch (error) {
     logger.error('Fallo el job de reservas temporales', error);
   }
+};
+
+/** Recupera pagos confirmados aunque el webhook no haya llegado. */
+const reconcileMercadoPagoPaymentsJob = async (): Promise<void> => {
+  if (!env.MERCADOPAGO_ACCESS_TOKEN) return;
+  try {
+    const pending = await Payment.findAll({
+      where: { provider: PAYMENT_PROVIDER.MERCADOPAGO, status: PAYMENT_STATUS.PENDING },
+      limit: 100,
+      order: [['createdAt', 'ASC']],
+    });
+    for (const payment of pending) {
+      try {
+        await paymentsService.reconcilePayment(payment);
+      } catch (error) {
+        logger.error(`No se pudo conciliar el pago ${payment.id} de Mercado Pago`, error);
+      }
+    }
+  } catch (error) {
+    logger.error('Fallo la conciliacion de Mercado Pago', error);
+  }
+};
+
+const reconcileSubscriptionsJob = async (): Promise<void> => {
+  if (!env.MERCADOPAGO_ACCESS_TOKEN) return;
+  try {
+    const rows = await Subscription.findAll({ where: { [Op.or]: [
+      { status: { [Op.in]: [SUBSCRIPTION_STATUS.PENDING, SUBSCRIPTION_STATUS.ACTIVE, SUBSCRIPTION_STATUS.PAST_DUE] } },
+      { status: SUBSCRIPTION_STATUS.CANCELED, providerReference: null },
+    ] }, limit: 100, order: [['updatedAt', 'ASC']] });
+    for (const subscription of rows) {
+      try { await subscriptionsService.sync(subscription.id); }
+      catch (error) { logger.error(`No se pudo conciliar la suscripción ${subscription.id}`, error); }
+    }
+  } catch (error) { logger.error('Fallo la conciliación de suscripciones', error); }
 };
 
 /** Publica borradores territoriales programados desde el panel. */
@@ -176,7 +294,7 @@ const generateDeliverySlotsJob = async (): Promise<void> => {
 
   try {
     const branches = await Branch.findAll({
-      where: { isActive: true, acceptsDelivery: true },
+      where: { isActive: true, [Op.or]: [{ acceptsDelivery: true }, { acceptsPickup: true }] },
       attributes: ['id', 'name'],
     });
 
@@ -184,12 +302,17 @@ const generateDeliverySlotsJob = async (): Promise<void> => {
     for (const branch of branches) {
       const result = await commercialAdminService.generateSlots({
         branchId: branch.id,
-        days: env.SLOT_HORIZON_DAYS,
+        days: Math.max(env.SLOT_HORIZON_DAYS, 45),
         windows,
         capacity: env.SLOT_CAPACITY,
         cutoffHours: env.SLOT_CUTOFF_HOURS,
       });
       created += result.created;
+      // La capacidad base es operativa, no un dato demo: se mantiene un
+      // horizonte futuro para que la disponibilidad de tortas funcione aunque
+      // SEED_DEMO_DATA esté desactivado. Los cambios manuales por fecha y
+      // estación se conservan porque seedCakeCapacities solo crea faltantes.
+      await seedCakeCapacities(branch.id, Math.max(env.SLOT_HORIZON_DAYS, 45));
     }
 
     if (created > 0) logger.info(`Franjas de entrega generadas: ${created}`);
@@ -257,23 +380,40 @@ const escalateUnacceptedKitchenTicketsJob = async (): Promise<void> => {
 const timers: NodeJS.Timeout[] = [];
 
 export const startJobs = (): void => {
+  const processActivity = async () => {
+    try { await processActivityOutbox(); }
+    catch (error) { logger.error('No se pudo procesar la actividad pendiente', error); }
+  };
+  void processActivity();
+  void processPushQueue();
+  timers.push(setInterval(() => void processActivity(), 3000), setInterval(() => void processPushQueue(), 10000), setInterval(() => void enqueueSubscriptionReminders().catch((error) => logger.error('Fallo el recordatorio de cajas', error)), HOUR));
+  void processCommunicationQueue();
+  void processPaymentReminders();
   void expirePlansJob(); // una pasada al arrancar
   void expirePendingPaymentsJob();
+  void reconcileMercadoPagoPaymentsJob();
+  void reconcileSubscriptionsJob();
   void publishAdminDraftsJob();
   void generateDeliverySlotsJob();
   void releaseScheduledKitchenOrdersJob();
+  void notifyCakeProductionJob();
   void escalateUnacceptedKitchenTicketsJob();
   timers.push(
+    setInterval(() => void processCommunicationQueue(), 10_000),
+    setInterval(() => void processPaymentReminders(), MINUTE),
     setInterval(() => void expirePlansJob(), HOUR),
     setInterval(() => void expirePendingPaymentsJob(), MINUTE),
+    setInterval(() => void reconcileMercadoPagoPaymentsJob(), 2 * MINUTE),
+    setInterval(() => void reconcileSubscriptionsJob(), 30 * MINUTE),
     setInterval(() => void publishAdminDraftsJob(), MINUTE),
     setInterval(() => void generateDeliverySlotsJob(), 6 * HOUR),
     setInterval(() => void releaseScheduledKitchenOrdersJob(), 30_000),
+    setInterval(() => void notifyCakeProductionJob(), HOUR),
     setInterval(() => void escalateUnacceptedKitchenTicketsJob(), 30_000),
   );
 
   logger.info(
-    'Tareas programadas activas: planes, reservas de pago, publicaciones, franjas, pedidos programados y escalamiento KDS',
+    'Tareas programadas activas: planes, reservas de pago, publicaciones, franjas, capacidad y avisos de tortas, pedidos programados y escalamiento KDS',
   );
 };
 

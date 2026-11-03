@@ -1,4 +1,6 @@
+import { CustomerPoliciesSettings } from '../components/CustomerPoliciesSettings';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Bell,
   Building2,
@@ -8,6 +10,7 @@ import {
   KeyRound,
   QrCode,
   Mail,
+  PlugZap,
   Printer,
   RefreshCw,
   ReceiptText,
@@ -32,6 +35,7 @@ import { formatDate } from '@lib/format';
 import { getApiErrorMessage } from '@services/api/client';
 import { refreshBusinessInfo, type BusinessInfo } from '@services/businessInfo';
 import { isValidRuc } from '@lib/peruDocs';
+import { isDemoDirectQr } from '@features/checkout/directPayments';
 import {
   settingsAdminApi,
   type BusinessSettingsState,
@@ -42,9 +46,10 @@ import {
   type LocalPaymentSettingsState,
   type ReceiptSettings,
   type ReceiptSettingsState,
+  type IntegrationStatus,
 } from '../services/settingsAdmin.service';
 
-type TabId = 'business' | 'payments' | 'receipts' | 'communication' | 'history';
+type TabId = 'business' | 'payments' | 'receipts' | 'communication' | 'integrations' | 'history' | 'terms';
 type BusinessErrors = Partial<Record<keyof BusinessInfo, string>>;
 type CommunicationErrors = Partial<Record<'smtpPort' | 'fromEmail' | 'fromName' | 'replyToEmail', string>>;
 
@@ -78,6 +83,7 @@ const toCommunicationForm = (state: CommunicationSettingsState): CommunicationSe
   emailNotificationsEnabled: state.communication.emailNotificationsEnabled,
   inAppNotificationsEnabled: state.communication.inAppNotificationsEnabled,
   orderUpdatesEnabled: state.communication.orderUpdatesEnabled,
+  whatsappUpdatesEnabled: state.communication.whatsappUpdatesEnabled,
   planUpdatesEnabled: state.communication.planUpdatesEnabled,
   staffAccessEnabled: state.communication.staffAccessEnabled,
   availabilityAlertsEnabled: state.communication.availabilityAlertsEnabled,
@@ -98,7 +104,10 @@ const toCommunicationForm = (state: CommunicationSettingsState): CommunicationSe
 const formatStamp = (value: string | null | undefined) => (value ? formatDate(value) : 'Sin registro');
 
 const BusinessSettingsPage = () => {
-  const [activeTab, setActiveTab] = useState<TabId>('business');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  const activeTab: TabId = ['payments', 'receipts', 'communication', 'integrations', 'history', 'terms'].includes(requestedTab ?? '') ? requestedTab as TabId : 'business';
+  const setActiveTab = (tab: TabId) => setSearchParams({ tab }, { replace: true });
   const [businessState, setBusinessState] = useState<BusinessSettingsState | null>(null);
   const [businessForm, setBusinessForm] = useState<BusinessInfo | null>(null);
   const [communicationState, setCommunicationState] = useState<CommunicationSettingsState | null>(null);
@@ -108,6 +117,8 @@ const BusinessSettingsPage = () => {
   const [receiptState, setReceiptState] = useState<ReceiptSettingsState | null>(null);
   const [receiptForm, setReceiptForm] = useState<ReceiptSettings | null>(null);
   const [history, setHistory] = useState<NotificationOverview | null>(null);
+  const [integrations, setIntegrations] = useState<IntegrationStatus | null>(null);
+  const [integrationsError, setIntegrationsError] = useState('');
   const [businessErrors, setBusinessErrors] = useState<BusinessErrors>({});
   const [communicationErrors, setCommunicationErrors] = useState<CommunicationErrors>({});
   const [testRecipient, setTestRecipient] = useState('');
@@ -126,6 +137,16 @@ const BusinessSettingsPage = () => {
       // Sin esto, un historial caido se leia como "todavia no existen envios".
       setHistory(null);
       setHistoryError(getApiErrorMessage(error));
+    }
+  }, []);
+
+  const loadIntegrations = useCallback(async () => {
+    try {
+      setIntegrations(await settingsAdminApi.getIntegrations());
+      setIntegrationsError('');
+    } catch (error) {
+      setIntegrations(null);
+      setIntegrationsError(getApiErrorMessage(error));
     }
   }, []);
 
@@ -159,7 +180,8 @@ const BusinessSettingsPage = () => {
       setIsLoading(false);
     }
     await loadHistory();
-  }, [loadHistory]);
+    await loadIntegrations();
+  }, [loadHistory, loadIntegrations]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -189,7 +211,7 @@ const BusinessSettingsPage = () => {
    * mirando un area LITERALMENTE vacia, sin mensaje y sin forma de reintentar. */
   if (!businessForm || !businessState || !communicationForm || !communicationState || !localPaymentForm || !localPaymentState || !receiptForm || !receiptState) {
     return (
-      <div className="mx-auto max-w-6xl">
+      <div className="mx-auto max-w-8xl">
         <PageHeader
           eyebrow="Configuración central"
           title="Negocio y comunicaciones"
@@ -241,6 +263,10 @@ const BusinessSettingsPage = () => {
   };
 
   const saveLocalPayments = async () => {
+    const paymentMinutes = localPaymentForm.paymentWindowMinutes ?? 15;
+    const reviewMinutes = localPaymentForm.reviewAlertMinutes ?? 10;
+    if (!Number.isInteger(paymentMinutes) || paymentMinutes < 5 || paymentMinutes > 120) return toast.error('El plazo para pagar debe estar entre 5 y 120 minutos.');
+    if (!Number.isInteger(reviewMinutes) || reviewMinutes < 1 || reviewMinutes > 120) return toast.error('El aviso a caja debe estar entre 1 y 120 minutos.');
     for (const provider of ['yape', 'plin'] as const) {
       if (!localPaymentForm[`${provider}Enabled`]) continue;
       if (localPaymentForm[`${provider}Phone`].replace(/\D/g, '').length < 9) return toast.error(`Completa el telefono de ${provider === 'yape' ? 'Yape' : 'Plin'}`);
@@ -324,16 +350,18 @@ const BusinessSettingsPage = () => {
 
   const tabs: Array<{ id: TabId; label: string; icon: typeof Building2 }> = [
     { id: 'business', label: 'Datos del negocio', icon: Building2 },
+    { id: 'terms', label: 'Términos y condiciones', icon: FileCheck2 },
     { id: 'payments', label: 'Yape y Plin', icon: QrCode },
     { id: 'receipts', label: 'Tickets', icon: ReceiptText },
     { id: 'communication', label: 'Correo y avisos', icon: SlidersHorizontal },
+    { id: 'integrations', label: 'Integraciones', icon: PlugZap },
     { id: 'history', label: 'Historial', icon: History },
   ];
 
   const deliveryStatus = communicationState.communication.deliveryMode;
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="mx-auto max-w-8xl">
       <PageHeader
         eyebrow="Configuración central"
         title="Negocio y comunicaciones"
@@ -384,6 +412,8 @@ const BusinessSettingsPage = () => {
         ))}
       </nav>
 
+      {activeTab === 'terms' && <CustomerPoliciesSettings />}
+
       {activeTab === 'business' && (
         <div className="grid gap-4">
           <Alert variant={businessState.isConfigured ? 'success' : 'warning'} className="rounded-card" title={businessState.isConfigured ? 'Información publicada' : 'Completa la configuración inicial'}>
@@ -419,7 +449,7 @@ const BusinessSettingsPage = () => {
       {activeTab === 'payments' && (
         <div className="grid gap-4">
           <Alert variant={localPaymentState.isConfigured ? 'success' : 'warning'} className="rounded-card" title={localPaymentState.isConfigured ? 'Configuración publicada' : 'Configura tus cuentas reales'}>
-            El cliente verá estos datos antes de registrar su código de operación. Caja deberá validar el movimiento antes de que cocina reciba el pedido.
+            Una cuenta por método para todo el taller. El cliente verá sus datos después de crear el pedido. Caja verificará el movimiento antes de confirmar el pago.
           </Alert>
 
           {(['yape', 'plin'] as const).map((provider) => {
@@ -434,15 +464,26 @@ const BusinessSettingsPage = () => {
                 />
                 <div className="pt-4"><FormGrid>
                   <Input label="Teléfono asociado" value={localPaymentForm[`${provider}Phone`]} placeholder="999 999 999" onChange={(event) => changeLocalPayment(`${provider}Phone`, event.target.value)} />
-                  <Input label="Titular visible" value={localPaymentForm[`${provider}Recipient`]} placeholder="Verde Bowl S.A.C." onChange={(event) => changeLocalPayment(`${provider}Recipient`, event.target.value)} />
+                  <Input label="Titular visible" value={localPaymentForm[`${provider}Recipient`]} placeholder="Misky Challay S.A.C." onChange={(event) => changeLocalPayment(`${provider}Recipient`, event.target.value)} />
                   <Input label="URL pública de la imagen QR (opcional)" value={localPaymentForm[`${provider}QrImageUrl`]} placeholder="https://.../qr.png" onChange={(event) => changeLocalPayment(`${provider}QrImageUrl`, event.target.value)} />
                 </FormGrid></div>
+                {localPaymentForm[`${provider}QrImageUrl`] && <div className="mt-4 flex flex-wrap items-center gap-4 rounded-card border border-line bg-surface-muted p-3">
+                  <img src={localPaymentForm[`${provider}QrImageUrl`]} alt={`QR de ${name}`} className="h-44 w-40 rounded-card bg-white object-contain" />
+                  <p className="max-w-md text-xs leading-5 text-ink-muted">{isDemoDirectQr(localPaymentForm[`${provider}QrImageUrl`])
+                    ? 'QR de demostración: no admite pagos. El cliente puede transferir al número publicado. Reemplaza esta imagen por el QR oficial de cobro cuando lo tengas.'
+                    : `El cliente verá este QR al continuar con ${name}.`}</p>
+                </div>}
               </FormSection>
             );
           })}
 
           <FormSection icon={ShieldCheck} title="Instrucción al cliente" description="Mensaje mostrado junto al importe y el campo del código de operación.">
             <Textarea value={localPaymentForm.instructions} maxLength={500} onChange={(event) => changeLocalPayment('instructions', event.target.value)} />
+            <div className="mt-4"><FormGrid>
+              <Input label="Plazo para pagar (minutos)" type="number" min={5} max={120} value={localPaymentForm.paymentWindowMinutes ?? 15} onChange={(event) => changeLocalPayment('paymentWindowMinutes', Number(event.target.value))} />
+              <Input label="Aviso a caja tras (minutos)" type="number" min={1} max={120} value={localPaymentForm.reviewAlertMinutes ?? 10} onChange={(event) => changeLocalPayment('reviewAlertMinutes', Number(event.target.value))} />
+            </FormGrid></div>
+            <p className="mt-3 text-xs text-ink-muted">El aviso destaca revisiones demoradas. Un reporte en revisión o con una corrección solicitada conserva su reserva y no se cancela por vencer el plazo de pago.</p>
           </FormSection>
           <SaveBar dirty={localPaymentDirty || !localPaymentState.isConfigured} loading={isSaving} onSave={() => void saveLocalPayments()} />
         </div>
@@ -494,6 +535,7 @@ const BusinessSettingsPage = () => {
 
       {activeTab === 'communication' && (
         <div className="grid gap-4">
+          <div className="rounded-card border border-line bg-white p-4 text-sm"><p className="font-bold">WhatsApp, bot y seguimiento de envíos</p><p className="mt-1 text-ink-muted">Configura Meta, las plantillas y la atención humana desde Comunicaciones. El modo de prueba permite validar el flujo sin envíos reales.</p><Link to="/admin/comunicaciones?tab=settings" className="mt-2 inline-block font-bold text-brand-700 underline">Abrir Comunicaciones</Link></div>
           <Alert
             variant={deliveryStatus === 'smtp' ? 'success' : 'warning'}
             className="rounded-card"
@@ -509,6 +551,7 @@ const BusinessSettingsPage = () => {
               <SettingToggle checked={communicationForm.emailNotificationsEnabled} onChange={(value) => changeCommunication('emailNotificationsEnabled', value)} label="Correos informativos" description="Estados de pedidos, planes activados y accesos del personal." />
               <SettingToggle checked={communicationForm.inAppNotificationsEnabled} onChange={(value) => changeCommunication('inAppNotificationsEnabled', value)} label="Avisos dentro de la web" description="Muestra novedades en la campana de la cuenta del cliente." />
               <SettingToggle checked={communicationForm.orderUpdatesEnabled} onChange={(value) => changeCommunication('orderUpdatesEnabled', value)} label="Cambios de pedidos" description="Confirmado, en preparación, en reparto, entregado o cancelado." />
+              <SettingToggle checked={communicationForm.whatsappUpdatesEnabled} onChange={(value) => changeCommunication('whatsappUpdatesEnabled', value)} label="Avisos por WhatsApp" description="Envía confirmación, listo, reparto y cotizaciones solo con consentimiento y conexión Meta activa." />
               <SettingToggle checked={communicationForm.planUpdatesEnabled} onChange={(value) => changeCommunication('planUpdatesEnabled', value)} label="Activación de planes" description="Confirma saldo, bonos y fechas de vigencia al cliente." />
               <SettingToggle checked={communicationForm.staffAccessEnabled} onChange={(value) => changeCommunication('staffAccessEnabled', value)} label="Acceso de personal" description="Entrega credenciales temporales al crear un usuario interno." />
               <SettingToggle checked={communicationForm.availabilityAlertsEnabled} onChange={(value) => changeCommunication('availabilityAlertsEnabled', value)} label="Platos nuevamente disponibles" description="Permite que clientes soliciten un unico aviso por producto y local." />
@@ -573,12 +616,36 @@ const BusinessSettingsPage = () => {
             </FormGrid>
             <div className="mt-4 flex justify-end">
               <Button variant="outline" leftIcon={<Send className="size-4" />} isLoading={isTesting} onClick={() => void testEmail()}>
-                Guardar y enviar prueba
+                Guardar y enviar correo real de prueba
               </Button>
             </div>
           </FormSection>
 
           <SaveBar dirty={communicationDirty || !communicationState.isConfigured} loading={isSaving} onSave={() => void persistCommunication()} />
+          <p className="text-xs text-ink-muted">La prueba SMTP de esta pantalla envía un correo real si hay servidor configurado. Para simular avisos sin contactar con nadie, usa Comunicaciones → Probar el flujo. Los correos esenciales de recuperación de acceso y reclamaciones conservan su entrega directa.</p>
+        </div>
+      )}
+
+      {activeTab === 'integrations' && (
+        <div className="grid gap-4">
+          <Alert variant={integrations?.integrations.every((item) => item.status === 'READY') ? 'success' : 'warning'} className="rounded-card" title="Salud de las conexiones">
+            Revisa aquí si correo, pagos, avisos de cocina y la aplicación móvil están listos para operar.
+          </Alert>
+          {integrationsError && <LoadError title="No pudimos consultar integraciones" message={integrationsError} onRetry={() => void loadIntegrations()} />}
+          <div className="grid gap-3 md:grid-cols-2">
+            {integrations?.integrations.map((item) => (
+              <article key={item.key} className="rounded-card border border-line bg-white p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div><p className="font-extrabold text-ink">{item.name}</p><p className="mt-1 text-xs text-ink-muted">{item.provider}</p></div>
+                  <span className={cn('rounded-pill px-2.5 py-1 text-xs font-black', item.status === 'READY' ? 'bg-brand-50 text-brand-800' : item.status === 'DEVELOPMENT' ? 'bg-blue-50 text-blue-800' : 'bg-amber-50 text-amber-900')}>
+                    {item.status === 'READY' ? 'Listo' : item.status === 'DEVELOPMENT' ? 'Desarrollo' : 'Requiere acción'}
+                  </span>
+                </div>
+                <p className="mt-4 text-sm leading-6 text-ink-muted">{item.detail}</p>
+              </article>
+            ))}
+          </div>
+          <p className="text-xs text-ink-muted">Última comprobación: {formatStamp(integrations?.checkedAt)}</p>
         </div>
       )}
 

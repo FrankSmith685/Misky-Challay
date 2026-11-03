@@ -15,6 +15,7 @@ interface AuthState {
   isAuthenticated: boolean;
   status: RequestStatus;
   error: string | null;
+  currentUserRequestId: string | null;
 }
 
 const initialState: AuthState = {
@@ -22,6 +23,7 @@ const initialState: AuthState = {
   isAuthenticated: false,
   status: 'idle',
   error: null,
+  currentUserRequestId: null,
 };
 
 export const login = createAsyncThunk<
@@ -104,12 +106,15 @@ export const fetchCurrentUser = createAsyncThunk<User, void, { rejectValue: stri
  * pase lo que pase, limpia la sesion local. Nunca falla de cara al usuario.
  */
 export const logoutUser = createAsyncThunk<void, void>('auth/logoutUser', async (_, { dispatch }) => {
+  const accessToken = tokenStorage.getAccess();
+  const request = api.post(ENDPOINTS.auth.logout, undefined, {
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+  });
+  dispatch(logout());
   try {
-    await api.post(ENDPOINTS.auth.logout);
+    await request;
   } catch {
     // Best-effort: aunque el backend no responda, cerramos la sesion en el cliente.
-  } finally {
-    dispatch(logout());
   }
 });
 
@@ -123,8 +128,10 @@ const authSlice = createSlice({
       state.isAuthenticated = false;
       state.status = 'idle';
       state.error = null;
+      state.currentUserRequestId = null;
     },
     setUser: (state, action: PayloadAction<User>) => {
+      state.currentUserRequestId = null;
       state.user = action.payload;
       state.isAuthenticated = true;
     },
@@ -136,6 +143,7 @@ const authSlice = createSlice({
         state.error = null;
       })
       .addCase(login.fulfilled, (state, action) => {
+        state.currentUserRequestId = null;
         state.status = 'succeeded';
         state.user = action.payload.user;
         state.isAuthenticated = true;
@@ -149,6 +157,7 @@ const authSlice = createSlice({
         state.error = null;
       })
       .addCase(register.fulfilled, (state, action) => {
+        state.currentUserRequestId = null;
         state.status = 'succeeded';
         state.user = action.payload.user;
         state.isAuthenticated = true;
@@ -157,11 +166,17 @@ const authSlice = createSlice({
         state.status = 'failed';
         state.error = action.payload ?? 'No se pudo crear la cuenta';
       })
+      .addCase(fetchCurrentUser.pending, (state, action) => {
+        state.currentUserRequestId = action.meta.requestId;
+      })
       .addCase(fetchCurrentUser.fulfilled, (state, action) => {
+        state.currentUserRequestId = null;
         state.user = action.payload;
         state.isAuthenticated = true;
       })
       .addCase(fetchCurrentUser.rejected, (state) => {
+        tokenStorage.clear();
+        state.currentUserRequestId = null;
         state.user = null;
         state.isAuthenticated = false;
       });

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import api from '@services/api/client';
+import { DATA_CHANGED } from '@services/realtime';
 import { ENDPOINTS } from '@services/api/endpoints';
 import type { ApiSuccess } from '@/types/api';
 
@@ -20,6 +21,7 @@ export interface BusinessInfo {
   ruc: string;
   address: string;
   phone: string;
+  whatsappPhone?: string;
   email: string;
   supportEmail: string;
   complaintResponseDays: number;
@@ -38,6 +40,8 @@ export interface InvoicingSettings {
 }
 
 export interface LocalPaymentSettings {
+  paymentWindowMinutes?: number;
+  reviewAlertMinutes?: number;
   yapeEnabled: boolean; yapePhone: string; yapeRecipient: string; yapeQrImageUrl: string;
   plinEnabled: boolean; plinPhone: string; plinRecipient: string; plinQrImageUrl: string;
   instructions: string;
@@ -50,6 +54,7 @@ export interface LocalPaymentSettings {
  */
 export interface OnlinePaymentSettings {
   onlineEnabled: boolean;
+  onlineProvider?: string;
 }
 
 export interface ReceiptSettings {
@@ -70,16 +75,16 @@ interface PublicSettings {
 
 const FALLBACK: PublicSettings = {
   business: {
-    legalName: 'Verde Bowl S.A.C.',
-    commercialName: 'Verde Bowl',
+    legalName: 'Misky Challay (datos legales pendientes)',
+    commercialName: 'Misky Challay',
     ruc: '20600000000',
     address: 'Miraflores, Lima',
     phone: '+51 999 999 999',
-    email: 'hola@verdebowl.com',
-    supportEmail: 'reclamos@verdebowl.com',
+    email: 'contacto@ejemplo.com',
+    supportEmail: 'reclamos@ejemplo.com',
     complaintResponseDays: 15,
   },
-  cod: { enabled: true, maxAmount: 300 },
+  cod: { enabled: false, maxAmount: 300 },
   invoicing: { boletaDniThreshold: 700 },
   localPayments: {
     yapeEnabled: false, yapePhone: '', yapeRecipient: '', yapeQrImageUrl: '',
@@ -95,10 +100,11 @@ const FALLBACK: PublicSettings = {
 // Promesa compartida: aunque varios componentes la pidan a la vez, se hace una sola
 // peticion.
 let cache: PublicSettings | null = null;
+let loadedAt = 0;
 let inflight: Promise<PublicSettings> | null = null;
 
 const loadSettings = async (): Promise<PublicSettings> => {
-  if (cache) return cache;
+  if (cache && Date.now() - loadedAt < 30000) return cache;
   if (inflight) return inflight;
 
   inflight = api
@@ -112,6 +118,8 @@ const loadSettings = async (): Promise<PublicSettings> => {
         payments: response.data.data.payments ?? FALLBACK.payments,
         receipts: response.data.data.receipts ?? FALLBACK.receipts,
       };
+      loadedAt = Date.now();
+      window.dispatchEvent(new CustomEvent('business-info-updated', { detail: cache }));
       return cache;
     })
     .catch(() => FALLBACK)
@@ -124,17 +132,9 @@ const loadSettings = async (): Promise<PublicSettings> => {
 
 /** Refresca la fuente pública después de que el superadmin guarda cambios. */
 export const refreshBusinessInfo = async (): Promise<BusinessInfo> => {
-  const response = await api.get<ApiSuccess<PublicSettings>>(ENDPOINTS.settings.public);
-  const loaded: PublicSettings = {
-    business: response.data.data.business,
-    cod: response.data.data.cod ?? FALLBACK.cod,
-    invoicing: response.data.data.invoicing ?? FALLBACK.invoicing,
-    localPayments: response.data.data.localPayments ?? FALLBACK.localPayments,
-    payments: response.data.data.payments ?? FALLBACK.payments,
-    receipts: response.data.data.receipts ?? FALLBACK.receipts,
-  };
-  cache = loaded;
-  window.dispatchEvent(new CustomEvent('business-info-updated', { detail: loaded }));
+  loadedAt = 0;
+  const loaded = await loadSettings();
+  localStorage.setItem('dulceflow:settings-version', String(Date.now()));
   return loaded.business;
 };
 
@@ -148,12 +148,22 @@ const useSettings = (): PublicSettings => {
       if (active && detail) setSettings(detail);
     };
     window.addEventListener('business-info-updated', handleUpdate);
+    const revalidate = () => { if (!document.hidden) void loadSettings().then((loaded) => { if (active) setSettings(loaded); }); };
+    const invalidate = (event: Event) => {
+      if (event.type === DATA_CHANGED && !(event as CustomEvent<string[]>).detail?.some((topic) => ['settings', 'resync'].includes(topic))) return;
+      if (event.type === 'storage' && (event as StorageEvent).key !== 'dulceflow:settings-version') return;
+      loadedAt = 0; revalidate();
+    };
+    window.addEventListener('focus', revalidate); window.addEventListener('online', revalidate);
+    window.addEventListener('storage', invalidate); window.addEventListener(DATA_CHANGED, invalidate);
+    const timer = window.setInterval(revalidate, 30000);
     void loadSettings().then((loaded) => {
       if (active) setSettings(loaded);
     });
     return () => {
       active = false;
       window.removeEventListener('business-info-updated', handleUpdate);
+      clearInterval(timer); window.removeEventListener('focus', revalidate); window.removeEventListener('online', revalidate); window.removeEventListener('storage', invalidate); window.removeEventListener(DATA_CHANGED, invalidate);
     };
   }, []);
 

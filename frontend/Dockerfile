@@ -19,12 +19,15 @@ COPY frontend/package.json ./frontend/
 RUN npm ci --workspace frontend --include-workspace-root
 
 COPY frontend ./frontend
+COPY scripts/check-admin-nav.mjs scripts/check-misky-ar-assets.cjs ./scripts/
 
 # La URL del API se cablea en tiempo de COMPILACION (Vite sustituye import.meta.env
 # al empaquetar). Por defecto queda relativa, que es lo correcto cuando nginx sirve
 # el sitio y hace de proxy: mismo origen, sin CORS y sin exponer el backend.
 ARG VITE_API_URL=/api/v1
 ENV VITE_API_URL=$VITE_API_URL
+ARG VITE_PUBLIC_WEB_URL=
+ENV VITE_PUBLIC_WEB_URL=$VITE_PUBLIC_WEB_URL
 
 RUN npm run build --workspace frontend
 

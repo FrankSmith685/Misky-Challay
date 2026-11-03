@@ -23,7 +23,7 @@ export interface EmptyStateProps {
 
 /** Vacío con explicación y salida. Nunca una pantalla en blanco ni un «sin datos». */
 export function EmptyState({
-  icon = 'bowl-mix-outline',
+  icon = 'cake-variant-outline',
   title,
   message,
   actionLabel,

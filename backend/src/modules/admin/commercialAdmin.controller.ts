@@ -177,7 +177,7 @@ export const commercialAdminController = {
       action: 'geo.zone.create',
       entity: 'coverage_zones',
       entityId: zone.id,
-      after: { name: zone.name, deliveryFee: Number(zone.deliveryFee) },
+      after: { name: zone.name, deliveryFee: Number(zone.deliveryFee), extraCoverageKm: Number(zone.extraCoverageKm), extraFeePerKm: Number(zone.extraFeePerKm) },
     });
 
     return created(res, { id: zone.id }, 'Zona creada');
@@ -197,6 +197,8 @@ export const commercialAdminController = {
       before,
       after: {
         deliveryFee: Number(zone.deliveryFee),
+        extraCoverageKm: Number(zone.extraCoverageKm),
+        extraFeePerKm: Number(zone.extraFeePerKm),
         minimumOrder: Number(zone.minimumOrder),
         isActive: zone.isActive,
       },

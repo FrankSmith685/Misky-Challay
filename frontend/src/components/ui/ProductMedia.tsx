@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Salad } from 'lucide-react';
+import { CakeSlice } from 'lucide-react';
 import { cn } from '@lib/cn';
 
 type Ratio = 'square' | '4/3' | '3/2' | '16/9';
@@ -14,6 +14,7 @@ interface ProductMediaProps {
   /** Carga eager (para imágenes above-the-fold como la ficha). Por defecto lazy. */
   priority?: boolean;
   className?: string;
+  compact?: boolean;
   /** Overlays posicionados sobre la imagen (badges, chips). */
   children?: ReactNode;
 }
@@ -37,6 +38,7 @@ export const ProductMedia = ({
   zoom = true,
   priority = false,
   className,
+  compact = false,
   children,
 }: ProductMediaProps) => {
   // Una URL rota debe caer al mismo placeholder que un producto sin foto: el icono
@@ -59,11 +61,11 @@ export const ProductMedia = ({
         />
       ) : (
         <div
-          className="grid size-full place-items-center bg-gradient-to-br from-brand-100 via-brand-50 to-white"
+          className="grid size-full place-items-center bg-gradient-to-br from-accent-50 via-surface-muted to-brand-50"
           aria-label={alt}
           role="img"
         >
-          <Salad className="size-14 text-brand-300 sm:size-16" strokeWidth={1.25} />
+          <div className={cn('flex flex-col items-center gap-3 text-center', compact ? 'p-2' : 'p-5')}><span className={cn('grid place-items-center rounded-full border border-accent-200 bg-white/70', compact ? 'size-16' : 'size-24')}><CakeSlice className={cn('text-brand-400', compact ? 'size-8' : 'size-12')} strokeWidth={1.1} /></span>{!compact && <span className="text-[10px] font-medium uppercase tracking-[.16em] text-ink-muted">Foto no disponible</span>}</div>
         </div>
       )}
       {children}

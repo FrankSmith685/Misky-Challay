@@ -4,7 +4,7 @@ import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { isIP } from 'node:net';
 import path from 'node:path';
 import { Op, type Order } from 'sequelize';
-import { BuilderPreset, CustomizationOption, MediaAsset, Product } from '@database/models';
+import { BuilderPreset, CakeTheme, Category, CustomizationOption, InventoryItem, MediaAsset, Product, sequelize } from '@database/models';
 import { ApiError } from '@shared/errors/ApiError';
 
 const MEDIA_DIR = path.resolve(process.cwd(), 'uploads', 'media');
@@ -191,13 +191,16 @@ const listAssets = async (options: MediaListOptions = {}) => {
   });
   const urls = rows.map((row) => row.url);
   // `usedOptions` y no `options`: el parametro de la funcion ya se llama asi.
-  const [products, usedOptions, presets] = urls.length
+  const [products, usedOptions, presets, inventoryItems, categories, themes] = urls.length
     ? await Promise.all([
         Product.findAll({ where: { imageUrl: { [Op.in]: urls } }, attributes: ['id', 'imageUrl', 'name'] }),
         CustomizationOption.findAll({ where: { imageUrl: { [Op.in]: urls } }, attributes: ['id', 'imageUrl', 'name'] }),
         BuilderPreset.findAll({ where: { imageUrl: { [Op.in]: urls } }, attributes: ['id', 'imageUrl', 'name'] }),
+        InventoryItem.findAll({ where: { imageUrl: { [Op.in]: urls } }, attributes: ['id', 'imageUrl', 'name'] }),
+        Category.findAll({ where: { imageUrl: { [Op.in]: urls } }, attributes: ['id', 'imageUrl', 'name'] }),
+        CakeTheme.findAll({ attributes: ['id', 'name', 'imageUrlsJson'] }),
       ])
-    : [[], [], []];
+    : [[], [], [], [], [], []];
   const items = rows.map((row) => ({
     id: row.id,
     originalName: row.originalName,
@@ -212,6 +215,9 @@ const listAssets = async (options: MediaListOptions = {}) => {
       products: products.filter((item) => item.imageUrl === row.url).map((item) => ({ id: item.id, name: item.name })),
       options: usedOptions.filter((item) => item.imageUrl === row.url).map((item) => ({ id: item.id, name: item.name })),
       presets: presets.filter((item) => item.imageUrl === row.url).map((item) => ({ id: item.id, name: item.name })),
+      inventoryItems: inventoryItems.filter((item) => item.imageUrl === row.url).map((item) => ({ id: item.id, name: item.name })),
+      categories: categories.filter((item) => item.imageUrl === row.url).map((item) => ({ id: item.id, name: item.name })),
+      themes: themes.filter((item) => item.imageUrlsJson.includes(row.url)).map((item) => ({ id: item.id, name: item.name })),
     },
   }));
   return { items, total: count, page, limit };
@@ -345,11 +351,22 @@ export const mediaService = {
       MediaAsset.findByPk(replacementId),
     ]);
     if (!source || !replacement) throw ApiError.notFound('Alguna imagen no existe');
-    const [products, options, presets] = await Promise.all([
-      Product.update({ imageUrl: replacement.url }, { where: { imageUrl: source.url } }),
-      CustomizationOption.update({ imageUrl: replacement.url }, { where: { imageUrl: source.url } }),
-      BuilderPreset.update({ imageUrl: replacement.url }, { where: { imageUrl: source.url } }),
-    ]);
-    return { products: products[0], options: options[0], presets: presets[0], replacementUrl: replacement.url };
+    return sequelize.transaction(async (transaction) => {
+      const [products, options, presets, inventoryItems, categories] = await Promise.all([
+        Product.update({ imageUrl: replacement.url }, { where: { imageUrl: source.url }, transaction }),
+        CustomizationOption.update({ imageUrl: replacement.url }, { where: { imageUrl: source.url }, transaction }),
+        BuilderPreset.update({ imageUrl: replacement.url }, { where: { imageUrl: source.url }, transaction }),
+        InventoryItem.update({ imageUrl: replacement.url }, { where: { imageUrl: source.url }, transaction }),
+        Category.update({ imageUrl: replacement.url }, { where: { imageUrl: source.url }, transaction }),
+      ]);
+      let themes = 0;
+      const designs = await CakeTheme.findAll({ transaction, lock: transaction.LOCK.UPDATE });
+      for (const design of designs) {
+        if (!design.imageUrlsJson.includes(source.url)) continue;
+        await design.update({ imageUrlsJson: [...new Set(design.imageUrlsJson.map((url) => url === source.url ? replacement.url : url))], version: design.version + 1 }, { transaction });
+        themes += 1;
+      }
+      return { products: products[0], options: options[0], presets: presets[0], inventoryItems: inventoryItems[0], categories: categories[0], themes, replacementUrl: replacement.url };
+    });
   },
 };

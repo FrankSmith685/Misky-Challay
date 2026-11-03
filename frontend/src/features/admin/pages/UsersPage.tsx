@@ -23,7 +23,7 @@ import { accessApi, type RoleRow, type StaffRow } from '../services/access.servi
 
 const EMPTY_FORM = { email: '', password: '', firstName: '', lastName: '' };
 
-const BRANCH_SCOPED_ROLE_CODES = new Set(['kitchen', 'dispatcher', 'driver', 'branch_admin']);
+const BRANCH_SCOPED_ROLE_CODES = new Set(['kitchen', 'purchasing', 'dispatcher', 'driver', 'branch_admin']);
 
 interface CreatedAccess {
   email: string;
@@ -167,7 +167,7 @@ const UsersPage = () => {
   const copyCreatedAccess = async () => {
     if (!createdAccess) return;
     const text = [
-      'Acceso al panel de Verde Bowl',
+      'Acceso al panel de Misky Challay',
       `Ingresar: ${createdAccess.loginUrl}`,
       `Usuario: ${createdAccess.email}`,
       `Contraseña temporal: ${createdAccess.password}`,
@@ -271,7 +271,7 @@ const UsersPage = () => {
             <p className="mt-1 text-sm leading-6 text-ink-muted">
               Crea el usuario, asígnale rol y cocina, y comparte el acceso generado. Todos ingresan
               en <strong className="text-ink">/ingresar</strong>; Cocina irá a su tablero y
-              Nutrición irá directamente al catálogo nutricional según sus permisos.
+              Catálogo y Cocina mostrarán sus pantallas según los permisos asignados.
             </p>
           </div>
         </div>

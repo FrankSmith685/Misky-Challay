@@ -299,14 +299,14 @@ const RolesPage = () => {
                     code: event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_'),
                   }))
                 }
-                placeholder="nutricionista_junior"
+                placeholder="pastelero_editor"
                 hint="Minusculas y guion bajo"
               />
               <Input
                 label="Nombre"
                 value={form.name}
                 onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                placeholder="Nutricionista junior"
+                placeholder="Editor de pastelería"
               />
             </div>
           )}

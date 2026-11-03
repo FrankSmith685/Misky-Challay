@@ -16,8 +16,6 @@
  */
 
 const KEY = 'verde-bowl:pending-order:v1';
-/** Pasado un dia, la sesion de pago de la pasarela ya no sirve. */
-const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 export interface PendingOrderRef {
   orderNumber: string;
@@ -37,10 +35,6 @@ export const readPendingOrder = (): PendingOrderRef | null => {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) ?? 'null') as PendingOrderRef | null;
     if (!saved?.orderNumber || typeof saved.createdAt !== 'number') return null;
-    if (Date.now() - saved.createdAt > MAX_AGE_MS) {
-      forgetPendingOrder();
-      return null;
-    }
     return saved;
   } catch {
     forgetPendingOrder();

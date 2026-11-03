@@ -25,6 +25,8 @@ import {
   type ServiceMode,
 } from '@config/constants';
 import type { OrderItem } from './orderItem.model';
+import type { OrderTermsAcceptance } from '../../modules/settings/checkoutTerms.service';
+import type { CustomerContactRecord } from '../../modules/admin/orderContact.service';
 
 export interface AddressSnapshot {
   label: string;
@@ -61,9 +63,15 @@ export class Order extends Model<InferAttributes<Order>, InferCreationAttributes
   declare addressSnapshotJson: CreationOptional<AddressSnapshot | null>;
   declare contactName: CreationOptional<string | null>;
   declare contactPhone: CreationOptional<string | null>;
+  declare whatsappOptInAt: CreationOptional<Date | null>;
+  declare termsAcceptanceJson: CreationOptional<OrderTermsAcceptance | null>;
+  declare giftJson: CreationOptional<{ recipientName: string; recipientPhone?: string; hidePrices: boolean; message?: string; token: string } | null>;
+  declare customerContactJson: CreationOptional<CustomerContactRecord | null>;
 
   declare subtotal: number;
   declare deliveryFee: CreationOptional<number>;
+  declare deliveryVehicleType: CreationOptional<'CAR' | null>;
+  declare deliveryHandlingInstructions: CreationOptional<string | null>;
   declare discountTotal: CreationOptional<number>;
   declare walletAmount: CreationOptional<number>;
   /** Tasa de IGV vigente al cerrar el pedido. Congelada: si la tasa cambia, el
@@ -74,6 +82,13 @@ export class Order extends Model<InferAttributes<Order>, InferCreationAttributes
   /** IGV contenido en el importe cobrado. NO se suma al total. */
   declare taxTotal: CreationOptional<number>;
   declare grandTotal: number;
+  /** Plan de cobro para tortas de diseño: anticipo y saldo separado. */
+  declare paymentPlan: CreationOptional<'FULL' | 'DEPOSIT_BALANCE'>;
+  declare depositAmount: CreationOptional<number>;
+  declare balanceAmount: CreationOptional<number>;
+  declare balanceDueAt: CreationOptional<Date | null>;
+  declare depositPaidAt: CreationOptional<Date | null>;
+  declare balancePaidAt: CreationOptional<Date | null>;
   declare currency: CreationOptional<string>;
 
   // --- Comprobante de pago (SUNAT) ---
@@ -153,15 +168,27 @@ Order.init(
     addressSnapshotJson: { type: DataTypes.JSON, allowNull: true },
     contactName: { type: DataTypes.STRING(120), allowNull: true },
     contactPhone: { type: DataTypes.STRING(30), allowNull: true },
+    whatsappOptInAt: { type: DataTypes.DATE, allowNull: true },
+    termsAcceptanceJson: { type: DataTypes.JSON, allowNull: true },
+    giftJson: { type: DataTypes.JSON, allowNull: true },
+    customerContactJson: { type: DataTypes.JSON, allowNull: true },
 
     subtotal: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
     deliveryFee: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
+    deliveryVehicleType: { type: DataTypes.STRING(16), allowNull: true },
+    deliveryHandlingInstructions: { type: DataTypes.STRING(1000), allowNull: true },
     discountTotal: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
     walletAmount: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
     taxRate: { type: DataTypes.DECIMAL(5, 4), allowNull: false, defaultValue: 0 },
     taxableBase: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
     taxTotal: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
     grandTotal: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
+    paymentPlan: { type: DataTypes.ENUM('FULL', 'DEPOSIT_BALANCE'), allowNull: false, defaultValue: 'FULL' },
+    depositAmount: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
+    balanceAmount: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
+    balanceDueAt: { type: DataTypes.DATE, allowNull: true },
+    depositPaidAt: { type: DataTypes.DATE, allowNull: true },
+    balancePaidAt: { type: DataTypes.DATE, allowNull: true },
     currency: { type: DataTypes.CHAR(3), allowNull: false, defaultValue: CURRENCY },
 
     documentType: {

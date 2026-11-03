@@ -9,8 +9,8 @@
 ## Puesta en marcha
 
 ```bash
-cp .env.docker.example .env      # y rellena los CAMBIAME
-docker compose up -d --build
+# completa las claves y dominios de .env.docker
+docker compose --env-file .env.docker up -d --build
 ```
 
 La web queda en `http://localhost:8080`. El backend **no** se publica: nginx le hace

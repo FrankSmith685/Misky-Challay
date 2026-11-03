@@ -2,6 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { CartItem } from '../../types/domain';
 
 const KEY = 'verde-bowl.cart.v1';
+let generation = 0;
+let writes = Promise.resolve();
 
 /**
  * Una línea vale solo si trae lo que el checkout necesita para recotizarla. Un
@@ -37,10 +39,14 @@ export const cartStorage = {
   },
 
   write(items: CartItem[]): Promise<void> {
-    return AsyncStorage.setItem(KEY, JSON.stringify(items));
+    const epoch = generation; const serialized = JSON.stringify(items);
+    writes = writes.catch(() => undefined).then(() => epoch === generation ? AsyncStorage.setItem(KEY, serialized) : undefined);
+    return writes;
   },
 
   clear(): Promise<void> {
-    return AsyncStorage.removeItem(KEY);
+    generation += 1;
+    writes = writes.catch(() => undefined).then(() => AsyncStorage.removeItem(KEY));
+    return writes;
   },
 };

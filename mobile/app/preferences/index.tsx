@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { NotificationChannels } from '../../src/components/NotificationChannels';
+﻿import { useEffect, useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -6,7 +7,6 @@ import {
   StyleSheet,
   Switch,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -32,27 +32,11 @@ import type {
   NewsletterStatus,
 } from '../../src/types/domain';
 
-/** Límites de updateFoodPreferencesSchema en el backend. */
-const CALORIE_RANGE = { min: 300, max: 5000 } as const;
-const PROTEIN_RANGE = { min: 0, max: 500 } as const;
-
 const EMPTY_PREFERENCES: FoodPreferences = {
   allergens: [],
   dietaryTags: [],
   dislikedOptionIds: [],
-  calorieTarget: null,
-  proteinTarget: null,
 };
-
-/** El texto del campo numérico se guarda tal cual se teclea; solo al enviar se convierte. */
-const toTargetText = (value: number | null): string => (value === null ? '' : String(value));
-
-const parseTarget = (text: string): number | null => {
-  const digits = text.replace(/[^0-9]/g, '');
-  if (digits === '') return null;
-  return Number(digits);
-};
-
 const sameList = (left: string[], right: string[]): boolean =>
   left.length === right.length && left.every((code) => right.includes(code));
 
@@ -85,8 +69,6 @@ export default function PreferencesScreen() {
   });
 
   const [draft, setDraft] = useState<FoodPreferences>(EMPTY_PREFERENCES);
-  const [calorieText, setCalorieText] = useState('');
-  const [proteinText, setProteinText] = useState('');
   const [savingFood, setSavingFood] = useState(false);
 
   const [newsletterOn, setNewsletterOn] = useState(false);
@@ -107,36 +89,19 @@ export default function PreferencesScreen() {
   useEffect(() => {
     if (!saved.data) return;
     setDraft(saved.data);
-    setCalorieText(toTargetText(saved.data.calorieTarget));
-    setProteinText(toTargetText(saved.data.proteinTarget));
   }, [saved.data]);
 
   useEffect(() => {
     if (newsletter.data) setNewsletterOn(newsletter.data.subscribed);
   }, [newsletter.data]);
 
-  const calorieTarget = parseTarget(calorieText);
-  const proteinTarget = parseTarget(proteinText);
-
-  const calorieError =
-    calorieTarget !== null &&
-    (calorieTarget < CALORIE_RANGE.min || calorieTarget > CALORIE_RANGE.max)
-      ? `Entre ${CALORIE_RANGE.min} y ${CALORIE_RANGE.max} kcal.`
-      : '';
-  const proteinError =
-    proteinTarget !== null && proteinTarget > PROTEIN_RANGE.max
-      ? `Como máximo ${PROTEIN_RANGE.max} g.`
-      : '';
-
   const foodDirty = useMemo(() => {
     const base = saved.data ?? EMPTY_PREFERENCES;
     return (
       !sameList(draft.allergens, base.allergens) ||
-      !sameList(draft.dietaryTags, base.dietaryTags) ||
-      calorieTarget !== base.calorieTarget ||
-      proteinTarget !== base.proteinTarget
+      !sameList(draft.dietaryTags, base.dietaryTags)
     );
-  }, [calorieTarget, draft, proteinTarget, saved.data]);
+  }, [draft, saved.data]);
 
   const toggle = (key: 'allergens' | 'dietaryTags', code: string) => {
     setDraft((current) => ({
@@ -148,11 +113,6 @@ export default function PreferencesScreen() {
   };
 
   const saveFood = async () => {
-    if (calorieError || proteinError) {
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      toast.show({ message: 'Revisa las metas: están fuera de rango.', tone: 'warning' });
-      return;
-    }
 
     setSavingFood(true);
     try {
@@ -160,8 +120,6 @@ export default function PreferencesScreen() {
         allergens: draft.allergens,
         dietaryTags: draft.dietaryTags,
         dislikedOptionIds: draft.dislikedOptionIds,
-        calorieTarget,
-        proteinTarget,
       });
 
       saved.mutate(result);
@@ -253,6 +211,7 @@ export default function PreferencesScreen() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
         >
+          {authenticated && <NotificationChannels />}
           <View style={styles.hero}>
             <MaterialCommunityIcons
               name="shield-account-outline"
@@ -330,56 +289,6 @@ export default function PreferencesScreen() {
                       onPress={() => toggle('dietaryTags', item.code)}
                     />
                   ))}
-                </View>
-              </View>
-
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}>Metas orientativas por bowl</Text>
-                <Text style={styles.cardCopy}>
-                  Son una guía para destacar platos, no un límite: siempre podrás pedir lo que
-                  quieras.
-                </Text>
-
-                <View style={styles.targets}>
-                  <View style={styles.target}>
-                    <Text style={styles.targetLabel}>Máximo de calorías</Text>
-                    <View style={[styles.targetField, calorieError !== '' && styles.targetError]}>
-                      <TextInput
-                        accessibilityLabel="Máximo de calorías por bowl"
-                        value={calorieText}
-                        onChangeText={(value) => setCalorieText(value.replace(/[^0-9]/g, ''))}
-                        keyboardType="number-pad"
-                        maxLength={4}
-                        placeholder="650"
-                        placeholderTextColor={colors.inkMuted}
-                        style={styles.targetInput}
-                      />
-                      <Text style={styles.targetUnit}>kcal</Text>
-                    </View>
-                    <Text style={[styles.targetHint, calorieError !== '' && styles.targetHintBad]}>
-                      {calorieError || `Entre ${CALORIE_RANGE.min} y ${CALORIE_RANGE.max}`}
-                    </Text>
-                  </View>
-
-                  <View style={styles.target}>
-                    <Text style={styles.targetLabel}>Mínimo de proteína</Text>
-                    <View style={[styles.targetField, proteinError !== '' && styles.targetError]}>
-                      <TextInput
-                        accessibilityLabel="Mínimo de proteína por bowl"
-                        value={proteinText}
-                        onChangeText={(value) => setProteinText(value.replace(/[^0-9]/g, ''))}
-                        keyboardType="number-pad"
-                        maxLength={3}
-                        placeholder="30"
-                        placeholderTextColor={colors.inkMuted}
-                        style={styles.targetInput}
-                      />
-                      <Text style={styles.targetUnit}>g</Text>
-                    </View>
-                    <Text style={[styles.targetHint, proteinError !== '' && styles.targetHintBad]}>
-                      {proteinError || `Hasta ${PROTEIN_RANGE.max}`}
-                    </Text>
-                  </View>
                 </View>
               </View>
             </>
@@ -533,52 +442,6 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginTop: spacing.md,
   },
-  targets: {
-    flexDirection: 'row',
-    gap: spacing.sm + spacing.xs,
-    marginTop: spacing.md,
-  },
-  target: {
-    flex: 1,
-  },
-  targetLabel: {
-    ...type.label,
-    color: colors.ink,
-    marginBottom: spacing.xs + 2,
-  },
-  targetField: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs + 2,
-    minHeight: layout.minTouch + 6,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: radius.sm + 2,
-    backgroundColor: colors.surface,
-    paddingHorizontal: spacing.sm + spacing.xs,
-  },
-  targetError: {
-    borderColor: colors.danger,
-    backgroundColor: '#fffafa',
-  },
-  targetInput: {
-    ...type.body,
-    flex: 1,
-    color: colors.ink,
-    paddingVertical: spacing.sm + spacing.xs,
-  },
-  targetUnit: {
-    ...type.bodySm,
-    color: colors.inkMuted,
-  },
-  targetHint: {
-    ...type.caption,
-    color: colors.inkMuted,
-    marginTop: spacing.xs,
-  },
-  targetHintBad: {
-    color: colors.danger,
-  },
   switchRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -623,3 +486,5 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
   },
 });
+
+

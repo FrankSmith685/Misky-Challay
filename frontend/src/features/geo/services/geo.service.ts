@@ -94,9 +94,9 @@ export const geoApi = {
     return data.data;
   },
 
-  async getSlots(branchId: number, days = 7): Promise<DeliverySlot[]> {
+  async getSlots(branchId: number, days = 7, vehicleType?: 'CAR'): Promise<DeliverySlot[]> {
     const { data } = await api.get<ApiSuccess<DeliverySlot[]>>(ENDPOINTS.locations.slots, {
-      params: { branchId, days },
+      params: { branchId, days, vehicleType },
     });
     return data.data;
   },

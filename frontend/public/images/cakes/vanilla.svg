@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 720" role="img" aria-label="Torta clásica de vainilla">
+ <defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#EAF7FF"/><stop offset="1" stop-color="#FFF2D9"/></linearGradient><linearGradient id="cake" x2="0" y2="1"><stop stop-color="#FFF5DC"/><stop offset="1" stop-color="#EFC99B"/></linearGradient><filter id="s"><feGaussianBlur stdDeviation="22"/></filter></defs>
+ <rect width="960" height="720" fill="url(#bg)"/><circle cx="790" cy="118" r="185" fill="#FFF8EC" opacity=".55"/><circle cx="167" cy="581" r="160" fill="#D8EEFA" opacity=".5"/>
+ <ellipse cx="480" cy="600" rx="310" ry="46" fill="#05284C" opacity=".18" filter="url(#s)"/><ellipse cx="480" cy="565" rx="332" ry="65" fill="#FAF8F4"/><ellipse cx="480" cy="553" rx="274" ry="42" fill="#E8DBD8"/>
+ <path d="M226 332h508v207c0 72-508 72-508 0z" fill="url(#cake)" stroke="#E8BE9E" stroke-width="5"/><ellipse cx="480" cy="333" rx="254" ry="56" fill="#FFF9E8" stroke="#F5DFB9" stroke-width="5"/>
+ <path d="M226 408c72-22 125 27 199 1 71-25 130 22 202 0 42-13 77-13 107-2v26c-65-11-97 15-160 14-60-1-117-15-167 4-63 23-122-4-181 1z" fill="#FDF9ED"/>
+ <path d="M253 323c16-42 73-59 100-34 20-52 75-42 100-3 23-48 78-47 105-8 39-32 87-13 102 26 39-18 67 3 75 24-50-18-95 6-132 8-51 5-88-18-128-3-52 21-83-8-128-5-35 2-67 16-94-5z" fill="#FFFDF3"/>
+ <circle cx="350" cy="281" r="19" fill="#B1496D"/><circle cx="495" cy="272" r="20" fill="#B1496D"/><circle cx="626" cy="285" r="19" fill="#B1496D"/><path d="M349 264c-5-18 9-22 17-26M495 254c-2-20 12-25 20-27M626 267c-3-19 10-24 18-27" fill="none" stroke="#67865A" stroke-width="6" stroke-linecap="round"/>
+ <text x="480" y="495" text-anchor="middle" fill="#073A6B" font-family="Georgia,serif" font-size="45" font-style="italic">Misky Challay</text>
+</svg>

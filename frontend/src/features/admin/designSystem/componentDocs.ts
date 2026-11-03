@@ -640,7 +640,7 @@ export const COMPONENT_DOCS: Record<string, ComponentDocMeta> = {
     "name": "Button",
     "import": "@components/ui",
     "builtOn": "MuiButton -> <button>, con la escala de alturas BUTTON_HEIGHT",
-    "description": "Boton de accion del producto: envuelve al Button de Material UI con la API de Verde Bowl (cinco variantes semanticas, tres tamanos anclados a BUTTON_HEIGHT, estado de carga propio e icono a la izquierda). Con isLoading queda deshabilitado, expone aria-busy y cambia el icono por un spinner, asi que no hay que gestionar el doble clic a mano.",
+    "description": "Boton de accion del producto: envuelve al Button de Material UI con la API de Misky Challay (cinco variantes semanticas, tres tamanos anclados a BUTTON_HEIGHT, estado de carga propio e icono a la izquierda). Con isLoading queda deshabilitado, expone aria-busy y cambia el icono por un spinner, asi que no hay que gestionar el doble clic a mano.",
     "whenToUse": "Es el boton por defecto en toda la aplicacion. El Button de @mui/material solo se usa donde MUI lo exige: dentro de ButtonGroup y como disparador de Menu. Para acciones que se entienden con un icono usa IconButton con aria-label, y Fab para la accion primaria flotante de una pantalla.",
     "props": [
       {

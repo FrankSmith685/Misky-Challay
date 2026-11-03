@@ -8,7 +8,7 @@ const mysql = require('mysql2/promise');
     port: Number(process.env.DB_PORT || 3306),
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'verde_bowl_v3',
+    database: process.env.DB_NAME || 'DulceFlow',
   });
   const [columns] = await connection.query("SHOW COLUMNS FROM dining_tables LIKE 'qr_token'");
   const [summary] = await connection.query(`

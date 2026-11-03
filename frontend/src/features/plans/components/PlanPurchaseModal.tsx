@@ -111,7 +111,7 @@ export const PlanPurchaseModal = ({
         variant="compact"
         items={[
           { icon: Lock, label: 'Checkout protegido' },
-          { icon: ShieldCheck, label: 'Datos de tarjeta fuera de Verde Bowl' },
+          { icon: ShieldCheck, label: 'Datos de tarjeta fuera de Misky Challay' },
         ]}
       />
 

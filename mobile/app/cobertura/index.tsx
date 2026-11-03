@@ -192,13 +192,13 @@ export default function CoverageScreen() {
 
   return (
     <ScreenScaffold
-      title="¿Llegamos a tu zona?"
+      title="Zonas de entrega"
       subtitle="Compruébalo sin crear una cuenta"
       showBack
       footer={
         <View style={styles.footer}>
           <PrimaryButton
-            label="Comprobar cobertura"
+            label="Comprobar mi dirección"
             loading={checking}
             disabled={!hasPoint || locating}
             onPress={() => void check()}
@@ -326,7 +326,7 @@ export default function CoverageScreen() {
 
                   <Text style={styles.resultText}>
                     {result.covered
-                      ? `Te atiende ${result.branch?.name ?? 'nuestra cocina más cercana'}.`
+                      ? `Te atiende ${result.branch?.name ?? 'nuestra pastelería más cercana'}.`
                       : (result.reason ?? 'Esta zona está fuera del área de reparto.')}
                   </Text>
                 </View>
@@ -354,7 +354,7 @@ export default function CoverageScreen() {
                     <Text style={styles.factLabel}>MÍNIMO</Text>
 
                     <Text style={styles.factValue}>
-                      {result.zone ? money(result.zone.minimumOrder) : '—'}
+                      {result.zone ? (result.zone.minimumOrder > 0 ? money(result.zone.minimumOrder) : 'Sin mínimo') : '—'}
                     </Text>
                   </View>
                 </View>

@@ -1,3 +1,5 @@
+import { Alert } from 'react-native';
+import { apiRequest } from '../services/api/client';
 import { useCallback, useState } from 'react';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -26,7 +28,9 @@ const toSelections = (
 };
 
 const joinNames = (names: string[]): string =>
-  names.length > 2 ? `${names.slice(0, 2).join(', ')} y ${names.length - 2} más` : names.join(' y ');
+  names.length > 2
+    ? `${names.slice(0, 2).join(', ')} y ${names.length - 2} más`
+    : names.join(' y ');
 
 export interface UseReorderResult {
   reorder: (orderNumber: string) => Promise<void>;
@@ -37,7 +41,7 @@ export interface UseReorderResult {
 /**
  * «Volver a pedir»: repite un pedido anterior en un toque.
  *
- * El pedido guarda una fotografía, no un carrito. El precio, la nutrición y la
+ * El pedido guarda una fotografía, no un carrito. El precio y la
  * disponibilidad de hoy los decide el backend, así que cada línea se recotiza en
  * /customizations/quote antes de entrar al carrito: aquí no se multiplica ni se
  * suma nada. Lo que ya no se puede preparar no se sustituye en silencio, se
@@ -79,9 +83,29 @@ export function useReorder(): UseReorderResult {
         const unavailable: string[] = [];
         let added = 0;
 
+        const repeatDesign = order.items.some(
+          (item) => item.designImages?.length || item.specialInstructions,
+        )
+          ? await new Promise<boolean>((resolve) =>
+              Alert.alert(
+                'Repetir pedido',
+                '¿Quieres conservar también el diseño? Revisa el texto de la torta antes de comprar.',
+                [
+                  { text: 'Solo combinación', onPress: () => resolve(false) },
+                  { text: 'También el diseño', onPress: () => resolve(true) },
+                ],
+                { cancelable: true, onDismiss: () => resolve(false) },
+              ),
+            )
+          : false;
         for (const item of order.items) {
           const selections = toSelections(item);
-          if (item.productId === null || item.variantId === null || selections === null) {
+          if (
+            item.productId === null ||
+            item.variantId === null ||
+            selections === null ||
+            item.designQuoteId
+          ) {
             unavailable.push(item.productNameSnapshot);
             continue;
           }
@@ -93,10 +117,34 @@ export function useReorder(): UseReorderResult {
               quantity: item.quantity,
               branchId: branch?.id ?? null,
               selections,
+              requestedServings: item.requestedServings ?? undefined,
             });
             const product = catalog.get(item.productId) ?? null;
 
+            const design: {
+              referenceDataUrl?: string;
+              aiProposalDataUrl?: string;
+              specialInstructions?: string;
+              designDetails?: { inscription: string; occasion: string; finish: string };
+            } = {};
+            if (repeatDesign) {
+              design.specialInstructions =
+                item.designDetailsJson?.originalInstructions ??
+                item.specialInstructions ??
+                undefined;
+              design.designDetails = item.designDetailsJson ?? undefined;
+              for (const image of item.designImages ?? []) {
+                if (image.position > 0) continue;
+                const result = await apiRequest<{ dataUrl: string }>(
+                  `/customer/orders/${order.orderNumber}/images/${item.id}/${image.id}`,
+                  { auth: true },
+                );
+                if (image.kind === 'AI_PROPOSAL') design.aiProposalDataUrl = result.dataUrl;
+                else design.referenceDataUrl = result.dataUrl;
+              }
+            }
             addItem({
+              ...design,
               productId: item.productId,
               variantId: item.variantId,
               productName: product?.name ?? item.productNameSnapshot,

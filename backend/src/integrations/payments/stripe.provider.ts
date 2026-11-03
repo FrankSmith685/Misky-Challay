@@ -17,7 +17,8 @@ import type {
  * asi ningun dato de tarjeta toca nuestro servidor ni nuestro frontend.
  *
  * Eventos que confirman el pedido:
- *   checkout.session.completed        -> pago aprobado
+ *   checkout.session.completed        -> pago aprobado si payment_status es paid
+ *   checkout.session.async_payment_succeeded -> pago diferido aprobado
  *   checkout.session.async_payment_failed / expired -> pago fallido
  */
 export class StripeProvider implements PaymentProvider {
@@ -94,7 +95,8 @@ export class StripeProvider implements PaymentProvider {
     }
 
     switch (event.type) {
-      case 'checkout.session.completed': {
+      case 'checkout.session.completed':
+      case 'checkout.session.async_payment_succeeded': {
         const session = event.data.object as Stripe.Checkout.Session;
         if (session.payment_status !== 'paid') {
           return { kind: 'IGNORED', eventId: event.id, eventType: event.type };
@@ -141,7 +143,7 @@ export class StripeProvider implements PaymentProvider {
       amount: Math.round(input.amount * 100),
       reason: 'requested_by_customer',
       metadata: { motivo: input.reason.slice(0, 100) },
-    });
+    }, input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : undefined);
 
     return { providerReference: refund.id, succeeded: refund.status === 'succeeded' };
   }

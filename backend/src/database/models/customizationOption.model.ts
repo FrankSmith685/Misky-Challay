@@ -6,6 +6,7 @@ import {
   Model,
 } from 'sequelize';
 import { sequelize } from '../connection';
+import type { CakeEffort } from './cakeProduction.model';
 
 export const OPTION_STATUS = {
   ACTIVE: 'ACTIVE',
@@ -43,6 +44,8 @@ export class CustomizationOption extends Model<
    * false -> extra normal: es gratis si entra en freeQuantity del grupo.
    */
   declare chargeAlways: CreationOptional<boolean>;
+  /** Al pedir porciones libres, escala precio, insumo y esfuerzo de esta opcion. */
+  declare cakeScaleWithServings: CreationOptional<boolean>;
   declare calories: CreationOptional<number>;
   declare protein: CreationOptional<number>;
   declare carbs: CreationOptional<number>;
@@ -52,6 +55,8 @@ export class CustomizationOption extends Model<
   declare inventoryItemId: CreationOptional<number | null>;
   /** Cuanto de ese insumo consume una unidad de la opcion (en la unidad del insumo). */
   declare consumptionQuantity: CreationOptional<number>;
+  /** Minutos adicionales por estacion de produccion de tortas. */
+  declare productionMinutesJson: CreationOptional<CakeEffort>;
   declare status: CreationOptional<OptionStatus>;
   declare sortOrder: CreationOptional<number>;
   declare createdAt: CreationOptional<Date>;
@@ -73,6 +78,7 @@ CustomizationOption.init(
     spiceLevel: { type: DataTypes.TINYINT.UNSIGNED, allowNull: false, defaultValue: 0 },
     priceDelta: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
     chargeAlways: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    cakeScaleWithServings: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     calories: { type: DataTypes.DECIMAL(8, 2), allowNull: false, defaultValue: 0 },
     protein: { type: DataTypes.DECIMAL(8, 2), allowNull: false, defaultValue: 0 },
     carbs: { type: DataTypes.DECIMAL(8, 2), allowNull: false, defaultValue: 0 },
@@ -80,6 +86,7 @@ CustomizationOption.init(
     maxPerItem: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
     inventoryItemId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
     consumptionQuantity: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
+    productionMinutesJson: { type: DataTypes.JSON, allowNull: false, defaultValue: {} },
     status: {
       type: DataTypes.ENUM(...Object.values(OPTION_STATUS)),
       allowNull: false,

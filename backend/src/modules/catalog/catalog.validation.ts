@@ -1,6 +1,6 @@
-import { z } from 'zod';
+﻿import { z } from 'zod';
 
-/** Acepta ?dietaryTags=vegano,alto-en-proteina o repetido: ?dietaryTags=a&dietaryTags=b */
+/** Acepta etiquetas dietarias separadas por comas o repetidas */
 const csvList = z
   .union([z.string(), z.array(z.string())])
   .optional()
@@ -13,12 +13,11 @@ const csvList = z
 export const listProductsSchema = z.object({
   query: z.object({
     branchId: z.coerce.number().int().positive().optional(),
+    audience: z.enum(['RETAIL', 'BUSINESS']).default('RETAIL'),
     categoryId: z.coerce.number().int().positive().optional(),
     search: z.string().max(80).optional(),
     dietaryTags: csvList,
     excludeAllergens: csvList,
-    maxCalories: z.coerce.number().positive().optional(),
-    minProtein: z.coerce.number().positive().optional(),
     featured: z
       .enum(['true', 'false'])
       .optional()

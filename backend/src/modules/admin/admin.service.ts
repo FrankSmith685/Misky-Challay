@@ -1,17 +1,23 @@
+import { orderDesignImages } from '@modules/cakes/cakeOrderImages.service';
 import { col, fn, literal, Op } from 'sequelize';
 import {
   AuditLog,
   Branch,
+  CakeProductionTask,
   DiningTable,
   KitchenTicket,
   Order,
   OrderItem,
+  OrderItemReference,
   OrderItemCustomization,
   OrderStatusHistory,
   Payment,
+  Delivery,
+  DeliveryEvidence,
   MobilePaymentClaim,
   Refund,
   UxEvent,
+  User,
   sequelize,
 } from '@database/models';
 import { PAYABLE_TYPE } from '@database/models/payment.model';
@@ -21,6 +27,15 @@ import type { BranchScopeCheck } from '@shared/utils/scope';
 import { buildMeta, getPagination, type PaginationQuery } from '@shared/utils/pagination';
 import { addDaysToIsoDate, defaultTimeZone, zonedDateAt, zonedParts } from '@shared/utils/datetime';
 import { settingsService } from '@modules/settings/settings.service';
+import { kitchenReleaseAtForTasks } from '@modules/operations/kitchenSchedule';
+
+const productionSummary = (tasks: CakeProductionTask[]) => [...tasks].sort((a, b) => a.workDate.localeCompare(b.workDate) || a.sequence - b.sequence).map((task) => ({
+  id: task.id,
+  station: task.station,
+  workDate: task.workDate,
+  status: task.status,
+  assigned: task.assignedTo != null,
+}));
 
 export interface OrderBoardFilters extends PaginationQuery {
   branchId?: number;
@@ -183,11 +198,13 @@ export const adminService = {
 
     const { rows, count } = await Order.findAndCountAll({
       where: searchClause ? { ...where, [Op.or]: searchClause } : where,
+      attributes: { exclude: ['termsAcceptanceJson'] },
       include: [
         { model: OrderItem, as: 'items', attributes: ['id', 'productNameSnapshot', 'quantity'] },
         { model: Branch, as: 'branch', attributes: ['id', 'name', 'prepMinutes'] },
         { model: DiningTable, as: 'diningTable', attributes: ['id', 'code', 'area'] },
         { model: KitchenTicket, as: 'kitchenTicket', attributes: ['id', 'status', 'targetAt'] },
+        { model: CakeProductionTask, as: 'cakeTasks', attributes: ['id', 'station', 'workDate', 'plannedMinutes', 'status', 'assignedTo'], separate: true },
       ],
       order: [['id', 'DESC']],
       limit: pagination.limit,
@@ -195,7 +212,20 @@ export const adminService = {
       distinct: true,
     });
 
-    return { orders: rows, meta: buildMeta(pagination, count) };
+    return {
+      orders: rows.map((order) => {
+        const tasks = (order.get('cakeTasks') as CakeProductionTask[] | undefined) ?? [];
+        const branch = order.get('branch') as Branch | undefined;
+        return {
+          ...order.toJSON(),
+          cakeTasks: productionSummary(tasks),
+          kitchenReleaseAt: order.scheduledAt
+            ? kitchenReleaseAtForTasks(order.scheduledAt, branch?.prepMinutes ?? 20, tasks)
+            : null,
+        };
+      }),
+      meta: buildMeta(pagination, count),
+    };
   },
 
   /**
@@ -220,11 +250,12 @@ export const adminService = {
         {
           model: OrderItem,
           as: 'items',
-          include: [{ model: OrderItemCustomization, as: 'customizations' }],
+          include: [{ model: OrderItemCustomization, as: 'customizations' }, { model: OrderItemReference, as: 'reference', attributes: ['id'] }, { model: OrderItemReference, as: 'designImages', attributes: ['id', 'kind', 'position'] }],
         },
         { model: Branch, as: 'branch', attributes: ['id', 'name', 'prepMinutes'] },
         { model: DiningTable, as: 'diningTable', attributes: ['id', 'code', 'area'] },
         { model: KitchenTicket, as: 'kitchenTicket', attributes: ['id', 'status', 'targetAt'] },
+        { model: CakeProductionTask, as: 'cakeTasks', attributes: ['id', 'station', 'workDate', 'plannedMinutes', 'status', 'assignedTo'], separate: true },
         {
           model: OrderStatusHistory,
           as: 'statusHistory',
@@ -238,10 +269,12 @@ export const adminService = {
     options.scopeCheck?.(order.branchId);
 
     const items = order.items ?? [];
+    const cakeTasks = (order.get('cakeTasks') as CakeProductionTask[] | undefined) ?? [];
+    const branch = order.get('branch') as Branch | undefined;
     const history =
       (order.get('statusHistory') as OrderStatusHistory[] | undefined) ?? [];
 
-    const [payments, receiptSettings] = await Promise.all([
+    const [payments, receiptSettings, customer] = await Promise.all([
       options.includePayments
       ? await Payment.findAll({
           where: { payableType: PAYABLE_TYPE.ORDER, payableId: order.id },
@@ -253,6 +286,7 @@ export const adminService = {
         })
       : Promise.resolve([]),
       settingsService.getReceiptSettings(),
+      order.userId ? User.findByPk(order.userId, { attributes: ['email'] }) : Promise.resolve(null),
     ]);
 
     return {
@@ -268,15 +302,30 @@ export const adminService = {
       placedAt: order.placedAt,
       cancelReason: order.cancelReason,
       contactName: order.contactName,
+      termsAcceptanceJson: order.termsAcceptanceJson,
       contactPhone: order.contactPhone,
+      customerEmail: customer?.email ?? null,
+      customerContactJson: order.customerContactJson,
       notes: order.notes,
       addressSnapshotJson: order.addressSnapshotJson,
       branch: order.get('branch') ?? null,
       diningTable: order.get('diningTable') ?? null,
       kitchenTicket: order.get('kitchenTicket') ?? null,
+      cakeTasks: productionSummary(cakeTasks),
+      kitchenReleaseAt: order.scheduledAt
+        ? kitchenReleaseAtForTasks(order.scheduledAt, branch?.prepMinutes ?? 20, cakeTasks)
+        : null,
 
       subtotal: money(order.subtotal),
       deliveryFee: money(order.deliveryFee),
+      deliveryVehicleType: order.deliveryVehicleType,
+      deliveryHandlingInstructions: order.deliveryHandlingInstructions,
+      deliveryProof: await (async () => {
+        const delivery = await Delivery.findOne({ where: { orderId: order.id }, attributes: ['id', 'status', 'proofJson'] });
+        if (!delivery) return null;
+        const photos = await DeliveryEvidence.findAll({ where: { deliveryId: delivery.id }, attributes: ['stage'] });
+        return { id: delivery.id, status: delivery.status, recipientName: delivery.proofJson?.recipientName ?? null, evidence: photos.map((photo) => photo.stage) };
+      })(),
       discountTotal: money(order.discountTotal),
       walletAmount: money(order.walletAmount),
       taxRate: Number(order.taxRate),
@@ -316,12 +365,16 @@ export const adminService = {
       // Proyeccion larga: lo que Soporte necesita leerle al cliente.
       detailItems: items.map((item) => ({
         id: item.id,
+        themeSnapshotJson: item.themeSnapshotJson,
         productNameSnapshot: item.productNameSnapshot,
         variantNameSnapshot: item.variantNameSnapshot ?? null,
+        descriptionSnapshot: item.descriptionSnapshot ?? null,
         quantity: item.quantity,
         unitPrice: money(item.unitPrice),
         lineTotal: money(item.lineTotal),
         specialInstructions: item.specialInstructions ?? null,
+        hasReference: Boolean(item.get('reference')),
+        designImages: orderDesignImages(item),
         customizations: (item.customizations ?? []).map((customization) => ({
           group: customization.groupNameSnapshot,
           option: customization.optionNameSnapshot,

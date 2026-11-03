@@ -45,7 +45,6 @@ export interface ProductCardProps {
 }
 
 
-/** «alto-en-proteina» sin diccionario cargado se lee como «Alto en proteina». */
 const humanize = (code: string): string => {
   const words = code.replace(/[-_]+/g, ' ').trim();
   return words.charAt(0).toUpperCase() + words.slice(1);
@@ -113,7 +112,7 @@ function ProductCardView({
 
         {isBuilder && product.isAvailable ? (
           <View style={styles.builderMediaBadge}>
-            <MaterialCommunityIcons name="bowl-mix-outline" size={14} color={colors.surface} />
+            <MaterialCommunityIcons name="cake-variant-outline" size={14} color={colors.surface} />
             <Text style={styles.featuredText}>Crea el tuyo</Text>
           </View>
         ) : product.isFeatured && product.isAvailable ? (
@@ -158,18 +157,6 @@ function ProductCardView({
           </View>
         )}
 
-        {product.nutrition && (
-          <View style={styles.nutrition}>
-            <MaterialCommunityIcons name="fire" size={14} color={colors.inkMuted} />
-            <Text style={styles.nutritionText}>
-              {Math.round(product.nutrition.calories)} kcal
-            </Text>
-            <View style={styles.nutritionDivider} />
-            <Text style={styles.nutritionText}>
-              {Math.round(product.nutrition.protein)} g proteína
-            </Text>
-          </View>
-        )}
 
         <View style={styles.footer}>
           <View style={styles.priceBox}>
@@ -310,7 +297,7 @@ const styles = StyleSheet.create({
     top: spacing.sm,
     left: spacing.sm,
     borderRadius: radius.pill,
-    backgroundColor: colors.accent500,
+    backgroundColor: colors.accent600,
     paddingHorizontal: 9,
     paddingVertical: 4,
   },
@@ -378,26 +365,6 @@ const styles = StyleSheet.create({
     ...type.caption,
     flex: 1,
     color: colors.danger,
-  },
-  nutrition: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: spacing.xs + 2,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    marginTop: spacing.sm,
-  },
-  nutritionText: {
-    ...type.caption,
-    color: colors.inkMuted,
-  },
-  nutritionDivider: {
-    width: 1,
-    height: 12,
-    backgroundColor: colors.line,
   },
   footer: {
     flexDirection: 'row',

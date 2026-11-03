@@ -271,7 +271,9 @@ router.post(
         cityId: z.coerce.number().int().positive(),
         name: z.string().min(3).max(80),
         deliveryFee: z.coerce.number().min(0),
-        minimumOrder: z.coerce.number().min(0),
+        extraCoverageKm: z.coerce.number().min(0).max(50).default(0),
+        extraFeePerKm: z.coerce.number().min(0).default(0),
+        minimumOrder: z.coerce.number().min(0).default(0),
         estimatedMinutes: z.coerce.number().int().min(5).max(240),
         priority: z.coerce.number().int().min(1).default(1),
         polygon: z
@@ -293,6 +295,8 @@ router.patch(
       body: z.object({
         name: z.string().min(3).max(80).optional(),
         deliveryFee: z.coerce.number().min(0).optional(),
+        extraCoverageKm: z.coerce.number().min(0).max(50).optional(),
+        extraFeePerKm: z.coerce.number().min(0).optional(),
         minimumOrder: z.coerce.number().min(0).optional(),
         estimatedMinutes: z.coerce.number().int().min(5).max(240).optional(),
         priority: z.coerce.number().int().min(1).optional(),
@@ -358,6 +362,7 @@ router.post(
         branchId: z.coerce.number().int().positive(),
         days: z.coerce.number().int().min(1).max(30).default(7),
         capacity: z.coerce.number().int().min(1).max(500).default(20),
+        carCapacity: z.coerce.number().int().min(0).max(500).optional(),
         cutoffHours: z.coerce.number().int().min(0).max(48).default(2),
         windows: z
           .array(
@@ -380,17 +385,10 @@ const optionId = z.object({ optionId: z.coerce.number().int().positive() });
 /**
  * Que campos de una opcion puede tocar quien NO administra el constructor.
  *
- * Los alergenos, las calorias y los macros de cada ingrediente del bowl solo se
- * editan aqui, y el nutricionista —que es quien responde por ellos— no tiene
- * `catalog.customization.write`. Se le abre la escritura, pero campo por campo:
- * el precio, el estado, el insumo y el orden siguen siendo del gestor de
- * catalogo. Responsabilidad y capacidad, por fin en las mismas manos.
+ * Los alergenos y las etiquetas de cada ingrediente se validan aquí. El precio,
+ * estado, insumo y orden siguen siendo responsabilidad del gestor del constructor.
  */
 const OPTION_FIELD_PERMISSION: Record<string, PermissionCode> = {
-  calories: PERMISSIONS.NUTRITION_WRITE,
-  protein: PERMISSIONS.NUTRITION_WRITE,
-  carbs: PERMISSIONS.NUTRITION_WRITE,
-  fat: PERMISSIONS.NUTRITION_WRITE,
   allergens: PERMISSIONS.ALLERGEN_WRITE,
   dietaryTags: PERMISSIONS.DIETARY_TAG_WRITE,
 };
@@ -416,7 +414,7 @@ const restrictOptionFields = (req: Request, _res: Response, next: NextFunction):
   if (blocked.length > 0) {
     next(
       ApiError.forbidden(
-        'Sobre este ingrediente solo puedes editar la nutricion, los alergenos y las etiquetas',
+        'Sobre este ingrediente solo puedes editar los alérgenos y las etiquetas',
       ),
     );
     return;
@@ -469,6 +467,7 @@ router.post(
           .regex(/^[a-z0-9_]+$/),
         name: z.string().min(2).max(80),
         description: z.string().max(255).optional(),
+        variantId: z.coerce.number().int().positive().nullable().optional(),
         selectionType: z.enum(['SINGLE', 'MULTIPLE']),
         minSelection: z.coerce.number().int().min(0).max(20),
         maxSelection: z.coerce.number().int().min(1).max(20),
@@ -526,10 +525,7 @@ router.post(
           sortOrder: z.coerce.number().int().min(0).optional(),
           priceDelta: z.coerce.number().min(0),
           chargeAlways: z.boolean().default(false),
-          calories: z.coerce.number().min(0).default(0),
-          protein: z.coerce.number().min(0).default(0),
-          carbs: z.coerce.number().min(0).default(0),
-          fat: z.coerce.number().min(0).default(0),
+          cakeScaleWithServings: z.boolean().default(true),
           maxPerItem: z.coerce.number().int().min(1).max(10).default(1),
           inventoryItemId: z.coerce.number().int().positive().nullable().optional(),
           consumptionQuantity: z.coerce.number().min(0).optional(),
@@ -544,7 +540,6 @@ router.patch(
   '/builder/options/:optionId',
   requireAnyPermission(
     PERMISSIONS.CATALOG_CUSTOMIZATION_WRITE,
-    PERMISSIONS.NUTRITION_WRITE,
     PERMISSIONS.ALLERGEN_WRITE,
     PERMISSIONS.DIETARY_TAG_WRITE,
   ),
@@ -564,10 +559,7 @@ router.patch(
           sortOrder: z.coerce.number().int().min(0).optional(),
           priceDelta: z.coerce.number().min(0).optional(),
           chargeAlways: z.boolean().optional(),
-          calories: z.coerce.number().min(0).optional(),
-          protein: z.coerce.number().min(0).optional(),
-          carbs: z.coerce.number().min(0).optional(),
-          fat: z.coerce.number().min(0).optional(),
+          cakeScaleWithServings: z.boolean().optional(),
           maxPerItem: z.coerce.number().int().min(1).max(10).optional(),
           status: z.enum(['ACTIVE', 'OUT_OF_STOCK', 'INACTIVE']).optional(),
           inventoryItemId: z.coerce.number().int().positive().nullable().optional(),

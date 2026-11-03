@@ -11,7 +11,7 @@ export const routingService = {
     const coordinates = `${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}`;
     try {
       const response = await fetch(`${base}/route/v1/driving/${coordinates}?overview=false&steps=false`, {
-        headers: { 'User-Agent': 'VerdeBowl/1.0' },
+        headers: { 'User-Agent': 'DulceFlow/1.0' },
         signal: AbortSignal.timeout(3500),
       });
       if (!response.ok) return null;

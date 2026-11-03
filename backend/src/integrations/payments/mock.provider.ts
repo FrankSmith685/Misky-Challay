@@ -13,10 +13,10 @@ import type {
 /**
  * SIMULADOR DE PAGO (solo desarrollo)
  * ---------------------------------------------------------------------------
- * Se usa cuando no hay STRIPE_SECRET_KEY. Reproduce el MISMO ciclo que Stripe:
+ * Se usa cuando no hay pasarela configurada. Reproduce el mismo ciclo de pago:
  * crea una "sesion", envia al cliente a una pagina de pago y confirma el pedido
  * unicamente por un webhook FIRMADO. Asi el flujo real ya esta probado el dia
- * que se enchufan las claves de Stripe.
+ * que se enchufan las claves de una pasarela real.
  *
  * Firma: HMAC-SHA256 del body crudo con MOCK_WEBHOOK_SECRET, en x-mock-signature.
  */

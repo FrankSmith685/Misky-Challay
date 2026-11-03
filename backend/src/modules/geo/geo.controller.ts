@@ -76,7 +76,7 @@ export const geoController = {
   slots: asyncHandler(async (req: Request, res: Response) => {
     const branchId = Number(req.query.branchId);
     const days = req.query.days ? Number(req.query.days) : undefined;
-    const slots = await geoService.listSlots(branchId, new Date(), days);
+    const slots = await geoService.listSlots(branchId, new Date(), days, req.query.vehicleType === 'CAR' ? 'CAR' : undefined);
     return ok(res, slots);
   }),
 };

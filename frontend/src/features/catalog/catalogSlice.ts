@@ -11,8 +11,6 @@ export interface CatalogFilters {
   productMode: 'ALL' | 'CUSTOM' | 'READY';
   dietaryTags: string[];
   excludeAllergens: string[];
-  maxCalories: number | null;
-  minProtein: number | null;
   /** Se resuelve en el navegador: los favoritos aun no viven en el backend (M12). */
   onlyFavorites: boolean;
 }
@@ -33,8 +31,6 @@ const initialFilters: CatalogFilters = {
   productMode: 'ALL',
   dietaryTags: [],
   excludeAllergens: [],
-  maxCalories: null,
-  minProtein: null,
   onlyFavorites: false,
 };
 
@@ -56,14 +52,12 @@ export const fetchProducts = createAsyncThunk<
 >('catalog/fetchProducts', async ({ branchId, filters }, { rejectWithValue }) => {
   try {
     // Se enumeran los campos porque `onlyFavorites` no viaja al API: se aplica en el cliente.
-    const { search, categoryId, dietaryTags, excludeAllergens, maxCalories, minProtein } = filters;
+    const { search, categoryId, dietaryTags, excludeAllergens } = filters;
     return await catalogApi.getProducts({
       search,
       categoryId,
       dietaryTags,
       excludeAllergens,
-      maxCalories,
-      minProtein,
       branchId,
     });
   } catch (error) {

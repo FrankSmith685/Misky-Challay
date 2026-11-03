@@ -48,7 +48,7 @@ const styles = StyleSheet.create({
   base: { minHeight: 56, paddingHorizontal: 20, borderRadius: radius.md + 4, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
   content: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   primary: { backgroundColor: colors.brand600, borderColor: colors.brand600, ...shadow.sm },
-  secondary: { backgroundColor: colors.surface, borderColor: '#b8d5c6' },
+  secondary: { backgroundColor: colors.surface, borderColor: '#b7dcf5' },
   ghost: { backgroundColor: 'transparent', borderColor: 'transparent' },
   danger: { backgroundColor: colors.danger, borderColor: colors.danger },
   label: { color: colors.surface, fontSize: 15, fontWeight: '900', letterSpacing: .1 },

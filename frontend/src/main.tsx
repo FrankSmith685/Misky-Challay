@@ -1,6 +1,8 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { RouterProvider } from 'react-router-dom';
+import { StyledEngineProvider } from '@mui/material/styles';
+import GlobalStyles from '@mui/material/GlobalStyles';
 import { AppProviders } from '@app/providers';
 import { router } from '@/router';
 import 'leaflet/dist/leaflet.css';
@@ -11,9 +13,12 @@ if (!container) throw new Error('No se encontro el elemento #root');
 
 createRoot(container).render(
   <StrictMode>
-    <AppProviders>
-      <RouterProvider router={router} />
-    </AppProviders>
+    <StyledEngineProvider enableCssLayer>
+      <GlobalStyles styles="@layer theme, base, mui, components, utilities;" />
+      <AppProviders>
+        <RouterProvider router={router} />
+      </AppProviders>
+    </StyledEngineProvider>
   </StrictMode>,
 );
 

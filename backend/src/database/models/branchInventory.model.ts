@@ -25,6 +25,8 @@ export class BranchInventory extends Model<
   declare inventoryItemId: number;
   declare onHand: CreationOptional<number>;
   declare reserved: CreationOptional<number>;
+  /** Costo promedio ponderado de lo que queda en esta sucursal. */
+  declare averageUnitCost: CreationOptional<number>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
 
@@ -42,6 +44,7 @@ BranchInventory.init(
     inventoryItemId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
     onHand: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
     reserved: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
+    averageUnitCost: { type: DataTypes.DECIMAL(12, 4), allowNull: false, defaultValue: 0 },
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,
   },

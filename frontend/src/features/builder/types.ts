@@ -1,10 +1,3 @@
-export interface Nutrition {
-  calories: number;
-  protein: number;
-  carbs: number;
-  fat: number;
-}
-
 export interface BuilderOption {
   id: number;
   name: string;
@@ -18,7 +11,7 @@ export interface BuilderOption {
   priceDelta: number;
   /** Suplemento: se cobra siempre, aunque el paso tenga unidades incluidas. */
   chargeAlways: boolean;
-  nutrition: Nutrition;
+  cakeScaleWithServings: boolean;
   maxPerItem: number;
   isAvailable: boolean;
   incompatibleWith: number[];
@@ -27,6 +20,8 @@ export interface BuilderOption {
 
 export interface BuilderGroup {
   id: number;
+  /** null = paso común a todas las presentaciones; de lo contrario es específico de una variante. */
+  variantId: number | null;
   code: string;
   name: string;
   description: string | null;
@@ -42,11 +37,13 @@ export interface BuilderVariant {
   id: number;
   name: string;
   basePrice: number;
+  servingSize: number | null;
+  servingUnit: string | null;
   isDefault: boolean;
-  nutrition: Nutrition;
 }
 
 export interface BuilderConfig {
+  customServings?: import('@features/cakes/cakes.service').CakeCustomServings | null;
   product: {
     id: number;
     name: string;
@@ -84,10 +81,13 @@ export interface SavedBowl {
 }
 
 export interface QuoteInput {
+  themeId?: number;
+  themeVersion?: number;
   productId: number;
   variantId: number;
   quantity: number;
   branchId?: number | null;
+  requestedServings?: number;
   selections: Array<{ optionId: number; quantity: number }>;
 }
 
@@ -100,17 +100,20 @@ export interface QuoteLine {
   chargedQuantity: number;
   priceDelta: number;
   lineExtra: number;
+  cakeScaleWithServings: boolean;
 }
 
 export interface QuoteResult {
+  theme?: import('@features/cakes/cakeThemes.service').ThemeSnapshot | null;
   productId: number;
   variantId: number;
+  variantName?: string;
+  requestedServings?: number | null;
   quantity: number;
   basePrice: number;
   extrasTotal: number;
   unitPrice: number;
   lineTotal: number;
-  nutrition: Nutrition;
   selections: QuoteLine[];
   description: string;
 }

@@ -64,6 +64,10 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         onChange={onChange}
         onBlur={onBlur}
         slotProps={{
+          inputLabel:
+            type === 'date' || type === 'time' || type === 'datetime-local'
+              ? { shrink: true }
+              : undefined,
           formHelperText: reserveHelperSpace
             ? {
                 sx: {

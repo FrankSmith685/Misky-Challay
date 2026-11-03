@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useLiveRefresh } from '@services/realtime';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   AlertTriangle,
   ArrowLeft,
   Check,
   Clock3,
-  MapPin,
   RefreshCw,
   ShieldCheck,
   ShoppingBag,
@@ -29,14 +29,13 @@ import { getApiErrorMessage } from '@services/api/client';
 import { formatCurrency } from '@lib/format';
 import { ROUTES } from '@constants/routes';
 import { catalogApi } from '../services/catalog.service';
-import { NutritionPanel } from '../components/NutritionPanel';
 import { ProductCard } from '../components/ProductCard';
 import { AvailabilityAlertButton } from '../components/AvailabilityAlertButton';
 import { FavoriteButton } from '@features/favorites/components/FavoriteButton';
 import { ProductReviewsSection } from '@features/reviews/components/ProductReviewsSection';
 import type { Product, ProductDetail } from '../types';
 
-const BRAND = 'Verde Bowl';
+const BRAND = 'Misky Challay';
 
 /** Cambia una meta ya declarada en index.html y devuelve cómo dejarla como estaba. */
 const setMetaContent = (selector: string, value: string) => {
@@ -59,7 +58,7 @@ const toAbsoluteUrl = (src: string | null) => {
   }
 };
 
-/** Ficha de producto: precio, variantes, nutrición y disponibilidad contextual. */
+/** Ficha de producto: precio, variantes y disponibilidad contextual. */
 const ProductPage = () => {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
@@ -79,12 +78,16 @@ const ProductPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
+  const loadedSource = useRef('');
+  useLiveRefresh(['catalog', 'inventory', 'coverage'], () => setRetryNonce((value) => value + 1));
 
   useEffect(() => {
     if (!slug) return undefined;
     let active = true;
 
-    setIsLoading(true);
+    const source = `${slug}:${branchId}`;
+    const background = loadedSource.current === source;
+    if (!background) setIsLoading(true);
     setLoadError(null);
     catalogApi
       .getProduct(slug, branchId)
@@ -94,8 +97,9 @@ const ProductPage = () => {
         const preferred =
           detail.variants.find((variant) => variant.isDefault) ??
           detail.variants[0];
-        setVariantId(preferred?.id ?? null);
-        setQuantity(1);
+        setVariantId((current) => background && detail.variants.some((variant) => variant.id === current) ? current : preferred?.id ?? null);
+        if (!background) setQuantity(1);
+        loadedSource.current = source;
 
         try {
           const related = await catalogApi.getProducts({
@@ -113,8 +117,7 @@ const ProductPage = () => {
       })
       .catch((error) => {
         if (!active) return;
-        setProduct(null);
-        setRelatedProducts([]);
+        if (!background) { setProduct(null); setRelatedProducts([]); }
         setLoadError(getApiErrorMessage(error));
       })
       .finally(() => {
@@ -137,7 +140,7 @@ const ProductPage = () => {
     const title = `${product.name} | ${BRAND}`;
     const description =
       product.description?.trim() ||
-      `Pide ${product.name} en ${BRAND}: ingredientes reales, nutrición visible y entrega en tu zona.`;
+      `Pide ${product.name} en ${BRAND}: ingredientes reales y entrega en tu zona.`;
     const image = toAbsoluteUrl(product.imageUrl);
 
     document.title = title;
@@ -205,7 +208,7 @@ const ProductPage = () => {
     ? deliveryType === 'PICKUP'
       ? {
           icon: Store,
-          title: `Recojo en ${pickupBranch?.name ?? 'tienda seleccionada'}`,
+          title: `Recojo en ${pickupBranch?.name ?? 'taller seleccionado'}`,
           detail: pickupBranch?.addressLine ?? 'Disponibilidad validada para este local.',
         }
       : {
@@ -224,14 +227,13 @@ const ProductPage = () => {
         productId: product.id,
         variantId: variant.id,
         name: product.name,
-        variantName: variant.name,
+        variantName: variant.servingSize ? `${variant.name} · ${variant.servingSize} ${variant.servingUnit ?? 'porciones'}` : variant.name,
         imageUrl: product.imageUrl,
         quantity,
         unitPrice: variant.basePrice,
         extrasTotal: 0,
         lineTotal: total,
         selections: [],
-        nutrition: variant.nutrition,
       }),
     );
 
@@ -241,8 +243,8 @@ const ProductPage = () => {
 
   return (
     <>
-      <div className="bg-[linear-gradient(180deg,#f8f5f8_0%,#ffffff_52%)] pb-36 sm:pb-28 lg:pb-16">
-        <div className="mx-auto max-w-7xl px-4 pb-12 pt-7 sm:px-6 lg:px-8 lg:pt-9">
+      <div className="bg-surface-muted pb-36 sm:pb-28 lg:pb-16">
+        <div className="mx-auto max-w-8xl px-4 pb-12 pt-7 sm:px-6 lg:px-8 lg:pt-9">
           <Breadcrumbs
             items={[
               { label: 'Inicio', to: '/' },
@@ -278,7 +280,7 @@ const ProductPage = () => {
               <div className="mt-4 grid grid-cols-3 gap-2">
                 <ProductAssurance icon={Clock3} title="Pedido rápido" detail="Confirmación inmediata" />
                 <ProductAssurance icon={ShieldCheck} title="Precio claro" detail="Sin cargos ocultos" />
-                <ProductAssurance icon={Check} title="Datos reales" detail="Nutrición por tamaño" />
+                <ProductAssurance icon={Check} title="Datos reales" detail="Ingredientes seleccionados" />
               </div>
             </section>
 
@@ -317,24 +319,14 @@ const ProductPage = () => {
                 <TagList tags={product.dietaryTags} className="mt-4" />
               )}
 
-              <div
-                className={`mt-6 flex items-start gap-3 rounded-card border p-4 ${
-                  purchaseContext
-                    ? 'border-brand-200 bg-brand-50/70'
-                    : 'border-amber-200 bg-amber-50/70'
-                }`}
-              >
-                {purchaseContext ? (
-                  <purchaseContext.icon className="mt-0.5 size-5 shrink-0 text-brand-700" />
-                ) : (
-                  <MapPin className="mt-0.5 size-5 shrink-0 text-amber-700" />
-                )}
+              {purchaseContext && <div className="mt-6 flex items-start gap-3 rounded-card border border-brand-200 bg-brand-50/70 p-4">
+                <purchaseContext.icon className="mt-0.5 size-5 shrink-0 text-brand-700" />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-extrabold text-ink">
-                    {purchaseContext?.title ?? 'Confirma dónde recibirás tu pedido'}
+                    {purchaseContext.title}
                   </p>
                   <p className="mt-1 truncate text-xs text-ink-muted">
-                    {purchaseContext?.detail ?? 'Selecciona entrega o recojo para validar la disponibilidad exacta.'}
+                    {purchaseContext.detail}
                   </p>
                 </div>
                 <button
@@ -342,9 +334,9 @@ const ProductPage = () => {
                   onClick={openLocationModal}
                   className="shrink-0 rounded-field px-2 py-1 text-xs font-extrabold text-brand-700 transition-colors hover:bg-white"
                 >
-                  {purchaseContext ? 'Cambiar' : 'Elegir'}
+                  Cambiar
                 </button>
-              </div>
+              </div>}
 
               {product.variants.length > 0 && (
                 <section className="mt-7 border-t border-line pt-6" aria-labelledby="product-variant-heading">
@@ -371,27 +363,12 @@ const ProductPage = () => {
                       label: entry.name,
                       hint: (
                         <span className="mt-1 block">
+                          {entry.servingSize && <span className="mr-2 text-ink-muted">{entry.servingSize} {entry.servingUnit ?? 'porciones'}</span>}
                           <strong className="text-brand-700">{formatCurrency(entry.basePrice)}</strong>
-                          {entry.nutrition && ` · ${Math.round(entry.nutrition.calories)} kcal`}
                         </span>
                       ),
                     }))}
                   />
-                </section>
-              )}
-
-              {variant?.nutrition && (
-                <section className="mt-7 border-t border-line pt-6" aria-labelledby="product-nutrition-heading">
-                  <p className="text-xs font-extrabold uppercase tracking-[.14em] text-brand-700">
-                    2. Información nutricional
-                  </p>
-                  <div className="mt-1 flex items-end justify-between gap-3">
-                    <h2 id="product-nutrition-heading" className="text-xl font-black text-ink">
-                      Lo que contiene tu elección
-                    </h2>
-                    <span className="shrink-0 text-xs text-ink-muted">Por unidad</span>
-                  </div>
-                  <NutritionPanel nutrition={variant.nutrition} layout="comfortable" />
                 </section>
               )}
 
@@ -452,7 +429,7 @@ const ProductPage = () => {
 
         {relatedProducts.length > 0 && (
           <section className="border-t border-line bg-white py-12 sm:py-16" aria-labelledby="related-products-heading">
-            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="mx-auto max-w-8xl px-4 sm:px-6 lg:px-8">
               <p className="text-xs font-extrabold uppercase tracking-[.16em] text-brand-700">
                 También podría gustarte
               </p>

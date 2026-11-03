@@ -1,15 +1,19 @@
+import customerJourneyRoutes from '@modules/orders/customerJourney.routes';
+import experienceRoutes from '@modules/experiences/experience.routes';
 import { Router } from 'express';
 import { sequelize } from '@database/connection';
 import { ok } from '@shared/http/ApiResponse';
 import { asyncHandler } from '@shared/utils/asyncHandler';
 
 import authRoutes from '@modules/auth/auth.routes';
+import communicationsRoutes from '@modules/communications/communications.routes';
 import accountRoutes from '@modules/account/account.routes';
 import geoRoutes from '@modules/geo/geo.routes';
 import catalogRoutes from '@modules/catalog/catalog.routes';
 import customizationRoutes from '@modules/customization/customization.routes';
 import pricingRoutes from '@modules/pricing/pricing.routes';
 import plansRoutes from '@modules/plans/plans.routes';
+import subscriptionRoutes from '@modules/subscriptions/subscriptions.routes';
 import cartRoutes from '@modules/cart/cart.routes';
 import checkoutRoutes from '@modules/checkout/checkout.routes';
 import ordersRoutes from '@modules/orders/orders.routes';
@@ -22,8 +26,12 @@ import accessRoutes from '@modules/access/access.routes';
 import mediaRoutes from '@modules/media/media.routes';
 import complaintsRoutes from '@modules/complaints/complaints.routes';
 import settingsRoutes from '@modules/settings/settings.routes';
+import cakesRoutes from '@modules/cakes/cakes.routes';
+import cakeThemesRoutes from '@modules/cakes/cakeThemes.routes';
+import cakePreviewShareRoutes from '@modules/cakes/cakePreviewShare.routes';
 
 const router = Router();
+router.use('/experiences', experienceRoutes);
 
 /**
  * SONDAS DE SALUD
@@ -69,15 +77,18 @@ router.get(
 
 // Mapa de rutas (seccion 16.3 del analisis funcional)
 router.use('/auth', authRoutes);
+router.use('/communications', communicationsRoutes);
 router.use('/account', accountRoutes);
 router.use('/locations', geoRoutes);
 router.use('/catalog', catalogRoutes);
 router.use('/customizations', customizationRoutes);
 router.use('/pricing', pricingRoutes);
 router.use('/plans', plansRoutes);
+router.use('/subscriptions', subscriptionRoutes);
 router.use('/cart', cartRoutes);
 router.use('/checkout', checkoutRoutes);
 router.use('/orders', ordersRoutes);
+router.use('/customer', customerJourneyRoutes);
 router.use('/payments', paymentsRoutes);
 router.use('/operations', operationsRoutes);
 router.use('/delivery', deliveryRoutes);
@@ -87,5 +98,8 @@ router.use('/access', accessRoutes);
 router.use('/media', mediaRoutes);
 router.use('/complaints', complaintsRoutes);
 router.use('/settings', settingsRoutes);
+router.use('/cakes', cakesRoutes);
+router.use('/cake-previews', cakePreviewShareRoutes);
+router.use('/cake-themes', cakeThemesRoutes);
 
 export default router;

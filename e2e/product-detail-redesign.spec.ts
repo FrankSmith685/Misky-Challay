@@ -24,7 +24,7 @@ test.describe('Detalle de producto mejorado', () => {
     await expect(
       page.getByRole('heading', { level: 2, name: 'Lo que contiene tu elección' }),
     ).toBeVisible();
-    await expect(page.getByText('Confirma dónde recibirás tu pedido')).toBeVisible();
+    await expect(page.getByText('Confirma dónde recibirás tu pedido')).toHaveCount(0);
     await expect(page.getByRole('group', { name: 'Presentación' })).toBeVisible();
 
     await page.getByRole('button', { name: /Agregar al carrito/i }).click();

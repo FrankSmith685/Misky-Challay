@@ -1,8 +1,14 @@
+import { allergenLabel } from '@lib/allergens';
+import axios from 'axios';
+import { beginCheckoutAttempt, readCheckoutAttempt, forgetCheckoutAttempt, type CheckoutAttempt } from '../checkoutAttempt';
+import { useLiveRefresh } from '@services/realtime';
+import { useCheckoutTerms } from '@services/checkoutTerms';
+import { ExperienceCheckout } from '@features/experiences/ExperienceCheckout';
+import { describeCakeVisualDesign } from '@features/cakes/utils/cakeVisualDesign';
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
-  Banknote,
   CalendarClock,
   CheckCircle2,
   ChevronDown,
@@ -10,7 +16,6 @@ import {
   CreditCard,
   Loader2,
   MapPin,
-  Pencil,
   ReceiptText,
   Smartphone,
   RefreshCw,
@@ -22,10 +27,11 @@ import {
 } from 'lucide-react';
 import toast from '@components/mui/MuiToast';
 import { PageHeader } from '@components/common/PageHeader';
+import { PageLoader } from '@components/common/PageLoader';
 import { Button } from '@components/ui/Button';
 import { Input } from '@components/ui/Input';
 import { Textarea } from '@components/ui/Textarea';
-import { Select, SelectOption } from '@components/ui/Select';
+import { DeliverySlotCalendar } from '@features/geo/components/DeliverySlotCalendar';
 import { Checkbox } from '@components/ui/Checkbox';
 import { Chip } from '@components/ui/Chip';
 import { Card, CardDescription, CardTitle } from '@components/ui/Card';
@@ -37,19 +43,19 @@ import { Callout } from '@components/ui/Callout';
 import { CheckoutStepper } from '@components/ui/CheckoutStepper';
 import { FormGrid, FormSection, FormStack } from '@components/ui/FormSection';
 import { useAppDispatch, useAppSelector } from '@app/hooks';
-import { clearCart } from '@features/cart/cartSlice';
+import { consumePurchasedItems, updateItemQuantity } from '@features/cart/cartSlice';
 import { useAppState } from '@context/AppStateContext';
 import { getApiErrorMessage } from '@services/api/client';
-import { formatCurrency, formatDate } from '@lib/format';
+import { formatCurrency } from '@lib/format';
 import { cn } from '@lib/cn';
+import { whatsappNumber } from '@lib/whatsapp';
 import { isValidDni, isValidRuc } from '@lib/peruDocs';
 import { ROUTES } from '@constants/routes';
 import { geoApi } from '@features/geo/services/geo.service';
+import { getDeliveryReferenceError } from '@features/geo/utils/deliveryAddress';
 import type { Address, DeliverySlot } from '@features/geo/types';
 import { accountApi } from '@features/account/services/account.service';
-import { trackUxEvent } from '@services/analytics';
 import {
-  useCodSettings,
   useInvoicingSettings,
   useLocalPaymentSettings,
   useOnlinePaymentSettings,
@@ -58,10 +64,11 @@ import {
 import { checkoutApi } from '../services/checkout.service';
 import { rememberPendingOrder } from '../pendingOrder';
 import { PendingOrderBanner } from '../components/PendingOrderBanner';
+import { CheckoutDestinationPicker } from '../components/CheckoutDestinationPicker';
+import { CheckoutMinimumDialog } from '../components/CheckoutMinimumDialog';
 import { usePendingOrder } from '../usePendingOrder';
 import type { CheckoutInput, OrderQuote } from '../types';
 
-const IDEMPOTENCY_KEY_STORAGE = 'verde-bowl:checkout-idempotency:v1';
 const DRAFT_STORAGE = 'verde-bowl:checkout-draft:v1';
 /**
  * La facturacion NO viaja en el borrador: el borrador se borra al confirmar la
@@ -76,15 +83,24 @@ const BILLING_STORAGE = 'verde-bowl:checkout-billing:v1';
  * `!quote?.meetsMinimum || missingDestination` y, como sin destino la cotizacion ni
  * arranca, la barra movil se quedaba en "Calculando..." con el boton muerto.
  */
-type BlockReason = 'falta_direccion' | 'falta_local' | 'bajo_minimo' | 'error_cotizacion';
+type BlockReason = 'falta_experiencia' | 'falta_direccion' | 'falta_local' | 'referencia_invalida' | 'falta_horario' | 'bajo_minimo' | 'error_cotizacion' | 'falta_pago';
 
 interface BlockAction {
   /** Lo que se lee en la barra fija en lugar del importe. */
   value: string;
   /** Etiqueta corta del boton: la barra fija mide 360 px en el peor caso. */
   label: string;
+  /** Acción explícita en el resumen lateral, donde hay más espacio. */
+  desktopLabel?: string;
   icon: ReactNode;
   run: () => void;
+}
+
+interface QuoteState {
+  inputKey: string;
+  value: OrderQuote | null;
+  error: string | null;
+  loading: boolean;
 }
 
 /**
@@ -97,6 +113,11 @@ const CheckoutPage = () => {
   const dispatch = useAppDispatch();
   const { items } = useAppSelector((state) => state.cart);
   const user = useAppSelector((state) => state.auth.user);
+  const { terms, error: termsLoadError, refresh: refreshTerms } = useCheckoutTerms();
+  const [consent, setConsent] = useState<{ version: number; userId: number } | null>(null);
+  const [termsIssue, setTermsIssue] = useState('');
+  const termsAccepted = Boolean(terms && consent?.version === terms.version && consent?.userId === user?.id);
+  useEffect(() => { setConsent(null); setTermsIssue(''); }, [user?.id]);
   const {
     address,
     branchId,
@@ -104,22 +125,22 @@ const CheckoutPage = () => {
     deliveryType,
     setDeliveryType,
     selectDelivery,
+    selectPickup,
+    setAddress,
+    setBranch,
     openLocationModal,
   } = useAppState();
-  const cod = useCodSettings();
   const invoicing = useInvoicingSettings();
   const localPayments = useLocalPaymentSettings();
   const onlinePayments = useOnlinePaymentSettings();
   const receipts = useReceiptSettings();
-  const { pending, dismiss: dismissPending } = usePendingOrder();
+  const { pending, isChecking: isCheckingPending, dismiss: dismissPending, recoveryError, retryRecovery } = usePendingOrder();
 
+  const [experience, setExperience] = useState<CheckoutInput['experience']>();
   const [couponInput, setCouponInput] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
   const [useWallet, setUseWallet] = useState(true);
-  // Como paga: online (tarjeta) o en efectivo al recibir.
-  const [paymentMethod, setPaymentMethod] = useState<'ONLINE' | 'CASH' | 'YAPE' | 'PLIN'>('ONLINE');
-  const [operationCode, setOperationCode] = useState('');
-  const [payerPhone, setPayerPhone] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'ONLINE' | 'YAPE' | 'PLIN'>('ONLINE');
   // Comprobante: boleta (por defecto) o factura con RUC.
   const [documentType, setDocumentType] = useState<'BOLETA' | 'FACTURA'>('BOLETA');
   const [ruc, setRuc] = useState('');
@@ -131,6 +152,29 @@ const CheckoutPage = () => {
   const [serviceMode, setServiceMode] = useState<'ASAP' | 'SCHEDULED'>('ASAP');
   const [slotId, setSlotId] = useState<number | null>(null);
   const [slots, setSlots] = useState<DeliverySlot[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [slotsReason, setSlotsReason] = useState('');
+  const [slotsError, setSlotsError] = useState(false);
+  const [slotsRetry, setSlotsRetry] = useState(0);
+  const [serverSchedule, setServerSchedule] = useState<{ key: string; requiresScheduledDelivery: boolean; minimumLeadHours: number; isOpenNow: boolean; deliveryVehicleType?: 'CAR' | null } | null>(null);
+  // No trasladar las restricciones de otra dirección, sede o producto al pedido actual.
+  const scheduleKey = JSON.stringify({
+    items: items.map((item) => [item.productId, item.theme?.id, item.designQuoteId]),
+    experience: experience?.packageId, deliveryType, branchId, latitude: address?.latitude, longitude: address?.longitude,
+  });
+  const currentSchedule = serverSchedule?.key === scheduleKey ? serverSchedule : null;
+  const branchClosed = currentSchedule?.isOpenNow === false;
+  const preferredCakeSlotId = items.find((item) => item.preferredSlotId)?.preferredSlotId;
+  const hasCake = Boolean(experience) || Boolean(currentSchedule?.requiresScheduledDelivery) || items.some((item) => item.requiresScheduledDelivery || item.preferredSlotId || item.designQuoteId);
+  const needsCar = currentSchedule?.deliveryVehicleType === 'CAR' || items.some((item) => item.requiresCarDelivery);
+  const minimumLeadHours = Math.max(currentSchedule?.minimumLeadHours ?? 0, ...items.map((item) => item.minLeadHours ?? 0));
+
+  useEffect(() => {
+    if (hasCake || branchClosed) {
+      setServiceMode('SCHEDULED');
+      if (preferredCakeSlotId) setSlotId(preferredCakeSlotId);
+    }
+  }, [hasCake, branchClosed, preferredCakeSlotId]);
   /*
    * El contacto sale del perfil, no en blanco: quien acaba de registrarse ya dio
    * su nombre y su telefono, y volver a pedirselos aqui parece que la cuenta no
@@ -138,16 +182,21 @@ const CheckoutPage = () => {
    * para la cuenta—, asi que cambiarlo aqui no toca su perfil.
    */
   const profileName = [user?.firstName, user?.lastName].filter(Boolean).join(' ');
+  const accountWhatsAppAvailable = Boolean(whatsappNumber(user?.phone));
   const [contactName, setContactName] = useState(profileName);
   const [contactPhone, setContactPhone] = useState(user?.phone ?? '');
+  const [isGift, setIsGift] = useState(false);
+  const [gift, setGift] = useState({ recipientName: '', recipientPhone: '', hidePrices: true, message: '' });
+  const [whatsappOptIn, setWhatsappOptIn] = useState(false);
   const [kitchenNotes, setKitchenNotes] = useState('');
   const [deliveryNotes, setDeliveryNotes] = useState('');
   const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
+  const deliveryReferenceError = deliveryType === 'DELIVERY' && address ? getDeliveryReferenceError(address) : undefined;
 
-  const [quote, setQuote] = useState<OrderQuote | null>(null);
-  const [quoteError, setQuoteError] = useState<string | null>(null);
-  const [isQuoting, setIsQuoting] = useState(false);
+  const [quoteState, setQuoteState] = useState<QuoteState | null>(null);
   const [isPaying, setIsPaying] = useState(false);
+  const isRedirecting = useRef(false);
+  const [minimumDialog, setMinimumDialog] = useState<{ minimumOrder: number } | null>(null);
   const [contactErrors, setContactErrors] = useState<{ name?: string; phone?: string }>({});
   /*
    * Permite relanzar la cotizacion sin que cambie la entrada. `quoteInput` ignora
@@ -165,7 +214,7 @@ const CheckoutPage = () => {
    * Ultima cotizacion valida. El fallo de red ya no vacia el resumen: sin esto un 500
    * puntual borraba desglose, ETA y medio de pago y dejaba el CTA sin nada que decir.
    */
-  const lastValidQuoteRef = useRef<OrderQuote | null>(null);
+  const lastValidQuoteRef = useRef<{ inputKey: string; value: OrderQuote } | null>(null);
   // Para llevar el foco al primer campo invalido, no solo hacer scroll a su seccion.
   const contactNameRef = useRef<HTMLInputElement>(null);
   const contactPhoneRef = useRef<HTMLInputElement>(null);
@@ -180,18 +229,20 @@ const CheckoutPage = () => {
         serviceMode?: 'ASAP' | 'SCHEDULED'; slotId?: number | null;
         contactName?: string; contactPhone?: string; kitchenNotes?: string; deliveryNotes?: string;
         paymentMethod?: 'ONLINE' | 'CASH' | 'YAPE' | 'PLIN';
+        experience?: CheckoutInput['experience'];
       } | null;
       if (!draft) return;
       setCouponInput(draft.couponInput ?? '');
       setAppliedCoupon(draft.appliedCoupon ?? null);
       setUseWallet(draft.useWallet ?? true);
-      setServiceMode(draft.serviceMode === 'SCHEDULED' ? 'SCHEDULED' : 'ASAP');
-      setSlotId(draft.slotId ?? null);
+      setServiceMode(hasCake || draft.serviceMode === 'SCHEDULED' ? 'SCHEDULED' : 'ASAP');
+      setSlotId(preferredCakeSlotId ?? draft.slotId ?? null);
       setContactName(draft.contactName || profileName);
       setContactPhone(draft.contactPhone || (user?.phone ?? ''));
       setKitchenNotes(draft.kitchenNotes ?? '');
       setDeliveryNotes(draft.deliveryNotes ?? '');
-      setPaymentMethod(['CASH', 'YAPE', 'PLIN'].includes(draft.paymentMethod ?? '') ? draft.paymentMethod! : 'ONLINE');
+      setExperience(draft.experience);
+      setPaymentMethod(draft.paymentMethod === 'YAPE' || draft.paymentMethod === 'PLIN' ? draft.paymentMethod : 'ONLINE');
     } catch {
       localStorage.removeItem(DRAFT_STORAGE);
     }
@@ -230,11 +281,11 @@ const CheckoutPage = () => {
     const timer = window.setTimeout(() => {
       localStorage.setItem(DRAFT_STORAGE, JSON.stringify({
         couponInput, appliedCoupon, useWallet, serviceMode, slotId, contactName, contactPhone, kitchenNotes, deliveryNotes,
-        paymentMethod,
+        paymentMethod, experience,
       }));
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [couponInput, appliedCoupon, useWallet, serviceMode, slotId, contactName, contactPhone, kitchenNotes, deliveryNotes, paymentMethod]);
+  }, [couponInput, appliedCoupon, useWallet, serviceMode, slotId, contactName, contactPhone, kitchenNotes, deliveryNotes, paymentMethod, experience]);
 
   useEffect(() => {
     if (!user) return;
@@ -252,11 +303,15 @@ const CheckoutPage = () => {
   }, [user]);
 
   const chooseSavedAddress = async (saved: Address) => {
+    if (saved.latitude == null || saved.longitude == null) {
+      toast.error('Esta dirección no tiene un punto exacto. Búscala de nuevo o márcala en el mapa para calcular el delivery.');
+      return;
+    }
     try {
       const coverage = await geoApi.checkCoverage({
         districtId: saved.districtId ?? undefined,
-        latitude: saved.latitude == null ? undefined : Number(saved.latitude),
-        longitude: saved.longitude == null ? undefined : Number(saved.longitude),
+        latitude: Number(saved.latitude),
+        longitude: Number(saved.longitude),
       });
       if (!coverage.covered || !coverage.branch) throw new Error(coverage.reason ?? 'Esta dirección no tiene cobertura');
       selectDelivery({
@@ -271,26 +326,7 @@ const CheckoutPage = () => {
     }
   };
 
-  /** Clave de idempotencia: una por intento de compra (RN-015). */
-  /**
-   * Clave de idempotencia estable mientras dure el intento de compra. Vive en
-   * sessionStorage para que recargar la pagina o volver de la pasarela reutilice la
-   * misma clave: el backend devuelve el pedido ya creado en vez de crear otro.
-   * Solo se renueva cuando el intento falla de verdad.
-   */
-  const [idempotencyKey, setIdempotencyKey] = useState(() => {
-    const stored = sessionStorage.getItem(IDEMPOTENCY_KEY_STORAGE);
-    if (stored) return stored;
-    const fresh = crypto.randomUUID();
-    sessionStorage.setItem(IDEMPOTENCY_KEY_STORAGE, fresh);
-    return fresh;
-  });
-
-  const renewIdempotencyKey = () => {
-    const fresh = crypto.randomUUID();
-    sessionStorage.setItem(IDEMPOTENCY_KEY_STORAGE, fresh);
-    setIdempotencyKey(fresh);
-  };
+  const [purchaseAttempt, setPurchaseAttempt] = useState(() => readCheckoutAttempt(user?.id));
 
   /**
    * Entrada de la COTIZACION: solo lo que puede cambiar el precio.
@@ -298,6 +334,19 @@ const CheckoutPage = () => {
    * disparaba un POST /checkout/quote por cada tecla escrita, y cada quote recotiza
    * items, cupones, cobertura y saldo.
    */
+  const addressLabel = address?.label;
+  const addressLine1 = address?.line1;
+  const addressDistrictId = address?.districtId;
+  const addressLatitude = address?.latitude;
+  const addressLongitude = address?.longitude;
+  const quoteAddress = useMemo(() => addressLine1 ? {
+    label: addressLabel,
+    line1: addressLine1,
+    districtId: addressDistrictId,
+    latitude: addressLatitude,
+    longitude: addressLongitude,
+  } : null, [addressLabel, addressLine1, addressDistrictId, addressLatitude, addressLongitude]);
+
   const quoteInput = useMemo<CheckoutInput | null>(() => {
     if (items.length === 0) return null;
 
@@ -305,115 +354,142 @@ const CheckoutPage = () => {
       items: items.map((item) => ({
         productId: item.productId,
         variantId: item.variantId,
+        requestedServings: item.requestedServings,
         quantity: item.quantity,
+        designQuoteId: item.designQuoteId,
+        themeId: item.theme?.id,
+        themeVersion: item.theme?.version,
+        specialInstructions: [item.specialInstructions, describeCakeVisualDesign(item.cakeVisualDesign, Boolean(item.referenceDataUrl))].filter(Boolean).join('\n') || undefined,
         selections: item.selections.map((selection) => ({
           optionId: selection.optionId,
           quantity: selection.quantity,
         })),
       })),
+      experience,
       deliveryType,
-      serviceMode,
-      deliverySlotId: serviceMode === 'SCHEDULED' ? (slotId ?? undefined) : undefined,
+      serviceMode: hasCake ? 'SCHEDULED' : serviceMode,
+      deliverySlotId: hasCake || serviceMode === 'SCHEDULED' ? (slotId ?? undefined) : undefined,
       couponCode: appliedCoupon ?? undefined,
       useWallet,
     };
 
     if (deliveryType === 'DELIVERY') {
-      if (!address) return null;
-      base.address = {
-        label: address.label,
-        line1: address.line1,
-        reference: address.reference,
-        districtId: address.districtId,
-        latitude: address.latitude,
-        longitude: address.longitude,
-      };
+      if (!quoteAddress || !branchId) return null;
+      base.address = quoteAddress;
     } else {
       if (!branchId || pickupBranch?.id !== branchId) return null;
       base.branchId = branchId;
     }
 
     return base;
-  }, [items, deliveryType, serviceMode, slotId, address, branchId, pickupBranch, appliedCoupon, useWallet]);
+  }, [items, hasCake, deliveryType, serviceMode, slotId, quoteAddress, branchId, pickupBranch, appliedCoupon, useWallet, experience]);
+
+  // Los precios pertenecen a una entrada concreta: nunca se reutiliza la tarifa
+  // de otra dirección, modalidad o cantidad mientras llega la nueva respuesta.
+  const quoteInputKey = quoteInput ? JSON.stringify(quoteInput) : '';
+  const currentQuoteState = quoteState?.inputKey === quoteInputKey ? quoteState : null;
+  const quote = currentQuoteState?.value ?? null;
+  const quoteError = currentQuoteState?.error ?? null;
+  const isQuoting = Boolean(quoteInput && (!currentQuoteState || currentQuoteState.loading));
+  const schedulePending = ((hasCake || branchClosed || serviceMode === 'SCHEDULED') && !slotId) || Boolean(quote?.schedulePending);
 
   /** Carga util del pedido: la cotizacion mas los datos que no afectan al precio. */
   const buildPlaceInput = (): CheckoutInput | null => {
-    if (!quoteInput) return null;
+    if (!quoteInput || deliveryReferenceError || schedulePending || (experience && experience.brief.trim().length < 10)) return null;
     const notes = [
       kitchenNotes.trim() ? `COCINA: ${kitchenNotes.trim()}` : '',
-      deliveryNotes.trim() ? `REPARTO: ${deliveryNotes.trim()}` : '',
+      deliveryType === 'DELIVERY' && deliveryNotes.trim() ? `REPARTO: ${deliveryNotes.trim()}` : '',
     ]
       .filter(Boolean)
       .join('\n');
 
     return {
       ...quoteInput,
+      ...(quoteInput.address && address ? {
+        address: { ...quoteInput.address, reference: address.reference?.trim() || undefined, hasHouseNumber: address.hasHouseNumber },
+      } : {}),
+      items: quoteInput.items.map((entry, index) => ({ ...entry, referenceDataUrl: items[index]?.referenceDataUrl, aiProposalDataUrl: items[index]?.cakeAiProposal?.dataUrl ?? items[index]?.archivedAiProposalDataUrl, designDetails: items[index]?.designDetails })),
       contactName: contactName || undefined,
       contactPhone: contactPhone || undefined,
+      whatsappOptIn,
+      gift: isGift ? gift : undefined,
+      termsAccepted,
+      termsVersion: terms?.version,
       notes: notes || undefined,
       paymentMethod,
-      ...((paymentMethod === 'YAPE' || paymentMethod === 'PLIN') ? {
-        mobilePayment: { operationCode: operationCode.trim(), payerPhone: payerPhone.trim() || undefined },
-      } : {}),
       billing:
-        documentType === 'FACTURA'
-          ? {
-              documentType: 'FACTURA',
-              docNumber: ruc.trim(),
-              name: razonSocial.trim(),
-              address: fiscalAddress.trim() || undefined,
-            }
-          : {
-              documentType: 'BOLETA',
-              // Solo se manda el DNI cuando el umbral lo exige y el campo esta visible:
-              // asi un DNI a medias de un total anterior no viaja escondido.
-              docNumber: boletaNeedsDni ? boletaDni.trim() || undefined : undefined,
-            },
+        receipts.mode === 'INTERNAL_ONLY'
+          ? undefined
+          : documentType === 'FACTURA'
+            ? {
+                documentType: 'FACTURA',
+                docNumber: ruc.trim(),
+                name: razonSocial.trim(),
+                address: fiscalAddress.trim() || undefined,
+              }
+            : {
+                documentType: 'BOLETA',
+                // Solo se manda el DNI cuando el umbral lo exige y el campo esta visible:
+                // asi un DNI a medias de un total anterior no viaja escondido.
+                docNumber: boletaNeedsDni ? boletaDni.trim() || undefined : undefined,
+              },
     };
   };
 
+  const availabilityKey = quoteInput ? JSON.stringify({ ...quoteInput, deliverySlotId: undefined, serviceMode: 'ASAP', couponCode: undefined, useWallet: false }) : '';
+  useLiveRefresh(['availability', 'coverage', 'production', 'inventory', 'delivery', 'catalog'], () => setSlotsRetry((value) => value + 1), { enabled: serviceMode === 'SCHEDULED' });
+
   /** Franjas de la sucursal, para los pedidos programados (RN-004). */
   useEffect(() => {
-    if (!branchId || serviceMode !== 'SCHEDULED') return;
+    setSlots([]);
+    setSlotsError(false);
+    if (!branchId || serviceMode !== 'SCHEDULED' || !availabilityKey) { setSlotsLoading(false); setSlotId(null); return; }
+    let active = true;
+    setSlotsLoading(true);
 
-    geoApi
-      .getSlots(branchId)
-      .then((available) => {
-        setSlots(available);
-        if (available.length > 0) setSlotId((current) => current ?? available[0].id);
+    checkoutApi
+      .availability(JSON.parse(availabilityKey) as CheckoutInput)
+      .then((response) => {
+        const available = response.slots;
+        if (!active) return;
+        const valid = available.filter((slot) => slot.available > 0 && new Date(slot.startsAt).getTime() >= Date.now() + minimumLeadHours * 3_600_000);
+        setSlots(valid);
+        setSlotsReason(response.reasons.map((reason) => reason.message).join(' '));
+        setSlotsLoading(false);
+        setSlotId((current) => valid.some((slot) => slot.id === current) ? current : valid.some((slot) => slot.id === preferredCakeSlotId) ? preferredCakeSlotId ?? null : null);
       })
-      .catch(() => setSlots([]));
-  }, [branchId, serviceMode]);
+      .catch(() => { if (active) { setSlots([]); setSlotsLoading(false); setSlotsError(true); setSlotId(null); } });
+    return () => { active = false; };
+  }, [branchId, serviceMode, preferredCakeSlotId, minimumLeadHours, slotsRetry, availabilityKey]);
 
   useEffect(() => {
-    if (!quoteInput) return;
+    if (lastValidQuoteRef.current?.inputKey !== quoteInputKey) {
+      lastValidQuoteRef.current = null;
+    }
+    if (!quoteInput) { setQuoteState(null); return; }
 
     let cancelled = false;
-    setIsQuoting(true);
+    setQuoteState({ inputKey: quoteInputKey, value: lastValidQuoteRef.current?.value ?? null, error: null, loading: true });
 
     checkoutApi
       .quote(quoteInput)
       .then((result) => {
         if (cancelled) return;
-        lastValidQuoteRef.current = result;
-        setQuote(result);
-        setQuoteError(null);
+        setServerSchedule({ key: scheduleKey, requiresScheduledDelivery: Boolean(result.requiresScheduledDelivery), minimumLeadHours: result.minimumLeadHours ?? 0, isOpenNow: result.isOpenNow, deliveryVehicleType: result.deliveryVehicleType });
+        lastValidQuoteRef.current = { inputKey: quoteInputKey, value: result };
+        setQuoteState({ inputKey: quoteInputKey, value: result, error: null, loading: false });
       })
       .catch((error) => {
         if (cancelled) return;
         // El fallo se degrada a banner: se mantiene el ultimo desglose bueno para que
         // el cliente conserve importes, ETA y medio de pago mientras reintenta.
-        setQuote(lastValidQuoteRef.current);
-        setQuoteError(getApiErrorMessage(error));
-      })
-      .finally(() => {
-        if (!cancelled) setIsQuoting(false);
+        setQuoteState({ inputKey: quoteInputKey, value: lastValidQuoteRef.current?.value ?? null, error: getApiErrorMessage(error), loading: false });
       });
 
     return () => {
       cancelled = true;
     };
-  }, [quoteInput, quoteNonce]);
+  }, [quoteInput, quoteInputKey, quoteNonce, scheduleKey]);
 
   // El comprobante se emite por el valor total de la venta (el saldo es un medio de
   // pago, no un descuento): esto es lo que compara SUNAT contra el umbral.
@@ -422,30 +498,33 @@ const CheckoutPage = () => {
   const boletaNeedsDni =
     receipts.mode !== 'INTERNAL_ONLY' && documentType === 'BOLETA' && invoiceTotal >= invoicing.boletaDniThreshold;
 
-  // El efectivo se ofrece si esta activo y el total a cobrar no supera el tope.
-  const codAvailable =
-    cod.enabled && quote != null && quote.grandTotal > 0 && quote.grandTotal <= cod.maxAmount;
+  const onlineLabel = onlinePayments.onlineProvider === 'mercadopago' ? 'Mercado Pago' : 'Pago en línea';
+  const paymentMethodAvailable = paymentMethod === 'ONLINE' ? onlinePayments.onlineEnabled
+    : paymentMethod === 'YAPE' ? localPayments.yapeEnabled : localPayments.plinEnabled;
+  const depositPlan = quote?.paymentPlan === 'DEPOSIT_BALANCE';
   /*
    * Si el medio elegido deja de estar disponible se cae al primero que si lo
    * este. Antes se caia siempre a tarjeta, que sin pasarela configurada no se
    * ofrece: el cliente quedaba con un medio invisible seleccionado.
    */
   useEffect(() => {
-    const available: Array<'ONLINE' | 'CASH' | 'YAPE' | 'PLIN'> = [
-      ...(onlinePayments.onlineEnabled ? (['ONLINE'] as const) : []),
-      ...(codAvailable ? (['CASH'] as const) : []),
-      ...(localPayments.yapeEnabled ? (['YAPE'] as const) : []),
-      ...(localPayments.plinEnabled ? (['PLIN'] as const) : []),
-    ];
+    if (!quote || isQuoting) return;
+    const available: Array<'ONLINE' | 'YAPE' | 'PLIN'> = [
+          ...(onlinePayments.onlineEnabled ? (['ONLINE'] as const) : []),
+          ...(localPayments.yapeEnabled ? (['YAPE'] as const) : []),
+          ...(localPayments.plinEnabled ? (['PLIN'] as const) : []),
+        ];
     if (available.length > 0 && !available.includes(paymentMethod)) {
       setPaymentMethod(available[0]);
     }
   }, [
-    codAvailable,
     localPayments.plinEnabled,
     localPayments.yapeEnabled,
     onlinePayments.onlineEnabled,
     paymentMethod,
+    depositPlan,
+    quote,
+    isQuoting,
   ]);
 
   /*
@@ -469,6 +548,8 @@ const CheckoutPage = () => {
   }, [summarySeen, quote]);
 
   if (items.length === 0) {
+    if (isCheckingPending || isPaying || isRedirecting.current) return <PageLoader />;
+    if (!pending) return <Navigate to={ROUTES.cart} replace />;
     /*
      * Es la pantalla a la que vuelve quien pulsa "atras" en la pasarela: el pedido
      * ya se creo y el carrito se vacio al crearlo. Sin el aviso, esto se leia como
@@ -476,14 +557,12 @@ const CheckoutPage = () => {
      */
     return (
       <div className="mx-auto max-w-3xl px-4 py-16">
-        <PendingOrderBanner pending={pending} onResolved={dismissPending} />
+        <PendingOrderBanner pending={pending} onResolved={dismissPending} recoveryError={recoveryError} onRetry={retryRecovery} />
         <div className="grid justify-items-center gap-4 text-center">
           <p className="text-ink-muted">
-            {pending
-              ? 'No hay nada más que pagar aquí: tus productos están en el pedido de arriba.'
-              : 'Tu carrito está vacío.'}
+            No hay nada más que pagar aquí: tus productos están en el pedido de arriba.
           </p>
-          <Button variant={pending ? 'outline' : 'primary'} onClick={() => navigate(ROUTES.menu)}>
+          <Button variant="outline" onClick={() => navigate(ROUTES.menu)}>
             Ver el menú
           </Button>
         </div>
@@ -508,13 +587,19 @@ const CheckoutPage = () => {
   const handleRemoveCoupon = () => {
     setCouponInput('');
     setAppliedCoupon(null);
-    setQuoteError(null);
     retryQuote();
   };
 
   const handlePay = async () => {
+    if (purchaseAttempt) { await submitPurchase(purchaseAttempt); return; }
+    if (!terms || termsLoadError || !termsAccepted) {
+      setTermsIssue(termsLoadError ? 'No pudimos cargar las condiciones. Reintenta para continuar.' : 'Acepta los términos y condiciones antes de confirmar el pedido.');
+      document.getElementById('checkout-terms')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      document.getElementById('checkout-terms-checkbox')?.focus({ preventScroll: true });
+      return;
+    }
     const placeInput = buildPlaceInput();
-    if (!placeInput || !quote?.meetsMinimum) return;
+    if (isPaying || isQuoting || quoteError || !placeInput || !quote?.meetsMinimum || (quote.grandTotal > 0 && !paymentMethodAvailable)) return;
 
     const errors = {
       ...(contactName.trim().length < 2 ? { name: 'Escribe el nombre de quien recibirá el pedido.' } : {}),
@@ -553,81 +638,78 @@ const CheckoutPage = () => {
       return;
     }
 
-    if ((paymentMethod === 'YAPE' || paymentMethod === 'PLIN') && !/^[A-Za-z0-9-]{6,24}$/.test(operationCode.trim())) {
-      toast.error('Ingresa el código de operación que aparece en tu aplicativo');
-      document.getElementById('checkout-payment')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      return;
-    }
 
-    setIsPaying(true);
-    void trackUxEvent('CHECKOUT_START', { deliveryType, itemCount: items.length, total: quote.grandTotal });
     try {
-      const order = await checkoutApi.place(placeInput, idempotencyKey);
-
-      // El pedido YA existe en el backend: el carrito se vacia aqui, no en la pantalla
-      // de retorno. Esperar a la confirmacion dejaba el carrito intacto si el cliente
-      // cerraba la pestana en la pasarela; al volver pagaba lo mismo otra vez y, como
-      // la clave de idempotencia se regeneraba, el backend creaba un segundo pedido real.
-      dispatch(clearCart());
-      // Solo el borrador: la facturacion vive en su propia clave justo para no morir aqui.
-      localStorage.removeItem(DRAFT_STORAGE);
-      // El pedido ya nacio: la proxima compra debe estrenar clave, o reutilizariamos
-      // esta y el backend devolveria el pedido anterior en lugar de crear el nuevo.
-      sessionStorage.removeItem(IDEMPOTENCY_KEY_STORAGE);
-
-      // El saldo cubrio todo: el backend ya confirmo el pedido, no hay nada que cobrar.
-      if (!order.checkoutUrl) {
-        if (order.provider === 'yape' || order.provider === 'plin') rememberPendingOrder(order.orderNumber);
-        navigate(`${ROUTES.checkoutSuccess}?pedido=${order.orderNumber}`);
-        return;
-      }
-
-      // Se deja anotado ANTES de salir de la app: si el cliente cierra la pestana
-      // o pulsa atras en la pasarela, es lo unico que permite volver a ofrecerle
-      // este pedido en vez de dejarlo invisible con el carrito ya vacio.
-      rememberPendingOrder(order.orderNumber);
-
-      // Stripe (o el simulador) cobra en su propia pagina: aqui no toca ninguna tarjeta.
-      void trackUxEvent('PAYMENT_REDIRECT', { provider: order.provider ?? 'unknown', total: order.grandTotal });
-      window.location.href = order.checkoutUrl;
-    } catch (error) {
-      const message = getApiErrorMessage(error);
-      void trackUxEvent('CHECKOUT_ERROR', { message: message.slice(0, 120), deliveryType });
-      toast.error(message);
-      // Si el pedido no se creo, el siguiente intento necesita una clave nueva.
-      renewIdempotencyKey();
-    } finally {
-      setIsPaying(false);
-    }
+      if (!user) return;
+      const attempt = beginCheckoutAttempt(user.id, placeInput, items);
+      setPurchaseAttempt(attempt);
+      await submitPurchase(attempt);
+    } catch (error) { toast.error(getApiErrorMessage(error)); }
   };
 
+  async function submitPurchase(attempt: CheckoutAttempt) {
+    if (isPaying || attempt.userId !== user?.id) return;
+    setIsPaying(true);
+    try {
+      const order = await checkoutApi.place(attempt.input, attempt.key);
+      isRedirecting.current = true;
+      dispatch(consumePurchasedItems(attempt.items));
+      forgetCheckoutAttempt(); setPurchaseAttempt(null);
+      localStorage.removeItem(DRAFT_STORAGE);
+      if (order.status === 'PENDING_PAYMENT') rememberPendingOrder(order.orderNumber);
+      if (order.checkoutUrl && order.status === 'PENDING_PAYMENT') window.location.assign(order.checkoutUrl);
+      else navigate(`${ROUTES.checkoutSuccess}?pedido=${order.orderNumber}`);
+    } catch (error) {
+      isRedirecting.current = false;
+      // A transport error or a 5xx can arrive after COMMIT: keep the frozen purchase.
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      const code = axios.isAxiosError(error) ? error.response?.data?.code : undefined;
+      if (status && status >= 400 && status < 500 && ![408, 409, 429].includes(status) || code === 'TERMS_CHANGED') {
+        forgetCheckoutAttempt(); setPurchaseAttempt(null);
+      }
+      void refreshTerms();
+      toast.error(getApiErrorMessage(error));
+    } finally { setIsPaying(false); }
+  }
+
   const missingDestination =
-    (deliveryType === 'DELIVERY' && !address)
+    (deliveryType === 'DELIVERY' && (!address || !branchId))
     || (deliveryType === 'PICKUP' && (!branchId || pickupBranch?.id !== branchId));
-  const payingCash = paymentMethod === 'CASH' && codAvailable;
   const payingMobile = paymentMethod === 'YAPE' || paymentMethod === 'PLIN';
   const selectedLocal = paymentMethod === 'YAPE'
     ? { name: 'Yape', phone: localPayments.yapePhone, recipient: localPayments.yapeRecipient, qr: localPayments.yapeQrImageUrl }
     : { name: 'Plin', phone: localPayments.plinPhone, recipient: localPayments.plinRecipient, qr: localPayments.plinQrImageUrl };
 
   const itemCount = items.reduce((total, item) => total + item.quantity, 0);
-  const missingForMinimum = quote ? Math.max(0, quote.minimumOrder - quote.subtotal) : 0;
+  const missingForMinimum = quote ? Math.max(0, quote.minimumOrder - (quote.productSubtotal ?? quote.subtotal)) : 0;
   /** Primera cotizacion en vuelo: todavia no hay ningun importe que ensenar. */
   const isFirstQuote = isQuoting && !quote;
+  const updateCheckoutQuantity = (id: string, quantity: number) => {
+    const item = items.find((entry) => entry.id === id);
+    if (!item || item.designQuoteId || !Number.isInteger(quantity) || quantity < 1 || quantity > 20 || quantity === item.quantity || isPaying || isQuoting) return;
+    // La cantidad cambió: el importe anterior deja de servir para confirmar.
+    setQuoteState(null);
+    setSummarySeen(false);
+    dispatch(updateItemQuantity({ id, quantity }));
+  };
 
   const blockReason: BlockReason | null = missingDestination
     ? deliveryType === 'DELIVERY'
       ? 'falta_direccion'
       : 'falta_local'
+    : deliveryReferenceError
+      ? 'referencia_invalida'
     : quoteError
       ? 'error_cotizacion'
+    : schedulePending
+      ? 'falta_horario'
       : !quote
         ? isFirstQuote
           ? null
           : 'error_cotizacion'
         : !quote.meetsMinimum
           ? 'bajo_minimo'
-          : null;
+          : experience && experience.brief.trim().length < 10 ? 'falta_experiencia' : quote.grandTotal > 0 && !paymentMethodAvailable ? 'falta_pago' : null;
 
   const scrollToSection = (id: string) => {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -641,27 +723,54 @@ const CheckoutPage = () => {
     ? {
         falta_direccion: {
           value: 'Falta tu dirección',
-          label: 'Elegir',
+          label: 'Dirección',
+          desktopLabel: 'Ir a dirección',
           icon: <MapPin className="size-4" />,
-          run: openLocationModal,
+          run: () => scrollToSection('checkout-destination'),
         },
         falta_local: {
           value: 'Falta elegir local',
-          label: 'Elegir',
+          label: 'Local',
+          desktopLabel: 'Ir a locales',
           icon: <Store className="size-4" />,
-          run: openLocationModal,
+          run: () => scrollToSection('checkout-destination'),
+        },
+        falta_horario: {
+          value: 'Falta elegir horario',
+          label: 'Elegir',
+          desktopLabel: 'Elegir horario',
+          icon: <CalendarClock className="size-4" />,
+          run: () => scrollToSection('checkout-schedule'),
+        },
+        referencia_invalida: {
+          value: 'Revisa la referencia',
+          label: 'Referencia',
+          desktopLabel: 'Revisar referencia',
+          icon: <MapPin className="size-4" />,
+          run: () => {
+            scrollToSection('checkout-destination');
+            document.getElementById('checkout-address-reference')?.focus({ preventScroll: true });
+          },
         },
         bajo_minimo: {
           value: `Te faltan ${formatCurrency(missingForMinimum)}`,
-          label: 'Agregar',
+          label: 'Completar mínimo',
+          desktopLabel: 'Completar pedido mínimo',
           icon: <Utensils className="size-4" />,
-          run: () => navigate(ROUTES.menu),
+          run: () => { if (quote) setMinimumDialog({ minimumOrder: quote.minimumOrder }); },
         },
         error_cotizacion: {
           value: 'No pudimos calcular',
           label: 'Reintentar',
           icon: <RefreshCw className="size-4" />,
           run: retryQuote,
+        },
+        falta_experiencia: { value: 'Describe tu idea para el QR', label: 'Completar idea', icon: <Tag className="size-4" />, run: () => scrollToSection('checkout-experience') },
+        falta_pago: {
+          value: 'Elige cómo pagar',
+          label: 'Elegir pago',
+          icon: <CreditCard className="size-4" />,
+          run: () => scrollToSection('checkout-payment'),
         },
       }[blockReason]
     : null;
@@ -674,32 +783,39 @@ const CheckoutPage = () => {
   const payLabel =
     quote?.grandTotal === 0
       ? 'Pagar con mi saldo'
-      : payingCash
-        ? `Confirmar pedido · ${quote ? formatCurrency(quote.grandTotal) : ''} al recibir`
-        : `Pagar ${quote ? formatCurrency(quote.grandTotal) : ''}`;
+      : payingMobile
+          ? `Continuar con ${selectedLocal.name}`
+          : `${depositPlan ? 'Pagar anticipo' : 'Pagar'} ${quote ? formatCurrency(depositPlan ? quote.depositAmount ?? 0 : quote.grandTotal) : ''}`;
   const payLabelCompact =
-    quote?.grandTotal === 0 ? 'Pagar con saldo' : payingCash ? 'Confirmar pedido' : 'Pagar con tarjeta';
+    quote?.grandTotal === 0 ? 'Pagar con saldo' : payingMobile ? `Continuar con ${selectedLocal.name}` : depositPlan ? 'Pagar anticipo' : 'Pagar en línea';
   const payIcon =
     quote?.grandTotal === 0 ? (
       <Wallet className="size-4" />
-    ) : payingCash ? (
-      <Banknote className="size-4" />
+    ) : payingMobile ? (
+      <Smartphone className="size-4" />
     ) : (
       <CreditCard className="size-4" />
     );
   const totalLabel =
-    quote?.grandTotal === 0 ? 'Total' : payingCash ? 'A pagar al recibir' : 'A pagar con tarjeta';
-  const paymentLabel = quote?.grandTotal === 0 ? 'Con mi saldo' : payingCash ? 'Efectivo al recibir' : 'Tarjeta';
+    schedulePending ? 'Total estimado' : quote?.grandTotal === 0 ? 'Total' : depositPlan ? 'Total del pedido' : payingMobile ? `A pagar con ${selectedLocal.name}` : 'A pagar en línea';
+  const paymentLabel = quote?.grandTotal === 0 ? 'Con mi saldo' : payingMobile ? selectedLocal.name : onlineLabel;
 
   const summaryLines: SummaryLine[] = quote
     ? [
-        { label: 'Subtotal', value: formatCurrency(quote.subtotal) },
-        { label: 'Delivery', value: quote.deliveryFee === 0 ? 'Gratis' : formatCurrency(quote.deliveryFee) },
+        { label: 'Productos', value: formatCurrency(quote.productSubtotal ?? quote.subtotal) },
+        ...(quote.experience ? [{ label: quote.experience.name, value: formatCurrency(quote.experience.price) }] : []),
+        { label: deliveryType === 'DELIVERY' ? (quote.deliveryVehicleType === 'CAR' ? 'Entrega en auto' : 'Delivery') : 'Recojo en taller', value: quote.deliveryFee === 0 ? (deliveryType === 'PICKUP' ? 'Sin costo' : 'Gratis') : formatCurrency(quote.deliveryFee) },
         ...(quote.discountTotal > 0
           ? [{ label: 'Descuentos', value: `-${formatCurrency(quote.discountTotal)}`, tone: 'positive' as const }]
           : []),
         ...(quote.walletAmount > 0
           ? [{ label: 'Saldo aplicado', value: `-${formatCurrency(quote.walletAmount)}`, tone: 'positive' as const }]
+          : []),
+        ...(quote.paymentPlan === 'DEPOSIT_BALANCE'
+          ? [
+              { label: 'Anticipo (50%)', value: formatCurrency(quote.depositAmount ?? 0) },
+              { label: 'Saldo antes de entrega', value: formatCurrency(quote.balanceAmount ?? 0) },
+            ]
           : []),
       ]
     : [];
@@ -719,6 +835,7 @@ const CheckoutPage = () => {
    * y solo la primera vez, y evita mantener el desglose duplicado en un tercer sitio.
    */
   const confirmOrReveal = () => {
+    if (isPaying || isQuoting) return;
     if (blockAction) {
       blockAction.run();
       return;
@@ -736,7 +853,7 @@ const CheckoutPage = () => {
   };
 
   return (
-    <main className="mx-auto max-w-6xl px-4 pb-32 pt-8 sm:pt-10 lg:pb-14">
+    <main className="mx-auto max-w-8xl px-4 pb-32 pt-8 sm:pt-10 lg:pb-14">
       <PageHeader
         eyebrow="Pago seguro"
         title="Finaliza tu pedido"
@@ -745,6 +862,8 @@ const CheckoutPage = () => {
         crumbs={[{ label: 'Inicio', to: '/' }, { label: 'Carrito', to: ROUTES.cart }, { label: 'Datos y pago' }]}
       />
       <CheckoutStepper current={1} className="mb-8 max-w-2xl" />
+      <PendingOrderBanner pending={pending} onResolved={dismissPending} recoveryError={recoveryError} onRetry={retryRecovery} />
+      {purchaseAttempt && <div role="alert" className="mb-5 rounded-card border border-amber-300 bg-amber-50 p-4"><p>La confirmación anterior quedó pendiente de respuesta. Recupera esa misma compra antes de iniciar otra. Los cambios posteriores de tu carrito se conservarán.</p><Button className="mt-3" isLoading={isPaying} onClick={() => void submitPurchase(purchaseAttempt)}>Recuperar compra anterior</Button></div>}
 
       {/* El contenedor de la rejilla ES el formulario: asi Enter confirma, el teclado
           movil ofrece tecla de accion y el navegador tiene contexto de autorrelleno,
@@ -791,13 +910,14 @@ const CheckoutPage = () => {
                       lines={summaryLines}
                       totalLabel={totalLabel}
                       totalValue={formatCurrency(quote.grandTotal)}
+                      note={schedulePending ? 'Elige fecha y horario para confirmar disponibilidad.' : undefined}
                     />
-                    <p className="mt-3 flex items-center gap-1.5 text-xs text-ink-muted">
+                    {serviceMode === 'ASAP' && !hasCake && !branchClosed && <p className="mt-3 flex items-center gap-1.5 text-xs text-ink-muted">
                       <Clock3 className="size-3.5 shrink-0" />
                       {deliveryType === 'DELIVERY'
                         ? `Entrega estimada: ${quote.etaMinutes} min`
                         : `Preparación estimada: ${quote.etaMinutes} min`}
-                    </p>
+                    </p>}
                     <button
                       type="button"
                       onClick={() => scrollToSection('checkout-payment')}
@@ -818,8 +938,9 @@ const CheckoutPage = () => {
           </section>
 
           <FormSection
+            id="checkout-destination"
             title="¿Cómo quieres recibirlo?"
-            description="Elige delivery o recojo. Validaremos la cobertura y el local antes del pago."
+            description="Elige delivery o recojo. Te mostramos el costo de envío antes de pagar."
             icon={MapPin}
           >
             <FormStack spacing={2.5}>
@@ -829,96 +950,86 @@ const CheckoutPage = () => {
               onChange={setDeliveryType}
               className="flex-col sm:flex-row"
               options={[
-                { value: 'DELIVERY', label: 'Delivery', icon: <MapPin className="size-4" /> },
-                { value: 'PICKUP', label: 'Recojo en tienda', icon: <Store className="size-4" /> },
+                { value: 'DELIVERY', label: needsCar ? 'Entrega en auto' : 'Delivery', icon: <MapPin className="size-4" /> },
+                { value: 'PICKUP', label: 'Recojo en taller', icon: <Store className="size-4" /> },
               ]}
             />
 
-            {deliveryType === 'DELIVERY' && (
-              <div className="rounded-card border border-line bg-surface-muted/55 p-4 text-sm">
-                {address ? (
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="text-ink"><span className="font-medium">{address.label}:</span> {address.line1}</p>
-                    <Button size="sm" variant="ghost" leftIcon={<Pencil className="size-3.5" />} onClick={openLocationModal}>Editar</Button>
-                  </div>
-                ) : (
-                  <p className="text-ink-muted">
-                    Aun no elegiste direccion. Usa el boton de ubicacion del menu superior.
-                  </p>
-                )}
-                {savedAddresses.length > 0 && (
-                  <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-                    {savedAddresses.map((saved) => <button key={saved.id} type="button" onClick={() => void chooseSavedAddress(saved)} className={cn('shrink-0 rounded-field border px-3 py-1.5 text-xs font-semibold', address?.id === saved.id ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-line bg-white text-ink-muted')}>{saved.label}</button>)}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {deliveryType === 'PICKUP' && (
-              <div className="rounded-card border border-brand-100 bg-brand-50/60 p-4 text-sm">
-                {pickupBranch?.id === branchId ? (
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="flex items-center gap-1.5 font-bold text-ink">
-                        <Store className="size-4 text-brand-700" />
-                        {pickupBranch.name}
-                      </p>
-                      <p className="mt-1 text-xs text-ink-muted">{pickupBranch.addressLine}</p>
-                      <p className="mt-2 text-xs font-semibold text-brand-800">
-                        Recojo confirmado · no necesitas dirección de entrega
-                      </p>
-                    </div>
-                    <Button size="sm" variant="ghost" onClick={openLocationModal}>Ver local</Button>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-ink-muted">Elige el local donde recogerás tu pedido.</p>
-                    <Button size="sm" variant="outline" onClick={openLocationModal}>Elegir local</Button>
-                  </div>
-                )}
+            <CheckoutDestinationPicker
+              deliveryLabel={needsCar ? 'Entrega en auto' : 'Delivery'}
+              deliveryType={deliveryType}
+              address={deliveryType === 'DELIVERY' ? address : null}
+              pickupBranch={deliveryType === 'PICKUP' && pickupBranch?.id === branchId ? pickupBranch : null}
+              branchId={branchId}
+              deliveryFee={quote?.deliveryFee}
+              extraDeliveryFee={quote?.extraDeliveryFee}
+              deliveryFeeLoading={isFirstQuote}
+              onReferenceChange={(reference) => { if (address) setAddress({ ...address, reference }); }}
+              onDelivery={selectDelivery}
+              onPickup={selectPickup}
+              onChangeAddress={() => { setAddress(null); setBranch(null); }}
+              onChangePickup={() => setBranch(null)}
+              onOpenMap={openLocationModal}
+            />
+            {needsCar && deliveryType === 'DELIVERY' && <div role="note" className="rounded-field border border-brand-100 bg-brand-50 p-4 text-sm leading-6"><strong className="block text-brand-800">Tu torta viaja en auto</strong><p className="mt-1 text-ink-muted">Coordinamos su traslado con embalaje y cuidados adecuados. El costo y los horarios disponibles se confirman con tu dirección. Si no hay cupo, puedes elegir otra fecha o recojo en taller.</p></div>}
+            {deliveryType === 'DELIVERY' && savedAddresses.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                <span className="w-full text-xs font-semibold text-ink-muted">Tus direcciones guardadas</span>
+                {savedAddresses.map((saved) => (
+                  <button
+                    key={saved.id}
+                    type="button"
+                    onClick={() => void chooseSavedAddress(saved)}
+                    className={cn('rounded-field border px-3 py-1.5 text-xs font-semibold', address?.id === saved.id ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-line bg-white text-ink-muted')}
+                  >
+                    {saved.label} · {saved.line1}
+                  </button>
+                ))}
               </div>
             )}
             </FormStack>
           </FormSection>
 
           <FormSection
+            id="checkout-schedule"
             title="¿Cuándo lo quieres?"
-            description="Elige preparación inmediata o reserva una franja disponible."
+            description={hasCake ? 'Las tortas se entregan en una franja programada que tenga capacidad de producción.' : 'Elige preparación inmediata o reserva una franja disponible.'}
             icon={CalendarClock}
           >
             <FormStack spacing={2.5}>
-            <ChoiceGroup
-              ariaLabel="Cuándo lo quieres"
-              value={serviceMode}
-              onChange={setServiceMode}
-              className="flex-col sm:flex-row"
-              options={[
-                { value: 'ASAP', label: 'Lo antes posible', icon: <Clock3 className="size-4" /> },
-                { value: 'SCHEDULED', label: 'Programar horario', icon: <CalendarClock className="size-4" /> },
-              ]}
-            />
+            {branchClosed && (
+              <Callout tone="info" size="sm" icon={CalendarClock}>
+                Puedes reservar tu pedido ahora. La sede está fuera de su horario de atención; elige una fecha y franja disponible para la entrega o el recojo.
+              </Callout>
+            )}
+            {hasCake && minimumLeadHours > 0 && (
+              <p className="text-xs leading-5 text-ink-muted">Este pedido requiere al menos {minimumLeadHours} horas de anticipación. Mostramos las franjas que cumplen ese plazo.</p>
+            )}
+            {!hasCake && (
+              <ChoiceGroup
+                ariaLabel="Cuándo lo quieres"
+                value={serviceMode}
+                onChange={setServiceMode}
+                className="flex-col sm:flex-row"
+                options={[
+                  { value: 'ASAP' as const, label: 'Lo antes posible', disabled: branchClosed, icon: <Clock3 className="size-4" /> },
+                  { value: 'SCHEDULED' as const, label: 'Programar horario', icon: <CalendarClock className="size-4" /> },
+                ]}
+              />
+            )}
 
-            {serviceMode === 'SCHEDULED' && (
-              <div className="rounded-card border border-brand-100 bg-brand-50/35 p-4">
-                {slots.length === 0 ? (
-                  <CardDescription>
-                    No hay franjas disponibles ahora mismo. Prueba con entrega inmediata.
-                  </CardDescription>
-                ) : (
-                    <Select
-                      id="slot"
-                      label="Franja de entrega"
-                      value={slotId ?? ''}
-                      onChange={(event) => setSlotId(Number(event.target.value))}
-                    >
-                      {slots.map((slot) => (
-                        <SelectOption key={slot.id} value={slot.id}>
-                          {formatDate(slot.startsAt)} — quedan {slot.available} cupos
-                        </SelectOption>
-                      ))}
-                    </Select>
-                )}
-              </div>
+            {(hasCake || serviceMode === 'SCHEDULED') && (
+              !branchId ? (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-brand-100 bg-brand-50/35 p-4">
+                  <div>
+                    <p className="text-sm font-bold text-ink">Primero elige dónde recibirás tu pedido</p>
+                    <CardDescription>Así podremos mostrarte las fechas y horarios con cupo.</CardDescription>
+                  </div>
+                  <button type="button" onClick={() => scrollToSection('checkout-destination')} className="min-h-10 rounded-field border border-brand-200 bg-white px-3 text-xs font-bold text-brand-700 transition-colors hover:bg-brand-50">Elegir destino</button>
+                </div>
+              ) : (
+                <DeliverySlotCalendar emptyMessage={slotsReason} id="slot" slots={slots} value={slotId} onChange={setSlotId} loading={slotsLoading} loadError={slotsError} onRetry={() => setSlotsRetry((count) => count + 1)} />
+              )
             )}
             </FormStack>
           </FormSection>
@@ -988,24 +1099,17 @@ const CheckoutPage = () => {
                 }
               />
             </FormGrid>
+            {user && <div className="mt-4 rounded-xl border border-brand-100 bg-brand-50/40 p-3">
+              <Checkbox checked={whatsappOptIn} disabled={!accountWhatsAppAvailable} onChange={(event) => setWhatsappOptIn(event.target.checked)} label="Acepto recibir en el celular de mi cuenta avisos de este pedido por WhatsApp de Misky Challay (confirmación, listo y reparto). Es opcional." />
+              {!accountWhatsAppAvailable && <p className="ml-8 mt-1 text-xs text-ink-muted">Para activar estos avisos, <Link to={ROUTES.accountProfile} className="font-semibold text-brand-700 underline">agrega tu celular en Mi perfil</Link>.</p>}
+            </div>}
             <FormGrid className="mt-5">
-              <Textarea rows={3} label="Indicaciones para cocina" value={kitchenNotes} onChange={(event) => setKitchenNotes(event.target.value)} placeholder="Salsa aparte, sin cubiertos…" maxLength={250} />
-              <Textarea rows={3} label="Indicaciones para reparto" value={deliveryNotes} onChange={(event) => setDeliveryNotes(event.target.value)} placeholder="Tocar el timbre, recepción…" maxLength={250} />
+              <div className="space-y-3"><label className="flex min-h-11 items-center gap-3"><input type="checkbox" checked={isGift} onChange={(event) => setIsGift(event.target.checked)} />Es un regalo</label>{isGift && <><Input label="Nombre del destinatario" maxLength={120} value={gift.recipientName} onChange={(event) => setGift({ ...gift, recipientName: event.target.value })} /><Input label="Teléfono del destinatario (para coordinar la entrega)" maxLength={30} value={gift.recipientPhone} onChange={(event) => setGift({ ...gift, recipientPhone: event.target.value })} /><Textarea label="Dedicatoria del regalo" maxLength={500} value={gift.message} onChange={(event) => setGift({ ...gift, message: event.target.value })} /><label className="flex min-h-11 items-center gap-3"><input type="checkbox" checked={gift.hidePrices} onChange={(event) => setGift({ ...gift, hidePrices: event.target.checked })} />Ocultar precios en la ficha del destinatario</label><p className="text-xs text-ink-muted">Los avisos de compra siguen llegando a tu cuenta. Podrás compartir una ficha del regalo sin tus datos de pago.</p></>}</div><Textarea rows={3} label="Indicaciones para cocina" value={kitchenNotes} onChange={(event) => setKitchenNotes(event.target.value)} placeholder="Texto en la torta, acabado o empaque…" maxLength={250} />
+              {deliveryType === 'DELIVERY' && <Textarea rows={3} label="Indicaciones adicionales para la entrega (opcional)" value={deliveryNotes} onChange={(event) => setDeliveryNotes(event.target.value)} placeholder="Ej. llamar al llegar o dejar en recepción" maxLength={250} />}
             </FormGrid>
           </FormSection>
 
-          {receipts.mode === 'INTERNAL_ONLY' ? (
-            <FormSection
-              id="checkout-billing"
-              title="Ticket interno"
-              description="Recibiras un resumen de tu pedido. No es una boleta ni una factura y no usa serie o correlativo SUNAT."
-              icon={ReceiptText}
-            >
-              <div className="rounded-card border border-brand-200 bg-brand-50 p-4 text-sm leading-6 text-brand-900">
-                El ticket se identifica con el numero de pedido y estara disponible para el personal al preparar la entrega.
-              </div>
-            </FormSection>
-          ) : <FormSection
+          {receipts.mode !== 'INTERNAL_ONLY' && <FormSection
             id="checkout-billing"
             title="Comprobante de pago"
             description="Emitimos boleta por defecto. Elige factura si necesitas sustentar un gasto empresarial."
@@ -1080,13 +1184,12 @@ const CheckoutPage = () => {
             </FormStack>
           </FormSection>}
 
-          {/* El selector vivia solo en el aside, o sea al final del scroll en movil,
-              mientras la barra fija ya ofrecia confirmar: quien queria pagar en efectivo
-              nunca descubria que existia la opcion. */}
+          <ExperienceCheckout value={experience} onChange={setExperience} />
+
           <FormSection
             id="checkout-payment"
             title="¿Cómo quieres pagar?"
-            description="Elige el medio con el que completarás la compra."
+            description="Elige pago en línea o transferencia directa al taller."
             icon={CreditCard}
           >
             {quote && quote.grandTotal > 0 ? (
@@ -1095,47 +1198,30 @@ const CheckoutPage = () => {
                   ariaLabel="Método de pago"
                   value={paymentMethod}
                   onChange={setPaymentMethod}
-                  className="flex-col sm:flex-row"
+                  variant="tile"
+                  columns={3}
+                  className="grid-cols-1 sm:grid-cols-3"
                   options={[
                     /* Sin pasarela configurada el backend rechazaria el cobro al
                      * confirmar: no se ofrece un medio que no se puede cumplir. */
                     ...(onlinePayments.onlineEnabled
-                      ? [{ value: 'ONLINE' as const, label: 'Tarjeta', icon: <CreditCard className="size-4" /> }]
+                      ? [{ value: 'ONLINE' as const, label: onlineLabel, hint: 'Completa el pago en la pasarela.', icon: <CreditCard className="size-4" /> }]
                       : []),
-                    ...(codAvailable
-                      ? [{ value: 'CASH' as const, label: 'Efectivo al recibir', icon: <Banknote className="size-4" /> }]
-                      : []),
-                    ...(localPayments.yapeEnabled
-                      ? [{ value: 'YAPE' as const, label: 'Yape', icon: <Smartphone className="size-4" /> }]
-                      : []),
-                    ...(localPayments.plinEnabled
-                      ? [{ value: 'PLIN' as const, label: 'Plin', icon: <Smartphone className="size-4" /> }]
-                      : []),
+                    { value: 'YAPE' as const, label: 'Yape', hint: localPayments.yapeEnabled ? 'Transferencia directa al taller.' : 'Temporalmente no disponible.', disabled: !localPayments.yapeEnabled, icon: <Smartphone className="size-4" /> },
+                    { value: 'PLIN' as const, label: 'Plin', hint: localPayments.plinEnabled ? 'Transferencia directa al taller.' : 'Temporalmente no disponible.', disabled: !localPayments.plinEnabled, icon: <Smartphone className="size-4" /> },
                   ]}
                 />
                 {payingMobile && (
-                  <div className="grid gap-4 rounded-card border border-violet-200 bg-violet-50/60 p-4 sm:grid-cols-[minmax(0,1fr)_140px]">
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wide text-violet-700">Paga el importe exacto con {selectedLocal.name}</p>
-                      <p className="mt-2 text-2xl font-black text-ink">{formatCurrency(quote.grandTotal)}</p>
-                      <p className="mt-2 text-sm font-bold text-ink">{selectedLocal.phone} · {selectedLocal.recipient}</p>
-                      <p className="mt-2 text-xs leading-5 text-ink-muted">{localPayments.instructions}</p>
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                        <Input label="Código de operación" value={operationCode} maxLength={24} autoComplete="off" placeholder="Ej. 12345678" onChange={(event) => setOperationCode(event.target.value.replace(/[^A-Za-z0-9-]/g, '').toUpperCase())} />
-                        <Input label="Celular desde el que pagaste (opcional)" value={payerPhone} inputMode="numeric" maxLength={9} placeholder="999999999" onChange={(event) => setPayerPhone(event.target.value.replace(/\D/g, '').slice(0, 9))} />
-                      </div>
-                    </div>
-                    {selectedLocal.qr && <img src={selectedLocal.qr} alt={`QR de ${selectedLocal.name}`} className="mx-auto aspect-square w-full max-w-36 rounded-card border border-white bg-white object-contain p-2 shadow-sm" />}
+                  <div className="rounded-card border border-brand-200 bg-brand-50/60 p-4 text-sm leading-6 text-brand-900">
+                    Primero registraremos tu pedido y su {depositPlan ? 'anticipo' : 'total'} de <b>{formatCurrency(depositPlan ? quote.depositAmount ?? 0 : quote.grandTotal)}</b>. Después verás el número y QR del taller para transferir con {selectedLocal.name} y reportar el pago.
                   </div>
                 )}
                 <p className="text-xs leading-5 text-ink-muted">
                   {payingMobile
-                    ? 'Caja validará el movimiento. Cocina recibirá el pedido únicamente después de esa aprobación.'
-                    : payingCash
-                    ? `Confirmamos tu pedido de una vez y pagas ${formatCurrency(quote.grandTotal)} en efectivo cuando lo recibas.`
-                    : 'Te llevamos a la pasarela para pagar con tarjeta. Nunca guardamos esos datos.'}
-                  {!codAvailable && cod.enabled && ` El efectivo solo está disponible hasta ${formatCurrency(cod.maxAmount)}.`}
+                    ? 'El taller verificará el movimiento recibido antes de confirmar el pago. Podrás seguirlo desde Mis pedidos.'
+                    : 'Te llevamos a la pasarela para completar el pago. Nunca guardamos los datos de tu tarjeta.'}
                 </p>
+                {!onlinePayments.onlineEnabled && !localPayments.yapeEnabled && !localPayments.plinEnabled && <Callout tone="warning" size="sm">Por ahora no hay medios de pago disponibles. Inténtalo más tarde.</Callout>}
               </FormStack>
             ) : (
               <p className="text-xs leading-5 text-ink-muted">
@@ -1164,7 +1250,7 @@ const CheckoutPage = () => {
                   event.preventDefault();
                   handleApplyCoupon();
                 }}
-                placeholder="VERDE10"
+                placeholder="DULCE10"
                 autoComplete="off"
               />
               <Button type="button" variant="outline" onClick={handleApplyCoupon} className="shrink-0">
@@ -1218,10 +1304,15 @@ const CheckoutPage = () => {
 
             <div className="grid gap-5 p-5">
             <ul className="grid gap-3 text-sm">
-              {items.map((item) => (
+              {items.map((item, index) => (
                 <li key={item.id} className="flex justify-between gap-4">
                   <span className="min-w-0 text-ink-muted">
                     {item.quantity}x {item.name}
+                    {quote?.items[index]?.allergenCodes?.length ? <span className="mt-1 block text-xs">Alérgenos declarados: {quote.items[index].allergenCodes!.map(allergenLabel).join(', ')}. Consulta al equipo si tienes una alergia; no se garantiza ausencia de contacto cruzado.</span> : null}
+                    {item.specialInstructions && <span className="mt-1 block whitespace-pre-wrap break-words text-xs leading-5">{item.specialInstructions.replace(/^(Descripción del diseño|Indicaciones): /, '')}</span>}
+                    {item.approvedDesignSummary && <span className="mt-1 block whitespace-pre-wrap break-words text-xs leading-5">{item.approvedDesignSummary}</span>}
+                    {item.referenceDataUrl && <span className="mt-1 inline-flex items-center gap-2 text-xs"><img src={item.referenceDataUrl} alt="Referencia de la torta" className="size-9 rounded-md border border-line object-cover" /> Referencia adjunta</span>}
+                    {(item.cakeAiProposal || item.archivedAiProposalDataUrl) && <span className="mt-1 inline-flex items-center gap-2 text-xs"><img src={item.cakeAiProposal?.dataUrl ?? item.archivedAiProposalDataUrl} alt="Propuesta con IA que acompañará el pedido" className="size-9 rounded-md border border-line object-cover" /> Propuesta con IA adjunta</span>}
                   </span>
                   <span className="shrink-0">{formatCurrency(item.lineTotal)}</span>
                 </li>
@@ -1229,24 +1320,26 @@ const CheckoutPage = () => {
             </ul>
 
             {/* Region viva: cada recotizacion cambiaba el importe en silencio. */}
-            {quote && (
+            {(quote || isFirstQuote) && (
               <div ref={breakdownRef} className="border-t border-line pt-4" aria-live="polite" aria-busy={isQuoting}>
-                <div className="mb-4 rounded-card border border-brand-100 bg-brand-50 p-4 text-xs leading-5 text-brand-800">
+                {quote && <div className="mb-4 rounded-card border border-brand-100 bg-brand-50 p-4 text-xs leading-5 text-brand-800">
                   <p className="flex items-center gap-1.5 font-bold"><CheckCircle2 className="size-4" /> Atiende {quote.branchName}</p>
-                  <p className="mt-1 flex items-center gap-1.5"><Clock3 className="size-3.5" /> {deliveryType === 'DELIVERY' ? `Entrega estimada: ${quote.etaMinutes} min` : `Preparación estimada: ${quote.etaMinutes} min`}{quote.routeDistanceKm ? ` · ${quote.routeDistanceKm} km` : ''}</p>
+                  {serviceMode === 'ASAP' && !hasCake && !branchClosed && <p className="mt-1 flex items-center gap-1.5"><Clock3 className="size-3.5" /> {deliveryType === 'DELIVERY' ? `Entrega estimada: ${quote.etaMinutes} min` : `Preparación estimada: ${quote.etaMinutes} min`}{quote.routeDistanceKm ? ` · ${quote.routeDistanceKm} km` : ''}</p>}
                   {quote.etaSource === 'LIVE_ROUTE' && <p className="mt-1 font-semibold text-brand-700">Ruta actualizada con la ubicación exacta.</p>}
-                  {quote.demandLevel !== 'LOW' && <p className="mt-1 font-semibold text-amber-800">{quote.demandLevel === 'HIGH' ? 'Demanda alta: el tiempo ya incluye la espera actual.' : 'Demanda moderada en esta cocina.'}</p>}
-                </div>
+                  {serviceMode === 'ASAP' && !hasCake && !branchClosed && quote.demandLevel !== 'LOW' && <p className="mt-1 font-semibold text-amber-800">{quote.demandLevel === 'HIGH' ? 'Demanda alta: el tiempo ya incluye la espera actual.' : 'Demanda moderada en esta cocina.'}</p>}
+                </div>}
                 <PriceBreakdown
                   lines={summaryLines}
                   totalLabel={totalLabel}
-                  totalValue={formatCurrency(quote.grandTotal)}
-                  note={quote.taxTotal > 0 ? (
-                    <div className="flex justify-between">
+                  totalValue={quote ? formatCurrency(quote.grandTotal) : '—'}
+                  isLoading={isFirstQuote}
+                  note={quote ? <div className="grid gap-2">
+                    {quote.taxTotal > 0 && <div className="flex justify-between">
                       <span>Incluye IGV ({Math.round(quote.taxRate * 100)}%)</span>
                       <span>{formatCurrency(quote.taxTotal)}</span>
-                    </div>
-                  ) : undefined}
+                    </div>}
+                    {schedulePending && <p>Elige fecha y horario para confirmar disponibilidad.</p>}
+                  </div> : undefined}
                 />
               </div>
             )}
@@ -1284,7 +1377,7 @@ const CheckoutPage = () => {
 
             {quote && !quote.meetsMinimum && (
               <Callout tone="warning" size="sm" icon={AlertCircle}>
-                Agrega {formatCurrency(Math.max(0, quote.minimumOrder - quote.subtotal))} para alcanzar el pedido mínimo de {formatCurrency(quote.minimumOrder)}.
+                <strong>Faltan {formatCurrency(missingForMinimum)} en productos.</strong> El mínimo es {formatCurrency(quote.minimumOrder)} y llevas {formatCurrency(quote.subtotal)}. El delivery no cuenta para este mínimo.
               </Callout>
             )}
 
@@ -1302,7 +1395,7 @@ const CheckoutPage = () => {
             {quote && quote.grandTotal > 0 && (
               <div className="flex items-center justify-between gap-3 border-t border-line pt-4 text-sm">
                 <span className="flex min-w-0 items-center gap-2">
-                  {payingCash ? <Banknote className="size-4 shrink-0 text-brand-700" /> : <CreditCard className="size-4 shrink-0 text-brand-700" />}
+                  {payingMobile ? <Smartphone className="size-4 shrink-0 text-brand-700" /> : <CreditCard className="size-4 shrink-0 text-brand-700" />}
                   <span className="min-w-0 truncate font-medium text-ink">{paymentLabel}</span>
                 </span>
                 <Button type="button" size="sm" variant="ghost" onClick={() => scrollToSection('checkout-payment')}>
@@ -1311,22 +1404,38 @@ const CheckoutPage = () => {
               </div>
             )}
 
+            <section id="checkout-terms" className="rounded-card border border-line bg-surface-muted p-4 text-sm" aria-label="Aceptación de condiciones">
+              {terms && !termsLoadError ? <>
+                <label className="flex cursor-pointer items-start gap-3 leading-6">
+                  <input id="checkout-terms-checkbox" type="checkbox" className="mt-1.5 size-4 shrink-0 accent-brand-700" checked={termsAccepted} disabled={isPaying} aria-describedby={termsIssue ? 'checkout-terms-error' : undefined} onChange={(event) => { setConsent(event.target.checked && user ? { version: terms.version, userId: user.id } : null); setTermsIssue(''); }} />
+                  <span>{terms.acceptanceLabel}</span>
+                </label>
+                <Link className="mt-2 inline-block font-semibold text-brand-700 underline underline-offset-2" to={ROUTES.terms} target="_blank" rel="noopener noreferrer">Leer {terms.title} · versión {terms.version}</Link>
+                {consent && consent.version !== terms.version && <p className="mt-2 text-xs">Las condiciones se actualizaron. Revisa y acepta la nueva versión.</p>}
+              </> : <><p>{termsLoadError ? 'No pudimos cargar las condiciones de compra.' : 'Cargando condiciones de compra…'}</p><Button type="button" variant="ghost" onClick={() => void refreshTerms()}>Reintentar</Button></>}
+              {termsIssue && <p id="checkout-terms-error" role="alert" className="mt-2 text-xs text-red-700">{termsIssue}</p>}
+            </section>
+
             {/* Nunca deshabilitado: si algo bloquea, el boton hace lo que hay que hacer. */}
             <Button
               type="submit"
               className="w-full"
               size="lg"
               leftIcon={blockAction ? blockAction.icon : payIcon}
-              isLoading={isPaying || isFirstQuote}
+              isLoading={isPaying || isQuoting}
             >
-              {blockAction ? blockAction.label : payLabel}
+              {blockAction ? blockAction.desktopLabel ?? blockAction.label : payLabel}
             </Button>
 
             <CardDescription className="text-center text-xs leading-5">
-              {quote?.grandTotal === 0
+              {blockReason === 'bajo_minimo'
+                ? 'Completa el mínimo ajustando cantidades aquí o eligiendo otros productos. Después podrás pagar.'
+                : blockReason === 'falta_horario'
+                ? 'Elige un horario disponible para continuar con el pago.'
+                : quote?.grandTotal === 0
                 ? 'Tu saldo cubre todo el pedido: no se cobrara nada a tu tarjeta.'
-                : payingCash
-                  ? 'Confirmamos tu pedido de una vez y pagas en efectivo cuando lo recibas.'
+                  : payingMobile
+                    ? 'Crearás el pedido y verás los datos para transferir. El taller verificará el pago reportado.'
                   : 'El pago se procesa fuera de esta web. Nunca guardamos datos de tu tarjeta.'}
             </CardDescription>
 
@@ -1336,27 +1445,23 @@ const CheckoutPage = () => {
         </aside>
       </form>
 
+      <CheckoutMinimumDialog isOpen={minimumDialog !== null} items={items} quote={quote} minimumOrder={quote?.minimumOrder ?? minimumDialog?.minimumOrder ?? 0} isQuoting={isQuoting} quoteError={quoteError} onQuantityChange={updateCheckoutQuantity} onRetry={retryQuote} onClose={() => setMinimumDialog(null)} />
+
       {/* "Calculando…" solo mientras hay una peticion en vuelo sin nada que ensenar.
           Antes salia siempre que `quote` fuera null, incluido el caso en que la
           cotizacion ni arrancaba por falta de destino: eterno y con el boton muerto. */}
       <StickyActionBar
         hideFrom="lg"
-        label={blockAction ? 'Para continuar' : summarySeen ? 'Total confirmado' : 'Total del pedido'}
+        label={quote ? schedulePending ? 'Total estimado' : 'Total del pedido' : blockAction ? 'Para continuar' : 'Total del pedido'}
         value={
-          blockAction
-            ? blockAction.value
-            : isFirstQuote
-              ? 'Calculando…'
-              : quote
-                ? formatCurrency(quote.grandTotal)
-                : '—'
+          isFirstQuote ? 'Calculando…' : quote ? formatCurrency(quote.grandTotal) : blockAction?.value ?? '—'
         }
       >
         <Button
           type="button"
           size="lg"
           leftIcon={blockAction ? undefined : summarySeen ? payIcon : <ReceiptText className="size-4" />}
-          isLoading={isPaying || isFirstQuote}
+          isLoading={isPaying || isQuoting}
           onClick={confirmOrReveal}
         >
           {blockAction ? blockAction.label : summarySeen ? payLabelCompact : 'Revisar y pagar'}

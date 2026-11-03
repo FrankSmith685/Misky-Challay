@@ -162,7 +162,7 @@ export const AvailabilityAlertButton = ({
             <Stack sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 'var(--radius-card)', px: 1.5, py: .5, bgcolor: 'background.default' }}>
               <FormControlLabel
                 control={<Checkbox checked={notifyInApp} onChange={(event) => setNotifyInApp(event.target.checked)} />}
-                label={<Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><Bell size={17} /><span>Notificación dentro de Verde Bowl</span></Stack>}
+                label={<Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}><Bell size={17} /><span>Notificación dentro de Misky Challay</span></Stack>}
               />
               <FormControlLabel
                 control={<Checkbox checked={notifyEmail} onChange={(event) => setNotifyEmail(event.target.checked)} />}

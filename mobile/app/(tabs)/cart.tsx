@@ -72,16 +72,16 @@ function CartLine({ item, onQuantity, onRemove, onEdit }: CartLineProps) {
       </View>
 
       <View style={styles.lineActions}>
-        <QuantityStepper
+        {item.designQuoteId ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}><Text style={styles.variant}>1 unidad cotizada</Text><Pressable accessibilityRole="button" accessibilityLabel={`Quitar ${item.productName}`} onPress={onRemove}><Text style={styles.editLabel}>Quitar</Text></Pressable></View> : <QuantityStepper
           value={item.quantity}
           onChange={onQuantity}
           size="sm"
           minBehavior="remove"
           onRemove={onRemove}
           label={item.productName}
-        />
+        />}
 
-        {isCustom ? (
+        {isCustom && !item.designQuoteId ? (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`Editar ${item.productName}`}
@@ -342,7 +342,7 @@ export default function CartScreen() {
             <EmptyState
               icon="shopping-outline"
               title="Tu carrito está esperando"
-              message="Explora la carta y agrega una receta, o arma un bowl a tu gusto: lo que agregues se conserva mientras sigues mirando."
+              message="Explora las tortas y elige una clásica o personaliza la tuya. Guardaremos lo que agregues mientras sigues mirando."
               actionLabel="Explorar el menú"
               onAction={() => router.push('/(tabs)/menu')}
             />
@@ -376,7 +376,7 @@ const styles = StyleSheet.create({
   },
   checkoutProgress: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, marginTop: spacing.sm },
   checkoutStep: { width: 30, height: 30, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line },
-  checkoutStepActive: { width: 34, height: 34, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accent500, ...shadow.sm },
+  checkoutStepActive: { width: 34, height: 34, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accent600, ...shadow.sm },
   checkoutStepNumber: { ...type.caption, color: colors.inkMuted },
   checkoutStepNumberActive: { ...type.label, color: colors.surface },
   checkoutLine: { flex: 1, height: 2, backgroundColor: colors.line },

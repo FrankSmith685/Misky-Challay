@@ -1,5 +1,4 @@
 import { Link } from 'react-router-dom';
-import { Leaf } from 'lucide-react';
 import { ROUTES } from '@constants/routes';
 import { cn } from '@lib/cn';
 
@@ -14,19 +13,43 @@ interface AppLogoProps {
   className?: string;
 }
 
-/** Identidad unificada de la marca para tienda, cuenta y panel. */
-export const AppLogo = ({ inverse = false, compact = false, onClick, className }: AppLogoProps) => (
-  <Link to={ROUTES.home} onClick={onClick} className={cn('inline-flex items-center gap-2.5', className)} aria-label="Ir al inicio de Verde Bowl">
-    <span className={cn('grid size-9 shrink-0 place-items-center rounded-xl shadow-sm', inverse ? 'bg-brand-600 text-white' : 'bg-brand-600 text-white')}><Leaf className="size-5" /></span>
+/** Conserva el logo original de Misky Challay en tienda, cuenta y panel. */
+export const AppLogo = ({ compact = false, inverse = false, onClick, className }: AppLogoProps) => (
+  <Link
+    to={ROUTES.home}
+    onClick={onClick}
+    className={cn(
+      'inline-flex min-w-0 items-center',
+      inverse && 'rounded-xl bg-white px-3 py-1',
+      className,
+    )}
+    aria-label="Ir al inicio de Misky Challay"
+  >
+    {(compact === true || compact === 'xs') && (
+      <img
+        src="/brand/misky-mark.png"
+        alt=""
+        width={40}
+        height={40}
+        aria-hidden="true"
+        className={cn('size-10 shrink-0 object-contain', compact === 'xs' && 'sm:hidden')}
+      />
+    )}
     {compact !== true && (
       <span
         className={cn(
-          'text-xl font-extrabold tracking-tight',
-          compact === 'xs' && 'hidden sm:inline',
-          inverse ? 'text-white' : 'text-brand-800',
+          'block h-14 w-44 shrink-0 overflow-hidden',
+          compact === 'xs' && 'hidden sm:block',
         )}
+        aria-hidden="true"
       >
-        Verde<span className="text-accent-500">Bowl</span>
+        <img
+          src="/brand/misky-challay-wordmark.png"
+          alt=""
+          width={176}
+          height={56}
+          className="block size-full object-cover object-center"
+        />
       </span>
     )}
   </Link>

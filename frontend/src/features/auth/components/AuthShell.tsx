@@ -9,7 +9,6 @@ import {
   Sparkles,
   WalletCards,
 } from 'lucide-react';
-import { AppLogo } from '@components/common/AppLogo';
 import { ROUTES } from '@constants/routes';
 import { cn } from '@lib/cn';
 
@@ -35,7 +34,7 @@ const benefits = [
   {
     icon: HeartHandshake,
     title: 'Una experiencia personal',
-    description: 'Favoritos, bowls y pedidos guardados.',
+    description: 'Tus tortas favoritas y pedidos guardados.',
   },
 ];
 
@@ -63,18 +62,19 @@ export const AuthShell = ({
       )}
     >
       <aside className="relative hidden min-h-[650px] overflow-hidden bg-brand-900 p-10 text-white lg:flex lg:flex-col xl:p-12">
-        <div className="absolute -right-28 -top-24 size-80 rounded-full bg-white/8" />
-        <div className="absolute -bottom-28 -left-24 size-72 rounded-full border-[42px] border-white/5" />
+        <div className="absolute inset-0 bg-gradient-to-br from-brand-700 to-brand-900" />
 
         <div className="relative">
-          <AppLogo inverse />
+          <Link to={ROUTES.home} aria-label="Ir al inicio de Misky Challay" className="inline-block overflow-hidden rounded-2xl border-2 border-white/80 bg-white shadow-lg transition-transform hover:scale-[1.02]">
+            <img src="/brand/misky-challay-square.jpeg" alt="" width={144} height={144} className="size-32 object-cover xl:size-36" />
+          </Link>
 
-          <span className="mt-12 inline-flex items-center gap-2 rounded-pill border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold text-brand-50">
+          <span className="mt-7 flex w-fit items-center gap-2 rounded-pill border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold text-brand-50">
             <Sparkles className="size-3.5 text-accent-400" />
             Tu cuenta, todo más simple
           </span>
-          <p className="mt-5 max-w-md text-4xl font-black leading-[1.08] tracking-[-.04em]">
-            Come bien. Nosotros recordamos el resto.
+          <p className="mt-5 max-w-md text-4xl font-extrabold leading-[1.12] tracking-[-.025em]">
+            Celebra a tu manera. Nosotros recordamos el resto.
           </p>
           <p className="mt-4 max-w-md text-sm leading-7 text-brand-50/72">
             Accede a una experiencia pensada para ahorrar pasos: tus pedidos, direcciones,
@@ -104,7 +104,7 @@ export const AuthShell = ({
         <div className="relative mt-8 flex items-start gap-2.5 border-t border-white/10 pt-5">
           <ShieldCheck className="mt-0.5 size-4.5 shrink-0 text-brand-200" />
           <p className="text-xs leading-5 text-brand-50/65">
-            Protegemos tu sesión y nunca mostramos tu contraseña al equipo de Verde Bowl.
+            Protegemos tu sesión y nunca mostramos tu contraseña al equipo de Misky Challay.
           </p>
         </div>
       </aside>

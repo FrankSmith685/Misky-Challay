@@ -92,8 +92,6 @@ export const useMenuCatalog = () => {
     catalog.filters.categoryId,
     catalog.filters.dietaryTags,
     catalog.filters.excludeAllergens,
-    catalog.filters.maxCalories,
-    catalog.filters.minProtein,
     retryNonce,
   ]);
 

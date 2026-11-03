@@ -3,25 +3,14 @@ import { FlatList, Linking, Pressable, StyleSheet, Text, View } from 'react-nati
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams, type Href } from 'expo-router';
 import { EmptyState } from '../../src/components/EmptyState';
+import { CheckoutTermsDocument } from '../../src/components/CheckoutTermsDocument';
 import { ScreenScaffold } from '../../src/components/ScreenScaffold';
 import { useResource } from '../../src/hooks/useResource';
 import { businessApi } from '../../src/services/api/business.service';
 import { colors, layout, radius, shadow, spacing, type } from '../../src/theme/tokens';
 import type { PublicSettings } from '../../src/types/domain';
 
-/**
- * Documentos legales DENTRO de la aplicación.
- *
- * Antes se abría el navegador contra `${env.webUrl}/privacidad`, y esa URL se
- * infiere del host del API cuando no hay EXPO_PUBLIC_WEB_URL: con un API real el
- * enlace terminaba en el dominio del servidor, no en la web pública. Además
- * `/preguntas-frecuentes` ni siquiera está registrada en el router de la web.
- *
- * El texto vive aquí porque en la web solo existe como componente React
- * (frontend/src/features/legal/pages): no hay endpoint que lo sirva. Lo único que
- * viaja del backend son los datos de la empresa (/settings/public), que es
- * justamente lo que cambia entre entornos y lo que no debe quedar escrito a mano.
- */
+/** Documentos legales de la app. Los términos de compra se publican desde el panel. */
 
 type Business = PublicSettings['business'];
 
@@ -60,7 +49,7 @@ const legalRoute = (slug: LegalSlug): Href => `/legal/${slug}` as Href;
 const SUPPORT_ROUTE = '/support' as Href;
 const PREFERENCES_ROUTE = '/preferences' as Href;
 
-const nameOf = (business: Business | null): string => business?.legalName?.trim() || 'Verde Bowl';
+const nameOf = (business: Business | null): string => business?.legalName?.trim() || 'Misky Challay';
 const supportMail = (business: Business | null): string =>
   business?.supportEmail?.trim() || business?.email?.trim() || 'hola@verdebowl.pe';
 
@@ -83,7 +72,7 @@ const buildPrivacy = (business: Business | null): LegalDoc => ({
   navTitle: 'Privacidad',
   title: 'Política de Privacidad',
   intro:
-    'Te explicamos qué información usa Verde Bowl, por qué la necesita, con quién puede compartirla y cómo ejercer control sobre ella.',
+    'Te explicamos qué información usa Misky Challay, por qué la necesita, con quién puede compartirla y cómo ejercer control sobre ella.',
   collapsible: false,
   sections: [
     {
@@ -91,7 +80,7 @@ const buildPrivacy = (business: Business | null): LegalDoc => ({
       blocks: [
         {
           kind: 'text',
-          value: `${identity(business)} es responsable de los bancos de datos que usa Verde Bowl.`,
+          value: `${identity(business)} es responsable de los bancos de datos que usa Misky Challay.`,
         },
         {
           kind: 'mail',
@@ -174,7 +163,7 @@ const buildPrivacy = (business: Business | null): LegalDoc => ({
         {
           kind: 'text',
           value:
-            'Los datos completos de tarjeta se ingresan directamente en la plataforma del proveedor de pagos. Verde Bowl conserva referencias, estado, importe y respuesta depurada de la operación, pero no el número completo de la tarjeta ni el código de seguridad.',
+            'Los datos completos de tarjeta se ingresan directamente en la plataforma del proveedor de pagos. Misky Challay conserva referencias, estado, importe y respuesta depurada de la operación, pero no el número completo de la tarjeta ni el código de seguridad.',
         },
       ],
     },
@@ -247,184 +236,6 @@ const buildPrivacy = (business: Business | null): LegalDoc => ({
           label: 'Términos y Condiciones',
           caption: 'Las reglas de compra, planes y saldo',
           to: legalRoute('terminos'),
-        },
-      ],
-    },
-  ],
-});
-
-const buildTerms = (business: Business | null): LegalDoc => ({
-  navTitle: 'Términos',
-  title: 'Términos y Condiciones',
-  intro:
-    'Reglas claras para comprar, recibir pedidos y usar planes. Revisa sobre todo la sección de dinero pagado, bonos y vigencias.',
-  collapsible: false,
-  sections: [
-    {
-      title: 'Identificación del proveedor y alcance',
-      blocks: [
-        {
-          kind: 'text',
-          value: `La aplicación y los servicios de Verde Bowl son operados por ${identity(business)}. Estas condiciones regulan el uso de la app, la cuenta, los pedidos, los planes y la billetera de saldo.`,
-        },
-        {
-          kind: 'mail',
-          email: supportMail(business),
-          caption: 'Nuestro correo de contacto',
-        },
-      ],
-    },
-    {
-      title: 'Cuenta y aceptación',
-      blocks: [
-        {
-          kind: 'text',
-          value:
-            'Debes dar información verdadera y mantener la confidencialidad de tu acceso. Al crear una cuenta aceptas estos términos y la Política de Privacidad.',
-        },
-        {
-          kind: 'text',
-          value:
-            'Para comprar un plan te pedimos además una confirmación expresa de sus reglas de saldo, y guardamos la fecha y la versión que aceptaste. No compartas tu cuenta ni intentes usar saldos, cupones o promociones de forma fraudulenta.',
-        },
-      ],
-    },
-    {
-      title: 'Productos, disponibilidad y precios',
-      blocks: [
-        {
-          kind: 'text',
-          value:
-            'Los precios están expresados en soles e incluyen IGV. El costo de entrega, los descuentos y el total final se muestran antes de confirmar. Las fotografías son referenciales y la disponibilidad depende del stock y del local elegido.',
-        },
-        {
-          kind: 'text',
-          value:
-            'Si detectamos un error manifiesto de precio o disponibilidad antes de preparar el pedido, te avisaremos y podrás aceptar la corrección o recibir la devolución que corresponda.',
-        },
-      ],
-    },
-    {
-      title: 'Pedidos, pagos y comprobantes',
-      blocks: [
-        {
-          kind: 'text',
-          value:
-            'Antes de comprar ves el detalle del pedido. En los pagos por internet el pedido queda confirmado cuando el proveedor de pago comunica la aprobación. Cuando esté habilitado el pago contra entrega, se confirma sujeto al límite que se informa en el checkout.',
-        },
-        {
-          kind: 'text',
-          value:
-            'Emitimos boleta o factura con los datos que ingresas. Verde Bowl no almacena números completos de tarjeta ni códigos de seguridad: esos datos se procesan en la pasarela.',
-        },
-      ],
-    },
-    {
-      title: 'Entrega y recojo',
-      blocks: [
-        {
-          kind: 'text',
-          value:
-            'La entrega está sujeta a cobertura, capacidad y horarios disponibles. Los tiempos son estimados y pueden variar por tránsito, clima o demanda. Debes indicar una dirección y un punto de recepción correctos y estar disponible. Si eliges recojo, no se solicita dirección de entrega y debes acudir al local confirmado dentro del horario indicado.',
-        },
-      ],
-    },
-    {
-      title: 'Cancelaciones y devoluciones',
-      blocks: [
-        {
-          kind: 'text',
-          value:
-            'Puedes pedir la cancelación mientras el pedido no haya empezado a prepararse. Después evaluaremos el caso considerando que el producto es perecible y personalizado.',
-        },
-        {
-          kind: 'text',
-          value:
-            'Cuando corresponda devolver saldo de billetera, restituimos los lotes usados si todavía son válidos. Si vencieron mientras el pedido estaba en curso, el importe devuelto se emite con una nueva vigencia de 180 días. Los pagos externos se devuelven al medio original, sujetos a los tiempos de la entidad que procesa.',
-        },
-        {
-          kind: 'mail',
-          email: supportMail(business),
-          caption: 'Escríbenos para pedir una cancelación',
-        },
-      ],
-    },
-    {
-      title: 'Planes, dinero pagado y bonos',
-      blocks: [
-        {
-          kind: 'text',
-          value:
-            'Un plan es una compra única de saldo con beneficios, no una suscripción. No hay renovación ni cargo automático. Cada nueva compra crea lotes independientes y no extiende ni reemplaza las fechas de compras anteriores.',
-        },
-        {
-          kind: 'list',
-          items: [
-            'Dinero pagado: corresponde al precio que abonaste y puedes usarlo durante 180 días calendario desde la confirmación del pago.',
-            'Bono promocional: es la diferencia gratuita entre el crédito anunciado y el precio pagado; vence al terminar la vigencia indicada para el plan.',
-            'Beneficios: los descuentos, el delivery gratuito u otras ventajas solo se aplican durante la vigencia del plan. Si tienes varios planes, se aplica el mejor beneficio de cada tipo y no se suman porcentajes equivalentes.',
-          ],
-        },
-        {
-          kind: 'text',
-          value:
-            'Al pagar pedidos, el sistema consume primero el lote con vencimiento más cercano. Cuando un lote vence, solo se anula su remanente; nunca el saldo de otra compra. Las fechas e importes están en «Mi saldo». El saldo no es transferible ni canjeable por efectivo, salvo obligación legal o devolución expresamente aprobada.',
-        },
-      ],
-    },
-    {
-      title: 'Promociones y cupones',
-      blocks: [
-        {
-          kind: 'text',
-          value:
-            'Cada promoción puede tener fechas, productos, zonas, monto mínimo, límite de usos y reglas de acumulación propias. Las condiciones particulares que se muestran en la promoción complementan este documento. Podemos invalidar usos duplicados, automatizados o fraudulentos sin afectar los derechos de una compra legítima.',
-        },
-      ],
-    },
-    {
-      title: 'Información nutricional y alérgenos',
-      blocks: [
-        {
-          kind: 'text',
-          value:
-            'La información nutricional es estimada y puede variar según la porción o la personalización. Si tienes alergias o una condición médica, revisa los ingredientes y consulta antes de comprar. En cocina puede existir contacto cruzado; ninguna etiqueta sustituye una indicación profesional.',
-        },
-      ],
-    },
-    {
-      title: 'Disponibilidad del servicio y propiedad intelectual',
-      blocks: [
-        {
-          kind: 'text',
-          value:
-            'Podemos hacer mantenimientos o corregir fallas de la plataforma. Las marcas, diseños, textos, fotografías y software pertenecen a sus titulares y no pueden copiarse ni explotarse sin autorización. Nada en estas condiciones excluye responsabilidades ni derechos que la ley peruana reconoce al consumidor.',
-        },
-      ],
-    },
-    {
-      title: 'Atención y Libro de Reclamaciones',
-      blocks: [
-        {
-          kind: 'text',
-          value:
-            'Presentar un reclamo no limita otros mecanismos de solución ni es requisito para denunciar ante INDECOPI.',
-        },
-        {
-          kind: 'route',
-          label: 'Libro de Reclamaciones virtual',
-          caption: 'Presenta un reclamo o una queja desde la app',
-          to: SUPPORT_ROUTE,
-        },
-      ],
-    },
-    {
-      title: 'Cambios y ley aplicable',
-      blocks: [
-        {
-          kind: 'text',
-          value:
-            'Podemos actualizar estas condiciones hacia el futuro. Los cambios materiales se informan por la app o por tus datos de contacto y no reducen retroactivamente saldos ya adquiridos. Se aplican las leyes del Perú y las autoridades competentes, sin restringir tu derecho a acudir a la autoridad o jurisdicción que corresponda.',
         },
       ],
     },
@@ -552,7 +363,7 @@ const buildFaq = (business: Business | null): LegalDoc => ({
         {
           kind: 'text',
           value:
-            'Depende de la zona de cobertura de cada local. Al guardar una dirección comprobamos la cobertura y te mostramos el costo de entrega y el horario disponible. Si no llegamos, siempre puedes elegir recojo en tienda.',
+            'Depende de la zona de cobertura de cada local. Al guardar una dirección comprobamos la cobertura y te mostramos el costo de entrega y el horario disponible. Si no llegamos, siempre puedes elegir recojo en taller.',
         },
       ],
     },
@@ -577,12 +388,12 @@ const buildFaq = (business: Business | null): LegalDoc => ({
       ],
     },
     {
-      title: '¿Un plan es una suscripción?',
+      title: '¿Cómo funcionan las cajas mensuales?',
       blocks: [
         {
           kind: 'text',
           value:
-            'No. Es una compra única de saldo con beneficios: no hay renovación ni cargo automático. El dinero pagado dura 180 días y el bono promocional vence con la vigencia del plan. En «Mi saldo» ves cada lote con su fecha.',
+            'Las cajas mensuales se cobran de forma recurrente. Cada cobro confirmado habilita una caja para programar en la sucursal elegida. Puedes cancelar cobros futuros desde Mis suscripciones. El saldo comprado antes se consulta por separado en Mi saldo.',
         },
       ],
     },
@@ -635,14 +446,18 @@ const buildFaq = (business: Business | null): LegalDoc => ({
   ],
 });
 
-const BUILDERS: Record<LegalSlug, (business: Business | null) => LegalDoc> = {
+const BUILDERS: Partial<Record<LegalSlug, (business: Business | null) => LegalDoc>> = {
   privacidad: buildPrivacy,
-  terminos: buildTerms,
   cookies: buildStorage,
   'preguntas-frecuentes': buildFaq,
 };
 
 export default function LegalDocumentScreen() {
+  const params = useLocalSearchParams<{ slug?: string }>();
+  return params.slug === 'terminos' ? <CheckoutTermsDocument /> : <StaticLegalDocumentScreen />;
+}
+
+function StaticLegalDocumentScreen() {
   const params = useLocalSearchParams<{ slug?: string }>();
   const slug = typeof params.slug === 'string' ? params.slug : '';
 
@@ -657,7 +472,7 @@ export default function LegalDocumentScreen() {
 
   const business = settings.data?.business ?? null;
   const doc = useMemo<LegalDoc | null>(
-    () => (isLegalSlug(slug) ? BUILDERS[slug](business) : null),
+    () => (isLegalSlug(slug) ? (BUILDERS[slug]?.(business) ?? null) : null),
     [business, slug],
   );
 

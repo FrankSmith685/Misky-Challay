@@ -50,7 +50,7 @@ export const Drawer = ({ isOpen, onClose, title, description, side = 'right', ch
           py: { xs: 2.25, sm: 2.75 },
           borderBottom: '1px solid',
           borderColor: 'divider',
-          background: 'linear-gradient(135deg, rgba(248,241,248,.95), rgba(255,255,255,.98))',
+          background: 'linear-gradient(135deg, rgba(241,248,255,.95), rgba(255,255,255,.98))',
         }}
       >
         <Box sx={{ minWidth: 0 }}>

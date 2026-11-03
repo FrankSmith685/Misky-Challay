@@ -13,15 +13,18 @@ interface BranchSelectorProps {
    * distinta a "no pudimos preguntar".
    */
   hasError?: boolean;
+  disabled?: boolean;
 }
 
-export const BranchSelector = ({ value, branches, onChange, hasError }: BranchSelectorProps) => (
+export const BranchSelector = ({ value, branches, onChange, hasError, disabled }: BranchSelectorProps) => (
   <Select
     aria-label="Cocina activa"
     label="Sucursal operativa"
+    disabled={disabled}
     value={value ?? ''}
+    fullWidth={false}
     onChange={(event) => onChange(Number(event.target.value))}
-    sx={{ minWidth: { xs: '100%', sm: 230 }, bgcolor: 'background.paper' }}
+    sx={{ width: { xs: '100%', sm: 230 }, minWidth: 0, maxWidth: '100%', flexShrink: 1, bgcolor: 'background.paper' }}
     slotProps={{
       input: {
         startAdornment: <InputAdornment position="start"><Store size={17} /></InputAdornment>,

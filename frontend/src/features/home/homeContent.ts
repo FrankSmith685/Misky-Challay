@@ -3,7 +3,7 @@ import {
   ChefHat,
   Flame,
   MapPin,
-  Salad,
+  CakeSlice,
   Truck,
   type LucideIcon,
 } from 'lucide-react';
@@ -23,19 +23,19 @@ export interface HomeStep {
 
 export const HOME_BENEFITS: HomeBenefit[] = [
   {
-    icon: Salad,
-    title: 'Hecho a tu manera',
-    description: 'Elige una receta o combina cada ingrediente según tu antojo.',
+    icon: CakeSlice,
+    title: 'Hecha a tu manera',
+    description: 'Elige una receta o combina sabores, rellenos y decoración según tu idea.',
   },
   {
     icon: Flame,
-    title: 'Nutrición transparente',
-    description: 'Calorías y macros visibles antes de añadir tu bowl al carrito.',
+    title: 'Precio transparente',
+    description: 'Cada tamaño y extra se refleja antes de confirmar tu pedido.',
   },
   {
     icon: CalendarDays,
-    title: 'A la hora que prefieras',
-    description: 'Pide para ahora o reserva una franja que encaje con tu día.',
+    title: 'Fecha asegurada',
+    description: 'Consulta franjas con capacidad real y reserva la entrega con anticipación.',
   },
 ];
 
@@ -44,18 +44,18 @@ export const HOME_STEPS: HomeStep[] = [
     number: '01',
     icon: MapPin,
     title: 'Confirma tu zona',
-    description: 'Validamos cobertura y elegimos la cocina que puede atenderte mejor.',
+    description: 'Comprobamos si llegamos a tu dirección y qué sucursal puede atenderte.',
   },
   {
     number: '02',
     icon: ChefHat,
-    title: 'Elige o crea',
-    description: 'Pide una receta lista o arma un bowl único, paso a paso y sin sorpresas.',
+    title: 'Elige o diseña',
+    description: 'Pide una receta lista o crea una torta única, paso a paso y sin sorpresas.',
   },
   {
     number: '03',
     icon: Truck,
-    title: 'Síguelo hasta tu puerta',
-    description: 'Consulta el estado del pedido desde cocina hasta la entrega.',
+    title: 'Recíbela a tiempo',
+    description: 'Consulta el estado del pedido desde producción hasta la entrega.',
   },
 ];

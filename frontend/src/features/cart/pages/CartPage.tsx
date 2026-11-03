@@ -1,14 +1,11 @@
+import { CartAvailabilityNotice } from '../components/CartAvailabilityNotice';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  AlertTriangle,
   ArrowRight,
-  CheckCircle2,
   LogIn,
-  MapPin,
   PackageCheck,
   ShoppingBag,
-  Store,
   Trash2,
   Undo2,
   Utensils,
@@ -26,7 +23,6 @@ import { TrustBadges } from '@components/ui/TrustBadges';
 import { PriceBreakdown } from '@components/ui/PriceBreakdown';
 import { Callout } from '@components/ui/Callout';
 import { useAppDispatch, useAppSelector } from '@app/hooks';
-import { useAppState } from '@context/AppStateContext';
 import { useWalletBalance } from '@hooks/useWalletBalance';
 import {
   cancelItemEdit,
@@ -41,7 +37,7 @@ import { PendingOrderBanner } from '@features/checkout/components/PendingOrderBa
 import { usePendingOrder } from '@features/checkout/usePendingOrder';
 import { formatCurrency } from '@lib/format';
 import { ROUTES } from '@constants/routes';
-import type { SavedBowl } from '@features/builder/types';
+import { catalogApi } from '@features/catalog/services/catalog.service';
 import type { CartItem } from '@/types/domain';
 
 /**
@@ -54,18 +50,10 @@ const CartPage = () => {
   const [confirmClear, setConfirmClear] = useState(false);
   const { items, subtotal } = useAppSelector((state) => state.cart);
   const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated);
-  const {
-    address,
-    hasCoverage,
-    deliveryType,
-    pickupBranch,
-    openLocationModal,
-  } = useAppState();
-  const { pending, dismiss: dismissPending } = usePendingOrder();
+  const { pending, dismiss: dismissPending, recoveryError, retryRecovery } = usePendingOrder();
   const { balance, isLoading: isBalanceLoading } = useWalletBalance();
   /** Ultima linea quitada, para poder devolverla a su sitio. */
   const [lastRemoved, setLastRemoved] = useState<{ item: CartItem; index: number } | null>(null);
-  const isPickup = deliveryType === 'PICKUP';
   const totalUnits = useMemo(
     () => items.reduce((total, item) => total + item.quantity, 0),
     [items],
@@ -111,19 +99,11 @@ const CartPage = () => {
    * linea se queda en el carrito mientras tanto —si abandona el constructor no
    * pierde nada— y el bowl que vuelva la reemplaza en su sitio (ver `cartSlice`).
    */
-  const editCustomBowl = (item: CartItem) => {
-    // El constructor precarga con la forma de un bowl guardado (solo lee nombre,
-    // variante y selecciones): la linea del carrito viaja con esa misma forma.
-    const preload: SavedBowl = {
-      id: 0,
-      name: item.name,
-      productId: item.productId,
-      variantId: item.variantId,
-      selections: item.selections.map(({ optionId, quantity }) => ({ optionId, quantity })),
-      updatedAt: new Date().toISOString(),
-    };
+  const editCustomBowl = async (item: CartItem) => {
+    const slug = item.slug ?? (await catalogApi.getProducts()).find((product) => product.id === item.productId)?.slug;
+    if (!slug) { toast.error('Esta torta ya no está disponible para editar.'); return; }
     dispatch(startItemEdit(item.id));
-    navigate(ROUTES.builder, { state: { savedBowl: preload } });
+    navigate(`${ROUTES.cake(slug)}${item.theme ? `?diseno=${encodeURIComponent(item.theme.slug)}` : ''}`, { state: { editItem: item } });
   };
 
   const undoNotice = lastRemoved && (
@@ -148,10 +128,6 @@ const CartPage = () => {
    * un error de la tienda, no como un requisito.
    */
   const proceed = () => {
-    if (!hasCoverage) {
-      openLocationModal();
-      return;
-    }
     if (!isAuthenticated) {
       // Al identificarse vuelve al checkout: el carrito y la direccion se conservan.
       navigate(ROUTES.login, { state: { from: ROUTES.checkout } });
@@ -160,11 +136,7 @@ const CartPage = () => {
     navigate(ROUTES.checkout);
   };
 
-  const ctaLabel = !hasCoverage
-    ? isPickup
-      ? 'Elegir local'
-      : 'Elegir dirección'
-    : isAuthenticated
+  const ctaLabel = isAuthenticated
       ? 'Continuar al checkout'
       : 'Inicia sesión para continuar';
 
@@ -178,21 +150,22 @@ const CartPage = () => {
      * siga siendo lo primero que se lee.
      */
     return (
-      <main className="mx-auto max-w-6xl px-4 py-8 sm:py-12">
+      <main className="mx-auto max-w-8xl px-4 py-8 sm:py-12">
         <PageHeader
           eyebrow="Tu pedido"
           title="Carrito"
           description={
             pending
               ? 'Tus productos ya pasaron a un pedido que está esperando el pago.'
-              : 'Agrega tus bowls favoritos y vuelve aquí para revisar tu compra.'
+              : 'Agrega una torta y vuelve aquí para revisar tu compra.'
           }
           icon={ShoppingBag}
           crumbs={[{ label: 'Inicio', to: '/' }, { label: 'Carrito' }]}
         />
         <CheckoutStepper current={0} className="mb-7 max-w-xl" />
 
-        <PendingOrderBanner pending={pending} onResolved={dismissPending} />
+        <PendingOrderBanner pending={pending} onResolved={dismissPending} recoveryError={recoveryError} onRetry={retryRecovery} />
+        <CartAvailabilityNotice />
 
         {/* Se puede haber vaciado quitando la ultima linea: la salida sigue disponible. */}
         {undoNotice}
@@ -208,7 +181,7 @@ const CartPage = () => {
           description={
             pending
               ? 'Cuando termines o canceles ese pedido podrás empezar una compra nueva desde aquí.'
-              : 'Explora el menú o crea un bowl a tu medida. Lo que agregues se conservará mientras continúas comprando.'
+              : 'Explora las tortas o crea una a tu gusto. Lo que agregues se conservará mientras continúas comprando.'
           }
           action={
             <div className="flex flex-col gap-2 sm:flex-row">
@@ -221,8 +194,8 @@ const CartPage = () => {
                 Explorar el menú
               </Button>
               {!pending && (
-                <Button component={Link} to={ROUTES.builder} variant="outline">
-                  Armar mi bowl
+                <Button component={Link} to={ROUTES.menuMode('CUSTOM')} variant="outline">
+                  Crear mi torta
                 </Button>
               )}
             </div>
@@ -233,24 +206,9 @@ const CartPage = () => {
     );
   }
 
-  const destinationTitle = hasCoverage
-    ? isPickup
-      ? 'Local de recojo confirmado'
-      : 'Dirección de entrega confirmada'
-    : isPickup
-      ? 'Falta elegir el local de recojo'
-      : 'Falta confirmar la dirección';
-  const destinationDetail = hasCoverage
-    ? isPickup
-      ? `${pickupBranch?.name ?? 'Local seleccionado'} · ${pickupBranch?.addressLine ?? ''}`
-      : `${address?.label ? `${address.label} · ` : ''}${address?.line1 ?? ''}`
-    : isPickup
-      ? 'Selecciona el local donde recogerás tu pedido.'
-      : 'Confirma tu ubicación para validar cobertura y calcular el delivery.';
-
   return (
     <>
-      <main className="mx-auto max-w-6xl px-4 pb-32 pt-8 sm:pt-12 lg:pb-14">
+    <main className="mx-auto max-w-8xl px-4 pb-32 pt-8 sm:pt-12 lg:pb-14">
         <PageHeader
           eyebrow="Tu pedido"
           title="Revisa tu carrito"
@@ -268,36 +226,11 @@ const CartPage = () => {
 
         {/* Puede haber vuelto a llenar el carrito con un pedido anterior todavia
             sin pagar: pagar dos veces lo mismo no lo evita nadie mas que este aviso. */}
-        <PendingOrderBanner pending={pending} onResolved={dismissPending} />
+        <PendingOrderBanner pending={pending} onResolved={dismissPending} recoveryError={recoveryError} onRetry={retryRecovery} />
+        <CartAvailabilityNotice />
 
         <div className="grid items-start gap-7 lg:grid-cols-[minmax(0,1fr)_360px] xl:gap-9">
           <div className="grid min-w-0 gap-5">
-            <Card className={hasCoverage ? 'border-brand-200 bg-brand-50/45' : 'border-accent-300 bg-accent-50/45'}>
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex min-w-0 items-start gap-3">
-                  <span className={`grid size-10 shrink-0 place-items-center rounded-card ${hasCoverage ? 'bg-brand-700 text-white' : 'bg-accent-100 text-accent-700'}`}>
-                    {isPickup ? <Store className="size-5" /> : <MapPin className="size-5" />}
-                  </span>
-                  <div className="min-w-0">
-                    {/* La distincion entre destino resuelto y sin resolver no puede
-                        descansar solo en el color de la rampa accent. */}
-                    <p className="flex items-center gap-1.5 text-sm font-extrabold text-ink">
-                      {destinationTitle}
-                      {hasCoverage ? (
-                        <CheckCircle2 className="size-4 text-brand-700" />
-                      ) : (
-                        <AlertTriangle className="size-4 text-accent-700" />
-                      )}
-                    </p>
-                    <p className="mt-1 text-xs leading-5 text-ink-muted sm:text-sm">{destinationDetail}</p>
-                  </div>
-                </div>
-                <Button variant="outline" size="sm" onClick={openLocationModal} className="w-full sm:w-auto">
-                  {hasCoverage ? 'Cambiar' : isPickup ? 'Elegir local' : 'Elegir dirección'}
-                </Button>
-              </div>
-            </Card>
-
             <section aria-labelledby="cart-products-title">
               <div className="mb-3 flex items-end justify-between gap-3">
                 <div>
@@ -326,7 +259,7 @@ const CartPage = () => {
                         dispatch(updateItemQuantity({ id: item.id, quantity }))
                       }
                       onRemove={() => handleRemove(item, index)}
-                      onEdit={() => editCustomBowl(item)}
+                      onEdit={() => void editCustomBowl(item)}
                     />
                   </li>
                 ))}
@@ -359,8 +292,8 @@ const CartPage = () => {
                   lines={[
                     { label: 'Subtotal de productos', value: formatCurrency(subtotal) },
                     {
-                      label: isPickup ? 'Recojo en tienda' : 'Delivery',
-                      value: isPickup ? 'Gratis' : 'Por calcular',
+                      label: 'Entrega o recojo',
+                      value: 'Se elige en checkout',
                     },
                     {
                       label: 'Promociones y saldo',
@@ -375,7 +308,7 @@ const CartPage = () => {
                       tone: walletBalance != null ? 'positive' : undefined,
                     },
                   ]}
-                  totalLabel="Total estimado"
+                  totalLabel="Subtotal"
                   totalValue={formatCurrency(subtotal)}
                   prominentTotal
                   note="El servidor confirmará disponibilidad, descuentos, saldo y costo de envío en el siguiente paso."
@@ -391,15 +324,7 @@ const CartPage = () => {
                   </div>
                 )}
 
-                {!hasCoverage && (
-                  <Callout tone="warning" size="sm">
-                    {isPickup
-                      ? 'Elige un local para habilitar el checkout.'
-                      : 'Confirma una dirección con cobertura para habilitar el checkout.'}
-                  </Callout>
-                )}
-
-                {hasCoverage && !isAuthenticated && (
+                {!isAuthenticated && (
                   <Callout tone="info" size="sm" icon={LogIn}>
                     Para confirmar el pedido necesitas tu cuenta: es donde sigues el
                     estado, guardas tus direcciones y usas cupones o saldo.
@@ -434,9 +359,9 @@ const CartPage = () => {
         </div>
       </main>
 
-      <StickyActionBar label={`${totalUnits} ${totalUnits === 1 ? 'producto' : 'productos'} · Total estimado`} value={formatCurrency(subtotal)} maxWidth="6xl">
+      <StickyActionBar label={`${totalUnits} ${totalUnits === 1 ? 'producto' : 'productos'} · Subtotal`} value={formatCurrency(subtotal)} maxWidth="6xl">
         <Button size="lg" onClick={proceed}>
-          {!hasCoverage ? (isPickup ? 'Elegir local' : 'Elegir dirección') : isAuthenticated ? 'Continuar' : 'Iniciar sesión'}
+          {isAuthenticated ? 'Continuar' : 'Iniciar sesión'}
         </Button>
       </StickyActionBar>
 

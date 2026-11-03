@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { Op, type Transaction } from 'sequelize';
 import {
   Branch,
+  CakeProductProfile,
   DiningOffering,
   DiningOrderRequest,
   DiningTable,
@@ -181,7 +182,6 @@ const createOrderItems = async (
       lineTotal: line.lineTotal,
       taxableBase: tax.base,
       taxTotal: tax.tax,
-      nutritionSnapshotJson: line.nutrition,
       allergenSnapshotJson: [],
       specialInstructions: source?.specialInstructions?.trim() || null,
     }, { transaction });
@@ -196,7 +196,6 @@ const createOrderItems = async (
         quantity: selection.quantity,
         priceDelta: selection.priceDelta,
         lineExtra: selection.lineExtra,
-        nutritionSnapshotJson: null,
       }, { transaction });
     }
   }
@@ -230,6 +229,146 @@ const receipt = async (order: Order, transaction?: Transaction) => {
 };
 
 export const diningService = {
+  /** Catálogo simplificado para el mostrador: el cajero vende la presentación
+   * predeterminada y el servidor vuelve a cotizar el precio real. */
+  async counterCatalog(branchId: number) {
+    const products = await catalogService.listProducts({ branchId });
+    return products
+      // El diseÃ±o especial necesita su cotizaciÃ³n y aprobaciÃ³n; el mostrador
+      // solo ofrece bases listas o personalizables con precio publicado.
+      .filter((product) => product.isAvailable && product.defaultVariantId !== null && product.cakeSaleMode !== 'ADVANCED')
+      .map((product) => ({
+        productId: product.id,
+        name: product.name,
+        description: product.description,
+        imageUrl: product.imageUrl,
+        variantId: product.defaultVariantId as number,
+        variantName: product.defaultVariantName,
+        price: product.defaultVariantPrice,
+        cakeSaleMode: product.cakeSaleMode,
+      }));
+  },
+
+  /**
+   * Registra una venta de mostrador como un pedido POS real. Así la venta entra
+   * a la misma cocina, reserva los mismos insumos y deja el mismo rastro de pago
+   * que una compra web, pero el cajero ya marcó el medio de pago como cobrado.
+   */
+  async createCounterSale(input: {
+    branchId: number;
+    actorId: number;
+    items: DiningItemInput[];
+    paymentMethod: DiningPaymentMethod;
+    customerName?: string | null;
+    notes?: string | null;
+    idempotencyKey?: string | null;
+  }) {
+    const rawKey = input.idempotencyKey?.trim() || crypto.randomUUID();
+    const idempotencyKey = `pos-${input.branchId}-${rawKey}`.slice(0, 100);
+    const previous = await Order.findOne({ where: { idempotencyKey } });
+    if (previous) return { orderNumber: previous.orderNumber, status: previous.status, total: Number(previous.grandTotal), reused: true };
+
+    return sequelize.transaction(async (transaction) => {
+      await Branch.findByPk(input.branchId, { transaction, lock: transaction.LOCK.UPDATE });
+      const existing = await Order.findOne({ where: { idempotencyKey }, transaction });
+      if (existing) return { orderNumber: existing.orderNumber, status: existing.status, total: Number(existing.grandTotal), reused: true };
+      const profileRows = await CakeProductProfile.findAll({ where: { productId: [...new Set(input.items.map((item) => item.productId))] } });
+      if (profileRows.some((profile) => profile.saleMode === 'ADVANCED')) {
+        throw ApiError.unprocessable('Los diseños especiales se cotizan y se venden desde Pedidos; no se pueden registrar como venta directa');
+      }
+
+      const quote = await pricingService.quoteOrder({
+        branchId: input.branchId,
+        deliveryType: DELIVERY_TYPE.PICKUP,
+        items: input.items,
+        userId: null,
+        useWallet: false,
+      });
+      await inventoryService.assertCartAvailability(input.branchId, input.items);
+
+      const created = await Order.create({
+        orderNumber: orderNumber(),
+        userId: null,
+        branchId: input.branchId,
+        diningTableId: null,
+        waiterId: null,
+        source: ORDER_SOURCE.POS,
+        coverageZoneId: null,
+        deliveryType: DELIVERY_TYPE.PICKUP,
+        serviceMode: SERVICE_MODE.ASAP,
+        deliverySlotId: null,
+        scheduledAt: null,
+        status: ORDER_STATUS.PENDING_PAYMENT,
+        addressSnapshotJson: null,
+        contactName: input.customerName?.trim() || 'Cliente de mostrador',
+        contactPhone: null,
+        subtotal: quote.subtotal,
+        deliveryFee: 0,
+        discountTotal: 0,
+        walletAmount: 0,
+        taxRate: quote.taxRate,
+        taxableBase: quote.taxableBase,
+        taxTotal: quote.taxTotal,
+        grandTotal: quote.grandTotal,
+        paymentPlan: 'FULL',
+        depositAmount: 0,
+        balanceAmount: 0,
+        balanceDueAt: null,
+        depositPaidAt: null,
+        balancePaidAt: null,
+        currency: quote.currency,
+        documentType: DOCUMENT_TYPE.BOLETA,
+        billingDocType: null,
+        billingDocNumber: null,
+        billingName: null,
+        billingAddress: null,
+        invoiceStatus: INVOICE_STATUS.PENDING,
+        notes: input.notes?.trim() || null,
+        idempotencyKey,
+      }, { transaction });
+
+      await createOrderItems(created, quote, input.items, transaction);
+      await OrderStatusHistory.create({
+        orderId: created.id,
+        fromStatus: null,
+        toStatus: ORDER_STATUS.PENDING_PAYMENT,
+        actorId: input.actorId,
+        source: 'STAFF',
+        comment: 'Venta de mostrador creada en Punto de venta',
+      }, { transaction });
+
+      await inventoryService.reserveForOrder(created, transaction, true);
+
+      const now = new Date();
+      const provider = input.paymentMethod === 'card' ? 'pos' : input.paymentMethod;
+      const payment = await Payment.create({
+        payableType: PAYABLE_TYPE.ORDER,
+        payableId: created.id,
+        userId: null,
+        provider,
+        method: input.paymentMethod,
+        amount: quote.grandTotal,
+        currency: quote.currency,
+        status: PAYMENT_STATUS.SUCCEEDED,
+        stage: 'FULL',
+        idempotencyKey: `pos-payment-${idempotencyKey}`.slice(0, 80),
+        authorizedAt: now,
+        capturedAt: now,
+      }, { transaction });
+
+      await confirmPaidOrder(
+        created,
+        transaction,
+        'STAFF',
+        `Venta de mostrador cobrada con ${input.paymentMethod}`,
+        payment,
+        { skipCakeProduction: true },
+      );
+
+      return { orderNumber: created.orderNumber, status: created.status, total: Number(created.grandTotal), reused: false };
+    });
+  },
+
   async catalog(branchId: number) {
     const [products, offerings] = await Promise.all([
       catalogService.listProducts({ branchId }),
@@ -343,12 +482,17 @@ export const diningService = {
   },
 
   async openCommand(input: { branchId: number; tableId: number; waiterId: number | null; guestName?: string | null; notes?: string | null; items: DiningItemInput[]; idempotencyKey?: string | null }) {
-    const baseQuote = await pricingService.quoteOrder({ branchId: input.branchId, deliveryType: DELIVERY_TYPE.DINE_IN, items: input.items, userId: null, useWallet: false });
-    await inventoryService.assertCartAvailability(input.branchId, input.items);
 
     return sequelize.transaction(async (transaction) => {
       const table = await DiningTable.findOne({ where: { id: input.tableId, branchId: input.branchId, isActive: true }, transaction, lock: transaction.LOCK.UPDATE });
       if (!table) throw ApiError.notFound('Mesa no encontrada en este local');
+      if (input.idempotencyKey) {
+        const previous = await DiningOrderRequest.findOne({ where: { diningTableId: table.id, idempotencyKey: input.idempotencyKey }, transaction });
+        if (previous) return { orderNumber: previous.orderNumber, status: previous.status, total: Number(previous.total) };
+      }
+    const baseQuote = await pricingService.quoteOrder({ branchId: input.branchId, deliveryType: DELIVERY_TYPE.DINE_IN, items: input.items, userId: null, useWallet: false });
+    await inventoryService.assertCartAvailability(input.branchId, input.items);
+
       const occupied = await Order.count({ where: { diningTableId: table.id, status: { [Op.in]: [...OPEN_STATUSES] } }, transaction });
       if (occupied > 0) throw ApiError.conflict(`${table.code} ya tiene una comanda abierta`);
       const quote = await applyOfferings(baseQuote, input.items, input.branchId, transaction, true);
@@ -365,7 +509,7 @@ export const diningService = {
          * para no chocar con la de un pedido web.
          */
         idempotencyKey: input.idempotencyKey
-          ? `mesa-${table.id}-${input.idempotencyKey}`.slice(0, 100)
+          ? `mesa-${table.id}-${crypto.createHash('sha256').update(input.idempotencyKey).digest('hex')}`
           : `pos-${input.branchId}-${table.id}-${Date.now()}-${crypto.randomInt(100, 999)}`,
       }, { transaction });
       await createOrderItems(created, quote, input.items, transaction);
@@ -373,16 +517,22 @@ export const diningService = {
       await OrderStatusHistory.create({ orderId: created.id, fromStatus: null, toStatus: ORDER_STATUS.PENDING_PAYMENT, actorId: input.waiterId, source: 'STAFF', comment: `Comanda abierta en ${table.code}` }, { transaction });
       await inventoryService.reserveForOrder(created, transaction, true);
       await confirmPaidOrder(created, transaction, 'STAFF', `Comanda enviada desde ${table.code}`);
+      if (input.idempotencyKey) await DiningOrderRequest.create({ diningTableId: table.id, idempotencyKey: input.idempotencyKey, orderId: created.id, orderNumber: created.orderNumber, status: created.status, total: Number(created.grandTotal) }, { transaction });
       return { orderNumber: created.orderNumber, status: created.status, total: Number(created.grandTotal) };
     });
   },
 
-  async addItems(input: { orderNumber: string; branchId: number; actorId: number | null; items: DiningItemInput[] }) {
+  async addItems(input: { orderNumber: string; branchId: number; actorId: number | null; items: DiningItemInput[]; idempotencyKey?: string | null }) {
+    return sequelize.transaction(async (transaction) => {
+      const order = await Order.findOne({ where: { orderNumber: input.orderNumber, branchId: input.branchId, deliveryType: DELIVERY_TYPE.DINE_IN }, transaction, lock: transaction.LOCK.UPDATE });
+      if (!order) throw ApiError.notFound('No existe una comanda abierta que pueda ampliarse');
+      if (input.idempotencyKey && order.diningTableId) {
+        const previous = await DiningOrderRequest.findOne({ where: { diningTableId: order.diningTableId, idempotencyKey: input.idempotencyKey }, transaction });
+        if (previous) return { orderNumber: previous.orderNumber, status: previous.status, total: Number(previous.total) };
+      }
+      if (order.status !== ORDER_STATUS.CONFIRMED) throw ApiError.conflict('La comanda ya no puede ampliarse.');
     const baseQuote = await pricingService.quoteOrder({ branchId: input.branchId, deliveryType: DELIVERY_TYPE.DINE_IN, items: input.items, userId: null, useWallet: false });
     await inventoryService.assertCartAvailability(input.branchId, input.items);
-    return sequelize.transaction(async (transaction) => {
-      const order = await Order.findOne({ where: { orderNumber: input.orderNumber, branchId: input.branchId, deliveryType: DELIVERY_TYPE.DINE_IN, status: ORDER_STATUS.CONFIRMED }, transaction, lock: transaction.LOCK.UPDATE });
-      if (!order) throw ApiError.notFound('No existe una comanda abierta que pueda ampliarse');
       const ticket = await KitchenTicket.findOne({ where: { orderId: order.id }, transaction, lock: transaction.LOCK.UPDATE });
       if (!ticket || !(ADDABLE_TICKET_STATUSES as readonly string[]).includes(ticket.status)) throw ApiError.conflict('Cocina ya empezÃ³ a preparar. Abre una nueva comanda adicional para evitar confusiones');
       const quote = await applyOfferings(baseQuote, input.items, input.branchId, transaction, true);
@@ -418,6 +568,7 @@ export const diningService = {
           idempotencyKey: `kitchen-ticket-${ticket.id}-items-${order.updatedAt.getTime()}`,
         }).catch(() => undefined);
       });
+      if (input.idempotencyKey && order.diningTableId) await DiningOrderRequest.create({ diningTableId: order.diningTableId, idempotencyKey: input.idempotencyKey, orderId: order.id, orderNumber: order.orderNumber, status: order.status, total: Number(order.grandTotal) }, { transaction });
       return { orderNumber: order.orderNumber, status: order.status, total: Number(order.grandTotal) };
     });
   },
@@ -476,7 +627,7 @@ export const diningService = {
     if (!table) throw ApiError.notFound('Este QR de mesa no estÃ¡ activo');
     const branch = await Branch.findByPk(table.branchId);
     const open = await Order.findOne({ where: { diningTableId: table.id, status: { [Op.in]: [...OPEN_STATUSES] } }, order: [['placedAt', 'DESC']] });
-    return { table: { id: table.id, code: table.code, area: table.area, capacity: table.capacity }, branch: { id: table.branchId, name: branch?.name ?? 'Verde Bowl' }, command: open ? { orderNumber: open.orderNumber, status: open.status, total: Number(open.grandTotal) } : null, catalog: await this.catalog(table.branchId) };
+    return { table: { id: table.id, code: table.code, area: table.area, capacity: table.capacity }, branch: { id: table.branchId, name: branch?.name ?? 'Misky Challay' }, command: open ? { orderNumber: open.orderNumber, status: open.status, total: Number(open.grandTotal) } : null, catalog: await this.catalog(table.branchId) };
   },
 
   /**
@@ -517,30 +668,8 @@ export const diningService = {
 
     const open = await Order.findOne({ where: { diningTableId: table.id, status: { [Op.in]: [...OPEN_STATUSES] } }, order: [['placedAt', 'DESC']] });
     const result = open
-      ? await this.addItems({ orderNumber: open.orderNumber, branchId: table.branchId, actorId: null, items: input.items })
+      ? await this.addItems({ orderNumber: open.orderNumber, branchId: table.branchId, actorId: null, items: input.items, idempotencyKey })
       : await this.openCommand({ branchId: table.branchId, tableId: table.id, waiterId: null, guestName: input.guestName, notes: input.notes, items: input.items, idempotencyKey });
-
-    if (idempotencyKey) {
-      const applied = await Order.findOne({
-        where: { orderNumber: result.orderNumber },
-        attributes: ['id'],
-      });
-      /*
-       * Se anota DESPUES de aplicar: si el registro fallara antes, el comensal
-       * se quedaria sin su pedido. Al reves, como mucho pierde la proteccion de
-       * un reintento — y el indice unico ya frena las carreras simultaneas.
-       */
-      if (applied) {
-        await DiningOrderRequest.create({
-          diningTableId: table.id,
-          idempotencyKey,
-          orderId: applied.id,
-          orderNumber: result.orderNumber,
-          status: result.status,
-          total: result.total,
-        }).catch(() => undefined);
-      }
-    }
 
     return result;
   },

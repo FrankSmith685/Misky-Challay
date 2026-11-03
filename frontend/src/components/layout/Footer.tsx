@@ -4,12 +4,15 @@ import { Clock3, Mail, MapPin, MessageCircle, Phone, ShieldCheck, Truck } from '
 import { ROUTES } from '@constants/routes';
 import { AppLogo } from '@components/common/AppLogo';
 import { useBusinessInfo } from '@services/businessInfo';
+import { whatsappLink } from '@lib/whatsapp';
 
 const DISCOVER = [
-  { label: 'Menú', to: ROUTES.menu },
-  { label: 'Arma tu bowl', to: ROUTES.builder },
-  { label: 'Planes y saldo', to: ROUTES.plans },
-  { label: 'Cobertura', to: ROUTES.coverage },
+  { label: 'Cómo hacer tu pedido', to: ROUTES.howToOrder },
+  { label: 'Catálogo', to: ROUTES.menu },
+  { label: 'Crea tu torta', to: ROUTES.menuMode('CUSTOM') },
+  { label: 'Para empresas', to: ROUTES.business },
+  { label: 'Zonas de entrega', to: ROUTES.coverage },
+  { label: 'Experiencia AR', to: ROUTES.cakeAr },
 ];
 
 const LEGAL = [
@@ -30,6 +33,7 @@ const TRUST = [
 
 export const Footer = () => {
   const business = useBusinessInfo();
+  const whatsapp = whatsappLink(business.whatsappPhone ?? business.phone, 'Hola, quisiera hacer una consulta a Misky Challay.');
 
   // El pie usa las paradas oscuras/claras de la marca (primary.900 / primary.300):
   // si el negocio cambia el verde, el pie lo sigue en vez de conservar su hex propio.
@@ -63,10 +67,10 @@ export const Footer = () => {
         <Box>
           <AppLogo inverse />
           <Typography variant="body2" sx={{ mt: 2.5, maxWidth: 380, color: 'rgba(255,255,255,.68)', lineHeight: 1.8 }}>
-            Bowls frescos y personalizables, nutrición transparente y una experiencia de compra diseñada alrededor de tu tiempo.
+            Tortas, postres, turrones y bocaditos para compartir. Elige tu favorito y reserva una fecha disponible para tu entrega.
           </Typography>
           <Stack direction="row" spacing={1} sx={{ mt: 3 }}>
-            <IconButton component="a" href={`https://wa.me/${business.phone.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" aria-label="Escríbenos por WhatsApp" sx={{ color: 'white', bgcolor: 'rgba(255,255,255,.08)' }}><MessageCircle size={18} /></IconButton>
+            {whatsapp && <IconButton component="a" href={whatsapp} target="_blank" rel="noopener noreferrer" aria-label="Escríbenos por WhatsApp" sx={{ color: 'white', bgcolor: 'rgba(255,255,255,.08)' }}><MessageCircle size={18} /></IconButton>}
             <IconButton component="a" href={`mailto:${business.email}`} aria-label="Enviar correo" sx={{ color: 'white', bgcolor: 'rgba(255,255,255,.08)' }}><Mail size={18} /></IconButton>
           </Stack>
         </Box>
@@ -94,12 +98,12 @@ export const Footer = () => {
         </Box>
 
         <Box>
-          <Typography variant="overline" sx={{ color: 'primary.300', fontWeight: 800 }}>Visítanos</Typography>
+          <Typography variant="overline" sx={{ color: 'primary.300', fontWeight: 800 }}>Taller y contacto</Typography>
           <Stack spacing={1.75} sx={{ mt: 1.5, color: 'rgba(255,255,255,.72)' }}>
             <Stack direction="row" spacing={1.25}><MapPin size={18} /><Typography variant="body2">{business.address}</Typography></Stack>
             <Stack direction="row" spacing={1.25}><Mail size={18} /><MuiLink href={`mailto:${business.email}`} color="inherit" underline="hover" variant="body2">{business.email}</MuiLink></Stack>
             <Stack direction="row" spacing={1.25}><Phone size={18} /><MuiLink href={`tel:${business.phone.replace(/\s+/g, '')}`} color="inherit" underline="hover" variant="body2">{business.phone}</MuiLink></Stack>
-            <Typography variant="caption" sx={{ pl: 3.75, color: 'rgba(255,255,255,.48)' }}>Atención todos los días</Typography>
+            <Typography variant="caption" sx={{ pl: 3.75, color: 'rgba(255,255,255,.48)' }}>Consulta los horarios al elegir tu entrega o recojo.</Typography>
           </Stack>
         </Box>
       </Box>

@@ -48,7 +48,7 @@ export default function RegisterScreen() {
   };
 
   return (
-    <AuthScaffold eyebrow="Únete a Verde Bowl" title="Crea tu cuenta" description="Guarda tus datos una vez y disfruta pedidos más rápidos y personalizados.">
+    <AuthScaffold eyebrow="Únete a Misky Challay" title="Crea tu cuenta" description="Guarda tus datos una vez y disfruta pedidos más rápidos y personalizados.">
       {errors.submit && <View style={styles.alert}><Text style={styles.alertTitle}>No pudimos crear tu cuenta</Text><Text style={styles.alertCopy}>{errors.submit}</Text></View>}
       <View style={styles.row}>
         <View style={styles.half}><FormField label="Nombre" icon="account-outline" value={fields.firstName} onChangeText={update('firstName')} error={errors.firstName} autoComplete="given-name" /></View>

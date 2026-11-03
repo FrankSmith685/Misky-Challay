@@ -90,61 +90,67 @@ export const CoverageResultCard = ({
           </div>
         </div>
 
-        <div className="grid gap-3 p-4 sm:p-5">
-          <div className="grid grid-cols-2 gap-2.5">
-            <Metric icon={Clock3} label="Tiempo estimado" value={`~${result.etaMinutes} min`} />
-            <Metric icon={Bike} label="Delivery" value={formatCurrency(result.zone.deliveryFee)} />
-            <Metric
-              icon={PackageCheck}
-              label="Pedido mínimo"
-              value={formatCurrency(result.zone.minimumOrder)}
-            />
-            <Metric icon={Store} label="Local asignado" value={result.branch.name} />
-          </div>
+        <div className="grid min-w-0 grid-cols-1 gap-4 p-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_minmax(240px,.4fr)] lg:items-center lg:gap-6">
+          <div className="grid min-w-0 grid-cols-1 gap-3">
+            <div className="grid grid-cols-2 gap-2.5 xl:grid-cols-4">
+              <Metric icon={Clock3} label="Tiempo estimado" value={`~${result.etaMinutes} min`} />
+              <Metric icon={Bike} label="Delivery" value={formatCurrency(result.zone.deliveryFee + (result.extraDeliveryFee ?? 0))} />
+              <Metric
+                icon={PackageCheck}
+                label="Pedido mínimo"
+                value={result.zone.minimumOrder > 0 ? formatCurrency(result.zone.minimumOrder) : 'Sin mínimo'}
+              />
+              <Metric icon={Store} label="Local asignado" value={result.branch.name} />
+            </div>
+            {result.extraDeliveryFee ? <p className="text-xs leading-5 text-ink-muted">El delivery incluye {formatCurrency(result.extraDeliveryFee)} por {result.extraDistanceKm?.toFixed(1)} km fuera de la zona habitual.</p> : null}
 
-          <div className="flex items-start gap-2 rounded-card bg-white px-3 py-2.5 text-xs text-ink-muted ring-1 ring-brand-100">
-            <span
-              className={`mt-1 size-2 shrink-0 rounded-full ${
-                result.branch.isOpenNow ? 'bg-brand-500' : 'bg-amber-500'
-              }`}
-            />
-            <span>
-              <strong className="text-ink">
-                {result.branch.isOpenNow ? 'Abierto ahora' : 'Cerrado en este momento'}
-              </strong>
-              {' · '}
-              Zona {result.zone.name}
-              {result.routeDistanceKm != null ? ` · ${result.routeDistanceKm.toFixed(1)} km` : ''}
-            </span>
-          </div>
-
-          {!isAuthenticated && (
-            <div className="flex items-start gap-2.5 rounded-card border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs leading-5 text-amber-900">
-              <LockKeyhole className="mt-0.5 size-4 shrink-0" />
+            <div className="flex items-start gap-2 rounded-card bg-white px-3 py-2.5 text-xs text-ink-muted ring-1 ring-brand-100">
+              <span
+                className={`mt-1 size-2 shrink-0 rounded-full ${
+                  result.branch.isOpenNow ? 'bg-brand-500' : 'bg-amber-500'
+                }`}
+              />
               <span>
-                <strong className="block">Tu cobertura ya está confirmada</strong>
-                Inicia sesión para guardar esta dirección y asociarla a tus pedidos.
+                <strong className="text-ink">
+                  {result.branch.isOpenNow ? 'Abierto ahora' : 'Cerrado en este momento'}
+                </strong>
+                {' · '}
+                Zona {result.zone.name}
+                {result.routeDistanceKm != null ? ` · ${result.routeDistanceKm.toFixed(1)} km` : ''}
               </span>
             </div>
-          )}
+          </div>
 
-          <Button
-            className="w-full"
-            size="lg"
-            isLoading={isConfirming}
-            leftIcon={!isAuthenticated ? <LockKeyhole className="size-4" /> : undefined}
-            onClick={onConfirm}
-          >
-            {isAuthenticated ? 'Guardar y usar esta dirección' : 'Ingresar para usar esta dirección'}
-          </Button>
-          <button
-            type="button"
-            onClick={onEdit}
-            className="mx-auto flex min-h-9 items-center gap-1.5 px-3 text-xs font-bold text-ink-muted transition-colors hover:text-brand-700"
-          >
-            <RotateCcw className="size-3.5" />
-            Ajustar dirección
-          </button>
+          <div className="grid min-w-0 grid-cols-1 gap-3">
+            {!isAuthenticated && (
+              <div className="flex items-start gap-2.5 rounded-card border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs leading-5 text-amber-900">
+                <LockKeyhole className="mt-0.5 size-4 shrink-0" />
+                <span>
+                  <strong className="block">Podemos entregar en tu dirección</strong>
+                  Inicia sesión para guardar esta dirección y asociarla a tus pedidos.
+                </span>
+              </div>
+            )}
+
+            <Button
+              className="w-full"
+              sx={{ whiteSpace: 'normal' }}
+              size="lg"
+              isLoading={isConfirming}
+              leftIcon={!isAuthenticated ? <LockKeyhole className="size-4" /> : undefined}
+              onClick={onConfirm}
+            >
+              {isAuthenticated ? 'Guardar y usar esta dirección' : 'Ingresar para usar esta dirección'}
+            </Button>
+            <button
+              type="button"
+              onClick={onEdit}
+              className="mx-auto flex min-h-9 items-center gap-1.5 px-3 text-xs font-bold text-ink-muted transition-colors hover:text-brand-700"
+            >
+              <RotateCcw className="size-3.5" />
+              Ajustar dirección
+            </button>
+          </div>
         </div>
       </section>
     );

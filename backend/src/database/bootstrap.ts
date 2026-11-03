@@ -1,9 +1,11 @@
 import mysql from 'mysql2/promise';
 import { env } from '@config/env';
 import { logger } from '@config/logger';
+import { seedCheckoutTerms } from './seeders/checkoutTerms.seeder';
 import { databaseSsl, sequelize } from './connection';
 import { registerModels } from './models';
 import { runSeeders } from './seeders';
+import { seedFoodTaxonomy } from './seeders/foodTaxonomy.seeder';
 
 export interface DatabaseStartupOptions {
   /** Crea la base de datos si todavia no existe. */
@@ -14,7 +16,7 @@ export interface DatabaseStartupOptions {
   alter: boolean;
   /** DROP + CREATE de todas las tablas. Cuidado: borra toda la informacion. */
   force: boolean;
-  /** Ejecuta los seeders base (roles, permisos, admin) al terminar. */
+  /** Ejecuta los seeders base; la taxonomía alimentaria se asegura incluso si es false. */
   seed: boolean;
 }
 
@@ -68,6 +70,28 @@ const repairDiningQrTokens = async (): Promise<void> => {
 };
 
 /**
+ * Bases creadas antes de que `PurchaseOrder.createdBy` fuera opcional pueden
+ * conservar la columna como NOT NULL. La asociación usa ON DELETE SET NULL,
+ * así que MySQL rechaza la FK durante `sequelize.sync({ alter: true })` antes
+ * de tener oportunidad de ajustar la columna con el modelo nuevo.
+ */
+const repairPurchaseOrderAuthor = async (): Promise<void> => {
+  const [tables] = await sequelize.query("SHOW TABLES LIKE 'purchase_orders'");
+  if (!Array.isArray(tables) || tables.length === 0) return;
+
+  const [columns] = await sequelize.query("SHOW COLUMNS FROM `purchase_orders` LIKE 'created_by'");
+  const createdBy = Array.isArray(columns)
+    ? (columns[0] as { Null?: string } | undefined)
+    : undefined;
+  if (!createdBy || String(createdBy.Null).toUpperCase() === 'YES') return;
+
+  await sequelize.query(
+    'ALTER TABLE `purchase_orders` MODIFY COLUMN `created_by` BIGINT UNSIGNED NULL',
+  );
+  logger.info('Columna purchase_orders.created_by ajustada a NULL para conservar la orden si se elimina su autor');
+};
+
+/**
  * Arranque completo de la capa de datos:
  * crear BD -> registrar modelos + asociaciones -> autenticar -> sincronizar -> seeders.
  */
@@ -83,6 +107,7 @@ export const initDatabase = async (options: DatabaseStartupOptions): Promise<voi
 
   if (options.sync) {
     await repairDiningQrTokens();
+    await repairPurchaseOrderAuthor();
     if (options.force) {
       logger.warn('DB_FORCE activo: se eliminaran y recrearan TODAS las tablas');
       await sequelize.sync({ force: true });
@@ -100,7 +125,12 @@ export const initDatabase = async (options: DatabaseStartupOptions): Promise<voi
 
   if (options.seed) {
     await runSeeders();
+  } else {
+    // Los alérgenos son necesarios para revisar y publicar productos. También
+    // deben existir cuando se omite el bootstrap de roles y datos de ejemplo.
+    await seedFoodTaxonomy();
   }
+  await seedCheckoutTerms();
 };
 
 export const closeDatabase = async (): Promise<void> => {

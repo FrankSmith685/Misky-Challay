@@ -246,7 +246,7 @@ export default function SupportScreen() {
   };
 
   const openWhatsApp = async () => {
-    const digits = (settings.data?.business.phone ?? '').replace(/\D/g, '');
+    const digits = ((settings.data?.business.whatsappPhone ?? settings.data?.business.phone) ?? '').replace(/\D/g, '');
     if (!digits) {
       toast.show({
         message: 'El negocio todavía no configuró su número de atención.',
@@ -257,8 +257,8 @@ export default function SupportScreen() {
 
     const text = encodeURIComponent(
       orderNumber.trim()
-        ? `Hola Verde Bowl, necesito ayuda con el pedido ${orderNumber.trim()}.`
-        : 'Hola Verde Bowl, necesito ayuda con mi compra.',
+        ? `Hola Misky Challay, necesito ayuda con el pedido ${orderNumber.trim()}.`
+        : 'Hola Misky Challay, necesito ayuda con mi compra.',
     );
 
     try {

@@ -1,4 +1,4 @@
-import type { StaffModuleKey } from '../../constants/staffModules';
+﻿import type { StaffModuleKey } from '../../constants/staffModules';
 import { apiCall, apiPaged, apiRequest, type PaginationMeta } from './client';
 
 export type StaffRow = Record<string, unknown>;
@@ -30,7 +30,7 @@ const label = (value: string): string =>
     .replace(/^./, (letter) => letter.toUpperCase());
 
 /** Configuraciones anidadas convertidas en filas, sin exponer secretos. */
-const settingRows = (value: StaffRow, group = 'Configuración'): StaffRow[] =>
+const settingRows = (value: StaffRow, group = 'ConfiguraciÃ³n'): StaffRow[] =>
   Object.entries(value).flatMap(([key, entry]) => {
     if (['smtpPassword', 'secret', 'token', 'apiKey'].some((term) => key.toLowerCase().includes(term.toLowerCase()))) return [];
     if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
@@ -41,7 +41,7 @@ const settingRows = (value: StaffRow, group = 'Configuración'): StaffRow[] =>
   });
 
 const needsBranch = new Set<StaffModuleKey>([
-  'dashboard', 'orders', 'cash', 'dining', 'kitchen', 'delivery', 'inventory',
+  'dashboard', 'orders', 'cash', 'dining', 'kitchen', 'cakes', 'delivery', 'inventory', 'procurement',
 ]);
 
 const singlePage = (items: StaffRow[]): PaginationMeta => ({
@@ -97,8 +97,19 @@ export const staffApi = {
           summary: (data.stats as StaffRow) ?? undefined,
         };
       }
+      case 'cakes': {
+        const items = await apiRequest<StaffRow[]>('/cakes/tasks', { auth: true, query: { branchId, mine: 'false' } });
+        return { rows: items, meta: singlePage(items) };
+      }
       case 'delivery': return { rows: await apiRequest<StaffRow[]>('/delivery/board', { auth: true, query: { branchId } }) };
       case 'inventory': return { rows: await apiRequest<StaffRow[]>('/operations/inventory', { auth: true, query: { branchId } }) };
+      case 'procurement': {
+        const [orders, costs] = await Promise.all([
+          apiRequest<StaffRow[]>('/operations/procurement/purchase-orders', { auth: true, query: { branchId } }),
+          apiRequest<StaffRow>('/operations/procurement/cost-summary', { auth: true, query: { branchId } }),
+        ]);
+        return { rows: orders, summary: costs };
+      }
       case 'catalog': return { rows: await apiRequest<StaffRow[]>('/admin/catalog/products', { auth: true, query: { search: options.search, status: options.status } }) };
       case 'builder': {
         const products = await apiRequest<StaffRow[]>('/admin/catalog/products', { auth: true });
@@ -191,10 +202,12 @@ export const staffApi = {
   }) =>
     apiRequest(`/operations/dining/commands/${encodeURIComponent(orderNumber)}/close`, { method: 'POST', auth: true, body: input }),
 
-  createInventoryItem: (input: { branchId: number; code: string; name: string; unit: string; unitCost: number; minLevel: number; initialStock: number }) =>
+  createInventoryItem: (input: { branchId: number; name: string; unit: string; unitCost: number; minLevel: number; initialStock: number }) =>
     apiRequest('/operations/inventory/items', { method: 'POST', auth: true, body: input }),
   adjustStock: (input: { branchId: number; inventoryItemId: number; type: 'PURCHASE' | 'WASTE' | 'ADJUSTMENT'; quantity: number; reason: string }) =>
     apiRequest('/operations/inventory/adjust', { method: 'POST', auth: true, body: input }),
+  receivePurchaseOrder: (input: { branchId: number; orderId: number; lines: Array<{ purchaseOrderItemId: number; quantity: number; lotCode: string; expiresAt?: string | null; unitCost?: number }> }) =>
+    apiRequest('/operations/procurement/purchase-orders/' + input.orderId + '/receive', { method: 'POST', auth: true, body: { branchId: input.branchId, lines: input.lines } }),
 
   changeProductStatus: (productId: number, status: 'DRAFT' | 'ACTIVE' | 'INACTIVE') =>
     apiRequest(`/admin/catalog/products/${productId}/status`, { method: 'PATCH', auth: true, body: { status } }),
@@ -206,8 +219,6 @@ export const staffApi = {
     apiRequest(`/admin/catalog/variants/${variantId}`, { method: 'PATCH', auth: true, body: input }),
   addVariant: (productId: number, input: { name: string; basePrice: number }) =>
     apiRequest(`/admin/catalog/products/${productId}/variants`, { method: 'POST', auth: true, body: input }),
-  updateNutrition: (variantId: number, input: StaffRow) =>
-    apiRequest(`/admin/catalog/variants/${variantId}/nutrition`, { method: 'PATCH', auth: true, body: input }),
   setAllergens: (productId: number, allergenIds: number[]) =>
     apiRequest(`/admin/catalog/products/${productId}/allergens`, { method: 'PATCH', auth: true, body: { allergenIds } }),
   setDietaryTags: (productId: number, tagIds: number[]) =>
@@ -266,3 +277,4 @@ export const staffApi = {
   removeMedia: (id: number) => apiRequest(`/media/${id}`, { method: 'DELETE', auth: true }),
   restoreMedia: (id: number) => apiRequest(`/media/${id}/restore`, { method: 'POST', auth: true }),
 };
+

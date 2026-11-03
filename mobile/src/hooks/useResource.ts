@@ -49,11 +49,14 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>();
 /** Peticiones en vuelo por clave: dos pantallas que piden lo mismo comparten una sola. */
 const inflight = new Map<string, Promise<unknown>>();
+let cacheGeneration = 0;
+const revisions = new Map<string, number>();
+class ResourceInvalidatedError extends Error {}
 /** Hooks montados por clave, para que una invalidacion los despierte. */
-const listeners = new Map<string, Set<() => void>>();
+const listeners = new Map<string, Set<(reset?: boolean) => void>>();
 
-const notify = (key: string): void => {
-  listeners.get(key)?.forEach((listener) => listener());
+const notify = (key: string, reset = false): void => {
+  listeners.get(key)?.forEach((listener) => listener(reset));
 };
 
 /**
@@ -61,25 +64,34 @@ const notify = (key: string): void => {
  * Con `prefix` invalida toda una familia: invalidateResource('orders:', { prefix: true }).
  * Sin argumentos vacia la cache entera (util al cerrar sesion).
  */
-export function invalidateResource(key?: string, options?: { prefix?: boolean }): void {
+export function invalidateResource(key?: string, options?: { prefix?: boolean; reset?: boolean }): void {
   if (key === undefined) {
     const keys = [...cache.keys(), ...listeners.keys()];
+    cacheGeneration += 1;
+    inflight.clear();
+    revisions.clear();
     cache.clear();
-    new Set(keys).forEach(notify);
+    new Set(keys).forEach((entry) => notify(entry, options?.reset ?? true));
     return;
   }
 
   if (options?.prefix) {
     const affected = new Set(
-      [...cache.keys(), ...listeners.keys()].filter((entry) => entry.startsWith(key)),
+      [...cache.keys(), ...listeners.keys(), ...inflight.keys()].filter((entry) => entry.startsWith(key)),
     );
-    affected.forEach((entry) => cache.delete(entry));
-    affected.forEach(notify);
+    affected.forEach((entry) => {
+      cache.delete(entry);
+      inflight.delete(entry);
+      revisions.set(entry, (revisions.get(entry) ?? 0) + 1);
+    });
+    affected.forEach((entry) => notify(entry, options?.reset ?? false));
     return;
   }
 
   cache.delete(key);
-  notify(key);
+  inflight.delete(key);
+  revisions.set(key, (revisions.get(key) ?? 0) + 1);
+  notify(key, options?.reset ?? false);
 }
 
 /** Siembra la cache con un valor que ya tienes (por ejemplo el detalle que venia en la lista). */
@@ -100,6 +112,7 @@ const wait = (ms: number): Promise<void> =>
  */
 const isRetriable = (error: unknown): boolean => {
   if (!(error instanceof ApiRequestError)) return false;
+  if (error.code === 'SESSION_CHANGED') return false;
   return error.status === undefined || error.status >= 500;
 };
 
@@ -124,15 +137,18 @@ const attempt = async <T>(fetcher: () => Promise<T>, retries: number): Promise<T
 const runFetch = <T>(key: string, fetcher: () => Promise<T>, retries: number): Promise<T> => {
   const existing = inflight.get(key) as Promise<T> | undefined;
   if (existing) return existing;
+  const generation = cacheGeneration;
+  const revision = revisions.get(key) ?? 0;
 
   const promise = attempt(fetcher, retries).then(
     (value) => {
-      inflight.delete(key);
+      if (inflight.get(key) === promise) inflight.delete(key);
+      if (generation !== cacheGeneration || revision !== (revisions.get(key) ?? 0)) throw new ResourceInvalidatedError();
       cache.set(key, { value, at: Date.now() });
       return value;
     },
     (error: unknown) => {
-      inflight.delete(key);
+      if (inflight.get(key) === promise) inflight.delete(key);
       throw toError(error);
     },
   );
@@ -214,6 +230,7 @@ export function useResource<T>(options: UseResourceOptions<T>): UseResourceResul
   // que ya no es la que se esta mirando.
   const mountedRef = useRef(true);
   const keyRef = useRef(key);
+  const dataKeyRef = useRef(key);
   keyRef.current = key;
 
   useEffect(() => {
@@ -243,12 +260,15 @@ export function useResource<T>(options: UseResourceOptions<T>): UseResourceResul
         }));
       }
 
+      const generation = cacheGeneration;
+      const revision = revisions.get(key) ?? 0;
       try {
         const value = await runFetch<T>(key, () => fetcherRef.current(), retries);
-        if (!mountedRef.current || keyRef.current !== key) return;
+        if (!mountedRef.current || keyRef.current !== key || generation !== cacheGeneration || revision !== (revisions.get(key) ?? 0)) return;
         setState({ data: value, error: null, loading: false, refreshing: false });
       } catch (error) {
-        if (!mountedRef.current || keyRef.current !== key) return;
+        if (error instanceof ResourceInvalidatedError || (error instanceof ApiRequestError && error.code === 'SESSION_CHANGED')) return;
+        if (!mountedRef.current || keyRef.current !== key || generation !== cacheGeneration || revision !== (revisions.get(key) ?? 0)) return;
         setState((prev) => ({
           data: prev.data,
           error: toError(error),
@@ -262,6 +282,7 @@ export function useResource<T>(options: UseResourceOptions<T>): UseResourceResul
 
   // Carga inicial y cambio de clave.
   useEffect(() => {
+    dataKeyRef.current = key;
     if (!isActive || key === null) {
       setState(emptyState<T>());
       return;
@@ -283,10 +304,11 @@ export function useResource<T>(options: UseResourceOptions<T>): UseResourceResul
   useEffect(() => {
     if (!isActive || key === null) return;
 
-    const handler = () => {
+    const handler = (reset = false) => {
+      if (reset) setState({ data: null, error: null, loading: true, refreshing: false });
       void load('silent');
     };
-    const set = listeners.get(key) ?? new Set<() => void>();
+    const set = listeners.get(key) ?? new Set<(reset?: boolean) => void>();
     set.add(handler);
     listeners.set(key, set);
 
@@ -350,6 +372,8 @@ export function useResource<T>(options: UseResourceOptions<T>): UseResourceResul
 
   const mutate = useCallback(
     (value: T) => {
+      if (keyRef.current !== key || !mountedRef.current) return;
+      dataKeyRef.current = key;
       if (key !== null) primeResource(key, value);
       setState({ data: value, error: null, loading: false, refreshing: false });
     },
@@ -357,10 +381,10 @@ export function useResource<T>(options: UseResourceOptions<T>): UseResourceResul
   );
 
   return {
-    data: state.data,
-    error: state.error,
-    loading: state.loading,
-    refreshing: state.refreshing,
+    data: dataKeyRef.current === key ? state.data : null,
+    error: dataKeyRef.current === key ? state.error : null,
+    loading: dataKeyRef.current !== key || state.loading,
+    refreshing: dataKeyRef.current === key && state.refreshing,
     refetch,
     refresh,
     mutate,

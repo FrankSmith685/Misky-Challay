@@ -31,6 +31,7 @@ interface CardProps extends HTMLAttributes<HTMLDivElement> {
 export const Card = ({ className, shadow = 'e2', ...props }: CardProps) => (
   <Paper
     component="div"
+    data-ui-card
     variant="outlined"
     elevation={0}
     className={cn('rounded-card border-line bg-surface p-5 transition-[border-color,box-shadow,transform] duration-200', ELEVATION[shadow], className)}

@@ -4,10 +4,10 @@ import { sequelize } from '../connection';
 import { registerModels } from '../models';
 import { seedRbac } from './rbac.seeder';
 import { seedGeography, seedUbigeo } from './geo.seeder';
-import { seedCatalog } from './catalog.seeder';
+import { seedCakes } from './cakes.seeder';
 import { seedCoupons } from './coupon.seeder';
-import { seedOperations } from './operations.seeder';
-import { seedPlans } from './plan.seeder';
+import { seedFoodTaxonomy } from './foodTaxonomy.seeder';
+import { seedSubscriptionPlans } from './subscriptionPlans.seeder';
 
 /**
  * Seeders idempotentes: se pueden ejecutar en cada arranque sin duplicar datos.
@@ -16,18 +16,21 @@ import { seedPlans } from './plan.seeder';
 export const runSeeders = async (): Promise<void> => {
   logger.info('Ejecutando bootstrap esencial...');
   await seedRbac();
+  await seedFoodTaxonomy();
 
   if (env.SEED_DEMO_DATA) {
     logger.warn('SEED_DEMO_DATA activo: se cargarán datos comerciales de demostración');
     await seedGeography();
-    await seedCatalog();
+    await seedCakes();
     await seedCoupons();
-    await seedOperations();
-    await seedPlans();
+    // Los datos de bowls, planes y salón anteriores permanecen en la base para
+    // conservar historial, pero el catálogo público muestra solo perfiles de torta.
   } else {
     await seedUbigeo();
     logger.info('Datos demo desactivados: la operación se gestiona desde el panel');
   }
+
+  await seedSubscriptionPlans();
 
   logger.success('Bootstrap completado');
 };

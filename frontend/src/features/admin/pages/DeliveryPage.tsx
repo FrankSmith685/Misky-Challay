@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Bike, CircleCheckBig, Clock3, PackageCheck, Phone, RefreshCw, UserRoundCheck, WifiOff } from 'lucide-react';
 import toast from '@components/mui/MuiToast';
 import { Card } from '@components/ui/Card';
+import { Input } from '@components/ui/Input';
 import { Button } from '@components/ui/Button';
 import { Select, SelectOption } from '@components/ui/Select';
 import { useConfirm } from '@components/ui/ConfirmDialog';
@@ -24,6 +26,8 @@ import { DeliveryDestination } from '../components/DeliveryDestination';
 import { OperationFlowGuide } from '../components/OperationFlowGuide';
 import { OperationsMetricStrip } from '../components/OperationsMetricStrip';
 import type { DeliveryRow, DeliveryStatus, Driver } from '../types';
+import { CarTransportSettings } from '../components/CarTransportSettings';
+import { DeliveryEvidence } from '../components/DeliveryEvidence';
 
 const NEXT_STEP: Partial<Record<DeliveryStatus, { status: DeliveryStatus; label: string }>> = {
   ASSIGNED: { status: 'PICKED_UP', label: 'Recogí el pedido' },
@@ -70,12 +74,16 @@ const driverLabel = (driver: Driver): string => {
  */
 const DeliveryPage = () => {
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [recipients, setRecipients] = useState<Record<number, string>>({});
   /** Asignacion en vuelo, para que el desplegable no muestre a quien NO se asigno. */
   const [pendingDriver, setPendingDriver] = useState<Record<number, number>>({});
   const [now, setNow] = useState(() => Date.now());
   const {
     branchId, branches, setBranchId, isLoadingBranches, branchesError, reloadBranches,
   } = useActiveBranch();
+  const [params] = useSearchParams();
+  const linkedDelivery = Number(params.get('reparto'));
+  const appliedDelivery = useRef<number>();
   const { can } = usePermissions();
   const confirm = useConfirm();
 
@@ -99,6 +107,11 @@ const DeliveryPage = () => {
   );
   const { data, error, isLoading, lastSuccessAt, isStale, refresh } =
     usePolling<DeliveryBoard>(fetcher, 6000);
+
+  useEffect(() => {
+    if (!linkedDelivery || appliedDelivery.current === linkedDelivery || !data?.deliveries.some((row) => row.id === linkedDelivery)) return;
+    appliedDelivery.current = linkedDelivery; document.getElementById(`delivery-${linkedDelivery}`)?.scrollIntoView({ block: 'center' });
+  }, [linkedDelivery, data]);
 
   // Con el sondeo caido nadie provoca renders: sin este reloj la banda diria
   // "hace 3 s" indefinidamente, que es peor que no decir nada.
@@ -185,7 +198,7 @@ const DeliveryPage = () => {
 
   const handleAdvance = (delivery: DeliveryRow, next: { status: DeliveryStatus; label: string }) =>
     run(delivery.id, async () => {
-      await adminApi.advanceDelivery(delivery.id, next.status);
+      await api.post(`/delivery/${delivery.id}/advance`, { status: next.status, recipientName: next.status === 'DELIVERED' ? recipients[delivery.id]?.trim() || undefined : undefined });
       if (next.status === 'DELIVERED') toast.success('Entrega registrada. Buen trabajo.');
     });
 
@@ -254,6 +267,7 @@ const DeliveryPage = () => {
       />
 
       <OperationFlowGuide stage="delivery" branchName={activeBranchName} />
+      {data && canAssign && branchId && <CarTransportSettings key={branchId} branchId={branchId} drivers={data.drivers} onFleetSaved={() => void refresh()} />}
 
       {data && (
         <OperationsMetricStrip
@@ -337,9 +351,18 @@ const DeliveryPage = () => {
             const selectedDriverId = pendingDriver[delivery.id] ?? delivery.driver?.id ?? '';
             const isDriverListed =
               !delivery.driver || drivers.some((driver) => driver.id === delivery.driver?.id);
+            const compatibleDrivers = drivers.filter((driver) => order?.deliveryVehicleType !== 'CAR' || driver.vehicleType === 'CAR');
+            const hasAvailableDriver = compatibleDrivers.some((driver) => driver.status !== 'OFFLINE');
+            const assignmentHint = drivers.length === 0
+              ? 'Primero registra un repartidor para esta sucursal desde el aviso superior.'
+              : compatibleDrivers.length === 0
+                ? 'Este pedido requiere auto. Configura el vehículo de un repartidor en Entrega en auto.'
+                : !hasAvailableDriver
+                  ? 'Los repartidores compatibles están fuera de turno.'
+                  : undefined;
 
             return (
-              <Card key={delivery.id} className="flex flex-col gap-3">
+              <Card id={`delivery-${delivery.id}`} key={delivery.id} className="flex flex-col gap-3">
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <p className="font-semibold text-ink">{order?.orderNumber ?? `Reparto #${delivery.id}`}</p>
@@ -353,6 +376,7 @@ const DeliveryPage = () => {
                 </div>
 
                 <DeliveryDestination address={address} notes={order?.notes} />
+                {order?.deliveryVehicleType === 'CAR' && <div className="rounded-field border border-brand-100 bg-brand-50 p-3 text-sm"><strong className="text-brand-800">Entrega en auto obligatoria</strong><p className="mt-1 text-xs leading-5 text-ink-muted">{order.deliveryHandlingInstructions}</p></div>}
 
                 <p className="text-sm text-ink-muted">
                   {order?.contactName ?? 'Sin contacto'} · {formatCurrency(order?.grandTotal ?? 0)}
@@ -384,14 +408,16 @@ const DeliveryPage = () => {
                     id={`driver-${delivery.id}`}
                     label={delivery.driver ? 'Repartidor (cambiar)' : 'Asignar repartidor'}
                     value={selectedDriverId}
-                    disabled={isBusy}
+                    disabled={isBusy || !hasAvailableDriver}
+                    hint={assignmentHint}
+                    slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
                     onChange={(event) => {
                       const driverId = Number(event.target.value);
                       if (!driverId || driverId === delivery.driver?.id) return;
                       void handleAssign(delivery, driverId, drivers);
                     }}
                   >
-                    <SelectOption value="">Elige un repartidor</SelectOption>
+                    <SelectOption value="" disabled>{hasAvailableDriver ? 'Elige un repartidor' : 'Sin repartidores disponibles'}</SelectOption>
                     {/* El asignado puede no estar en la flota activa (se dio de baja
                         a mitad de ruta): sin esta opcion el desplegable saldria vacio. */}
                     {!isDriverListed && delivery.driver && (
@@ -406,9 +432,9 @@ const DeliveryPage = () => {
                       <SelectOption
                         key={driver.id}
                         value={driver.id}
-                        disabled={driver.status === 'OFFLINE'}
+                        disabled={driver.status === 'OFFLINE' || (order?.deliveryVehicleType === 'CAR' && driver.vehicleType !== 'CAR')}
                       >
-                        {driverLabel(driver)}
+                        {driverLabel(driver)}{driver.vehicleType === 'CAR' ? ' · Auto' : order?.deliveryVehicleType === 'CAR' ? ' · No compatible' : ''}
                       </SelectOption>
                     ))}
                   </Select>
@@ -422,6 +448,7 @@ const DeliveryPage = () => {
                   </p>
                 )}
 
+                {canOperate && delivery.status === 'ON_ROUTE' && <Input label="Nombre de quien recibe (opcional)" value={recipients[delivery.id] ?? ''} maxLength={120} onChange={(event) => setRecipients((current) => ({ ...current, [delivery.id]: event.target.value }))} />}
                 {canOperate && (next || delivery.status !== 'PENDING') && (
                   <div className="mt-auto grid gap-2 pt-1">
                     {next && (
@@ -448,6 +475,7 @@ const DeliveryPage = () => {
                     )}
                   </div>
                 )}
+                {delivery.status !== 'PENDING' && <DeliveryEvidence deliveryId={delivery.id} status={delivery.status} evidence={delivery.evidence} canUpload={canOperate} onSaved={() => void refresh()} />}
               </Card>
             );
           })}

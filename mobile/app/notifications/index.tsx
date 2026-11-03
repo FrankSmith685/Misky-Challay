@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { FlatList, Linking, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, type Href } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -9,6 +9,7 @@ import { Skeleton } from '../../src/components/Skeleton';
 import { invalidateResource, useResource } from '../../src/hooks/useResource';
 import { useSession } from '../../src/providers/SessionProvider';
 import { useToast } from '../../src/providers/ToastProvider';
+import { mobileNotificationHref } from '../../src/lib/notificationRoutes';
 import { accountApi } from '../../src/services/api/account.service';
 import { colors, layout, radius, spacing, type } from '../../src/theme/tokens';
 import type { AccountNotification, AccountNotificationsFeed } from '../../src/types/domain';
@@ -38,29 +39,9 @@ const decorate = (
   return { icon: 'bell-outline', tint: colors.brand700 };
 };
 
-/**
- * `actionUrl` lo escribe el backend pensando en la web (`/menu/:slug`), así que
- * aquí se traduce a las rutas del móvil. Lo que no sepamos traducir no navega:
- * mejor un aviso que no lleva a ningún sitio que una pantalla en blanco.
- */
 const toMobileHref = (notification: AccountNotification): Href | null => {
-  const url = notification.actionUrl;
-
-  if (url) {
-    const order = /^\/order\/([A-Za-z0-9-]+)$/.exec(url);
-    if (order) {
-      return { pathname: '/order/[orderNumber]', params: { orderNumber: order[1] } } as Href;
-    }
-
-    const product = /^\/(?:product|menu)\/([A-Za-z0-9-]+)$/.exec(url);
-    if (product) {
-      return { pathname: '/product/[slug]', params: { slug: product[1] } } as Href;
-    }
-
-    if (url === '/wallet') return '/wallet' as Href;
-    if (url === '/support') return '/support' as Href;
-    if (url === '/plans') return '/plans' as Href;
-  }
+  const destination = notification.actionUrl ? mobileNotificationHref(notification.actionUrl) : null;
+  if (destination) return destination;
 
   if (notification.order) {
     return {
@@ -68,6 +49,10 @@ const toMobileHref = (notification: AccountNotification): Href | null => {
       params: { orderNumber: notification.order.orderNumber },
     } as Href;
   }
+
+  if (notification.template === 'PLAN_ACTIVATED') return '/wallet' as Href;
+  if (notification.template.startsWith('COMPLAINT_')) return '/support' as Href;
+  if (notification.template === 'PRODUCT_AVAILABLE') return '/(tabs)/menu' as Href;
 
   return null;
 };
@@ -94,68 +79,43 @@ export default function NotificationsScreen() {
   const { status } = useSession();
   const toast = useToast();
 
+  const [page, setPage] = useState(1);
   const feed = useResource<AccountNotificationsFeed>({
-    key: status === 'authenticated' ? RESOURCE_KEY : null,
-    fetcher: () => accountApi.notifications(),
+    key: status === 'authenticated' ? `${RESOURCE_KEY}:${page}` : null,
+    fetcher: () => accountApi.notifications(page),
     pollIntervalMs: POLL_MS,
   });
 
-  /**
-   * Entrar en la bandeja marca todo como leído, así que para cuando se dibuja la
-   * lista ya no queda ninguna pendiente. Esta foto del momento de entrar es la
-   * que se resalta; si no, «nuevo» y «visto» se pintarían igual.
-   */
-  const [highlighted, setHighlighted] = useState<Set<number>>(() => new Set());
-  const markedRef = useRef(false);
-
   useEffect(() => {
-    if (status === 'anonymous') {
-      router.replace({ pathname: '/(auth)/login', params: { returnTo: '/notifications' } });
-    }
+    if (status === 'anonymous') router.replace({ pathname: '/(auth)/login', params: { returnTo: '/notifications' } });
   }, [status]);
-
   const items = feed.data?.items ?? [];
-  const { data: feedData, mutate: mutateFeed } = feed;
-
-  useEffect(() => {
-    if (markedRef.current || !feedData) return;
-
-    const unread = feedData.items.filter((item) => item.readAt === null);
-    setHighlighted(new Set(unread.map((item) => item.id)));
-    markedRef.current = true;
-    if (unread.length === 0) return;
-
-    // Optimista: el sello local evita que el contador parpadee mientras el
-    // servidor confirma. Al invalidar, la campana de la cuenta se entera sola.
-    const now = new Date().toISOString();
-    mutateFeed({
-      items: feedData.items.map((item) => ({ ...item, readAt: item.readAt ?? now })),
-      unreadCount: 0,
-    });
-
-    void accountApi
-      .markNotificationsRead()
-      .then(() => invalidateResource(RESOURCE_KEY))
-      .catch(() => undefined);
-  }, [feedData, mutateFeed]);
-
+  const markRead = async (item?: AccountNotification) => {
+    try {
+      await accountApi.markNotificationsRead(item ? { ids: [item.id] } : { all: true, throughId: feed.data?.newestId });
+      invalidateResource(RESOURCE_KEY, { prefix: true });
+    } catch { toast.show({ message: 'No pudimos guardar la lectura del aviso.', tone: 'error' }); }
+  };
   const open = useCallback(
     (notification: AccountNotification) => {
+      if (!notification.readAt) void markRead(notification);
       const href = toMobileHref(notification);
       if (!href) {
         toast.show({ message: 'Este aviso es solo informativo.', tone: 'info' });
         return;
       }
       void Haptics.selectionAsync();
-      router.push(href);
+      if (typeof href === 'string' && /^https?:\/\//.test(href)) void Linking.openURL(href);
+      else router.push(href);
     },
-    [toast],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [toast, items],
   );
 
   const renderItem = useCallback(
     ({ item }: { item: AccountNotification }) => {
       const { icon, tint } = decorate(item);
-      const isNew = highlighted.has(item.id);
+      const isNew = !item.readAt;
       const navigable = toMobileHref(item) !== null;
 
       return (
@@ -198,7 +158,7 @@ export default function NotificationsScreen() {
         </Pressable>
       );
     },
-    [highlighted, open],
+    [open],
   );
 
   const body = () => {
@@ -246,13 +206,14 @@ export default function NotificationsScreen() {
             onAction={() => router.push('/(tabs)/menu' as Href)}
           />
         }
-        ListFooterComponent={
-          items.length > 0 ? (
-            <Text style={styles.footNote}>
-              Guardamos los 50 avisos más recientes de tu cuenta.
-            </Text>
-          ) : null
-        }
+        ListFooterComponent={<View style={{ padding: spacing.md, gap: spacing.md }}>
+          <Pressable accessibilityRole="button" onPress={() => void markRead()} disabled={!feed.data?.unreadCount || !items.length}><Text>Marcar todo como leído ({feed.data?.unreadCount ?? 0})</Text></Pressable>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <Pressable accessibilityRole="button" disabled={page <= 1} onPress={() => setPage((value) => value - 1)}><Text>Anterior</Text></Pressable>
+            <Text>{page} / {feed.data?.totalPages ?? 1}</Text>
+            <Pressable accessibilityRole="button" disabled={page >= (feed.data?.totalPages ?? 1)} onPress={() => setPage((value) => value + 1)}><Text>Siguiente</Text></Pressable>
+          </View>
+        </View>}
       />
     );
   };

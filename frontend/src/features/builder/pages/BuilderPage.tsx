@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import toast from '@components/mui/MuiToast';
@@ -35,11 +35,8 @@ const EMPTY_PREFERENCES: FoodPreferences = {
   allergens: [],
   dietaryTags: [],
   dislikedOptionIds: [],
-  calorieTarget: null,
-  proteinTarget: null,
 };
 
-/** Constructor guiado: la UI orienta; el backend valida precio, nutrición y reglas. */
 const BuilderPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -245,27 +242,6 @@ const BuilderPage = () => {
   const preferenceConflicts = selectedAllergens.filter((code) =>
     preferences.allergens.includes(code),
   );
-  const liveNutrition =
-    quote?.nutrition ??
-    selectedVisualOptions.reduce(
-      (total, option) => ({
-        calories:
-          total.calories + option.nutrition.calories * option.quantity,
-        protein:
-          total.protein + option.nutrition.protein * option.quantity,
-        carbs: total.carbs + option.nutrition.carbs * option.quantity,
-        fat: total.fat + option.nutrition.fat * option.quantity,
-      }),
-      {
-        ...(variant?.nutrition ?? {
-          calories: 0,
-          protein: 0,
-          carbs: 0,
-          fat: 0,
-        }),
-      },
-    );
-
   const recommendation: BuilderRecommendation | null = (() => {
     if (quote && quote.extrasTotal >= 8) {
       const expensive = [...quote.selections]
@@ -279,7 +255,7 @@ const BuilderPage = () => {
           .find(({ option }) => option.id === expensive.optionId);
         if (entry) {
           return {
-            title: 'Hazlo más económico',
+            title: 'Hazlo mÃ¡s econÃ³mico',
             description: `Retira ${entry.option.name} y ahorra ${formatCurrency(expensive.lineExtra)}.`,
             action: 'remove',
             ...entry,
@@ -288,46 +264,6 @@ const BuilderPage = () => {
       }
     }
 
-    if (liveNutrition.protein < 25) {
-      const selectedSet = new Set(selectedIds);
-      const candidate = config.groups
-        .flatMap((group) =>
-          group.options.map((option) => ({ group, option })),
-        )
-        .filter(
-          ({ option }) =>
-            option.isAvailable &&
-            !selectedSet.has(option.id) &&
-            option.nutrition.protein >= 8,
-        )
-        .filter(
-          ({ option }) =>
-            !preferences.dislikedOptionIds.includes(option.id),
-        )
-        .filter(
-          ({ option }) =>
-            !option.allergens.some((code) =>
-              preferences.allergens.includes(code),
-            ),
-        )
-        .filter(
-          ({ option }) =>
-            !option.incompatibleWith.some((id) => selectedSet.has(id)),
-        )
-        .sort(
-          (a, b) =>
-            b.option.nutrition.protein -
-            a.option.nutrition.protein,
-        )[0];
-      if (candidate) {
-        return {
-          title: 'Súmale proteína',
-          description: `${candidate.option.name} aporta ${Math.round(candidate.option.nutrition.protein)} g adicionales.`,
-          action: 'add',
-          ...candidate,
-        };
-      }
-    }
     return null;
   })();
 
@@ -437,10 +373,9 @@ const BuilderPage = () => {
           quantity: line.quantity,
           priceDelta: line.priceDelta,
         })),
-        nutrition: quote.nutrition,
       }),
     );
-    toast.success('Tu bowl está listo y ya está en el carrito');
+    toast.success('Tu bowl estÃ¡ listo y ya estÃ¡ en el carrito');
     reset();
     navigate(ROUTES.cart);
   };
@@ -465,7 +400,7 @@ const BuilderPage = () => {
         style={BUILDER_SCROLL_ANCHOR}
         className="bg-[linear-gradient(180deg,var(--color-surface-muted)_0%,var(--color-surface-muted)_45%,var(--color-surface)_100%)] pb-16 pt-8 sm:pt-10 lg:pb-24"
       >
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-8xl px-4 sm:px-6 lg:px-8">
           {restoredNotice && (
             <div
               role="status"
@@ -485,7 +420,7 @@ const BuilderPage = () => {
                     Perfil alimentario activo.
                   </strong>{' '}
                   <span className="text-ink-muted">
-                    Evitamos recomendaciones con tus alérgenos y
+                    Evitamos recomendaciones con tus alÃ©rgenos y
                     respetamos tus metas.
                   </span>
                 </div>
@@ -498,10 +433,10 @@ const BuilderPage = () => {
           <div className="mb-7 flex flex-col justify-between gap-3 border-b border-line pb-6 sm:flex-row sm:items-end">
             <div>
               <p className="text-xs font-extrabold uppercase tracking-[.16em] text-brand-700">
-                Personalización guiada
+                PersonalizaciÃ³n guiada
               </p>
               <h2 className="mt-1.5 text-2xl font-black tracking-tight text-ink sm:text-3xl">
-                Construye tu combinación paso a paso
+                Construye tu combinaciÃ³n paso a paso
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-muted">
                 Completa los pasos esenciales. Puedes volver y cambiar cualquier ingrediente antes de confirmar.
@@ -523,7 +458,6 @@ const BuilderPage = () => {
 
               <BuilderMobileOverview
                 options={selectedVisualOptions}
-                nutrition={liveNutrition}
                 total={total}
                 isQuoting={isQuoting}
               />
@@ -590,7 +524,7 @@ const BuilderPage = () => {
                         optionId: option.id,
                       });
                       toast.success(
-                        `${option.name} reemplazó la opción incompatible`,
+                        `${option.name} reemplazÃ³ la opciÃ³n incompatible`,
                       );
                     }}
                     selectedOptionNames={selectedOptionNames}
@@ -628,8 +562,6 @@ const BuilderPage = () => {
               variant={variant}
               selectedOptions={selectedVisualOptions}
               quote={quote}
-              nutrition={liveNutrition}
-              preferences={preferences}
               recommendation={recommendation}
               selectedAllergens={selectedAllergens}
               preferenceConflicts={preferenceConflicts}
@@ -643,7 +575,7 @@ const BuilderPage = () => {
               saveLabel={
                 isAuthenticated
                   ? 'Guardar este bowl'
-                  : 'Inicia sesión para guardarlo'
+                  : 'Inicia sesiÃ³n para guardarlo'
               }
               onApplyRecommendation={() => {
                 if (!recommendation) return;
@@ -695,7 +627,7 @@ const BuilderPage = () => {
         maxWidth="3xl"
         label={
           isComplete
-            ? 'Tu bowl está listo'
+            ? 'Tu bowl estÃ¡ listo'
             : nextMissingGroup
               ? `Siguiente: ${nextMissingGroup.name}`
               : 'Validando tu bowl'
@@ -737,3 +669,4 @@ const BuilderPage = () => {
 };
 
 export default BuilderPage;
+

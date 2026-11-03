@@ -53,13 +53,14 @@ interface AddressMapPickerProps {
   onResolvingChange?: (isResolving: boolean) => void;
   autoLocate?: boolean;
   coveragePolygon?: Array<{ lat: number; lng: number }> | null;
+  fillAvailableSpace?: boolean;
 }
 
 const LIMA_CENTER: [number, number] = [-12.04527778, -77.03083333];
 
 const pinIcon = divIcon({
   className: 'verde-map-pin',
-  html: '<span style="display:grid;width:42px;height:42px;place-items:center;border:4px solid white;border-radius:50% 50% 50% 8px;background:linear-gradient(135deg,#813b86,#4e1a4e);box-shadow:0 12px 30px rgba(59,20,59,.38);transform:rotate(-45deg)"><span style="width:10px;height:10px;border-radius:999px;background:white;box-shadow:0 0 0 4px rgba(255,255,255,.2)"></span></span>',
+  html: '<span style="display:grid;width:42px;height:42px;place-items:center;border:4px solid white;border-radius:50% 50% 50% 8px;background:linear-gradient(135deg,var(--color-brand-500),var(--color-brand-700));box-shadow:0 12px 30px color-mix(in srgb,var(--color-brand-900) 38%,transparent);transform:rotate(-45deg)"><span style="width:10px;height:10px;border-radius:999px;background:white;box-shadow:0 0 0 4px rgba(255,255,255,.2)"></span></span>',
   iconSize: [42, 42],
   iconAnchor: [21, 40],
 });
@@ -97,12 +98,10 @@ const MapInteraction = ({
 const MapViewport = ({
   value,
   contextCenter,
-  expanded,
   recenterSignal,
 }: {
   value: MapPosition | null;
   contextCenter: MapPosition | null;
-  expanded: boolean;
   recenterSignal: number;
 }) => {
   const map = useMap();
@@ -118,9 +117,10 @@ const MapViewport = ({
   }, [contextCenter, map, recenterSignal, value]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => map.invalidateSize(), 180);
-    return () => window.clearTimeout(timer);
-  }, [expanded, map]);
+    const observer = new ResizeObserver(() => map.invalidateSize({ pan: false }));
+    observer.observe(map.getContainer());
+    return () => observer.disconnect();
+  }, [map]);
 
   return null;
 };
@@ -153,6 +153,7 @@ export const AddressMapPicker = ({
   onResolvingChange,
   autoLocate = false,
   coveragePolygon,
+  fillAvailableSpace = false,
 }: AddressMapPickerProps) => {
   const [locationError, setLocationError] = useState('');
   const [isLocating, setIsLocating] = useState(false);
@@ -279,11 +280,9 @@ export const AddressMapPicker = ({
       setResolutionNote(
         result.ubigeoCode == null
           ? 'Identificamos la dirección, pero no su UBIGEO. Revisa la zona antes de continuar.'
-          : result.hasHouseNumber === false
-            ? 'No encontramos número de puerta; revísalo antes de continuar.'
-            : result.precision === 'approximate'
-              ? 'La dirección es aproximada. Arrastra el pin hasta la entrada.'
-              : '',
+          : result.precision === 'approximate'
+            ? 'La dirección es aproximada. Arrastra el pin hasta la entrada.'
+            : '',
       );
       onAddressResolved?.(result);
     } catch {
@@ -375,12 +374,14 @@ export const AddressMapPicker = ({
               position: 'fixed',
               inset: 0,
               zIndex: 1500,
-              bgcolor: '#faf7fa',
+              bgcolor: 'background.default',
               p: { xs: 1.5, sm: 3 },
               display: 'flex',
               flexDirection: 'column',
             }
-          : undefined
+          : fillAvailableSpace
+            ? { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }
+            : undefined
       }
     >
       <Box
@@ -389,21 +390,23 @@ export const AddressMapPicker = ({
           display: 'flex',
           flexWrap: 'wrap',
           alignItems: 'center',
-          justifyContent: 'space-between',
+          justifyContent: fillAvailableSpace ? 'flex-end' : 'space-between',
           gap: 1.5,
         }}
       >
-        <Box sx={{ minWidth: 0 }}>
-          <Typography
-            variant="subtitle2"
-            sx={{ display: 'flex', alignItems: 'center', gap: 0.75, fontWeight: 850 }}
-          >
-            <MapPin size={16} /> Entrada exacta
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            Haz clic o arrastra el pin hasta la puerta donde recibirás el pedido.
-          </Typography>
-        </Box>
+        {!fillAvailableSpace && (
+          <Box sx={{ minWidth: 0 }}>
+            <Typography
+              variant="subtitle2"
+              sx={{ display: 'flex', alignItems: 'center', gap: 0.75, fontWeight: 850 }}
+            >
+              <MapPin size={16} /> Entrada exacta
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Haz clic o arrastra el pin hasta la puerta donde recibirás el pedido.
+            </Typography>
+          </Box>
+        )}
 
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
           {value && (
@@ -447,28 +450,28 @@ export const AddressMapPicker = ({
         role="application"
         aria-label="Mapa interactivo para seleccionar la ubicación exacta"
         sx={{
-          height: isExpanded ? '100%' : { xs: 300, sm: 360, lg: 390 },
-          minHeight: isExpanded ? 320 : undefined,
-          flex: isExpanded ? 1 : undefined,
+          height: isExpanded ? '100%' : fillAvailableSpace ? { xs: 280, lg: 320 } : { xs: 300, sm: 360, lg: 390 },
+          minHeight: isExpanded ? 320 : fillAvailableSpace ? { xs: 280, lg: 320 } : undefined,
+          flex: isExpanded || fillAvailableSpace ? 1 : undefined,
           overflow: 'hidden',
           borderRadius: 'var(--radius-card)',
           border: '1px solid',
           borderColor: value ? 'primary.light' : 'divider',
-          bgcolor: '#eddaed',
+          bgcolor: 'primary.100',
           position: 'relative',
           boxShadow: value ? 'var(--shadow-e3)' : 'var(--shadow-e2)',
           '& .leaflet-container': {
             height: '100%',
             width: '100%',
             fontFamily: 'inherit',
-            background: '#eddaed',
+            backgroundColor: 'primary.100',
           },
           '& .leaflet-tile-pane': {
             filter: 'saturate(.82) contrast(1.04) brightness(1.02)',
           },
           '& .leaflet-control-zoom a': {
-            color: '#4e1a4e',
-            borderColor: '#e7dfe8',
+            color: 'primary.dark',
+            borderColor: 'divider',
           },
           '& .leaflet-control-attribution': {
             fontSize: 9,
@@ -526,7 +529,7 @@ export const AddressMapPicker = ({
               gap: 0.75,
               whiteSpace: 'nowrap',
               borderRadius: 'var(--radius-pill)',
-              bgcolor: 'rgba(59,20,59,.86)',
+              bgcolor: 'rgba(0,59,125,.86)',
               color: 'white',
               px: 1.5,
               py: 0.8,
@@ -563,8 +566,8 @@ export const AddressMapPicker = ({
                 center={[contextCenter.latitude, contextCenter.longitude]}
                 radius={450}
                 pathOptions={{
-                  color: '#813b86',
-                  fillColor: '#c88dc9',
+                  color: 'var(--color-brand-600)',
+                  fillColor: 'var(--color-brand-300)',
                   fillOpacity: 0.05,
                   weight: 2,
                   dashArray: '6 7',
@@ -575,7 +578,7 @@ export const AddressMapPicker = ({
                 radius={7}
                 pathOptions={{
                   color: '#ffffff',
-                  fillColor: '#602060',
+                  fillColor: 'var(--color-brand-600)',
                   fillOpacity: 1,
                   weight: 4,
                 }}
@@ -590,8 +593,8 @@ export const AddressMapPicker = ({
             <Polygon
               positions={coveragePolygon.map((point) => [point.lat, point.lng])}
               pathOptions={{
-                color: '#602060',
-                fillColor: '#c88dc9',
+                color: 'var(--color-brand-600)',
+                fillColor: 'var(--color-brand-300)',
                 fillOpacity: 0.14,
                 weight: 2,
               }}
@@ -600,7 +603,6 @@ export const AddressMapPicker = ({
           <MapViewport
             value={value}
             contextCenter={contextCenter}
-            expanded={isExpanded}
             recenterSignal={recenterSignal}
           />
         </MapContainer>
@@ -623,7 +625,7 @@ export const AddressMapPicker = ({
           bgcolor: locationError
             ? 'error.50'
             : resolvedAddress
-              ? 'rgba(248,241,248,.72)'
+              ? 'rgba(241,248,255,.72)'
               : 'rgba(250,247,250,.82)',
           px: 1.5,
           py: 1.25,

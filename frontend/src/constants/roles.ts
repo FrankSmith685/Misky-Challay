@@ -14,7 +14,6 @@ export const ROLE_LABELS: Record<string, string> = {
   driver: 'Repartidor',
   support: 'Soporte',
   catalog_manager: 'Gestor de catalogo',
-  nutritionist: 'Nutricionista',
   branch_admin: 'Admin de sucursal',
   admin: 'Administrador general',
   auditor: 'Auditor',

@@ -39,7 +39,7 @@ export function LocationBar({ inverse = false }: { inverse?: boolean }) {
         <Text style={[styles.label, inverse && styles.labelInverse]}>{mode.label}</Text>
         <Text numberOfLines={1} style={[styles.detail, inverse && styles.detailInverse]}>{detail}</Text>
       </View>
-      <MaterialCommunityIcons name="chevron-down" size={22} color={inverse ? '#d5e7dd' : colors.inkMuted} />
+      <MaterialCommunityIcons name="chevron-down" size={22} color={inverse ? '#d7eaff' : colors.inkMuted} />
     </Pressable>
   );
 }

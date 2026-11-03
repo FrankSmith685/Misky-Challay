@@ -9,9 +9,8 @@ export interface ProductQuery {
   search?: string;
   dietaryTags?: string[];
   excludeAllergens?: string[];
-  maxCalories?: number | null;
-  minProtein?: number | null;
   featured?: boolean;
+  audience?: 'RETAIL' | 'BUSINESS';
 }
 
 export interface AvailabilityAlert {
@@ -34,9 +33,8 @@ const toParams = (query: ProductQuery): Record<string, string | number> => {
   if (query.search) params.search = query.search;
   if (query.dietaryTags?.length) params.dietaryTags = query.dietaryTags.join(',');
   if (query.excludeAllergens?.length) params.excludeAllergens = query.excludeAllergens.join(',');
-  if (query.maxCalories) params.maxCalories = query.maxCalories;
-  if (query.minProtein) params.minProtein = query.minProtein;
   if (query.featured) params.featured = 'true';
+  if (query.audience) params.audience = query.audience;
 
   return params;
 };

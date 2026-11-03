@@ -30,6 +30,9 @@ export class CoverageZone extends Model<
   declare name: string;
   declare polygon: GeoPoint[] | null;
   declare deliveryFee: number;
+  declare extraCoverageKm: CreationOptional<number>;
+  declare extraFeePerKm: CreationOptional<number>;
+  /** 0 = sin mínimo. Un monto positivo exige ese subtotal de productos solo en delivery. */
   declare minimumOrder: CreationOptional<number>;
   declare estimatedMinutes: CreationOptional<number>;
   declare priority: CreationOptional<number>;
@@ -45,6 +48,8 @@ CoverageZone.init(
     name: { type: DataTypes.STRING(80), allowNull: false },
     polygon: { type: DataTypes.JSON, allowNull: true },
     deliveryFee: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
+    extraCoverageKm: { type: DataTypes.DECIMAL(6, 2), allowNull: false, defaultValue: 0 },
+    extraFeePerKm: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
     minimumOrder: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
     estimatedMinutes: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 45 },
     priority: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },

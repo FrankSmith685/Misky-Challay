@@ -1,5 +1,5 @@
-import { useCallback } from 'react';
-import { AlertTriangle, BarChart3, Clock, LayoutDashboard, Lock, MapPinned, Percent, RefreshCw, ShoppingBag, TrendingUp, WifiOff, XCircle } from 'lucide-react';
+import { useCallback, useState } from 'react';
+import { AlertTriangle, BarChart3, Clock, Download, LayoutDashboard, Lock, MapPinned, Percent, RefreshCw, ShoppingBag, TrendingUp, WifiOff, XCircle } from 'lucide-react';
 import { Card, CardDescription } from '@components/ui/Card';
 import { Button } from '@components/ui/Button';
 import { PageLoader } from '@components/common/PageLoader';
@@ -38,6 +38,22 @@ const AdminDashboardPage = () => {
     fetcher,
     30000,
   );
+  const [isExporting, setIsExporting] = useState(false);
+
+  const exportReport = async () => {
+    setIsExporting(true);
+    try {
+      const file = await adminApi.exportReports(branchId ?? undefined);
+      const url = URL.createObjectURL(file);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `misky-challay-reporte-${new Date().toISOString().slice(0, 10)}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const header = (
     <PageHeader
@@ -61,6 +77,15 @@ const AdminDashboardPage = () => {
             onClick={() => refresh()}
           >
             Actualizar
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            isLoading={isExporting}
+            leftIcon={<Download className="size-4" />}
+            onClick={() => void exportReport()}
+          >
+            Exportar CSV
           </Button>
         </>
       }
@@ -222,6 +247,20 @@ const AdminDashboardPage = () => {
           </ul>
         )}
       </Card>
+
+      <div className="mt-5 grid gap-4 lg:grid-cols-3">
+        <Card className="p-5">
+          <div className="mb-4 flex items-center justify-between"><div><h2 className="font-bold text-ink">Canales de venta</h2><p className="text-xs text-ink-muted">Dónde se originan tus pedidos</p></div><ShoppingBag className="size-5 text-brand-500" /></div>
+          <div className="space-y-3">
+            {data.channelBreakdown.length === 0 ? <CardDescription>Sin pedidos en el periodo.</CardDescription> : data.channelBreakdown.map((channel) => {
+              const maxOrders = Math.max(...data.channelBreakdown.map((item) => item.orders), 1);
+              return <div key={channel.channel}><div className="flex justify-between text-sm"><span className="font-semibold text-ink">{channel.channel}</span><span className="text-ink-muted">{channel.orders} pedidos{sales ? ` · ${formatCurrency(channel.revenue)}` : ''}</span></div><div className="mt-1.5 h-2 rounded-pill bg-surface-muted"><div className="h-2 rounded-pill bg-brand-500" style={{ width: `${Math.round(channel.orders / maxOrders * 100)}%` }} /></div></div>;
+            })}
+          </div>
+        </Card>
+        {sales && data.paymentBreakdown && <Card className="p-5"><div className="mb-4 flex items-center justify-between"><div><h2 className="font-bold text-ink">Medios de pago</h2><p className="text-xs text-ink-muted">Cobros registrados en el periodo</p></div><TrendingUp className="size-5 text-brand-500" /></div><div className="space-y-3">{data.paymentBreakdown.length === 0 ? <CardDescription>Sin cobros registrados.</CardDescription> : data.paymentBreakdown.map((payment) => <div key={payment.method} className="flex items-center justify-between rounded-card bg-surface-muted px-3 py-2.5"><span className="text-sm font-semibold text-ink">{payment.method}</span><span className="text-right text-xs text-ink-muted">{payment.transactions} operaciones<br /><strong className="text-sm text-ink">{formatCurrency(payment.amount)}</strong></span></div>)}</div></Card>}
+        <Card className="p-5"><div className="mb-4 flex items-center justify-between"><div><h2 className="font-bold text-ink">Horas de mayor demanda</h2><p className="text-xs text-ink-muted">Distribución por hora local</p></div><Clock className="size-5 text-brand-500" /></div><div className="space-y-2.5">{data.hourlySales.length === 0 ? <CardDescription>Sin pedidos en el periodo.</CardDescription> : data.hourlySales.slice().sort((a, b) => b.orders - a.orders).slice(0, 5).map((hour) => <div key={hour.hour} className="flex items-center justify-between text-sm"><span className="font-semibold text-ink">{String(hour.hour).padStart(2, '0')}:00</span><span className="text-ink-muted">{hour.orders} pedidos{sales ? ` · ${formatCurrency(hour.revenue)}` : ''}</span></div>)}</div></Card>
+      </div>
 
       <div className="mt-5 grid gap-4 lg:grid-cols-2">
         <Card className="p-5">

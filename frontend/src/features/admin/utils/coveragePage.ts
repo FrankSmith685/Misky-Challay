@@ -20,6 +20,8 @@ export const polygonsOverlap = (first: PolygonPoint[], second: PolygonPoint[]): 
 
 export const zoneEdits = (zone: AdminZone) => ({
   deliveryFee: zone.deliveryFee,
+  extraCoverageKm: zone.extraCoverageKm,
+  extraFeePerKm: zone.extraFeePerKm,
   minimumOrder: zone.minimumOrder,
   estimatedMinutes: zone.estimatedMinutes,
 });

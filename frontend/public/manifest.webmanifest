@@ -1,33 +1,33 @@
 {
-  "name": "Verde Bowl · Operación",
-  "short_name": "Verde Bowl",
-  "description": "Pedidos, cocina, salón e inventario de Verde Bowl.",
-  "start_url": "/admin/cocina?kds=1",
+  "name": "Misky Challay · Producción",
+  "short_name": "Misky Challay",
+  "description": "Pedidos y producción de tortas de Misky Challay.",
+  "start_url": "/admin/tortas",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#f5f8f6",
-  "theme_color": "#602060",
+  "background_color": "#faf6f1",
+  "theme_color": "#8b3d59",
   "icons": [
     {
-      "src": "/favicon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "src": "/brand/misky-app-icon.png",
+      "sizes": "1254x1254",
+      "type": "image/png",
+      "purpose": "any"
     }
   ],
   "shortcuts": [
     {
-      "name": "Tablero de cocina",
-      "short_name": "Cocina",
-      "url": "/admin/cocina?kds=1",
-      "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
-    },
-    {
-      "name": "Salón y comandas",
-      "short_name": "Salón",
-      "url": "/admin/salon",
-      "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+      "name": "Producción de tortas",
+      "short_name": "Tortas",
+      "url": "/admin/tortas",
+      "icons": [
+        {
+          "src": "/brand/misky-app-icon.png",
+          "sizes": "1254x1254",
+          "type": "image/png"
+        }
+      ]
     }
   ]
 }

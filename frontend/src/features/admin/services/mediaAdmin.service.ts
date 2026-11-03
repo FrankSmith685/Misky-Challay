@@ -15,6 +15,9 @@ export interface MediaAsset {
     products: Array<{ id: number; name: string }>;
     options: Array<{ id: number; name: string }>;
     presets: Array<{ id: number; name: string }>;
+    categories: Array<{ id: number; name: string }>;
+    inventoryItems: Array<{ id: number; name: string }>;
+    themes?: Array<{ id: number; name: string }>;
   };
 }
 
@@ -27,7 +30,27 @@ export interface MediaListParams {
   search?: string;
 }
 
+export interface SavedMediaImage {
+  id: number;
+  url: string;
+  altText: string | null;
+  category: string;
+}
+
+export interface GeneratedMediaImage {
+  dataUrl: string;
+  mimeType: 'image/jpeg' | 'image/png' | 'image/webp';
+}
+
 export const mediaAdminApi = {
+  async generationStatus(): Promise<{ configured: boolean }> {
+    const { data } = await api.get<ApiSuccess<{ configured: boolean }>>('/media/generation-status');
+    return data.data;
+  },
+  async generateImage(prompt: string): Promise<GeneratedMediaImage> {
+    const { data } = await api.post<ApiSuccess<GeneratedMediaImage>>('/media/generate', { prompt }, { timeout: 75_000 });
+    return data.data;
+  },
   /**
    * Biblioteca PAGINADA. El servidor cortaba en 250 por categoria sin avisar, y con
    * "Mostrar papelera" era peor: los borrados consumian del mismo cupo. El contador
@@ -46,8 +69,8 @@ export const mediaAdminApi = {
     dataUrl: string;
     altText?: string | null;
     category?: string;
-  }): Promise<{ id: number; url: string; altText: string | null; category: string }> {
-    const { data } = await api.post<ApiSuccess<{ id: number; url: string; altText: string | null; category: string }>>('/media', input);
+  }): Promise<SavedMediaImage> {
+    const { data } = await api.post<ApiSuccess<SavedMediaImage>>('/media', input);
     return data.data;
   },
   async importFromUrl(input: {

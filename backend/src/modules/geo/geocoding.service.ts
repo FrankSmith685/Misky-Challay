@@ -309,7 +309,7 @@ export const geocodingService = {
         params.set('lon', String(selectedGeography.longitude));
       }
       const response = await fetch(`${env.PHOTON_BASE_URL}/api?${params}`, {
-        headers: { 'User-Agent': `VerdeBowl/1.0 (${env.FRONTEND_URL}; contact: ${env.MAIL_FROM})` },
+        headers: { 'User-Agent': `DulceFlow/1.0 (${env.FRONTEND_URL}; contact: ${env.MAIL_FROM})` },
         signal: AbortSignal.timeout(7000),
       });
       if (!response.ok) throw new Error('El proveedor de direcciones no está disponible');
@@ -378,7 +378,7 @@ export const geocodingService = {
         'accept-language': 'es',
       });
       const response = await fetch(`${env.NOMINATIM_BASE_URL}/search?${params}`, {
-        headers: { 'User-Agent': `VerdeBowl/1.0 (${env.FRONTEND_URL}; contact: ${env.MAIL_FROM})` },
+        headers: { 'User-Agent': `DulceFlow/1.0 (${env.FRONTEND_URL}; contact: ${env.MAIL_FROM})` },
       });
       if (!response.ok) throw new Error('No pudimos consultar el servicio de mapas');
       const rows = await response.json() as Array<{ place_id: number; display_name: string; lat: string; lon: string; address?: Record<string, string> }>;
@@ -442,7 +442,7 @@ export const geocodingService = {
         'accept-language': 'es',
       });
       const response = await fetch(`${env.NOMINATIM_BASE_URL}/reverse?${params}`, {
-        headers: { 'User-Agent': `VerdeBowl/1.0 (${env.FRONTEND_URL}; contact: ${env.MAIL_FROM})` },
+        headers: { 'User-Agent': `DulceFlow/1.0 (${env.FRONTEND_URL}; contact: ${env.MAIL_FROM})` },
       });
       if (!response.ok) throw new Error('No pudimos consultar la direccion de ese punto');
       const payload = await response.json() as {

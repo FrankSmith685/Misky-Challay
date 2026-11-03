@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { AlertCircle, CheckCircle2, Clock, CreditCard, RefreshCw, Smartphone, Timer, Truck, XCircle } from 'lucide-react';
 import toast from '@components/mui/MuiToast';
@@ -6,14 +6,14 @@ import { Button } from '@components/ui/Button';
 import { Card, CardDescription, CardTitle } from '@components/ui/Card';
 import { CheckoutStepper } from '@components/ui/CheckoutStepper';
 import { PageLoader } from '@components/common/PageLoader';
-import { useAppDispatch } from '@app/hooks';
-import { clearCart } from '@features/cart/cartSlice';
 import { formatCurrency } from '@lib/format';
 import { getApiErrorMessage } from '@services/api/client';
 import { ROUTES } from '@constants/routes';
 import { checkoutApi } from '../services/checkout.service';
 import { forgetPendingOrder } from '../pendingOrder';
 import type { OrderDetail } from '../types';
+import { DirectPaymentCheckout } from '../components/DirectPaymentCheckout';
+import type { DirectPaymentDetail } from '../directPayments';
 
 /** Tras este numero de intentos dejamos de esperar al webhook y damos salidas. */
 const MAX_POLLS = 10;
@@ -32,20 +32,21 @@ const MAX_POLLS = 10;
  */
 const CheckoutSuccessPage = () => {
   const [params] = useSearchParams();
-  const dispatch = useAppDispatch();
   const orderNumber = params.get('pedido');
   const paymentCancelled = params.get('pago') === 'cancelado';
 
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
+  const [canRetryOnline, setCanRetryOnline] = useState(false);
+  const [isRetryingPayment, setIsRetryingPayment] = useState(false);
   const [isCash, setIsCash] = useState(false);
   const [isMobilePayment, setIsMobilePayment] = useState(false);
+  const [directPayment, setDirectPayment] = useState<DirectPaymentDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [gaveUpWaiting, setGaveUpWaiting] = useState(paymentCancelled);
   const [isCancelling, setIsCancelling] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
-  const cartCleared = useRef(false);
 
   useEffect(() => {
     if (!orderNumber) return;
@@ -60,24 +61,25 @@ const CheckoutSuccessPage = () => {
 
     const poll = async () => {
       try {
+        // El retorno no demuestra un cobro, pero permite recuperar inmediatamente
+        // una acreditacion si el webhook aun no llego al backend.
+        if (attempts === 0) await checkoutApi.reconcileOrder(orderNumber).catch(() => undefined);
         const { order: fetched, payment } = await checkoutApi.getOrder(orderNumber);
         if (cancelled) return;
 
         loaded = true;
         setOrder(fetched);
-        setCheckoutUrl(payment?.checkoutUrl ?? null);
+        setCheckoutUrl(payment?.checkoutUrlIsLive === false ? null : payment?.checkoutUrl ?? null);
+        setCanRetryOnline(payment?.provider === 'mercadopago' || payment?.provider === 'stripe' || payment?.provider === 'mock');
         setIsCash(payment?.provider === 'cash');
         const localPayment = payment?.provider === 'yape' || payment?.provider === 'plin';
         setIsMobilePayment(localPayment);
+        setDirectPayment(payment?.directPayment ?? null);
         setIsLoading(false);
 
         if (fetched.status !== 'PENDING_PAYMENT') {
           // Ya avanzo: deja de ser un pendiente que ofrecerle en el carrito.
           forgetPendingOrder();
-          if (fetched.status === 'CONFIRMED' && !cartCleared.current) {
-            cartCleared.current = true;
-            dispatch(clearCart());
-          }
           return;
         }
 
@@ -110,7 +112,7 @@ const CheckoutSuccessPage = () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [orderNumber, paymentCancelled, dispatch, retryNonce]);
+  }, [orderNumber, paymentCancelled, retryNonce]);
 
   const retry = useCallback(() => {
     setIsLoading(true);
@@ -132,6 +134,19 @@ const CheckoutSuccessPage = () => {
     }
   }, [order]);
 
+  const handleRetryPayment = useCallback(async () => {
+    if (!order) return;
+    setIsRetryingPayment(true);
+    try {
+      const result = await checkoutApi.retryPayment(order.orderNumber);
+      if (!result.checkoutUrl) throw new Error('No se recibio un enlace de pago');
+      window.location.assign(result.checkoutUrl);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error));
+      setIsRetryingPayment(false);
+    }
+  }, [order]);
+
   if (!orderNumber) {
     return (
       <div className="mx-auto max-w-lg px-4 py-20 text-center">
@@ -141,6 +156,10 @@ const CheckoutSuccessPage = () => {
   }
 
   if (isLoading) return <PageLoader />;
+
+  if (order && directPayment) return (
+    <DirectPaymentCheckout order={order} payment={directPayment} onUpdate={setDirectPayment} onReported={() => { forgetPendingOrder(); }} />
+  );
 
   /**
    * Una sola vista calculada en lugar de cuatro banderas sueltas. Antes, cuando el
@@ -179,7 +198,7 @@ const CheckoutSuccessPage = () => {
         {isCancelled && <XCircle className="mx-auto size-12 text-red-500" />}
         {view === 'decision' && <Timer className="mx-auto size-12 text-amber-500" />}
         {view === 'waiting' && <Clock className="mx-auto size-12 animate-pulse text-accent-500" />}
-        {view === 'manualReview' && <Smartphone className="mx-auto size-12 text-violet-600" />}
+        {view === 'manualReview' && <Smartphone className="mx-auto size-12 text-brand-600" />}
         {view === 'unreachable' && <AlertCircle className="mx-auto size-12 text-amber-500" />}
 
         <CardTitle className="mt-4 text-xl">
@@ -195,9 +214,9 @@ const CheckoutSuccessPage = () => {
         <CardDescription className="mt-2">
           {isConfirmed && 'Ya lo estamos preparando. Te avisaremos cuando salga.'}
           {isCancelled &&
-            (order?.cancelReason ?? 'No se te cobró nada. Puedes volver a pedir cuando quieras.')}
+            (order?.cancelReason ?? 'Consulta el estado de tus pagos y devoluciones en el detalle del pedido.')}
           {view === 'decision' &&
-            'No llegamos a recibir el pago, así que el pedido sigue reservado a tu nombre. Termínalo o cancélalo para liberar el stock, el cupón y el saldo que aparta.'}
+            'Todavía no confirmamos el pago; el pedido sigue reservado a tu nombre. Termínalo o cancélalo para liberar el stock, el cupón y el saldo que aparta.'}
           {view === 'waiting' &&
             (isCash
               ? 'Estamos confirmando tu pedido. No cierres esta página.'
@@ -250,15 +269,14 @@ const CheckoutSuccessPage = () => {
 
         {view === 'decision' ? (
           <div className="mt-6 grid gap-2">
-            {checkoutUrl && (
+            {canRetryOnline && (
               <Button
                 size="lg"
                 leftIcon={<CreditCard className="size-4" />}
-                onClick={() => {
-                  window.location.href = checkoutUrl;
-                }}
+                isLoading={isRetryingPayment}
+                onClick={() => void handleRetryPayment()}
               >
-                Reanudar el pago
+                {checkoutUrl ? 'Reanudar el pago' : 'Intentar el pago de nuevo'}
               </Button>
             )}
             <Button

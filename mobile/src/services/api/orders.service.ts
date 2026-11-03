@@ -6,12 +6,14 @@ export interface OrdersPage {
   page?: number;
   /** Tope del backend: 50 por página. */
   pageSize?: number;
+  filter?: 'ALL' | 'ACTIVE' | 'DELIVERED' | 'CANCELLED';
 }
 
 export interface CancelledOrder {
   orderNumber: string;
   status: string;
   refunded: boolean;
+  refundPending?: boolean;
 }
 
 export interface PaymentRetry {
@@ -27,6 +29,13 @@ export interface PaymentRetry {
 }
 
 export const ordersApi = {
+  async active(): Promise<OrderSummary[]> {
+    const result: OrderSummary[] = [];
+    for (let page = 1; ; page++) {
+      const response = await this.listPaged({ page, pageSize: 50, filter: 'ACTIVE' }); result.push(...response.items);
+      if (page >= response.meta.totalPages) return result;
+    }
+  },
   /**
    * Historial paginado: devuelve también `meta`, así que la pantalla sabe
    * cuántos pedidos hay y puede pedir la página siguiente. Es la que hay que
@@ -36,7 +45,7 @@ export const ordersApi = {
     apiPaged<OrderSummary>(ENDPOINTS.orders.root, {
       method: 'GET',
       auth: true,
-      query: { page: page.page, pageSize: page.pageSize },
+      query: { page: page.page, pageSize: page.pageSize, filter: page.filter },
     }),
 
   /**
@@ -49,6 +58,9 @@ export const ordersApi = {
 
   detail: (orderNumber: string) =>
     apiRequest<OrderWithPayment>(ENDPOINTS.orders.detail(orderNumber), { auth: true }),
+
+  stopWhatsapp: (orderNumber: string) =>
+    apiRequest<{ whatsappOptInAt: null }>(`/orders/${encodeURIComponent(orderNumber)}/whatsapp/stop`, { method: 'POST', auth: true }),
 
   cancel: (orderNumber: string, reason: string) =>
     apiRequest<CancelledOrder>(ENDPOINTS.orders.cancel(orderNumber), {
@@ -73,5 +85,15 @@ export const ordersApi = {
       method: 'POST',
       auth: true,
       body: { client: 'MOBILE' },
+    }),
+
+  reconcilePayment: (orderNumber: string) =>
+    apiRequest<OrderWithPayment>(`/orders/${encodeURIComponent(orderNumber)}/payment/reconcile`, {
+      method: 'POST', auth: true,
+    }),
+
+  payBalance: (orderNumber: string) =>
+    apiRequest<{ checkoutUrl: string | null }>(`/orders/${encodeURIComponent(orderNumber)}/payment/balance`, {
+      method: 'POST', auth: true, body: { client: 'MOBILE' },
     }),
 };

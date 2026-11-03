@@ -1,4 +1,4 @@
-﻿import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router, type Href } from 'expo-router';
 import { useCallback, useMemo, useRef, useState, type ReactElement } from 'react';
@@ -591,7 +591,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.accent500,
+    backgroundColor: colors.accent600,
   },
   sectionHeader: {
     marginTop: spacing.lg,

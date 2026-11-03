@@ -27,6 +27,7 @@ export class OrderItemCustomization extends Model<
   declare priceDelta: CreationOptional<number>;
   /** Lo que realmente se cobro por esta opcion (0 si entro en las incluidas). */
   declare lineExtra: CreationOptional<number>;
+  declare cakeScaleWithServings: CreationOptional<boolean>;
   declare nutritionSnapshotJson: CreationOptional<NutritionSnapshot | null>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
@@ -43,6 +44,7 @@ OrderItemCustomization.init(
     quantity: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
     priceDelta: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
     lineExtra: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
+    cakeScaleWithServings: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     nutritionSnapshotJson: { type: DataTypes.JSON, allowNull: true },
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,

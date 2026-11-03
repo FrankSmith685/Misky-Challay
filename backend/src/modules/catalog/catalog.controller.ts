@@ -3,7 +3,7 @@ import { ok } from '@shared/http/ApiResponse';
 import { asyncHandler } from '@shared/utils/asyncHandler';
 import { catalogService, type CatalogFilters } from './catalog.service';
 
-/** Modulo CATALOG (M04): categorias, productos, nutricion, alergenos y filtros. */
+/** Modulo CATALOG (M04): categorias, productos, alergenos y filtros. */
 export const catalogController = {
   categories: asyncHandler(async (_req: Request, res: Response) => {
     const categories = await catalogService.listCategories();

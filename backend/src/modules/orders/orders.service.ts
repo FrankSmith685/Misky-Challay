@@ -1,6 +1,8 @@
-import { Transaction } from 'sequelize';
+import { CustomerOrderCase } from '@database/models/customerJourney.model';
+import { Op, Transaction } from 'sequelize';
 import {
   Branch,
+  CakeProductionTask,
   Coupon,
   CouponRedemption,
   CoverageZone,
@@ -11,14 +13,16 @@ import {
   Order,
   OrderDiscount,
   OrderItem,
+  OrderItemReference,
   OrderItemCustomization,
   OrderStatusHistory,
   Payment,
   MobilePaymentClaim,
+  MobilePaymentEvent,
   sequelize,
 } from '@database/models';
 import { REDEMPTION_STATUS } from '@database/models/couponRedemption.model';
-import { PAYABLE_TYPE } from '@database/models/payment.model';
+import { PAYABLE_TYPE, PAYMENT_STAGE } from '@database/models/payment.model';
 import {
   ORDER_STATUS,
   ORDER_STATUS_FLOW,
@@ -29,21 +33,28 @@ import {
 } from '@config/constants';
 import { walletService } from '@modules/plans/wallet.service';
 import { notificationsService } from '@modules/notifications/notifications.service';
+import { whatsappService } from '@integrations/whatsapp/whatsapp.service';
 import { logger } from '@config/logger';
 import { ApiError } from '@shared/errors/ApiError';
 import { deriveIdempotencyKey } from '@shared/utils/idempotency';
 import { getPagination, buildMeta, type PaginationQuery } from '@shared/utils/pagination';
 import { getPaymentProvider } from '@integrations/payments';
 import { inventoryService } from '@modules/operations/inventory.service';
+import { cakeProductionService } from '@modules/cakes/cakeProduction.service';
+import { cakeDesignService } from '@modules/cakes/cakeDesign.service';
 // Ciclo de importacion a proposito y seguro: estos modulos importan `ordersService`
 // y aqui solo se usan DENTRO de funciones, nunca al evaluar el modulo.
 import { cancelTicketForOrder } from '@modules/operations/operations.service';
 import { abortForOrder } from '@modules/delivery/delivery.service';
 import {
   openOrderCheckoutSession,
+  paymentsService,
   usableCheckoutUrl,
   type PaymentClient,
 } from '@modules/payments/payments.service';
+import { directPaymentsService } from '@modules/payments/directPayments.service';
+import { holdsDirectReview, isDirectProvider } from '@modules/payments/directPayments.logic';
+import { customerOrderSummary } from './customerOrderSummary';
 
 /**
  * Estados en los que el pedido ya murio y sus reservas ya se devolvieron.
@@ -67,7 +78,7 @@ const ORDER_INCLUDE = [
   {
     model: OrderItem,
     as: 'items',
-    include: [{ model: OrderItemCustomization, as: 'customizations' }],
+    include: [{ model: OrderItemCustomization, as: 'customizations' }, { model: OrderItemReference, as: 'reference', attributes: ['id'] }, { model: OrderItemReference, as: 'designImages', attributes: ['id', 'kind', 'position'] }],
   },
   { model: OrderDiscount, as: 'discounts' },
   { model: Branch, as: 'branch', attributes: ['id', 'name', 'addressLine', 'phone'] },
@@ -96,6 +107,8 @@ export interface StatusChangeContext {
   source?: string;
   comment?: string | null;
   transaction?: Transaction;
+  /** El vencimiento publica un aviso específico de pago en la misma transacción. */
+  notifyCustomer?: boolean;
 }
 
 export interface RetryPaymentOptions {
@@ -151,8 +164,8 @@ const settleCashPayment = async (
 };
 
 /**
- * Al cancelar mientras Yape/Plin sigue en revision, retira el movimiento de la
- * cola de Caja. Sin este cierre el cajero podia aprobar un pedido ya cancelado.
+ * Al cancelar, conserva reportes en revisión para comprobar si hubo ingreso.
+ * Su aprobación registra dinero recibido sin reabrir el pedido cancelado.
  */
 const rejectPendingMobilePayment = async (
   orderId: number,
@@ -169,6 +182,12 @@ const rejectPendingMobilePayment = async (
     lock: transaction.LOCK.UPDATE,
   });
   if (!payment || ![PAYMENT_PROVIDER.YAPE, PAYMENT_PROVIDER.PLIN].includes(payment.provider as 'yape' | 'plin')) return;
+
+  const reported = await MobilePaymentClaim.findOne({ where: { paymentId: payment.id }, transaction, lock: transaction.LOCK.UPDATE });
+  if (holdsDirectReview(reported?.status)) {
+    await MobilePaymentEvent.create({ paymentId: payment.id, kind: 'ORDER_CANCELLED', details: { reason, requiresReview: true } }, { transaction });
+    return; // Cancellation cannot decide whether a transfer was actually received.
+  }
 
   payment.status = PAYMENT_STATUS.FAILED;
   payment.failedAt = new Date();
@@ -232,6 +251,12 @@ const persistDeliveryEta = async (order: Order, transaction: Transaction): Promi
 };
 
 export const ordersService = {
+  async stopWhatsapp(orderNumber: string, userId: number) {
+    const order = await Order.findOne({ where: { orderNumber, userId } });
+    if (!order) throw ApiError.notFound('Pedido no encontrado');
+    order.whatsappOptInAt = null;
+    await order.save();
+  },
   /**
    * Cambia el estado respetando las transiciones validas (figura 3 del analisis)
    * y deja rastro en order_status_history (RN-021).
@@ -247,6 +272,17 @@ export const ordersService = {
     }
 
     const apply = async (transaction: Transaction) => {
+      if (next === ORDER_STATUS.PREPARING && await CustomerOrderCase.count({ where: { orderId: order.id, kind: ['DESIGN', 'CHANGE'], status: 'AWAITING_CUSTOMER' }, transaction })) throw ApiError.conflict('El diseño final espera la aprobación del cliente.');
+      if (
+        (next === ORDER_STATUS.OUT_FOR_DELIVERY || next === ORDER_STATUS.DELIVERED)
+        && order.paymentPlan === 'DEPOSIT_BALANCE'
+        && !order.balancePaidAt
+      ) {
+        throw ApiError.unprocessable('No se puede enviar la torta: el saldo pendiente debe estar pagado');
+      }
+      if (next === ORDER_STATUS.OUT_FOR_DELIVERY || next === ORDER_STATUS.DELIVERED) {
+        await cakeProductionService.assertDispatchComplete(order.id, transaction);
+      }
       order.status = next;
       if (next === ORDER_STATUS.CONFIRMED) order.confirmedAt = new Date();
       // Entra a preparacion: es cuando el ETA del reparto pasa a ser un dato real.
@@ -263,7 +299,8 @@ export const ordersService = {
         await rejectPendingMobilePayment(order.id, context.comment ?? 'Pedido cancelado', transaction);
       }
 
-      await order.save({ transaction });
+      const saveOptions = { transaction, activityCustomerNotification: context.notifyCustomer !== false };
+      await order.save(saveOptions);
 
       await OrderStatusHistory.create(
         {
@@ -283,9 +320,16 @@ export const ordersService = {
 
     // El correo se manda DESPUES y sin esperarlo: un fallo del proveedor de email
     // no puede tumbar un pedido ya pagado ni revertir la transaccion.
-    void notificationsService
-      .notifyOrderStatus(order.id, next)
-      .catch((error) => logger.error('Fallo la notificacion del pedido', error));
+    const notify = () => {
+      void notificationsService.notifyOrderStatus(order.id, next)
+        .catch((error) => logger.error('Fallo la notificacion del pedido', error));
+      void whatsappService.notifyOrder(order.id, next)
+        .catch((error) => logger.error('Fallo el aviso de WhatsApp del pedido', error));
+    };
+    if (context.notifyCustomer !== false) {
+      if (context.transaction) context.transaction.afterCommit(notify);
+      else notify();
+    }
 
     return order;
   },
@@ -324,6 +368,13 @@ export const ordersService = {
    */
   async releaseReservations(order: Order, transaction?: Transaction) {
     if (RELEASED_STATUSES.includes(order.status)) return;
+    if (transaction) {
+      await cakeProductionService.releaseForOrder(order, transaction);
+      await cakeDesignService.releaseOrder(order.id, transaction);
+    } else await sequelize.transaction(async (tx) => {
+      await cakeProductionService.releaseForOrder(order, tx);
+      await cakeDesignService.releaseOrder(order.id, tx);
+    });
 
     const redemptions = await CouponRedemption.findAll({
       where: { orderId: order.id, status: REDEMPTION_STATUS.RESERVED },
@@ -389,11 +440,15 @@ export const ordersService = {
     await slot.save({ transaction });
   },
 
-  async listByUser(userId: number, query: PaginationQuery) {
+  async listByUser(userId: number, query: PaginationQuery & { filter?: unknown }) {
     const pagination = getPagination(query);
+    const active = ['PENDING_PAYMENT', 'CONFIRMED', 'PREPARING', 'READY', 'OUT_FOR_DELIVERY'];
+    const statuses = query.filter === 'ACTIVE' ? active : query.filter === 'DELIVERED' ? ['DELIVERED'] : query.filter === 'CANCELLED' ? ['CANCELLED', 'REFUNDED'] : undefined;
+    const counts = await Promise.all([Order.count({ where: { userId } }), Order.count({ where: { userId, status: active } }), Order.count({ where: { userId, status: 'DELIVERED' } }), Order.count({ where: { userId, status: ['CANCELLED', 'REFUNDED'] } })]);
 
     const { rows, count } = await Order.findAndCountAll({
-      where: { userId },
+      where: { userId, ...(statuses ? { status: statuses } : {}) },
+      attributes: { exclude: ['termsAcceptanceJson', 'customerContactJson'] },
       include: ORDER_INCLUDE,
       order: [['id', 'DESC']],
       limit: pagination.limit,
@@ -401,13 +456,23 @@ export const ordersService = {
       distinct: true,
     });
 
-    return { orders: rows, meta: buildMeta(pagination, count) };
+    const pendingIds = rows.filter((order) => order.status === ORDER_STATUS.PENDING_PAYMENT).map((order) => order.id);
+    const payments = pendingIds.length ? await Payment.findAll({ where: { payableType: PAYABLE_TYPE.ORDER, payableId: pendingIds },
+      attributes: ['id', 'payableId', 'provider', 'status'], include: [{ model: MobilePaymentClaim, as: 'mobileClaim', attributes: ['status'], required: false }], order: [['id', 'DESC']] }) : [];
+    const paymentStates = new Map<number, string | null>();
+    for (const payment of payments) {
+      if (paymentStates.has(payment.payableId)) continue;
+      const claim = payment.get('mobileClaim') as MobilePaymentClaim | undefined;
+      paymentStates.set(payment.payableId, isDirectProvider(payment.provider) && payment.status === 'PENDING' && holdsDirectReview(claim?.status) ? claim!.status === 'OBSERVED' ? 'OBSERVED' : 'REVIEW' : null);
+    }
+    return { orders: rows.map((order) => ({ ...order.get({ plain: true }), directPaymentState: paymentStates.get(order.id) ?? null })), meta: { ...buildMeta(pagination, count), counts: { ALL: counts[0], ACTIVE: counts[1], DELIVERED: counts[2], CANCELLED: counts[3] } } };
   },
 
   /** Un cliente solo puede ver SUS pedidos (seccion 7.1). */
   async getForUser(orderNumber: string, userId: number | null) {
     const order = await Order.findOne({
       where: { orderNumber },
+      attributes: { exclude: ['customerContactJson'] },
       include: [
         ...ORDER_INCLUDE,
         DELIVERY_INCLUDE,
@@ -434,10 +499,12 @@ export const ordersService = {
         // proveedor no se devuelve al cliente.
         'createdAt',
         'safeResponseJson',
+        'stage',
       ],
     });
 
-    if (!payment) return { order, payment: null };
+    const customerSummary = await customerOrderSummary(order);
+    if (!payment) return { order, payment: null, customerSummary };
 
     const mobileClaim = [PAYMENT_PROVIDER.YAPE, PAYMENT_PROVIDER.PLIN].includes(payment.provider as 'yape' | 'plin')
       ? await MobilePaymentClaim.findOne({
@@ -446,8 +513,14 @@ export const ordersService = {
         })
       : null;
 
+    const directPayments = await Promise.all((await Payment.findAll({
+      where: { payableType: PAYABLE_TYPE.ORDER, payableId: order.id, provider: ['yape', 'plin'] },
+      order: [['id', 'DESC']], limit: 50,
+    })).map((direct) => directPaymentsService.serialize(direct, order)));
     return {
       order,
+      directPayments,
+      customerSummary,
       payment: {
         id: payment.id,
         status: payment.status,
@@ -465,6 +538,8 @@ export const ordersService = {
         currency: payment.currency,
         failureReason: payment.failureReason,
         mobileClaim: mobileClaim?.get({ plain: true }) ?? null,
+        stage: payment.stage,
+        directPayment: directPayments.find((direct) => direct.paymentId === payment.id) ?? null,
       },
     };
   },
@@ -491,6 +566,17 @@ export const ordersService = {
     // Los pedidos de invitado tienen `userId` nulo: tampoco son de nadie que pueda
     // reintentar el cobro desde su cuenta.
     if (order.userId !== userId) throw ApiError.forbidden('Este pedido no es tuyo');
+
+    const currentPayment = await Payment.findOne({
+      where: { payableType: PAYABLE_TYPE.ORDER, payableId: order.id }, order: [['id', 'DESC']],
+    });
+    if (currentPayment?.provider === PAYMENT_PROVIDER.MERCADOPAGO
+      && currentPayment.status === PAYMENT_STATUS.PENDING) {
+      const outcome = await paymentsService.reconcilePayment(currentPayment);
+      if (outcome?.eventType === 'order.processing' || outcome?.eventType === 'order.action_required') {
+        throw ApiError.conflict('Mercado Pago sigue procesando tu pago. Espera la confirmacion antes de reintentar.');
+      }
+    }
 
     /*
      * El cobro se RESERVA con la fila del pedido bloqueada, y la llamada de red al
@@ -579,7 +665,8 @@ export const ordersService = {
           payableId: locked.id,
           userId: locked.userId,
           provider: getPaymentProvider().name,
-          amount: Number(locked.grandTotal),
+          amount: locked.paymentPlan === 'DEPOSIT_BALANCE' ? Number(locked.depositAmount) : Number(locked.grandTotal),
+          stage: locked.paymentPlan === 'DEPOSIT_BALANCE' ? PAYMENT_STAGE.DEPOSIT : PAYMENT_STAGE.FULL,
           currency: locked.currency,
           status: PAYMENT_STATUS.CREATED,
           idempotencyKey,
@@ -631,6 +718,16 @@ export const ordersService = {
       });
       if (!locked) throw ApiError.notFound('Pedido no encontrado');
       if (!cancellable.includes(locked.status)) throw notCancellable;
+      if (await CakeProductionTask.count({ where: { orderId: locked.id, startedAt: { [Op.ne]: null } }, transaction })) {
+        throw ApiError.unprocessable('La producción de la torta ya comenzó. Contacta a soporte para revisar la cancelación.');
+      }
+
+      if (locked.status === ORDER_STATUS.CONFIRMED && locked.paymentPlan === 'DEPOSIT_BALANCE') {
+        const cutoff = locked.scheduledAt ? locked.scheduledAt.getTime() - 48 * 60 * 60_000 : 0;
+        if (!cutoff || Date.now() >= cutoff) {
+          throw ApiError.unprocessable('El anticipo de una torta con diseño solo se puede cancelar hasta 48 horas antes de la entrega');
+        }
+      }
 
       locked.cancelReason = reason;
       await ordersService.releaseReservations(locked, transaction);

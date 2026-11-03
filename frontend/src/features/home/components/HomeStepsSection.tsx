@@ -10,11 +10,11 @@ export const HomeStepsSection = () => (
       <Reveal className="lg:sticky lg:top-28 lg:self-start">
         <MarketingHeading
           eyebrow="Así de fácil"
-          title="De tu antojo a tu puerta"
-          description="Una experiencia guiada que resuelve primero lo importante: dónde estás, qué quieres y cuándo lo recibirás."
+          title="De tu idea a tu celebración"
+          description="Una experiencia guiada que resuelve primero lo importante: dónde estás, qué quieres y cuándo la recibirás."
         />
         <div className="mt-7 hidden border-l-2 border-brand-500 pl-4 text-sm leading-6 text-ink-muted lg:block">
-          Sin precios ocultos.<br />Sin perder tu selección.<br />Sin adivinar el estado.
+          Sin precios ocultos.<br />Sin perder tu selección.<br />Sin adivinar el avance.
         </div>
       </Reveal>
 

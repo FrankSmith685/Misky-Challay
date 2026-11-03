@@ -4,6 +4,7 @@ export const listOrdersSchema = z.object({
   query: z.object({
     page: z.coerce.number().int().min(1).optional(),
     pageSize: z.coerce.number().int().min(1).max(50).optional(),
+    filter: z.enum(['ALL', 'ACTIVE', 'DELIVERED', 'CANCELLED']).optional(),
   }),
 });
 
@@ -21,6 +22,11 @@ export const retryPaymentSchema = z.object({
   body: z
     .object({ client: z.enum(['WEB', 'MOBILE']).default('WEB') })
     .optional(),
+});
+
+export const balancePaymentSchema = z.object({
+  params: z.object({ orderNumber: z.string().min(5).max(20) }),
+  body: z.object({ client: z.enum(['WEB', 'MOBILE']).default('WEB'), method: z.enum(['ONLINE', 'YAPE', 'PLIN']).default('ONLINE') }).optional(),
 });
 
 export const cancelOrderSchema = z.object({

@@ -22,6 +22,8 @@ export class LocalPaymentSetting extends Model<
   declare plinRecipient: CreationOptional<string | null>;
   declare plinQrImageUrl: CreationOptional<string | null>;
   declare instructions: CreationOptional<string | null>;
+  declare paymentWindowMinutes: CreationOptional<number>;
+  declare reviewAlertMinutes: CreationOptional<number>;
   declare updatedBy: CreationOptional<number | null>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
@@ -39,6 +41,8 @@ LocalPaymentSetting.init(
     plinRecipient: { type: DataTypes.STRING(120), allowNull: true },
     plinQrImageUrl: { type: DataTypes.STRING(500), allowNull: true },
     instructions: { type: DataTypes.STRING(500), allowNull: true },
+    paymentWindowMinutes: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 15 },
+    reviewAlertMinutes: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 10 },
     updatedBy: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,

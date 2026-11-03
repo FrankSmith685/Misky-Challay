@@ -2,8 +2,8 @@
 # =============================================================================
 # Restauracion de una copia de seguridad.
 #
-#   ./scripts/restore.sh backups/verde_bowl_v3-20260720-030000.sql.gz
-#   ./scripts/restore.sh <copia> --into verde_bowl_prueba    (ensayo sin tocar la real)
+#   ./scripts/restore.sh backups/DulceFlow-20260720-030000.sql.gz
+#   ./scripts/restore.sh <copia> --into DulceFlow_prueba    (ensayo sin tocar la real)
 #
 # Una copia que nunca se ha restaurado no es una copia: es un archivo. Ensaya la
 # restauracion en una base aparte al menos una vez, ANTES de necesitarla de verdad,
@@ -26,7 +26,7 @@ fi
 
 DB_USER="${DB_USER:-root}"
 DB_PASSWORD="${DB_PASSWORD:-}"
-TARGET="${DB_NAME:-verde_bowl_v3}"
+TARGET="${DB_NAME:-DulceFlow}"
 
 # --into permite ensayar en una base desechable sin arriesgar la de verdad.
 if [ "${2:-}" = "--into" ] && [ -n "${3:-}" ]; then

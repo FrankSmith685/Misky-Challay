@@ -94,14 +94,14 @@ import { ComponentDoc, Label, SectionHeader } from '../designSystem/DocParts';
 import { ThemeEditor } from '../components/ThemeEditor';
 import { useThemeSettings } from '@/theme/ThemeSettingsProvider';
 import { type ColorRamp } from '@/theme/colorUtils';
-import { rampsFromTokens } from '@/theme/tokens';
+import { rampsFromTokens, SURFACE } from '@/theme/tokens';
 import { getDoc } from '../designSystem/componentDocs';
 
 /* ==========================================================================
  * FUNDAMENTOS
  * ========================================================================== */
 const PRINCIPLES = [
-  { icon: Boxes, title: 'Material, con tu marca', text: 'Componentes de MUI con un tema propio: morado de Verde Bowl, fuente Inter y bordes redondeados.' },
+  { icon: Boxes, title: 'Material, con tu marca', text: 'Componentes de MUI con un tema propio: rosa profundo, caramelo y verde suave, títulos editoriales y superficies cálidas.' },
   { icon: Palette, title: 'Tema gestionable', text: 'El look sale de theme/. Desde la seccion Tema cambias primary, secondary o tertiary y se actualiza toda la app.' },
   { icon: ShieldCheck, title: 'Accesible', text: 'MUI trae foco, teclado y ARIA de fabrica en dialogos, menus y formularios.' },
   { icon: Feather, title: 'Consistente', text: 'Mismos colores, radios y tipografia que el resto de la app.' },
@@ -111,7 +111,7 @@ const IntroSection: FC = () => (
   <div>
     <SectionHeader
       title="Introduccion"
-      description="Los componentes de la interfaz de Verde Bowl, sobre Material UI con un tema de marca gestionable."
+      description="Los componentes de la interfaz de Misky Challay, sobre Material UI con un tema de marca gestionable."
     />
     <div className="grid gap-4 sm:grid-cols-2">
       {PRINCIPLES.map(({ icon: Icon, title, text }) => (
@@ -131,7 +131,7 @@ const IntroSection: FC = () => (
     <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
       Cada componente muestra: sobre que esta construido, para que sirve, cuando usarlo, una vista previa
       en vivo, el codigo para copiar y una tabla con sus props principales. Fijate en la etiqueta de
-      importacion: <strong>@components/ui</strong> es el componente propio de Verde Bowl (API del proyecto)
+      importacion: <strong>@components/ui</strong> es el componente propio de Misky Challay (API del proyecto)
       y <strong>@mui/material</strong> es el de Material UI sin envolver. Si existe la version propia,
       usala: es la que respeta el tema, la escala de alturas y los estados del producto.
     </Typography>
@@ -163,11 +163,11 @@ const ThemeSection: FC = () => (
 const STOPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900] as const;
 
 const NEUTRALS = [
-  { token: 'surface', hex: '#ffffff' },
-  { token: 'surface-muted', hex: '#f8f6f8' },
-  { token: 'line', hex: '#e7e0e7' },
-  { token: 'ink-muted', hex: '#675d68' },
-  { token: 'ink', hex: '#201820' },
+  { token: 'surface', hex: SURFACE.base },
+  { token: 'surface-muted', hex: SURFACE.muted },
+  { token: 'line', hex: SURFACE.line },
+  { token: 'ink-muted', hex: SURFACE.inkMuted },
+  { token: 'ink', hex: SURFACE.ink },
 ];
 
 const rampToSwatches = (name: string, ramp: ColorRamp) =>
@@ -206,7 +206,7 @@ const ColorsSection: FC = () => {
   /* Misma fuente que alimenta las variables CSS de Tailwind (applyCssVars) y las
    * paletas de MUI (buildTheme). La rampa de acento se construia aqui a mano con
    * DOS paradas dentro de una rejilla dimensionada para diez, y el hex que
-   * publicaba (#eca73a) no existe en el producto: el accent-400 real es #f5a524.
+   * publicaba (#eca73a) no existe en el producto: el accent-400 real es #ff9f37.
    * Como el Swatch copia al portapapeles, el color inventado se propagaba a quien
    * lo pegara. */
   const ramps = rampsFromTokens(tokens);
@@ -405,7 +405,7 @@ const FormsSection: FC = () => {
           docId="textfield"
           name="Input"
           tag="@components/ui"
-          description="Campo personalizado de Verde Bowl construido sobre TextField de MUI."
+          description="Campo personalizado de Misky Challay construido sobre TextField de MUI."
           canvasClassName="items-stretch"
           code={`import { FormGrid, Input } from '@components/ui';\n\n<FormGrid>\n  <Input label="Nombre" hint="Como aparecerá en el sistema" />\n  <Input label="Correo" error="Ingresa un correo válido" />\n</FormGrid>`}
         >
@@ -441,8 +441,8 @@ const FormsSection: FC = () => {
         >
           <AppSelect label="Sucursal" defaultValue="" sx={{ width: { xs: '100%', sm: 320 } }}>
             <SelectOption value="" disabled>Selecciona...</SelectOption>
-            <SelectOption value="mira">Verde Bowl Miraflores</SelectOption>
-            <SelectOption value="isi">Verde Bowl San Isidro</SelectOption>
+            <SelectOption value="mira">Misky Challay Miraflores</SelectOption>
+            <SelectOption value="isi">Misky Challay San Isidro</SelectOption>
           </AppSelect>
         </ComponentDoc>
 
@@ -650,7 +650,7 @@ const FeedbackSection: FC = () => (
         docId="snackbar"
         name="Toast"
         tag="@components/mui/MuiToast"
-        description="La notificacion global real de la aplicacion. Es la misma que aparece al iniciar sesion."
+        description="Avisos globales: éxito e información duran 4 segundos; advertencias y errores, 6. Se cierran automáticamente, admiten cierre manual y agrupan repeticiones."
       >
         <AppButton variant="outline" onClick={() => toast.success('Cambios guardados correctamente')}>
           Probar exito
@@ -735,7 +735,7 @@ const NavigationSection: FC = () => {
 
         <ComponentDoc docId="stepper" canvasClassName="items-stretch">
           <Stepper activeStep={2} alternativeLabel className="w-full">
-            {['Base', 'Proteina', 'Toppings', 'Pago'].map((step) => (
+            {['Bizcocho', 'Relleno', 'Cobertura', 'Entrega'].map((step) => (
               <Step key={step}>
                 <StepLabel>{step}</StepLabel>
               </Step>
@@ -972,13 +972,13 @@ const DesignSystemPage = () => {
   }, [active, selectedDoc]);
 
   return (
-    <div className="mx-auto max-w-6xl pb-16">
+    <div className="mx-auto max-w-8xl pb-16">
       {/* Encabezado: el mismo `PageHeader` que las otras dieciseis pantallas. El
           hero artesanal que habia aqui era, junto al del Resumen, lo primero que
           ve un administrador general, y no compartia ni tipografia ni ritmo. */}
       <PageHeader
         eyebrow="Sistema de diseño"
-        title="Componentes de Verde Bowl"
+        title="Componentes de Misky Challay"
         description="Cada componente tiene su entrada individual, demo en vivo, documentación de props y código de referencia. El tema se gestiona desde un solo lugar."
         icon={Palette}
         action={

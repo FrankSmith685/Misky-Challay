@@ -183,7 +183,7 @@ export default function SavedBowlsScreen() {
           productId: bowl.productId,
           variantId: bowl.variantId,
           productName: bowl.product?.name ?? bowl.name,
-          variantName: bowl.variant?.name ?? quote.variantName ?? 'Bowl',
+          variantName: bowl.variant?.name ?? quote.variantName ?? 'Torta',
           imageUrl: bowl.product?.imageUrl ?? null,
           quantity: 1,
           unitPrice: quote.unitPrice,
@@ -265,7 +265,7 @@ export default function SavedBowlsScreen() {
     (bowl: SavedBowl) => {
       // Borrar es irreversible: aquí sí toca una confirmación bloqueante.
       Alert.alert(
-        'Eliminar bowl guardado',
+        'Eliminar receta guardada',
         `«${bowl.name}» dejará de aparecer en tu cuenta. Tus pedidos anteriores no cambian.`,
         [
           { text: 'Conservar', style: 'cancel' },
@@ -301,16 +301,16 @@ export default function SavedBowlsScreen() {
 
   if (!authenticated) {
     return (
-      <ScreenScaffold title="Bowls guardados" padded>
+      <ScreenScaffold title="Recetas guardadas" padded>
         <EmptyState
           icon="shield-lock-outline"
           title="Tus recetas viven en tu cuenta"
-          message="Inicia sesión para ver los bowls que guardaste y pedirlos en un toque."
+          message="Inicia sesión para ver las recetas que guardaste y pedirlas en un toque."
           actionLabel="Iniciar sesión"
           onAction={() =>
             router.push({ pathname: '/(auth)/login', params: { returnTo: '/saved-bowls' } })
           }
-          secondaryLabel="Armar un bowl"
+          secondaryLabel="Personalizar una torta"
           onSecondary={() => router.push('/(tabs)/menu')}
         />
       </ScreenScaffold>
@@ -319,7 +319,7 @@ export default function SavedBowlsScreen() {
 
   if (bowls.loading) {
     return (
-      <ScreenScaffold title="Bowls guardados" padded>
+      <ScreenScaffold title="Recetas guardadas" padded>
         <View style={styles.skeleton}>
           <Skeleton height={44} rounded="md" />
           <Skeleton height={188} rounded="lg" count={3} gap={spacing.md} style={styles.skeletonGap} />
@@ -330,7 +330,7 @@ export default function SavedBowlsScreen() {
 
   if (bowls.error && rows.length === 0) {
     return (
-      <ScreenScaffold title="Bowls guardados" padded>
+      <ScreenScaffold title="Recetas guardadas" padded>
         <EmptyState
           icon="cloud-alert-outline"
           title="No pudimos cargar tus recetas"
@@ -403,12 +403,12 @@ export default function SavedBowlsScreen() {
 
   return (
     <ScreenScaffold
-      title="Bowls guardados"
+      title="Recetas guardadas"
       subtitle="Tus combinaciones, listas para repetir"
       headerRight={
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Armar un bowl nuevo"
+          accessibilityLabel="Personalizar una torta nueva"
           hitSlop={layout.iconHitSlop}
           onPress={() => router.push('/(tabs)/menu')}
           style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}
@@ -435,16 +435,16 @@ export default function SavedBowlsScreen() {
             <EmptyState
               icon="magnify"
               title="No encontramos esa receta"
-              message="Prueba con el nombre del bowl, su base o alguno de sus ingredientes."
+              message="Prueba con el nombre de la receta o alguno de sus sabores."
               actionLabel="Limpiar búsqueda"
               onAction={() => setQuery('')}
             />
           ) : (
             <EmptyState
-              icon="bowl-mix-outline"
-              title="Aún no guardaste bowls"
+              icon="cake-variant-outline"
+              title="Aún no guardaste recetas"
               message="Arma una combinación en el constructor y guárdala: la tendrás lista para pedir en un toque."
-              actionLabel="Armar mi primer bowl"
+              actionLabel="Personalizar mi primera torta"
               onAction={() => router.push('/(tabs)/menu')}
             />
           )
@@ -534,7 +534,7 @@ export default function SavedBowlsScreen() {
             }}
             maxLength={80}
             autoFocus
-            placeholder="Mi bowl de los lunes"
+            placeholder="Mi torta de cumpleaños"
             placeholderTextColor={colors.inkMuted}
             returnKeyType="done"
             onSubmitEditing={() => void rename()}
@@ -620,7 +620,7 @@ function BowlCard({ bowl, config, busy, onAdd, onCustomize, onMenu }: BowlCardPr
             {bowl.name}
           </Text>
           <Text style={styles.cardMeta}>
-            {bowl.variant?.name ?? 'Bowl personalizado'}
+            {bowl.variant?.name ?? 'Torta personalizada'}
             {bowl.variant ? ` · desde ${money(bowl.variant.basePrice)}` : ''}
           </Text>
           <Text style={styles.cardDate}>{sinceText(bowl.updatedAt)}</Text>
@@ -897,7 +897,7 @@ const styles = StyleSheet.create({
     minHeight: 52,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#b8d5c6',
+    borderColor: '#b7dcf5',
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.md,
   },

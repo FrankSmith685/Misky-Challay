@@ -11,6 +11,7 @@ const buildInput = (req: Request): Omit<CheckoutInput, 'idempotencyKey'> => ({
 });
 
 export const checkoutController = {
+  availability: asyncHandler(async (req: Request, res: Response) => ok(res, await checkoutService.availability({ ...buildInput(req), idempotencyKey: 'availability-only' }))),
   /** RN-007: recotiza todo contra el catalogo antes de mostrar el total. */
   quote: asyncHandler(async (req: Request, res: Response) => {
     const quote = await checkoutService.quote({

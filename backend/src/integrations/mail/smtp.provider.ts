@@ -18,6 +18,9 @@ export class SmtpMailProvider implements MailProvider {
       host: settings.host,
       port: settings.port,
       secure: settings.secure,
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 20000,
       auth:
         settings.user && settings.password
           ? { user: settings.user, pass: settings.password }

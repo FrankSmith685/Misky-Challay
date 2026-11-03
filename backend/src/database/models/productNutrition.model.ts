@@ -26,6 +26,7 @@ export class ProductNutrition extends Model<
   declare fat: number;
   declare fiber: CreationOptional<number>;
   declare sodium: CreationOptional<number>;
+  declare verifiedAt: CreationOptional<Date | null>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
 }
@@ -41,6 +42,7 @@ ProductNutrition.init(
     fat: { type: DataTypes.DECIMAL(8, 2), allowNull: false, defaultValue: 0 },
     fiber: { type: DataTypes.DECIMAL(8, 2), allowNull: false, defaultValue: 0 },
     sodium: { type: DataTypes.DECIMAL(8, 2), allowNull: false, defaultValue: 0 },
+    verifiedAt: { type: DataTypes.DATE, allowNull: true, defaultValue: null },
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,
   },

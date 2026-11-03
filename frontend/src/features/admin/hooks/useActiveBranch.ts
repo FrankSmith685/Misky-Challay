@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { geoApi } from '@features/geo/services/geo.service';
 import type { Branch } from '@features/geo/types';
 import { getApiErrorMessage } from '@services/api/client';
@@ -16,6 +17,8 @@ const STORAGE_KEY = 'verde-bowl.admin.active-branch';
  * puede pintar LoadError y ofrecer `reloadBranches`.
  */
 export const useActiveBranch = () => {
+  const { search } = useLocation();
+  const appliedQuery = useRef<string | null>(null);
   const { branchIds, isSuperAdmin } = usePermissions();
   const [allBranches, setAllBranches] = useState<Branch[]>([]);
   const [branchId, setBranchIdState] = useState<number | null>(() => {
@@ -24,6 +27,7 @@ export const useActiveBranch = () => {
   });
   const [isLoadingBranches, setIsLoadingBranches] = useState(true);
   const [branchesError, setBranchesError] = useState<string | null>(null);
+  const [branchNotice, setBranchNotice] = useState<string | null>(null);
 
   const reloadBranches = useCallback(async () => {
     setIsLoadingBranches(true);
@@ -51,6 +55,7 @@ export const useActiveBranch = () => {
   );
 
   useEffect(() => {
+    if (branchNotice) return;
     if (branches.length === 0) {
       setBranchIdState(null);
       return;
@@ -59,20 +64,36 @@ export const useActiveBranch = () => {
       setBranchIdState(branches[0].id);
       localStorage.setItem(STORAGE_KEY, String(branches[0].id));
     }
-  }, [branchId, branches]);
+  }, [branchId, branches, branchNotice]);
 
   const setBranchId = (next: number) => {
+    if (!branches.some((branch) => branch.id === next)) return;
+    setBranchNotice(null);
     setBranchIdState(next);
     localStorage.setItem(STORAGE_KEY, String(next));
   };
 
+  useEffect(() => {
+    if (isLoadingBranches || appliedQuery.current === search) return;
+    appliedQuery.current = search;
+    const requested = Number(new URLSearchParams(search).get('branchId'));
+    setBranchNotice(null);
+    if (requested > 0 && branches.some((branch) => branch.id === requested)) {
+      setBranchIdState(requested);
+      localStorage.setItem(STORAGE_KEY, String(requested));
+    } else if (requested > 0) {
+      setBranchNotice('El aviso corresponde a una sucursal a la que no tienes acceso o que ya no está disponible. Selecciona una sucursal autorizada.');
+      setBranchIdState(null);
+    }
+  }, [search, branches, isLoadingBranches]);
+
   return {
-    branchId,
+    branchId: branchNotice ? null : branchId,
     branches,
     setBranchId,
     isLoadingBranches,
     /** Mensaje del fallo al cargar las cocinas. Null si todo fue bien. */
-    branchesError,
+    branchesError: branchesError ?? branchNotice,
     /** Reintento para el boton de LoadError. */
     reloadBranches,
   };

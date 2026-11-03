@@ -4,6 +4,8 @@ import { authenticate } from '@middlewares/auth.middleware';
 import { authLimiter } from '@middlewares/rateLimit.middleware';
 import { validate } from '@middlewares/validate.middleware';
 import { accountController } from './account.controller';
+import { activityStream } from '@modules/notifications/activityStream';
+import { asyncHandler } from '@shared/utils/asyncHandler';
 import {
   addressIdSchema,
   changePasswordSchema,
@@ -24,6 +26,7 @@ import {
 const router = Router();
 
 router.use(authenticate);
+router.get('/events', asyncHandler(activityStream));
 
 router.get('/profile', accountController.getProfile);
 router.patch('/profile', validate(updateProfileSchema), accountController.updateProfile);
@@ -61,7 +64,8 @@ router.delete(
   accountController.deleteAccount,
 );
 router.get('/notifications', accountController.listNotifications);
-router.patch('/notifications/read', accountController.markNotificationsRead);
+router.get('/notifications/feed', validate(z.object({ query: z.object({ audience: z.enum(['CUSTOMER', 'STAFF', 'ALL']).default('ALL'), page: z.coerce.number().int().positive().default(1), pageSize: z.coerce.number().int().min(1).max(50).default(15) }) })), accountController.notificationFeed);
+router.patch('/notifications/read', validate(z.object({ body: z.object({ ids: z.array(z.number().int().positive()).min(1).max(100).optional(), all: z.boolean().optional(), throughId: z.number().int().positive().optional(), audience: z.enum(['CUSTOMER', 'STAFF', 'ALL']).optional() }).optional() })), accountController.markNotificationsRead);
 router.post(
   '/mobile-devices',
   validate(z.object({ body: z.object({

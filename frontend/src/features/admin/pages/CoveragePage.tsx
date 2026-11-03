@@ -68,10 +68,12 @@ const WEEKDAYS = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'
 const EMPTY_ZONE: {
   name: string;
   deliveryFee: string;
+  extraCoverageKm: string;
+  extraFeePerKm: string;
   minimumOrder: string;
   estimatedMinutes: string;
   polygon: PolygonPoint[];
-} = { name: '', deliveryFee: '6.90', minimumOrder: '25', estimatedMinutes: '35', polygon: [] };
+} = { name: '', deliveryFee: '6.90', extraCoverageKm: '0', extraFeePerKm: '0', minimumOrder: '0', estimatedMinutes: '35', polygon: [] };
 const EMPTY_BRANCH: {
   name: string;
   addressLine: string;
@@ -209,7 +211,7 @@ const AdminCoveragePage = () => {
     try {
       const serverDraft = await commercialApi.getDraft<typeof EMPTY_ZONE>(SERVER_ZONE_DRAFT_KEY);
       if (serverDraft) {
-        setZoneForm(serverDraft.payload);
+        setZoneForm({ ...EMPTY_ZONE, ...serverDraft.payload });
         setPublishAt(
           serverDraft.publishAt ? new Date(serverDraft.publishAt).toISOString().slice(0, 16) : '',
         );
@@ -217,11 +219,11 @@ const AdminCoveragePage = () => {
       } else {
         const draft = JSON.parse(localStorage.getItem(ZONE_DRAFT_KEY) ?? 'null') as
           typeof EMPTY_ZONE | null;
-        setZoneForm(draft ?? EMPTY_ZONE);
+        setZoneForm({ ...EMPTY_ZONE, ...draft });
       }
     } catch {
       try {
-        setZoneForm(JSON.parse(localStorage.getItem(ZONE_DRAFT_KEY) ?? 'null') ?? EMPTY_ZONE);
+        setZoneForm({ ...EMPTY_ZONE, ...JSON.parse(localStorage.getItem(ZONE_DRAFT_KEY) ?? 'null') });
       } catch {
         setZoneForm(EMPTY_ZONE);
       }
@@ -311,6 +313,8 @@ const AdminCoveragePage = () => {
           ...zoneForm,
           cityId,
           deliveryFee: Number(zoneForm.deliveryFee),
+          extraCoverageKm: Number(zoneForm.extraCoverageKm),
+          extraFeePerKm: Number(zoneForm.extraFeePerKm),
           minimumOrder: Number(zoneForm.minimumOrder),
           estimatedMinutes: Number(zoneForm.estimatedMinutes),
           priority: (data?.zones.length ?? 0) + 1,
@@ -329,6 +333,8 @@ const AdminCoveragePage = () => {
     setZoneForm({
       name: zone.name,
       deliveryFee: String(zone.deliveryFee),
+      extraCoverageKm: String(zone.extraCoverageKm),
+      extraFeePerKm: String(zone.extraFeePerKm),
       minimumOrder: String(zone.minimumOrder),
       estimatedMinutes: String(zone.estimatedMinutes),
       polygon: zone.polygon ?? [],
@@ -362,6 +368,8 @@ const AdminCoveragePage = () => {
           await commercialApi.updateZone(editingZoneId, {
             name: zoneForm.name.trim(),
             deliveryFee: Number(zoneForm.deliveryFee),
+            extraCoverageKm: Number(zoneForm.extraCoverageKm),
+            extraFeePerKm: Number(zoneForm.extraFeePerKm),
             minimumOrder: Number(zoneForm.minimumOrder),
             estimatedMinutes: Number(zoneForm.estimatedMinutes),
             polygon: zoneForm.polygon.length >= 3 ? zoneForm.polygon : null,
@@ -371,6 +379,8 @@ const AdminCoveragePage = () => {
             cityId,
             name: zoneForm.name.trim(),
             deliveryFee: Number(zoneForm.deliveryFee),
+            extraCoverageKm: Number(zoneForm.extraCoverageKm),
+            extraFeePerKm: Number(zoneForm.extraFeePerKm),
             minimumOrder: Number(zoneForm.minimumOrder),
             estimatedMinutes: Number(zoneForm.estimatedMinutes),
             priority: (data?.zones.length ?? 0) + 1,
@@ -443,7 +453,7 @@ const AdminCoveragePage = () => {
       <div>
         <PageHeader
           eyebrow="Operación territorial"
-          title="Cobertura y cocinas"
+          title="Zonas y sucursales"
           description="Configura dónde operas, cuánto cobras y qué horarios acepta cada cocina."
           icon={MapPin}
         />
@@ -613,7 +623,7 @@ const AdminCoveragePage = () => {
     <div className="grid gap-8">
       <PageHeader
         eyebrow="Operación territorial"
-        title="Cobertura y cocinas"
+        title="Zonas y sucursales"
         description={
           canWrite
             ? 'Configura dónde operas, cuánto cobras y qué horarios acepta cada cocina.'
@@ -713,9 +723,11 @@ const AdminCoveragePage = () => {
                     onChange={(e) => patchZone(zone.id, { deliveryFee: Number(e.target.value) })}
                   />
                   <Input
-                    label="Pedido minimo"
+                    label="Mínimo opcional (S/)"
                     type="number"
-                    step="1"
+                    min="0"
+                    step="0.01"
+                    hint="0 = sin mínimo. Solo aplica a productos en delivery."
                     value={zone.minimumOrder}
                     onChange={(e) => patchZone(zone.id, { minimumOrder: Number(e.target.value) })}
                   />
@@ -725,13 +737,16 @@ const AdminCoveragePage = () => {
                     value={zone.estimatedMinutes}
                     onChange={(e) => patchZone(zone.id, { estimatedMinutes: Number(e.target.value) })}
                   />
+                  <Input label="Límite adicional (km, 0 sin límite)" type="number" min="0" max="50" step="0.1" value={zone.extraCoverageKm} onChange={(e) => patchZone(zone.id, { extraCoverageKm: Number(e.target.value) })} />
+                  <Input label="Recargo por km extra" type="number" min="0" step="0.1" value={zone.extraFeePerKm} onChange={(e) => patchZone(zone.id, { extraFeePerKm: Number(e.target.value) })} />
                 </div>
               ) : (
                 <dl className="mt-3 grid grid-cols-3 gap-2 text-sm">
                   {[
                     { label: 'Delivery', value: formatCurrency(zone.deliveryFee) },
-                    { label: 'Pedido mínimo', value: formatCurrency(zone.minimumOrder) },
+                    { label: 'Pedido mínimo', value: zone.minimumOrder > 0 ? formatCurrency(zone.minimumOrder) : 'Sin mínimo' },
                     { label: 'Reparto', value: `${zone.estimatedMinutes} min` },
+                    { label: 'Fuera de zona', value: zone.extraFeePerKm > 0 ? `${zone.extraCoverageKm > 0 ? `${zone.extraCoverageKm} km` : 'Sin límite'} · ${formatCurrency(zone.extraFeePerKm)}/km` : 'Desactivada' },
                   ].map((item) => (
                     <div key={item.label}>
                       <dt className="text-xs text-ink-muted">{item.label}</dt>
@@ -762,6 +777,8 @@ const AdminCoveragePage = () => {
                       () =>
                         commercialApi.updateZone(zone.id, {
                           deliveryFee: zone.deliveryFee,
+                          extraCoverageKm: zone.extraCoverageKm,
+                          extraFeePerKm: zone.extraFeePerKm,
                           minimumOrder: zone.minimumOrder,
                           estimatedMinutes: zone.estimatedMinutes,
                         }),
@@ -864,8 +881,8 @@ const AdminCoveragePage = () => {
                               <SelectOption value={NO_ZONE}>Sin cobertura</SelectOption>
                               {cityZones.map((entry) => (
                                 <SelectOption key={entry.id} value={String(entry.id)}>
-                                  {entry.name} · {formatCurrency(entry.deliveryFee)} · mín.{' '}
-                                  {formatCurrency(entry.minimumOrder)}
+                                  {entry.name} · {formatCurrency(entry.deliveryFee)} ·{' '}
+                                  {entry.minimumOrder > 0 ? `mín. ${formatCurrency(entry.minimumOrder)}` : 'Sin mínimo'}
                                 </SelectOption>
                               ))}
                               {/* La zona asignada puede estar apagada o ser de otra
@@ -880,7 +897,7 @@ const AdminCoveragePage = () => {
                           ) : (
                             <p className="mt-1 text-xs text-ink-muted">
                               {zone
-                                ? `${zone.name} · ${formatCurrency(zone.deliveryFee)} · mín. ${formatCurrency(zone.minimumOrder)}`
+                                ? `${zone.name} · ${formatCurrency(zone.deliveryFee)} · ${zone.minimumOrder > 0 ? `mín. ${formatCurrency(zone.minimumOrder)}` : 'Sin mínimo'}`
                                 : 'Sin cobertura'}
                             </p>
                           )}
@@ -1145,10 +1162,14 @@ const AdminCoveragePage = () => {
                       setZoneForm((form) => ({ ...form, deliveryFee: event.target.value }))
                     }
                   />
+                  <Input label="Límite fuera del mapa (km)" type="number" min="0" max="50" step="0.1" value={zoneForm.extraCoverageKm} onChange={(event) => setZoneForm((form) => ({ ...form, extraCoverageKm: event.target.value }))} hint="Distancia en línea recta desde el borde. 0 permite cotizar sin límite si hay tarifa." />
+                  <Input label="Recargo por km fuera del mapa" type="number" min="0" step="0.10" value={zoneForm.extraFeePerKm} onChange={(event) => setZoneForm((form) => ({ ...form, extraFeePerKm: event.target.value }))} hint="Se suma al costo base de delivery." />
                   <Input
-                    label="Pedido mínimo"
+                    label="Mínimo opcional (S/)"
                     type="number"
                     min="0"
+                    step="0.01"
+                    hint="0 = sin mínimo. Un monto mayor exige ese subtotal de productos solo en delivery."
                     value={zoneForm.minimumOrder}
                     onChange={(event) =>
                       setZoneForm((form) => ({ ...form, minimumOrder: event.target.value }))
@@ -1240,7 +1261,7 @@ const AdminCoveragePage = () => {
                 <div className="grid gap-4">
                   <Input
                     label="Nombre comercial"
-                    placeholder="Verde Bowl San Isidro"
+                    placeholder="Misky Challay San Isidro"
                     value={branchForm.name}
                     onChange={(event) =>
                       setBranchForm((form) => ({ ...form, name: event.target.value }))
@@ -1332,8 +1353,8 @@ const AdminCoveragePage = () => {
                     </SelectOption>
                     {branchZones.map((zone) => (
                       <SelectOption key={zone.id} value={String(zone.id)}>
-                        {zone.name} · {formatCurrency(zone.deliveryFee)} · mín.{' '}
-                        {formatCurrency(zone.minimumOrder)}
+                        {zone.name} · {formatCurrency(zone.deliveryFee)} ·{' '}
+                        {zone.minimumOrder > 0 ? `mín. ${formatCurrency(zone.minimumOrder)}` : 'Sin mínimo'}
                       </SelectOption>
                     ))}
                   </Select>
@@ -1472,6 +1493,8 @@ const AdminCoveragePage = () => {
                                 ...(typeof before.deliveryFee === 'number'
                                   ? { deliveryFee: before.deliveryFee }
                                   : {}),
+                                ...(typeof before.extraCoverageKm === 'number' ? { extraCoverageKm: before.extraCoverageKm } : {}),
+                                ...(typeof before.extraFeePerKm === 'number' ? { extraFeePerKm: before.extraFeePerKm } : {}),
                                 ...(typeof before.minimumOrder === 'number'
                                   ? { minimumOrder: before.minimumOrder }
                                   : {}),

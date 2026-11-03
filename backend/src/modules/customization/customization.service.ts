@@ -1,25 +1,25 @@
-import {
+﻿import {
   BranchOptionAvailability,
+  CakeProductProfile,
   BuilderPreset,
   BuilderPresetItem,
   CustomizationGroup,
   CustomizationOption,
+  InventoryItem,
+  Allergen,
   OptionIncompatibility,
   Product,
   ProductCustomizationGroup,
-  ProductNutrition,
   ProductVariant,
 } from '@database/models';
+import { Op } from 'sequelize';
 import { OPTION_STATUS } from '@database/models/customizationOption.model';
 import { PRODUCT_TYPE } from '@config/constants';
+import { PRODUCT_STATUS } from '@database/models/product.model';
 import { ApiError } from '@shared/errors/ApiError';
-
-export interface Nutrition {
-  calories: number;
-  protein: number;
-  carbs: number;
-  fat: number;
-}
+import { resolveCakeCustomServings } from '@modules/cakes/cakeCustomServings';
+import { resolveCakeTheme } from '@modules/cakes/cakeThemeRules';
+import type { CakeThemeSnapshot } from '@database/models/cakeTheme.model';
 
 export interface OptionDto {
   id: number;
@@ -34,7 +34,7 @@ export interface OptionDto {
   priceDelta: number;
   /** Suplemento: se cobra siempre, aunque el grupo tenga unidades incluidas. */
   chargeAlways: boolean;
-  nutrition: Nutrition;
+  cakeScaleWithServings: boolean;
   maxPerItem: number;
   isAvailable: boolean;
   incompatibleWith: number[];
@@ -43,6 +43,8 @@ export interface OptionDto {
 
 export interface GroupDto {
   id: number;
+  /** Variante a la que aplica el paso. null significa que aplica a todas. */
+  variantId: number | null;
   code: string;
   name: string;
   description: string | null;
@@ -55,6 +57,7 @@ export interface GroupDto {
 }
 
 export interface BuilderConfig {
+  customServings: import('@database/models/cakeProduction.model').CakeCustomServings | null;
   product: {
     id: number;
     name: string;
@@ -68,8 +71,9 @@ export interface BuilderConfig {
     id: number;
     name: string;
     basePrice: number;
+    servingSize: number | null;
+    servingUnit: string | null;
     isDefault: boolean;
-    nutrition: Nutrition;
   }>;
   groups: GroupDto[];
   presets: Array<{
@@ -90,10 +94,13 @@ export interface QuoteSelection {
 }
 
 export interface QuoteInput {
+  themeId?: number;
+  themeVersion?: number;
   productId: number;
   variantId: number;
   quantity: number;
   branchId?: number;
+  requestedServings?: number;
   selections: QuoteSelection[];
 }
 
@@ -107,37 +114,33 @@ export interface QuoteLine {
   chargedQuantity: number;
   priceDelta: number;
   lineExtra: number;
+  cakeScaleWithServings: boolean;
 }
 
 export interface QuoteResult {
+  allergenCodes?: string[];
+  theme?: CakeThemeSnapshot | null;
   productId: number;
   variantId: number;
-  /** Nombre corto de la presentación: Regular, Grande, etc. */
+  /** Nombre corto de la presentaciÃ³n: Regular, Grande, etc. */
   variantName: string;
+  requestedServings?: number | null;
   quantity: number;
   basePrice: number;
   extrasTotal: number;
   unitPrice: number;
   lineTotal: number;
-  nutrition: Nutrition;
   selections: QuoteLine[];
   /** Texto legible que se guarda en el carrito y en el pedido. */
   description: string;
 }
 
-const EMPTY_NUTRITION: Nutrition = { calories: 0, protein: 0, carbs: 0, fat: 0 };
-
-const toNutrition = (row?: ProductNutrition | null): Nutrition =>
-  row
-    ? {
-        calories: Number(row.calories),
-        protein: Number(row.protein),
-        carbs: Number(row.carbs),
-        fat: Number(row.fat),
-      }
-    : { ...EMPTY_NUTRITION };
-
 const round2 = (value: number): number => Math.round(value * 100) / 100;
+
+const variantLabel = (variant: ProductVariant): string =>
+  variant.servingSize !== null && variant.servingSize !== undefined && variant.servingUnit === 'porciones'
+    ? `${variant.name} · ${Number(variant.servingSize)} porciones`
+    : variant.name;
 
 /** Las reglas del producto (si existen) mandan sobre las del grupo reutilizable. */
 const effectiveRules = (group: CustomizationGroup, link?: ProductCustomizationGroup) => ({
@@ -150,23 +153,32 @@ const effectiveRules = (group: CustomizationGroup, link?: ProductCustomizationGr
 const loadProductOrFail = async (productId: number): Promise<Product> => {
   const product = await Product.findByPk(productId, {
     include: [
+      { model: Allergen, as: 'allergens', through: { attributes: [] } },
       {
         model: ProductVariant,
         as: 'variants',
         where: { isActive: true },
         required: false,
-        include: [{ model: ProductNutrition, as: 'nutrition', required: false }],
+        include: [],
       },
     ],
   });
   if (!product) throw ApiError.notFound('Producto no encontrado');
+  const cakeProfile = await CakeProductProfile.findByPk(productId);
+  if (cakeProfile && (product.status !== PRODUCT_STATUS.ACTIVE || !cakeProfile.isActive || !product.allergensReviewedAt)) {
+    throw ApiError.notFound('Torta no disponible');
+  }
   return product;
 };
 
 /** Grupos configurados del producto, con opciones, precios y disponibilidad de la sucursal. */
-const loadGroups = async (productId: number, branchId?: number): Promise<GroupDto[]> => {
+const loadGroups = async (productId: number, branchId?: number, variantId?: number): Promise<GroupDto[]> => {
   const links = await ProductCustomizationGroup.findAll({
-    where: { productId, isActive: true },
+    where: {
+      productId,
+      isActive: true,
+      ...(variantId ? { [Op.or]: [{ variantId: null }, { variantId }] } : {}),
+    },
     include: [
       {
         model: CustomizationGroup,
@@ -184,6 +196,14 @@ const loadGroups = async (productId: number, branchId?: number): Promise<GroupDt
       (link.get('group') as CustomizationGroup | undefined)?.options?.map((option) => option.id) ??
       [],
   );
+  const inventoryItemIds = [...new Set(links.flatMap((link) =>
+    (link.get('group') as CustomizationGroup | undefined)?.options
+      ?.map((option) => option.inventoryItemId).filter((id): id is number => id !== null) ?? [],
+  ))];
+  const inventoryItems = inventoryItemIds.length ? await InventoryItem.findAll({
+    where: { id: inventoryItemIds }, attributes: ['id', 'allergens'],
+  }) : [];
+  const inventoryAllergens = new Map(inventoryItems.map((item) => [item.id, item.allergens]));
 
   // Disponibilidad/precio por sucursal (RN-005) en una sola consulta.
   const branchRows = branchId
@@ -211,6 +231,7 @@ const loadGroups = async (productId: number, branchId?: number): Promise<GroupDt
 
     const options: OptionDto[] = (group.options ?? [])
       .filter((option) => option.status !== OPTION_STATUS.INACTIVE)
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
       .map((option) => {
         const branchRow = branchByOption.get(option.id);
         const now = new Date();
@@ -221,6 +242,7 @@ const loadGroups = async (productId: number, branchId?: number): Promise<GroupDt
           option.status === OPTION_STATUS.ACTIVE &&
           (branchRow ? branchRow.isAvailable && withinSchedule : true);
         const incompatibilityDetails = incompatibleByOption.get(option.id) ?? [];
+        const linkedAllergens = option.inventoryItemId === null ? null : inventoryAllergens.get(option.inventoryItemId);
 
         return {
           id: option.id,
@@ -230,26 +252,24 @@ const loadGroups = async (productId: number, branchId?: number): Promise<GroupDt
           imageAlt: option.imageAlt,
           imagePosition: option.imagePosition,
           dietaryTags: Array.isArray(option.dietaryTags) ? option.dietaryTags : [],
-          allergens: Array.isArray(option.allergens) ? option.allergens : [],
+          allergens: [...new Set([
+            ...(Array.isArray(option.allergens) ? option.allergens : []),
+            ...(Array.isArray(linkedAllergens) ? linkedAllergens : []),
+          ])],
           spiceLevel: option.spiceLevel,
           priceDelta: Number(branchRow?.priceOverride ?? option.priceDelta),
           chargeAlways: option.chargeAlways,
-          nutrition: {
-            calories: Number(option.calories),
-            protein: Number(option.protein),
-            carbs: Number(option.carbs),
-            fat: Number(option.fat),
-          },
+          cakeScaleWithServings: option.cakeScaleWithServings,
           maxPerItem: option.maxPerItem,
           isAvailable,
           incompatibleWith: incompatibilityDetails.map((entry) => entry.optionId),
           incompatibilities: incompatibilityDetails,
         };
-      })
-      .sort((a, b) => a.name.localeCompare(b.name));
+      });
 
     return {
       id: group.id,
+      variantId: link.variantId ?? null,
       code: group.code,
       name: group.name,
       description: group.description,
@@ -275,6 +295,7 @@ export const customizationService = {
     }
 
     return {
+      customServings: (await CakeProductProfile.findByPk(product.id))?.customServingsJson ?? null,
       product: {
         id: product.id,
         name: product.name,
@@ -288,8 +309,9 @@ export const customizationService = {
         id: variant.id,
         name: variant.name,
         basePrice: Number(variant.basePrice),
+        servingSize: variant.servingSize === null ? null : Number(variant.servingSize),
+        servingUnit: variant.servingUnit,
         isDefault: variant.isDefault,
-        nutrition: toNutrition(variant.nutrition),
       })),
       groups: await loadGroups(product.id, branchId),
       presets: (
@@ -316,17 +338,19 @@ export const customizationService = {
   /**
    * Cotiza una seleccion. El backend es la fuente de verdad (RN-007):
    * valida limites (RN-006), incompatibilidades y disponibilidad, y calcula
-   * precio y nutricion (RN-008). La UI puede estimar, pero esto es lo que vale.
+   * precio final. La UI puede mostrar el resultado, pero el servidor es la autoridad.
    */
   async quote(input: QuoteInput): Promise<QuoteResult> {
     const product = await loadProductOrFail(input.productId);
-
     const variant = (product.variants ?? []).find((entry) => entry.id === input.variantId);
     if (!variant) throw ApiError.badRequest('La presentacion elegida no existe o no esta activa');
 
     const quantity = Math.max(1, input.quantity);
-    const basePrice = Number(variant.basePrice);
-    const baseNutrition = toNutrition(variant.nutrition);
+    const servingRule = await resolveCakeCustomServings(product.id, variant.id, input.requestedServings);
+    const theme = await resolveCakeTheme(input);
+    const baseAllergens = (typeof product.get === 'function' ? product.get('allergens') as Allergen[] | undefined : undefined)?.map((allergen) => allergen.code) ?? [];
+    const basePrice = round2(Number(variant.basePrice) + servingRule.extraPrice);
+    const displayVariantName = servingRule.requestedServings ? `Personalizado · ${servingRule.requestedServings} porciones` : variantLabel(variant);
 
     // Producto fijo: no admite selecciones.
     if (product.type === PRODUCT_TYPE.FIXED) {
@@ -337,19 +361,21 @@ export const customizationService = {
       return {
         productId: product.id,
         variantId: variant.id,
-        variantName: variant.name,
+        variantName: displayVariantName,
         quantity,
         basePrice,
         extrasTotal: 0,
         unitPrice: basePrice,
         lineTotal: round2(basePrice * quantity),
-        nutrition: baseNutrition,
         selections: [],
-        description: variant.name,
+        allergenCodes: baseAllergens,
+        description: displayVariantName,
       };
     }
 
-    const groups = await loadGroups(product.id, input.branchId);
+    const allGroups = await loadGroups(product.id, input.branchId, input.variantId);
+    const hiddenGroupIds = new Set(theme?.rule.hiddenGroupIds ?? []);
+    const groups = allGroups.filter((group) => !hiddenGroupIds.has(group.id));
     const optionIndex = new Map<number, { group: GroupDto; option: OptionDto }>();
     groups.forEach((group) =>
       group.options.forEach((option) => optionIndex.set(option.id, { group, option })),
@@ -383,8 +409,7 @@ export const customizationService = {
 
     // 3) Minimos/maximos por grupo (RN-006) y cobro de lo que excede la cantidad incluida.
     const lines: QuoteLine[] = [];
-    let extrasTotal = 0;
-    const nutrition: Nutrition = { ...baseNutrition };
+    let extrasTotal = theme?.snapshot.priceDelta ?? 0;
 
     for (const group of groups) {
       const chosen = input.selections
@@ -422,7 +447,7 @@ export const customizationService = {
       const freeEligible = chosen
         .filter((entry) => !entry.option.chargeAlways)
         .flatMap((entry) => Array.from({ length: entry.quantity }, () => entry.option))
-        .sort((a, b) => b.priceDelta - a.priceDelta);
+        .sort((a, b) => b.priceDelta * (b.cakeScaleWithServings ? servingRule.scale : 1) - a.priceDelta * (a.cakeScaleWithServings ? servingRule.scale : 1));
 
       freeEligible.forEach((option, index) => {
         if (index >= group.freeQuantity) {
@@ -432,13 +457,9 @@ export const customizationService = {
 
       for (const entry of chosen) {
         const charged = chargedByOption.get(entry.option.id) ?? 0;
-        const lineExtra = round2(charged * entry.option.priceDelta);
+        const effectivePrice = round2(entry.option.priceDelta * (entry.option.cakeScaleWithServings ? servingRule.scale : 1));
+        const lineExtra = round2(charged * effectivePrice);
         extrasTotal += lineExtra;
-
-        nutrition.calories += entry.option.nutrition.calories * entry.quantity;
-        nutrition.protein += entry.option.nutrition.protein * entry.quantity;
-        nutrition.carbs += entry.option.nutrition.carbs * entry.quantity;
-        nutrition.fat += entry.option.nutrition.fat * entry.quantity;
 
         lines.push({
           groupId: group.id,
@@ -447,15 +468,14 @@ export const customizationService = {
           optionName: entry.option.name,
           quantity: entry.quantity,
           chargedQuantity: charged,
-          priceDelta: entry.option.priceDelta,
+          priceDelta: effectivePrice,
           lineExtra,
+          cakeScaleWithServings: entry.option.cakeScaleWithServings,
         });
       }
     }
 
     const unitPrice = round2(basePrice + extrasTotal);
-
-    // Descripcion legible: "Regular · Base: Quinoa · Proteina: Salmon · Toppings: Palta, Edamame"
     const byGroup = new Map<string, string[]>();
     lines.forEach((line) => {
       const label = line.quantity > 1 ? `${line.optionName} x${line.quantity}` : line.optionName;
@@ -463,26 +483,24 @@ export const customizationService = {
     });
 
     const description = [
-      variant.name,
+      displayVariantName,
+      ...(theme ? [`Diseño: ${theme.theme.name}`] : []),
       ...[...byGroup.entries()].map(([group, names]) => `${group}: ${names.join(', ')}`),
-    ].join(' · ');
+    ].join(' Â· ');
 
     return {
       productId: product.id,
       variantId: variant.id,
-      variantName: variant.name,
+      variantName: displayVariantName,
+      requestedServings: servingRule.requestedServings,
+      theme: theme?.snapshot ?? null,
       quantity,
       basePrice,
       extrasTotal: round2(extrasTotal),
       unitPrice,
       lineTotal: round2(unitPrice * quantity),
-      nutrition: {
-        calories: round2(nutrition.calories),
-        protein: round2(nutrition.protein),
-        carbs: round2(nutrition.carbs),
-        fat: round2(nutrition.fat),
-      },
       selections: lines,
+      allergenCodes: [...new Set([...baseAllergens, ...(theme?.snapshot.allergens ?? []), ...input.selections.flatMap((selection) => optionIndex.get(selection.optionId)?.option.allergens ?? [])])],
       description,
     };
   },

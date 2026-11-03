@@ -13,6 +13,9 @@ import { abortForOrder } from '@modules/delivery/delivery.service';
 import { paymentsService } from '@modules/payments/payments.service';
 import { sequelize } from '@database/models';
 import { adminService, type OrderBoardFilters } from './admin.service';
+import { cakeCommissionService } from '@modules/cakes/cakeCommission.service';
+import { isPlatformOwner } from '@middlewares/rbac.middleware';
+import { orderContactService } from './orderContact.service';
 
 /**
  * Permiso EXTRA que no se puede exigir en la ruta porque depende del cuerpo de la
@@ -25,6 +28,11 @@ const has = (req: Request, permission: PermissionCode): boolean =>
 
 /** Modulo ADMIN (M13): tablero, reportes y auditoria. */
 export const adminController = {
+  recordCustomerContact: asyncHandler(async (req: Request, res: Response) => {
+    const result = await orderContactService.record(req.params.orderNumber, req.body, req.user!.sub, branchScopeCheck(req));
+    if (!result.reused) await audit(req, { action: 'ORDER_CUSTOMER_CONTACTED', entity: 'orders', entityId: req.params.orderNumber, after: { ...result.record } });
+    return ok(res, result.record, result.reused ? 'El contacto ya estaba registrado' : 'Contacto con el cliente registrado');
+  }),
   orders: asyncHandler(async (req: Request, res: Response) => {
     const filters = req.query as unknown as OrderBoardFilters;
 
@@ -193,6 +201,10 @@ export const adminController = {
       refundable && canRefund
         ? await paymentsService.refundOrderPayment(order, reason, req.user.sub)
         : null;
+    if (refund) await order.reload();
+    const refundPending = refundable
+      ? (await paymentsService.refundablePaymentsForOrder(order)).length > 0
+      : false;
 
     await audit(req, {
       action: 'order.update_status',
@@ -204,19 +216,17 @@ export const adminController = {
         comment: req.body.comment ?? null,
         refundId: refund?.id ?? null,
         // Deja rastro de que quedo dinero sin devolver y por que.
-        refundPending: Boolean(refundable) && refund === null,
+        refundPending,
       },
     });
 
     let message = 'Estado actualizado';
-    if (refundable && !canRefund) {
-      // `Number(...)`: mysql2 entrega los DECIMAL como cadena y `.toFixed` reventaria.
-      message = `Estado actualizado. Queda un cobro de S/ ${Number(refundable.amount).toFixed(2)} sin devolver: pideselo a alguien con permiso de reembolsos.`;
-    } else if (refundable && !refund) {
-      message =
-        'Estado actualizado, pero el reembolso automatico no salio. Devuelvelo a mano desde la ficha del pedido.';
+    if (refundPending && !canRefund) {
+      message = 'Pedido cancelado. Quedan cobros por devolver; solicita a alguien con permiso de reembolsos que los revise.';
+    } else if (refundPending) {
+      message = 'Pedido cancelado. Quedan cobros por devolver: revisa cada pago en Detalles. Efectivo, Yape y Plin requieren entrega manual antes de registrarla.';
     } else if (refund) {
-      message = 'Estado actualizado y cobro devuelto al cliente.';
+      message = 'Pedido cancelado y devolución online procesada.';
     }
 
     return ok(
@@ -225,7 +235,7 @@ export const adminController = {
         orderNumber: order.orderNumber,
         status: order.status,
         refunded: refund !== null,
-        refundPending: Boolean(refundable) && refund === null,
+        refundPending,
       },
       message,
     );
@@ -247,6 +257,69 @@ export const adminController = {
       includeSales: has(req, PERMISSIONS.REPORT_SALES_READ),
     });
     return ok(res, reports);
+  }),
+
+  reportsExport: asyncHandler(async (req: Request, res: Response) => {
+    const scope = req.user?.branchIds ?? [];
+    const requested = req.query.branchId ? Number(req.query.branchId) : undefined;
+    const branchId = !req.user?.isSuperAdmin && scope.length > 0
+      ? assertBranchScope(req, requested ?? scope[0])
+      : requested;
+    const report = await adminService.reports({
+      branchId,
+      from: req.query.from as string | undefined,
+      to: req.query.to as string | undefined,
+      includeSales: has(req, PERMISSIONS.REPORT_SALES_READ),
+    });
+
+    const escapeCsv = (value: unknown): string => {
+      const text = value === null || value === undefined ? '' : String(value);
+      return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+    const lines = [
+      ['Seccion', 'Indicador', 'Valor'],
+      ['Periodo', 'Desde', report.range.from],
+      ['Periodo', 'Hasta', report.range.to],
+      ['Calidad', 'Cancelaciones', report.quality.cancelled],
+      ['Calidad', 'Tasa de cancelacion (%)', report.quality.cancellationRate],
+      ['Operacion', 'Preparacion promedio (min)', report.operations.avgPrepMinutes],
+      ['Operacion', 'Tickets medidos', report.operations.ticketsMeasured],
+      ...('sales' in report && report.sales ? [
+        ['Ventas', 'Pedidos vendidos', report.sales.orders],
+        ['Ventas', 'Ventas', report.sales.revenue],
+        ['Ventas', 'Ticket promedio', report.sales.averageTicket],
+        ['Ventas', 'Descuentos', report.sales.discounts],
+        ['Ventas', 'Delivery (%)', report.sales.deliveryShare],
+      ] : []),
+      ...report.topProducts.map((item) => ['Producto', item.name, `${item.units} unidades${'sales' in report && report.sales ? ` · S/ ${item.revenue.toFixed(2)}` : ''}`]),
+      ...report.channelBreakdown.map((item) => ['Canal', item.channel, `${item.orders} pedidos${'sales' in report && report.sales ? ` · S/ ${item.revenue.toFixed(2)}` : ''}`]),
+      ...('paymentBreakdown' in report && report.paymentBreakdown ? report.paymentBreakdown.map((item) => ['Pago', item.method, `${item.transactions} transacciones · S/ ${item.amount.toFixed(2)}`]) : []),
+    ];
+    const csv = `\uFEFF${lines.map((line) => line.map(escapeCsv).join(',')).join('\n')}\n`;
+    res.status(200).setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="dulceflow-reporte-${new Date().toISOString().slice(0, 10)}.csv"`);
+    return res.send(csv);
+  }),
+
+  cakeCommissions: asyncHandler(async (req: Request, res: Response) => {
+    const requested = req.query.branchId ? Number(req.query.branchId) : undefined;
+    const branchId = !req.user?.isSuperAdmin && (req.user?.branchIds ?? []).length > 0
+      ? assertBranchScope(req, requested ?? req.user!.branchIds![0])
+      : requested;
+    const report = await cakeCommissionService.report({ branchId, from: req.query.from as string | undefined, to: req.query.to as string | undefined, status: req.query.status as string | undefined });
+    return ok(res, { ...report, canManage: await isPlatformOwner(req.user!.sub) });
+  }),
+
+  adjustCakeCommission: asyncHandler(async (req: Request, res: Response) => {
+    const row = await cakeCommissionService.adjust(Number(req.params.id), req.body.adjustmentAmount, req.body.notes, req.user!.sub);
+    await audit(req, { action: 'cake.commission.adjust', entity: 'cake_commissions', entityId: row.id, after: { adjustmentAmount: row.adjustmentAmount, commissionAmount: row.commissionAmount, notes: req.body.notes } });
+    return ok(res, row, 'Ajuste guardado');
+  }),
+
+  liquidateCakeCommission: asyncHandler(async (req: Request, res: Response) => {
+    const row = await cakeCommissionService.liquidate(Number(req.params.id), req.user!.sub, req.body.reference, req.body.amount, req.body.notes);
+    await audit(req, { action: 'cake.commission.transfer', entity: 'cake_commissions', entityId: row.id, after: { reference: req.body.reference, amount: req.body.amount, status: row.status } });
+    return ok(res, row, 'Liquidacion registrada');
   }),
 
   auditLogs: asyncHandler(async (req: Request, res: Response) => {

@@ -9,11 +9,11 @@ import {
   LogOut,
   MapPin,
   User2,
-  Wallet,
   PanelLeftClose,
   PanelLeftOpen,
-  Salad,
+  Gift,
   Star,
+  CalendarDays,
 } from 'lucide-react';
 import { ROUTES } from '@constants/routes';
 import { usePermissions } from '@hooks/usePermissions';
@@ -42,10 +42,10 @@ interface AccountLink {
 const ACCOUNT_LINKS: AccountLink[] = [
   { to: ROUTES.account, label: 'Inicio', icon: Home, section: 'ACTIVIDAD', end: true },
   { to: ROUTES.accountOrders, label: 'Mis pedidos', icon: ClipboardList, section: 'ACTIVIDAD' },
-  { to: ROUTES.accountWallet, label: 'Mi saldo', icon: Wallet, section: 'ACTIVIDAD' },
   { to: ROUTES.accountFavorites, label: 'Mis favoritos', icon: Heart, section: 'ACTIVIDAD' },
-  { to: ROUTES.accountSavedBowls, label: 'Bowls guardados', icon: Salad, section: 'ACTIVIDAD' },
+  { to: ROUTES.designRequests, label: 'Mis diseños', icon: Gift, section: 'ACTIVIDAD' },
   { to: ROUTES.accountReviews, label: 'Mis opiniones', icon: Star, section: 'ACTIVIDAD' },
+  { to: ROUTES.accountSubscriptions, label: 'Mis suscripciones', icon: CalendarDays, section: 'ACTIVIDAD' },
   { to: ROUTES.accountProfile, label: 'Mi perfil', icon: User2, section: 'CUENTA' },
   { to: ROUTES.accountAddresses, label: 'Mis direcciones', icon: MapPin, section: 'CUENTA' },
 ];
@@ -68,7 +68,7 @@ export const AccountLayout = () => {
     () => localStorage.getItem(ACCOUNT_SIDEBAR_KEY) === 'true',
   );
   const fullName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || 'Mi cuenta';
-  const initials = [user?.firstName, user?.lastName].filter(Boolean).map((part) => part?.[0]).join('').slice(0, 2).toUpperCase() || 'VB';
+  const initials = [user?.firstName, user?.lastName].filter(Boolean).map((part) => part?.[0]).join('').slice(0, 2).toUpperCase() || 'DF';
 
   /* Entrando directo a una seccion, su pill podia quedar fuera del carrusel y la
    * navegacion parecia no tener nada activo. Se mueve solo el scroll horizontal de la
@@ -106,7 +106,7 @@ export const AccountLayout = () => {
 
       {/* El sidebar entra en lg, no en md: en tablet vertical se comia 288px y dejaba
         * el contenido en una columna de ~400px, con las reglas sm: troceando el texto. */}
-      <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-5 px-4 py-5 lg:flex-row lg:gap-8 lg:px-6 lg:py-9">
+      <div className="mx-auto flex w-full max-w-8xl flex-1 flex-col gap-5 px-4 py-5 lg:flex-row lg:gap-8 lg:px-6 lg:py-9">
         <div className="flex items-center gap-3 rounded-card border border-line bg-white p-3 shadow-sm lg:hidden">
           <Avatar src={user?.avatarUrl ?? undefined} alt={fullName} sx={{ width: 40, height: 40, bgcolor: 'primary.dark', color: 'white', fontSize: 12, fontWeight: 800 }}>{initials}</Avatar>
           <div className="min-w-0 flex-1">

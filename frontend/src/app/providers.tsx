@@ -7,6 +7,24 @@ import { SessionGate } from './SessionGate';
 import { ThemeSettingsProvider } from '@/theme/ThemeSettingsProvider';
 import { AppStateProvider } from '@context/AppStateContext';
 import { PurchaseContextSync } from '@context/PurchaseContextSync';
+import { useAppSelector } from './hooks';
+import { StorefrontProvider } from '@features/home/content/StorefrontProvider';
+import { RealtimeConnection } from './RealtimeConnection';
+import { CustomerWorkspaceSync } from './CustomerWorkspaceSync';
+import { LocalPersistenceNotice } from './LocalPersistenceNotice';
+
+const PurchaseExperience = ({ children }: { children: ReactNode }) => {
+  const userId = useAppSelector((state) => state.auth.user?.id ?? null);
+  return (
+    <AppStateProvider key={userId ?? 'guest'}>
+      <PurchaseContextSync />
+      <RealtimeConnection />
+      <CustomerWorkspaceSync />
+      <LocalPersistenceNotice />
+      <ConfirmDialogProvider>{children}</ConfirmDialogProvider>
+    </AppStateProvider>
+  );
+};
 
 /**
  * Un unico lugar donde se envuelven todos los providers de la aplicacion.
@@ -22,16 +40,9 @@ import { PurchaseContextSync } from '@context/PurchaseContextSync';
 export const AppProviders = ({ children }: { children: ReactNode }) => (
   <ReduxProvider store={store}>
     <ThemeSettingsProvider>
-      <AppStateProvider>
-        {/* Recupera de la cuenta la direccion o el local que uso por ultima vez. */}
-        <PurchaseContextSync />
-        <ConfirmDialogProvider>
-          {/* Revalida la sesion contra el backend antes de mostrar la app. */}
-          <SessionGate>{children}</SessionGate>
-        </ConfirmDialogProvider>
-        {/* Centro de notificaciones personalizado, construido con Snackbar + Alert de MUI. */}
-        <Toaster toastOptions={{ duration: 4200 }} />
-      </AppStateProvider>
+      {/* No se consulta ni se sube contexto de una cuenta antes de validarla. */}
+      <StorefrontProvider><SessionGate><PurchaseExperience>{children}</PurchaseExperience></SessionGate></StorefrontProvider>
+      <Toaster />
     </ThemeSettingsProvider>
   </ReduxProvider>
 );

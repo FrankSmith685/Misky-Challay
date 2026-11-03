@@ -45,7 +45,7 @@ export const RouteErrorBoundary = () => {
         </h1>
         <p className="max-w-lg leading-7 text-ink-muted">
           {notFound
-            ? 'Puede que el enlace haya cambiado o que el plato ya no esté en el menú.'
+            ? 'Puede que el enlace haya cambiado o que el producto ya no esté en el catálogo.'
             : 'No es culpa tuya y no perdiste nada: tu carrito sigue guardado. Si estabas pagando, revisa Mis pedidos antes de repetir la compra, porque puede que ya esté registrada.'}
         </p>
 

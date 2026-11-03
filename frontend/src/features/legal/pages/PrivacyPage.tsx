@@ -16,7 +16,7 @@ const PrivacyPage = () => {
       body: (
         <p>
           <strong>{b.legalName}</strong>, RUC {b.ruc}, con domicilio en {b.address}, es responsable
-          de los bancos de datos usados por Verde Bowl. Para consultas o solicitudes relacionadas con
+          de los bancos de datos usados por Misky Challay. Para consultas o solicitudes relacionadas con
           privacidad, escribe a <Link href={`mailto:${b.supportEmail}`}>{b.supportEmail}</Link>.
         </p>
       ),
@@ -133,7 +133,7 @@ const PrivacyPage = () => {
       body: (
         <p>
           Los datos completos de tarjeta son ingresados directamente en la plataforma del proveedor de
-          pagos. Verde Bowl conserva referencias, estado, importe y respuesta depurada de la operación,
+          pagos. Misky Challay conserva referencias, estado, importe y respuesta depurada de la operación,
           pero no el número completo de tarjeta ni el código de seguridad.
         </p>
       ),
@@ -205,7 +205,7 @@ const PrivacyPage = () => {
     <LegalDocument
       title="Política de Privacidad"
       updatedAt={LEGAL_VERSION_DATE}
-      intro="Te explicamos qué información usa Verde Bowl, por qué la necesita, con quién puede compartirla y cómo ejercer control sobre ella."
+      intro="Te explicamos qué información usa Misky Challay, por qué la necesita, con quién puede compartirla y cómo ejercer control sobre ella."
       sections={sections}
     />
   );

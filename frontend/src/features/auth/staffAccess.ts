@@ -23,7 +23,6 @@ const ACCESS_BY_ROLE: Record<string, StaffAccess> = {
   driver: { to: ROUTES.adminDelivery, shortLabel: 'Entregas', actionLabel: 'Ver mis entregas', menuLabel: 'Mis entregas' },
   support: { to: ROUTES.adminOrders, shortLabel: 'Pedidos', actionLabel: 'Atender pedidos', menuLabel: 'Pedidos y soporte' },
   catalog_manager: { to: ROUTES.adminCatalog, shortLabel: 'Catálogo', actionLabel: 'Gestionar catálogo', menuLabel: 'Catálogo' },
-  nutritionist: { to: ROUTES.adminCatalog, shortLabel: 'Nutrición', actionLabel: 'Gestionar nutrición', menuLabel: 'Catálogo y nutrición' },
   branch_admin: PANEL,
   admin: PANEL,
   auditor: PANEL,
@@ -54,6 +53,6 @@ export const resolveStaffAccess = (input: {
   if (hasAny(PERM.KITCHEN_READ, PERM.KITCHEN_OPERATE)) return ACCESS_BY_ROLE.kitchen;
   if (hasAny(PERM.ORDER_READ, PERM.ORDER_UPDATE_STATUS, PERM.ORDER_CANCEL, PERM.PAYMENT_READ, PERM.PAYMENT_REFUND)) return ACCESS_BY_ROLE.support;
   if (hasAny(PERM.INVENTORY_READ, PERM.INVENTORY_MANAGE)) return { to: ROUTES.adminInventory, shortLabel: 'Inventario', actionLabel: 'Ir a Inventario', menuLabel: 'Inventario' };
-  if (hasAny(PERM.CATALOG_PRODUCT_READ, PERM.CATALOG_PRODUCT_WRITE, PERM.NUTRITION_READ, PERM.NUTRITION_WRITE)) return ACCESS_BY_ROLE.catalog_manager;
+  if (hasAny(PERM.CATALOG_PRODUCT_READ, PERM.CATALOG_PRODUCT_WRITE)) return ACCESS_BY_ROLE.catalog_manager;
   return PANEL;
 };

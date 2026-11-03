@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { activityStream } from '@modules/notifications/activityStream';
+import { asyncHandler } from '@shared/utils/asyncHandler';
 import { validate } from '@middlewares/validate.middleware';
 import { geoController } from './geo.controller';
 import { addressSuggestionsSchema, branchesSchema, coverageSchema, districtsSchema, geographicDistrictsSchema, provincesSchema, resolveAddressSchema, reverseAddressSchema, slotsSchema } from './geo.validation';
@@ -8,6 +10,7 @@ import { addressSuggestionsSchema, branchesSchema, coverageSchema, districtsSche
  * Prefijo: /api/v1/locations
  */
 const router = Router();
+router.get('/events', asyncHandler(activityStream));
 
 router.get('/cities', geoController.cities);
 router.get('/departments', geoController.departments);

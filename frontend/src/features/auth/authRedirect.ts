@@ -48,4 +48,11 @@ export const resolveAfterAuthPath = (
   returnTo: string | undefined,
   isStaff: boolean,
   staffPath: string = ROUTES.admin,
-): string => returnTo ?? (isStaff ? staffPath : ROUTES.home);
+  hasCartItems = false,
+): string => {
+  const path = returnTo?.split(/[?#]/)[0].replace(/\/+$/, '');
+  // Un retorno guardado al checkout solo tiene sentido si queda una compra.
+  // La confirmación y los enlaces de un pago creado conservan su propio destino.
+  const validReturn = path === ROUTES.checkout && !hasCartItems ? undefined : returnTo;
+  return validReturn ?? (isStaff ? staffPath : ROUTES.home);
+};

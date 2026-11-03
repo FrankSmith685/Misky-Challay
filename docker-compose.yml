@@ -1,12 +1,12 @@
 # =============================================================================
 # Verde Bowl — pila completa
 #
-#   docker compose up -d --build     levanta base, API y web
-#   docker compose logs -f api       ver el backend
-#   docker compose down              parar (los datos sobreviven en el volumen)
+#   docker compose --env-file .env.docker up -d --build   levanta base, API y web
+#   docker compose --env-file .env.docker logs -f api     ver el backend
+#   docker compose --env-file .env.docker down            parar (los datos sobreviven en el volumen)
 #
-# La configuracion se lee de un archivo .env en esta misma carpeta. Copia
-# .env.docker.example a .env y rellena las claves antes de arrancar.
+# La configuracion se lee de .env.docker en esta misma carpeta. Rellena las
+# claves antes de arrancar y pasa --env-file para la interpolacion de Compose.
 # =============================================================================
 
 services:
@@ -15,7 +15,7 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?falta DB_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${DB_NAME:-verde_bowl_v3}
+      MYSQL_DATABASE: ${DB_NAME:-DulceFlow}
       MYSQL_USER: ${DB_USER:?falta DB_USER}
       MYSQL_PASSWORD: ${DB_PASSWORD:?falta DB_PASSWORD}
       TZ: America/Lima
@@ -47,7 +47,7 @@ services:
       dockerfile: backend/Dockerfile
     command: ['node', 'backend/dist/database/migrate.js', 'up']
     restart: 'no'
-    env_file: [.env]
+    env_file: [.env.docker]
     environment:
       DB_HOST: db
       DB_PORT: '3306'
@@ -60,7 +60,7 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     restart: unless-stopped
-    env_file: [.env]
+    env_file: [.env.docker]
     environment:
       DB_HOST: db
       DB_PORT: '3306'

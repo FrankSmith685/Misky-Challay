@@ -1,5 +1,6 @@
+import { OrderCakeReference } from '@features/cakes/components/OrderCakeReference';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, Banknote, Bell, BellOff, CalendarClock, Clock, Download, Maximize2, Minimize2, MonitorUp, Printer, Radio, RefreshCw, Store, Utensils, WifiOff, Zap } from 'lucide-react';
 import toast from '@components/mui/MuiToast';
 import { Badge } from '@components/ui/Badge';
@@ -13,9 +14,11 @@ import { LoadError } from '@components/common/LoadError';
 import { getApiErrorMessage } from '@services/api/client';
 import { usePermissions } from '@hooks/usePermissions';
 import { PERM } from '@constants/permissions';
+import { ROUTES } from '@constants/routes';
 import { formatDate, formatRelative, formatTime } from '@lib/format';
 import { cn } from '@lib/cn';
 import { adminApi } from '../services/admin.service';
+import { CakeThemeReference } from '@features/cakes/components/CakeThemeBanner';
 import { usePolling } from '../hooks/usePolling';
 import { useActiveBranch } from '../hooks/useActiveBranch';
 import { BranchSelector } from '../components/BranchSelector';
@@ -30,21 +33,33 @@ import { printKitchenTicket } from '../utils/kitchenPrint';
 import { printInternalReceiptWindow } from '../utils/internalReceiptPrint';
 import { useReceiptSettings } from '@services/businessInfo';
 
-const NEXT_STEP: Partial<Record<TicketStatus, { status: TicketStatus; label: string }>> = {
+type KitchenAdvanceStatus = 'ACCEPTED' | 'PREPARING' | 'READY' | 'DISPATCHED';
+
+const NEXT_STEP: Partial<Record<TicketStatus, { status: KitchenAdvanceStatus; label: string }>> = {
   QUEUED: { status: 'ACCEPTED', label: 'Aceptar' },
   ACCEPTED: { status: 'PREPARING', label: 'Empezar a preparar' },
   PREPARING: { status: 'READY', label: 'Marcar listo' },
   READY: { status: 'DISPATCHED', label: 'Despachar' },
 };
 
-const COLUMNS: Array<{ status: TicketStatus; title: string }> = [
-  { status: 'QUEUED', title: 'En cola' },
-  { status: 'ACCEPTED', title: 'Aceptados' },
-  { status: 'PREPARING', title: 'Preparando' },
-  { status: 'READY', title: 'Listos' },
+const COLUMNS: Array<{ status: TicketStatus; title: string; description: string }> = [
+  { status: 'QUEUED', title: 'En cola', description: 'Pedidos confirmados que cocina debe aceptar.' },
+  { status: 'ACCEPTED', title: 'Aceptados', description: 'Aceptados, pendientes de empezar.' },
+  { status: 'PREPARING', title: 'Preparando', description: 'En elaboración; revisa notas y alérgenos.' },
+  { status: 'READY', title: 'Listos', description: 'Esperan recojo, Reparto o Salón.' },
 ];
 
-const PAGE_TITLE = 'Tablero de cocina | Verde Bowl';
+const stepHelp = (ticket: KitchenTicket): string => {
+  if (ticket.status === 'QUEUED') return 'Aceptar confirma que esta cocina se encargará del pedido. Todavía no se consumen insumos.';
+  if (ticket.status === 'ACCEPTED') return 'Al empezar, el inventario registra el consumo de insumos. Verifica productos, cambios, notas y alérgenos antes.';
+  if (ticket.status === 'PREPARING') return 'Marca listo solo cuando todo esté terminado. El pedido quedará disponible para Reparto, Salón o mostrador según su tipo.';
+  if (ticket.order?.deliveryType === 'PICKUP') return 'Entrega el pedido en mostrador antes de confirmar: esta acción lo marca como entregado.';
+  return ticket.order?.deliveryType === 'DINE_IN'
+    ? 'Cocina terminó. Salón debe servir, cobrar si corresponde y cerrar la mesa.'
+    : 'Cocina terminó. Reparto confirma el retiro y continúa la entrega.';
+};
+
+const PAGE_TITLE = 'Tablero de cocina | Misky Challay';
 const AUTO_PRINT_KEY = 'verde-bowl.admin.kitchen-auto-print';
 const KDS_MODE_KEY = 'verde-bowl.admin.kitchen-kds-mode';
 const ESCALATE_AFTER_MS = 2 * 60_000;
@@ -61,9 +76,15 @@ const TicketCard = ({
   isTarget,
   waitingMinutes,
   onPrint,
+  actionError,
+  canSeeOrders,
+  canSeeInventory,
+  canSeeCakes,
+  canSeeDelivery,
+  canSeeDining,
 }: {
   ticket: KitchenTicket;
-  onAdvance: (ticket: KitchenTicket, status: TicketStatus) => void;
+  onAdvance: (ticket: KitchenTicket, status: KitchenAdvanceStatus) => void;
   onCancel: (ticket: KitchenTicket) => void;
   isBusy: boolean;
   canOperate: boolean;
@@ -72,6 +93,12 @@ const TicketCard = ({
   isTarget: boolean;
   waitingMinutes: number;
   onPrint: (ticket: KitchenTicket) => void;
+  actionError: string | null;
+  canSeeOrders: boolean;
+  canSeeInventory: boolean;
+  canSeeCakes: boolean;
+  canSeeDelivery: boolean;
+  canSeeDining: boolean;
 }) => {
   const next = ticket.status === 'READY' && ticket.order?.deliveryType !== 'PICKUP'
     ? undefined
@@ -96,8 +123,8 @@ const TicketCard = ({
           {isTarget && <Badge variant="brand">Buscado</Badge>}
         </p>
         <div className="flex shrink-0 items-center gap-1.5">
-          <button type="button" onClick={() => onPrint(ticket)} className="grid size-8 place-items-center rounded-field text-ink-muted transition hover:bg-white hover:text-brand-700" aria-label={`Imprimir ${ticket.order?.orderNumber ?? 'comanda'}`}><Printer className="size-4" /></button>
-          <span className={cn('flex items-center gap-1 text-xs', ticket.isLate ? 'font-medium text-red-600' : 'text-ink-muted')}><Clock className="size-3.5" />{formatTime(ticket.targetAt)}</span>
+          <button type="button" onClick={() => onPrint(ticket)} disabled={!ticket.order} title="Imprimir comanda de cocina" className="grid size-8 place-items-center rounded-field text-ink-muted transition hover:bg-white hover:text-brand-700 disabled:opacity-40" aria-label={`Imprimir comanda ${ticket.order?.orderNumber ?? ''}`}><Printer className="size-4" /></button>
+          <span className={cn('flex items-center gap-1 text-xs', ticket.isLate ? 'font-medium text-red-600' : 'text-ink-muted')} title="Hora objetivo del pedido"><Clock className="size-3.5" />Meta {formatTime(ticket.targetAt)}</span>
         </div>
       </div>
 
@@ -151,6 +178,8 @@ const TicketCard = ({
             {item.description && (
               <p className="mt-1 text-xs leading-relaxed text-ink-muted">{item.description}</p>
             )}
+            {item.themeSnapshotJson && <CakeThemeReference theme={item.themeSnapshotJson} />}
+            <OrderCakeReference orderNumber={ticket.order!.orderNumber} itemId={item.id} images={item.designImages} hasReference={false} />
 
             {item.allergens && item.allergens.length > 0 && (
               <p className="mt-1 flex flex-wrap gap-1">
@@ -194,8 +223,23 @@ const TicketCard = ({
         <p className="mt-3 rounded-card border border-brand-200 bg-brand-50 p-2 text-sm font-semibold text-brand-800">
           {ticket.order?.deliveryType === 'DELIVERY'
             ? 'Esperando que Reparto confirme el retiro.'
-            : 'Salon ya puede servir y cerrar esta mesa.'}
+            : 'Salón ya puede servir, cobrar si corresponde y cerrar esta mesa.'}
         </p>
+      )}
+
+      <p className="mt-3 rounded-field bg-surface-muted px-3 py-2 text-xs leading-5 text-ink-muted">{stepHelp(ticket)}</p>
+      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs font-semibold">
+        {canSeeOrders && ticket.order && <Link className="text-brand-700 hover:underline" to={`${ROUTES.adminOrders}?q=${encodeURIComponent(ticket.order.orderNumber)}`}>Ver pedido completo →</Link>}
+        {ticket.status === 'READY' && ticket.order?.deliveryType === 'DELIVERY' && canSeeDelivery && <Link className="text-brand-700 hover:underline" to={ROUTES.adminDelivery}>Abrir Reparto →</Link>}
+        {ticket.status === 'READY' && ticket.order?.deliveryType === 'DINE_IN' && canSeeDining && <Link className="text-brand-700 hover:underline" to={ROUTES.adminDining}>Abrir Salón →</Link>}
+      </div>
+
+      {actionError && (
+        <div role="alert" className="mt-3 rounded-field border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800">
+          <strong>No se cambió el estado.</strong> {actionError}
+          {ticket.status === 'ACCEPTED' && /insumo|stock|inventario|receta/i.test(actionError) && canSeeInventory && <Link className="mt-1 block font-bold underline" to={ROUTES.adminInventory}>Revisar insumos en Inventario →</Link>}
+          {ticket.status === 'PREPARING' && /torta|calidad|producci[oó]n/i.test(actionError) && canSeeCakes && <Link className="mt-1 block font-bold underline" to={ROUTES.adminCakes}>Ir a Tortas, pestaña Producción →</Link>}
+        </div>
       )}
 
       {canOperate && (
@@ -203,16 +247,12 @@ const TicketCard = ({
           {next && (
             <Button size="lg" disabled={isBusy} onClick={() => onAdvance(ticket, next.status)}>
               {next.status === 'DISPATCHED'
-                ? ticket.order?.deliveryType === 'DELIVERY'
-                  ? 'Entregar a reparto'
-                  : ticket.order?.deliveryType === 'DINE_IN'
-                    ? 'Avisar a Salon'
-                    : 'Entregar en mostrador'
+                ? 'Confirmar entrega en mostrador'
                 : next.status === 'READY'
                   ? ticket.order?.deliveryType === 'DELIVERY'
                     ? 'Marcar listo para reparto'
                     : ticket.order?.deliveryType === 'DINE_IN'
-                      ? 'Marcar listo y avisar a Salon'
+                      ? 'Marcar listo para Salón'
                       : 'Marcar listo para recojo'
                   : next.label}
             </Button>
@@ -237,7 +277,14 @@ const TicketCard = ({
   );
 };
 
-const ScheduledOrderCard = ({ order, isTarget }: { order: ScheduledKitchenOrder; isTarget: boolean }) => (
+const ScheduledOrderCard = ({ order, isTarget, branchId }: { order: ScheduledKitchenOrder; isTarget: boolean; branchId: number }) => {
+  const today = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  const datePart = (type: string) => today.find((part) => part.type === type)?.value ?? '';
+  const todayKey = `${datePart('year')}-${datePart('month')}-${datePart('day')}`;
+  const pendingTasks = (order.productionTasks ?? []).filter((task) => task.status !== 'DONE');
+  const overdueTasks = pendingTasks.filter((task) => task.workDate < todayKey);
+  const dueTasks = pendingTasks.filter((task) => task.workDate === todayKey);
+  return (
   <Card
     id={`kitchen-scheduled-${order.id}`}
     shadow="e1"
@@ -255,20 +302,38 @@ const ScheduledOrderCard = ({ order, isTarget }: { order: ScheduledKitchenOrder;
     </div>
     <p className="mt-3 text-sm font-bold text-accent-800">Entrega: {formatDate(order.scheduledAt)}</p>
     <p className="mt-1 text-xs font-semibold text-ink-muted">
-      Entrará automáticamente a En cola a las {formatTime(order.releaseAt)}.
+      Comanda de cierre prevista: {formatDate(order.releaseAt)}.
     </p>
+    {order.productionTasks && order.productionTasks.length > 0 && <div className="mt-3 rounded-lg border border-accent-200 bg-white p-3 text-xs text-ink">
+      <p className="font-bold">Producción: {order.productionTasks.length - pendingTasks.length} de {order.productionTasks.length} etapas terminadas</p>
+      <p className={`mt-1 ${overdueTasks.length ? 'font-bold text-red-700' : dueTasks.length ? 'font-bold text-amber-800' : 'text-ink-muted'}`}>{overdueTasks.length ? `${overdueTasks.length} etapa(s) atrasada(s)` : dueTasks.length ? `${dueTasks.length} etapa(s) para hoy` : 'Próxima etapa según el calendario'}</p>
+      {pendingTasks.some((task) => !task.assigned) && <p className="mt-1 font-semibold text-amber-800">Hay etapas sin responsable.</p>}
+      <Link className="mt-2 inline-block font-bold text-brand-700 underline" to={`${ROUTES.adminCakes}?seccion=production&pedido=${encodeURIComponent(order.orderNumber)}&branchId=${branchId}`}>Abrir plan de producción →</Link>
+    </div>}
     <ul className="mt-3 space-y-1 border-t border-accent-200 pt-3 text-sm text-ink">
-      {order.items.map((item) => <li key={item.id}><strong>{item.quantity}x</strong> {item.name}</li>)}
+      {order.items.map((item) => (
+        <li key={item.id}>
+          <strong>{item.quantity}x</strong> {item.name}
+          {item.customizations.length > 0 && <span className="block pl-3 text-xs text-ink-muted">{item.customizations.map((customization) => `${customization.group}: ${customization.option}${customization.quantity > 1 ? ` x${customization.quantity}` : ''}`).join(' · ')}</span>}
+          {item.themeSnapshotJson && <CakeThemeReference theme={item.themeSnapshotJson} />}
+          <OrderCakeReference orderNumber={order.orderNumber} itemId={item.id} images={item.designImages} hasReference={false} />
+          {item.allergens && item.allergens.length > 0 && <span className="block pl-3 text-xs font-bold text-red-700">Alérgenos: {item.allergens.join(', ').replace(/_/g, ' ')}</span>}
+          {item.specialInstructions && <span className="block pl-3 text-xs text-accent-800">Indicación: {item.specialInstructions}</span>}
+        </li>
+      ))}
     </ul>
     {order.notes && <p className="mt-3 rounded-field bg-white p-2 text-xs text-ink"><strong>Nota:</strong> {order.notes}</p>}
   </Card>
-);
+  );
+};
 
 const KitchenPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedOrderNumber = searchParams.get('pedido');
   const requestedBranchId = Number(searchParams.get('branchId')) || null;
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [actionError, setActionError] = useState<{ ticketId: number; message: string } | null>(null);
+  const [cancelFeedback, setCancelFeedback] = useState<{ orderNumber: string; message: string; pending: boolean } | null>(null);
   const receiptSettings = useReceiptSettings();
   const [autoPrint, setAutoPrint] = useState(() => {
     const stored = localStorage.getItem(AUTO_PRINT_KEY);
@@ -290,11 +355,31 @@ const KitchenPage = () => {
   const {
     branchId, branches, setBranchId, isLoadingBranches, branchesError, reloadBranches,
   } = useActiveBranch();
+  const appliedBranchParam = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!requestedBranchId || requestedBranchId === branchId) return;
-    if (branches.some((branch) => branch.id === requestedBranchId)) setBranchId(requestedBranchId);
+    if (!requestedBranchId) {
+      appliedBranchParam.current = null;
+      return;
+    }
+    if (appliedBranchParam.current === requestedBranchId) return;
+    if (branches.some((branch) => branch.id === requestedBranchId)) {
+      appliedBranchParam.current = requestedBranchId;
+      if (requestedBranchId !== branchId) setBranchId(requestedBranchId);
+    }
   }, [branchId, branches, requestedBranchId, setBranchId]);
+
+  const changeBranch = (nextBranchId: number) => {
+    setBranchId(nextBranchId);
+    // El pedido del enlace pertenecía a otra cocina; no conservar una búsqueda
+    // que haría parecer que desapareció al cambiar de sucursal.
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.delete('pedido');
+      next.delete('branchId');
+      return next;
+    }, { replace: true });
+  };
   const { can } = usePermissions();
   const confirm = useConfirm();
   const device = useKdsDevice();
@@ -305,6 +390,11 @@ const KitchenPage = () => {
   const canOperate = can(PERM.KITCHEN_OPERATE);
   // Cancelar arrastra el pedido a CANCELLED: el servidor exige los dos permisos.
   const canCancel = canOperate && can(PERM.ORDER_CANCEL);
+
+  useEffect(() => {
+    setActionError(null);
+    setCancelFeedback(null);
+  }, [branchId]);
 
   const fetcher = useCallback(
     (signal: AbortSignal): Promise<KitchenBoard> => branchId
@@ -399,48 +489,91 @@ const KitchenPage = () => {
     toast.success(next ? 'Impresión automática activada' : 'Impresión automática desactivada');
   };
 
-  const runTicketAction = async (ticket: KitchenTicket, status: TicketStatus, comment?: string) => {
-    const printWindow = status === 'READY' && receiptSettings.autoPrintCustomerTicket
+  const runTicketAction = async (ticket: KitchenTicket, status: KitchenAdvanceStatus) => {
+    const printWindow = status === 'READY' && receiptSettings.autoPrintCustomerTicket && ticket.order?.orderNumber
       ? window.open('', '_blank', 'popup,width=420,height=760')
       : null;
     setBusyId(ticket.id);
+    setActionError(null);
     try {
-      await adminApi.advanceTicket(ticket.id, status, comment);
+      await adminApi.advanceTicket(ticket.id, status);
+      refresh();
+      toast.success(status === 'ACCEPTED' ? 'Comanda aceptada.' : status === 'PREPARING' ? 'Preparación iniciada; insumos consumidos.' : status === 'READY' ? 'Pedido listo. Continúa el equipo de entrega correspondiente.' : 'Pedido entregado en mostrador.');
+
+      // El estado ya cambió en el servidor. Un fallo de impresión no debe mostrar
+      // "acción fallida" ni invitar a repetir una transición irreversible.
       if (status === 'READY' && receiptSettings.autoPrintCustomerTicket && ticket.order?.orderNumber) {
-        if (!printWindow) toast.error('El navegador bloqueo la impresion automatica. Usa Imprimir desde el pedido.');
-        else {
+        if (!printWindow) toast.warning('El pedido quedó listo, pero el navegador bloqueó la impresión. Imprime el ticket desde Pedidos.');
+        else try {
           const detail = await adminApi.orderDetail(ticket.order.orderNumber);
           await adminApi.recordInternalReceiptPrint(detail.orderNumber);
           await printInternalReceiptWindow(detail, printWindow);
+        } catch {
+          printWindow.close();
+          toast.warning('El pedido quedó listo, pero no se pudo imprimir el ticket. Abre el pedido para imprimirlo.');
         }
       }
-      refresh();
     } catch (actionError) {
       printWindow?.close();
-      toast.error(getApiErrorMessage(actionError));
+      const message = getApiErrorMessage(actionError);
+      setActionError({ ticketId: ticket.id, message });
+      toast.error(message);
+      refresh();
     } finally {
       setBusyId(null);
     }
   };
 
-  const handleAdvance = (ticket: KitchenTicket, status: TicketStatus) => {
-    void runTicketAction(ticket, status);
+  const handleAdvance = async (ticket: KitchenTicket, status: KitchenAdvanceStatus) => {
+    if (status === 'DISPATCHED') {
+      const { confirmed } = await confirm({
+        title: `Confirmar entrega ${ticket.order?.orderNumber ?? ''}`.trim(),
+        message: ticket.order?.paymentDueOnDelivery
+          ? 'Este pedido indica cobro pendiente en mostrador. Confirma con Caja el importe y recibe el pago antes de entregar. Al confirmar, el sistema marcará el pedido como entregado y el pago en efectivo como recibido.'
+          : 'Confirma solo después de entregar físicamente el pedido al cliente en mostrador. El pedido quedará como entregado y saldrá de Cocina.',
+        confirmLabel: 'Sí, ya lo entregué',
+        cancelLabel: 'Todavía no',
+        requireTypedText: ticket.order?.paymentDueOnDelivery ? 'COBRADO' : undefined,
+      });
+      if (!confirmed) return;
+    }
+    await runTicketAction(ticket, status);
   };
 
   const handleCancel = async (ticket: KitchenTicket) => {
     const { confirmed, reason } = await confirm({
       title: `Cancelar el pedido ${ticket.order?.orderNumber ?? ''}`.trim(),
       message:
-        'El pedido ya esta pagado. Se cancela entero: se libera el cupon, se devuelve el saldo y se avisa al cliente. No se puede deshacer desde el tablero.',
+        'Se cancela el pedido completo y se detiene su preparación. Se liberan las reservas y se devuelve el saldo de billetera usado. Los cobros online se intentan devolver si tienes permiso; efectivo, Yape y Plin pueden requerir una devolución manual en Pedidos. No se puede deshacer.',
       confirmLabel: 'Cancelar el pedido',
       cancelLabel: 'Volver al tablero',
       tone: 'danger',
-      reasonLabel: 'Motivo de la cancelacion',
+      reasonLabel: 'Motivo de la cancelación',
       reasonRequired: true,
+      reasonMinLength: 3,
+      reasonMaxLength: 255,
+      reasonHint: 'Explica lo ocurrido. Se guardará en el historial del pedido.',
     });
     if (!confirmed) return;
+    if (!ticket.order) return;
 
-    await runTicketAction(ticket, 'CANCELLED', reason);
+    setBusyId(ticket.id);
+    setActionError(null);
+    try {
+      // La cancelación de Pedidos también cierra esta comanda y atiende los cobros.
+      const result = await adminApi.updateOrderStatus(ticket.order.orderNumber, 'CANCELLED', reason);
+      setCancelFeedback({ orderNumber: ticket.order.orderNumber, message: result.message, pending: result.refundPending });
+      if (result.refundPending) toast.warning(result.message);
+      else toast.success(result.message);
+      refresh();
+    } catch (cancelError) {
+      const message = getApiErrorMessage(cancelError);
+      setActionError({ ticketId: ticket.id, message });
+      toast.error(message);
+      refresh();
+    } finally {
+      setBusyId(null);
+    }
   };
 
   if ((isLoading && !data) || isLoadingBranches) return <PageLoader />;
@@ -507,16 +640,25 @@ const KitchenPage = () => {
                 <span className="grid size-6 place-items-center rounded-pill bg-surface text-[11px] text-ink shadow-e1">{columnTickets.length}</span>
               </h2>
 
+              {!kdsMode && <p className="mb-3 min-h-8 text-xs leading-4 text-ink-muted">{column.description}</p>}
+
               <div className="grid min-h-0 flex-1 auto-rows-min gap-3 overflow-y-auto">
+                {columnTickets.length === 0 && <p className="rounded-field border border-dashed border-line bg-white/70 p-3 text-center text-xs text-ink-muted">No hay pedidos en esta etapa.</p>}
                 {columnTickets.map((ticket) => (
                   <TicketCard
                     key={ticket.id}
                     ticket={ticket}
-                    isBusy={busyId === ticket.id}
-                    canOperate={canOperate}
-                    canCancel={canCancel}
+                    isBusy={busyId !== null}
+                    canOperate={canOperate && !isStale}
+                    canCancel={canCancel && !isStale}
                     isFresh={freshIds.includes(ticket.id)}
                     isTarget={requestedTicket?.id === ticket.id}
+                    actionError={actionError?.ticketId === ticket.id ? actionError.message : null}
+                    canSeeOrders={can(PERM.ORDER_READ)}
+                    canSeeInventory={can(PERM.INVENTORY_READ)}
+                    canSeeCakes={can(PERM.KITCHEN_READ)}
+                    canSeeDelivery={can(PERM.DELIVERY_READ) || can(PERM.DELIVERY_ASSIGN) || can(PERM.DELIVERY_OPERATE)}
+                    canSeeDining={can(PERM.DINING_READ) || can(PERM.DINING_OPERATE)}
                     waitingMinutes={ticket.createdAt ? Math.max(0, Math.floor((now - new Date(ticket.createdAt).getTime()) / 60_000)) : 0}
                     onPrint={printKitchenTicket}
                     onAdvance={handleAdvance}
@@ -532,12 +674,15 @@ const KitchenPage = () => {
   }
 
   return (
-    <div className={cn(kdsMode && 'fixed inset-0 z-[1400] overflow-y-auto bg-[#f8f5f8] p-3 sm:p-5')}>
+    <div className={cn(kdsMode && 'fixed inset-0 z-[1400] overflow-y-auto bg-surface-muted p-3 sm:p-5')}>
       <div className={cn('mb-5 flex flex-wrap items-end justify-between gap-4', kdsMode && 'hidden')}>
-        <PageHeader className="mb-0" eyebrow={kdsMode ? `KDS · ${activeBranchName ?? 'Cocina'}` : 'Producción'} icon={Utensils} title="Tablero de cocina" description="Pedidos instantáneos · sondeo de respaldo cada 30 segundos." />
+        <PageHeader className="mb-0" eyebrow="Producción" icon={Utensils} title="Tablero de cocina" description="Acepta las comandas de tu sucursal, prepara cada producto y márcalo listo para la entrega. El tablero se actualiza en vivo y consulta al servidor cada 30 segundos como respaldo." />
 
         <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
-          <BranchSelector value={branchId} branches={branches} onChange={setBranchId} hasError={Boolean(branchesError)} />
+          <BranchSelector value={branchId} branches={branches} onChange={changeBranch} hasError={Boolean(branchesError)} />
+
+          <Button variant="outline" size="sm" leftIcon={<RefreshCw className="size-4" />} disabled={!branchId} onClick={refresh}>Actualizar</Button>
+          <span className="text-xs text-ink-muted">{freshnessLabel}</span>
 
           <Button
             variant={isAlertOn ? 'outline' : 'ghost'}
@@ -578,7 +723,7 @@ const KitchenPage = () => {
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex min-w-0 items-center gap-3"><span className="grid size-11 shrink-0 place-items-center rounded-card bg-brand-700 text-white"><Utensils className="size-5" /></span><div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-[.12em] text-brand-700">KDS · {activeBranchName ?? 'Cocina'}</p><h1 className="truncate text-xl font-black text-ink sm:text-2xl">Tablero de cocina</h1></div></div>
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <BranchSelector value={branchId} branches={branches} onChange={setBranchId} hasError={Boolean(branchesError)} />
+              <BranchSelector value={branchId} branches={branches} onChange={changeBranch} hasError={Boolean(branchesError)} />
               <Button size="sm" variant={isAlertOn ? 'outline' : 'ghost'} leftIcon={isAlertOn ? <Bell className="size-4" /> : <BellOff className="size-4" />} onClick={toggleAlert}>{isAlertOn ? 'Sonido activo' : 'Activar sonido'}</Button>
               <Button size="sm" variant="outline" leftIcon={<Zap className="size-4" />} onClick={() => setDevicePanelOpen((open) => !open)}>{devicePanelOpen ? 'Ocultar equipo' : 'Configurar equipo'}</Button>
               <Button size="sm" variant="outline" aria-label={device.isFullscreen ? 'Salir de pantalla completa' : 'Usar pantalla completa'} onClick={() => void device.toggleFullscreen()}>{device.isFullscreen ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}</Button>
@@ -590,12 +735,16 @@ const KitchenPage = () => {
             {stats && <><Badge variant={stats.scheduled ? 'warning' : 'neutral'}>Programados {stats.scheduled}</Badge><Badge variant={stats.queued ? 'warning' : 'neutral'}>En cola {stats.queued}</Badge><Badge variant="brand">Preparando {stats.preparing}</Badge><Badge variant="success">Listos {stats.ready}</Badge>{stats.late > 0 && <Badge variant="danger">Con retraso {stats.late}</Badge>}</>}
             <span className="ml-auto text-[11px] font-semibold text-ink-muted">{freshnessLabel}</span>
           </div>
+          <details className="mt-2 border-t border-line pt-2 text-xs text-ink-muted">
+            <summary className="cursor-pointer font-bold text-brand-700">Cómo usar Cocina y qué hace cada botón</summary>
+            <p className="mt-2 leading-5">Acepta la comanda, comprueba notas y alérgenos, empieza a preparar (se consumen insumos) y marca listo. Reparto retira los pedidos a domicilio; Salón sirve las mesas. En recojo, confirma la entrega aquí solo después de dar el pedido al cliente.</p>
+          </details>
         </header>
       )}
 
       <Card className={cn('mb-4 overflow-hidden p-0', kdsMode && !devicePanelOpen && 'hidden')} shadow="e1">
         <div className="flex flex-col gap-3 border-b border-line bg-gradient-to-r from-brand-50 via-white to-accent-50 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
-          <div><p className="flex items-center gap-2 text-sm font-black text-ink"><Zap className="size-4 text-brand-700" /> Estado del equipo de cocina</p><p className="mt-1 text-xs text-ink-muted">Verifica estos indicadores al abrir el turno.</p></div>
+          <div><p className="flex items-center gap-2 text-sm font-black text-ink"><Zap className="size-4 text-brand-700" /> Estado del equipo de cocina</p><p className="mt-1 text-xs text-ink-muted">Al abrir el turno, comprueba la conexión, el sonido y la impresión. KDS amplía el tablero para usarlo en una pantalla de cocina; pantalla completa solo cambia la vista del navegador.</p></div>
           <div className="flex flex-wrap gap-2 text-xs font-bold">
             <span className={cn('inline-flex items-center gap-1.5 rounded-pill px-3 py-1.5', realtime.status === 'connected' ? 'bg-brand-100 text-brand-800' : 'bg-accent-50 text-accent-700')}><Radio className="size-3.5" /> {realtime.status === 'connected' ? 'Tiempo real conectado' : 'Reconectando · respaldo activo'}</span>
             <span className={cn('inline-flex items-center gap-1.5 rounded-pill px-3 py-1.5', device.wakeActive ? 'bg-brand-100 text-brand-800' : 'bg-surface-muted text-ink-muted')}><MonitorUp className="size-3.5" /> {device.wakeActive ? 'Pantalla siempre activa' : device.wakeSupported ? 'Suspensión permitida' : 'Wake Lock no compatible'}</span>
@@ -611,21 +760,56 @@ const KitchenPage = () => {
           {device.canInstall && <Button size="sm" variant="outline" leftIcon={<Download className="size-4" />} onClick={() => void device.install()}>Instalar como app</Button>}
           {device.isInstalled && <span className="inline-flex items-center gap-1.5 rounded-pill bg-brand-50 px-3 text-xs font-bold text-brand-800"><Download className="size-3.5" /> App instalada</span>}
         </div>
+        <p className="border-t border-line px-4 py-2 text-xs leading-5 text-ink-muted">El sonido avisa de comandas nuevas en esta pestaña. Las alertas fuera de la app requieren permiso del navegador. La autoimpresión intenta imprimir comandas nuevas cuando el tablero las recibe; puede aparecer el diálogo de impresión del navegador. También puedes imprimir cada comanda desde su tarjeta.</p>
         {remotePush.error && <p role="alert" className="border-t border-red-100 bg-red-50 px-4 py-2 text-xs font-semibold text-red-700">{remotePush.error}</p>}
       </Card>
 
       {attentionTickets.length > 0 && (
         <div role="alert" className="mb-4 flex flex-col gap-3 rounded-card border border-red-300 bg-red-50 px-4 py-3 text-red-800 shadow-e2 sm:flex-row sm:items-center sm:justify-between">
-          <p className="flex items-start gap-2 text-sm font-black"><Bell className="mt-0.5 size-4 shrink-0" /><span>{attentionTickets.length} {attentionTickets.length === 1 ? 'pedido lleva' : 'pedidos llevan'} más de 2 minutos sin aceptar. El escalamiento automático ya se activó.</span></p>
+          <p className="flex items-start gap-2 text-sm font-black"><Bell className="mt-0.5 size-4 shrink-0" /><span>{attentionTickets.length} {attentionTickets.length === 1 ? 'pedido lleva' : 'pedidos llevan'} más de 2 minutos sin aceptar. Revisa la columna En cola y acepta los que puedas preparar.</span></p>
           <Button size="sm" onClick={() => document.getElementById(`kitchen-ticket-${attentionTickets[0].id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}>Ver urgente</Button>
         </div>
       )}
 
       {!kdsMode && <OperationFlowGuide stage="kitchen" branchName={activeBranchName} />}
 
+      {!canOperate && branchId && (
+        <p role="status" className="mb-4 rounded-card border border-accent-200 bg-accent-50 px-4 py-3 text-sm text-accent-800">
+          Tu acceso a Cocina es de consulta. Puedes revisar e imprimir comandas, pero tu rol no permite aceptar, preparar ni marcar pedidos como listos.
+        </p>
+      )}
+
+      {!kdsMode && (
+        <Card className="mb-4 border-brand-200 bg-brand-50/40 p-4 sm:p-5" shadow="e1">
+          <h2 className="text-base font-black text-ink">¿Qué hace Cocina y en qué orden?</h2>
+          <p className="mt-1 text-sm leading-6 text-ink-muted">Aquí se trabajan las comandas de la sucursal seleccionada. Cada tarjeta muestra productos, cantidades, cambios, alérgenos, notas, destino y hora objetivo. La columna indica quién debe actuar ahora.</p>
+          <ol className="mt-4 grid gap-3 md:grid-cols-3">
+            <li className="rounded-card border border-line bg-white p-3"><strong className="text-sm text-ink">1. Revisa el pedido confirmado</strong><p className="mt-1 text-xs leading-5 text-ink-muted">Los programados aparecen en Agenda desde su confirmación. Las tortas tienen etapas en Producción desde ese momento; la comanda de cierre entra en la cola según el trabajo previsto para el día de entrega.</p></li>
+            <li className="rounded-card border border-line bg-white p-3"><strong className="text-sm text-ink">2. Revisa y prepara</strong><p className="mt-1 text-xs leading-5 text-ink-muted">Antes de empezar, revisa personalizaciones, instrucciones y alérgenos. Empezar registra el consumo en Inventario.</p></li>
+            <li className="rounded-card border border-line bg-white p-3"><strong className="text-sm text-ink">3. Marca listo y entrega</strong><p className="mt-1 text-xs leading-5 text-ink-muted">Al terminar, marca listo. Reparto retira el delivery, Salón atiende la mesa y Cocina confirma el recojo en mostrador tras entregarlo.</p></li>
+          </ol>
+          <p className="mt-3 text-xs leading-5 text-ink-muted">Si un pedido dice «Cobrar al entregar», Cocina solo lo prepara: la cobranza corresponde al equipo que hace la entrega o al Salón.</p>
+          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 border-t border-brand-200 pt-3 text-xs font-bold">
+            {can(PERM.ORDER_READ) && <Link className="text-brand-700 hover:underline" to={ROUTES.adminOrders}>Ver pedidos y pagos →</Link>}
+            {can(PERM.INVENTORY_READ) && <Link className="text-brand-700 hover:underline" to={ROUTES.adminInventory}>Revisar insumos →</Link>}
+            {can(PERM.KITCHEN_READ) && <Link className="text-brand-700 hover:underline" to={ROUTES.adminCakes}>Tortas: pestaña Producción →</Link>}
+            {(can(PERM.DELIVERY_READ) || can(PERM.DELIVERY_ASSIGN) || can(PERM.DELIVERY_OPERATE)) && <Link className="text-brand-700 hover:underline" to={ROUTES.adminDelivery}>Abrir Reparto →</Link>}
+            {(can(PERM.DINING_READ) || can(PERM.DINING_OPERATE)) && <Link className="text-brand-700 hover:underline" to={ROUTES.adminDining}>Abrir Salón →</Link>}
+          </div>
+        </Card>
+      )}
+
+      {cancelFeedback && (
+        <div role="status" className={cn('mb-4 rounded-card border px-4 py-3 text-sm', cancelFeedback.pending ? 'border-accent-300 bg-accent-50 text-accent-800' : 'border-brand-200 bg-brand-50 text-brand-800')}>
+          <strong>{cancelFeedback.orderNumber}: </strong>{cancelFeedback.message}{' '}
+          {can(PERM.ORDER_READ) && <Link className="font-bold underline" to={`${ROUTES.adminOrders}?q=${encodeURIComponent(cancelFeedback.orderNumber)}`}>Abrir en Pedidos →</Link>}
+        </div>
+      )}
+
       {requestedOrderNumber && !isLoading && data && !requestedTicket && !requestedScheduled && (
         <div role="status" className="mb-4 rounded-card border border-accent-200 bg-accent-50 px-4 py-3 text-sm text-accent-800">
-          El pedido <strong>{requestedOrderNumber}</strong> no tiene una comanda activa en esta cocina. Puede estar pendiente de pago, programado para mas tarde, despachado o cerrado.
+          El pedido <strong>{requestedOrderNumber}</strong> no tiene una comanda activa en esta cocina. Puede estar pendiente de pago, fuera de la agenda de siete días, despachado o cerrado. Comprueba la sucursal seleccionada.
+          {can(PERM.ORDER_READ) && <> <Link className="font-bold underline" to={`${ROUTES.adminOrders}?q=${encodeURIComponent(requestedOrderNumber)}`}>Buscar en Pedidos →</Link></>}
         </div>
       )}
 
@@ -642,7 +826,7 @@ const KitchenPage = () => {
         >
           <p className="flex items-start gap-2 font-medium">
             <WifiOff className="mt-0.5 size-4 shrink-0" />
-            <span>Sin conexion con el servidor · {freshnessLabel}. Puede haber pedidos que no ves.</span>
+            <span>Sin conexión con el servidor · {freshnessLabel}. Puede haber pedidos que no ves. {isStale && 'Las acciones se pausaron hasta recuperar datos recientes.'}</span>
           </p>
           <Button variant="outline" className="shrink-0" leftIcon={<RefreshCw className="size-4" />} onClick={refresh}>
             Reintentar
@@ -657,10 +841,10 @@ const KitchenPage = () => {
               <p className="text-xs font-black uppercase tracking-wider text-accent-700">Agenda confirmada</p>
               <h2 id="scheduled-kitchen-title" className="text-lg font-black text-ink">Programados ({scheduledOrders.length})</h2>
             </div>
-            <p className="text-xs text-ink-muted">Son pedidos pagados. Aún no requieren acción de cocina.</p>
+            <p className="text-xs text-ink-muted">Los pedidos de torta ya tienen un plan de producción. Revisa las etapas de hoy; la comanda de cierre se activará antes de la entrega.</p>
           </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {scheduledOrders.map((order) => <ScheduledOrderCard key={order.id} order={order} isTarget={requestedScheduled?.id === order.id} />)}
+            {scheduledOrders.map((order) => <ScheduledOrderCard key={order.id} order={order} branchId={branchId!} isTarget={requestedScheduled?.id === order.id} />)}
           </div>
         </section>
       )}

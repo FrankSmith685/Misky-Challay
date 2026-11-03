@@ -10,7 +10,7 @@ import { usePermissions } from '@hooks/usePermissions';
  *
  * Sin esto, un cocinero entra a /admin, el sistema intenta mostrarle el Resumen
  * (que exige permiso de reportes), no puede, y lo rebota a la tienda. Aqui lo
- * mandamos directo a Cocina; al nutricionista a Catalogo; al admin al Resumen.
+ * mandamos directo a Cocina; al gestor de catálogo a Catálogo; al admin al Resumen.
  *
  * Es lo que hace que el mismo panel se SIENTA propio de cada rol.
  *

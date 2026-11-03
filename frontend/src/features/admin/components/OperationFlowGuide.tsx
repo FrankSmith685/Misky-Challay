@@ -21,8 +21,8 @@ interface FlowStep {
 const STEPS: FlowStep[] = [
   {
     id: 'orders',
-    title: '1. Pedido confirmado',
-    description: 'Pago validado, datos de contacto y productos congelados.',
+    title: '1. Pedido registrado',
+    description: 'Se revisa el pago. Al confirmarse, el pedido puede pasar a preparación.',
     icon: ShoppingBag,
   },
   {

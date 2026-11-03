@@ -6,6 +6,9 @@ import { branchScopeCheck, resolveBranchId } from '@shared/utils/scope';
 import { PERMISSIONS, type PermissionCode } from '@config/constants';
 import type { DeliveryStatus } from '@database/models/delivery.model';
 import { deliveryService } from './delivery.service';
+import { carTransport } from './carTransport.service';
+import { audit } from '@shared/utils/audit';
+import { deliveryEvidenceService } from './deliveryEvidence.service';
 
 const requireActor = (req: Request): number => {
   if (!req.user) throw ApiError.unauthorized();
@@ -30,6 +33,39 @@ const isFieldDriver = (req: Request): boolean =>
 
 /** Modulo DELIVERY (M11): despacho, asignacion y seguimiento del reparto. */
 export const deliveryController = {
+  evidence: asyncHandler(async (req: Request, res: Response) => {
+    const actorId = requireActor(req);
+    const own = isFieldDriver(req) ? await deliveryService.driverIdsForUser(actorId) : undefined;
+    const id = Number(req.params.deliveryId);
+    const stage = req.params.stage as 'DEPARTURE' | 'ARRIVAL';
+    if (req.method === 'PUT') {
+      await deliveryEvidenceService.upload(id, stage, req.body.dataUrl, actorId, branchScopeCheck(req), own);
+      await audit(req, { action: 'delivery.evidence.upload', entity: 'Delivery', entityId: id, after: { stage } });
+      return ok(res, { stage }, 'Foto guardada');
+    }
+    const photo = await deliveryEvidenceService.read(id, stage, branchScopeCheck(req), own);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('Content-Type', photo.mime);
+    return res.send(photo.bytes);
+  }),
+  transport: asyncHandler(async (req: Request, res: Response) => {
+    const branchId = resolveBranchId(req, req.query.branchId as string | undefined);
+    return ok(res, await carTransport.settings(branchId));
+  }),
+  updateTransport: asyncHandler(async (req: Request, res: Response) => {
+    const branchId = resolveBranchId(req, req.body.branchId);
+    const before = await carTransport.settings(branchId);
+    await carTransport.updateSettings(branchId, req.body);
+    const after = await carTransport.settings(branchId);
+    await audit(req, { action: 'delivery.transport.update', entity: 'Branch', entityId: branchId, before, after });
+    return ok(res, after, 'Cupos e indicaciones actualizados');
+  }),
+  updateDriver: asyncHandler(async (req: Request, res: Response) => {
+    const branchId = resolveBranchId(req, req.body.branchId);
+    const driver = await carTransport.updateDriver(Number(req.params.driverId), branchId, req.body);
+    await audit(req, { action: 'delivery.driver.vehicle', entity: 'Driver', entityId: driver.id, after: { vehicleType: driver.vehicleType, vehicle: driver.vehicle, status: driver.status } });
+    return ok(res, driver, 'Vehículo actualizado');
+  }),
   board: asyncHandler(async (req: Request, res: Response) => {
     const branchId = resolveBranchId(req, req.query.branchId as string | undefined);
 
@@ -70,6 +106,7 @@ export const deliveryController = {
           req.body.reference,
           requireActor(req),
           branchScopeCheck(req),
+          req.body.vehicleType,
         );
 
     return ok(
@@ -94,7 +131,7 @@ export const deliveryController = {
       actorId,
       req.body.comment,
       branchScopeCheck(req),
-      { onlyDriverIds },
+      { onlyDriverIds, proof: req.body.recipientName ? { recipientName: req.body.recipientName } : undefined },
     );
 
     return ok(res, { id: delivery.id, status: delivery.status }, 'Reparto actualizado');

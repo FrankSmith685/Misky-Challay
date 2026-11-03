@@ -1,17 +1,21 @@
+import { invalidateResource } from '../hooks/useResource';
 import * as Application from 'expo-application';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import * as Device from 'expo-device';
-import { router, type Href } from 'expo-router';
+import { router } from 'expo-router';
 import {
   createContext,
   useCallback,
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
-import { Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
+import { colors } from '../theme/tokens';
+import { mobileNotificationHref } from '../lib/notificationRoutes';
 import { notificationsApi } from '../services/api/notifications.service';
 import { pushStorage } from '../services/session/pushStorage';
 import { useSession } from './SessionProvider';
@@ -77,36 +81,21 @@ const ANDROID_CHANNELS = [
  * expo-router. La lista es cerrada y cada patrón se valida: el destino viaja en
  * el propio aviso, así que jamás se navega a lo que llegue sin comprobarlo.
  */
-const routeForActionUrl = (actionUrl: string): Href | null => {
-  const kitchen = /^\/staff\/kitchen(?:\?branchId=(\d+))?$/.exec(actionUrl);
-  if (kitchen) {
-    return {
-      pathname: '/staff/[module]',
-      params: { module: 'kitchen', ...(kitchen[1] ? { branchId: kitchen[1] } : {}) },
-    } as Href;
-  }
-
-  const order = /^\/order\/([A-Za-z0-9-]+)$/.exec(actionUrl);
-  if (order) {
-    return { pathname: '/order/[orderNumber]', params: { orderNumber: order[1] } } as Href;
-  }
-
-  // El backend usa `/menu/:slug` y `/product/:slug` para lo mismo: la ficha.
-  const product = /^\/(?:product|menu)\/([A-Za-z0-9-]+)$/.exec(actionUrl);
-  if (product) {
-    return { pathname: '/product/[slug]', params: { slug: product[1] } } as Href;
-  }
-
-  if (actionUrl === '/wallet') return '/wallet' as Href;
-  if (actionUrl === '/support') return '/support' as Href;
-
-  return null;
-};
+const routeForActionUrl = mobileNotificationHref;
 
 export function MobileNotificationsProvider({ children }: { children: ReactNode }) {
   const { status: sessionStatus } = useSession();
   const [status, setStatus] = useState<PushStatus>(isExpoGo ? 'unsupported' : 'disabled');
   const [error, setError] = useState('');
+  const [pendingAction, setPendingAction] = useState<{ id: string; actionUrl: string } | null>(null);
+  const handled = useRef<string | null>(null);
+  useEffect(() => {
+    if (sessionStatus !== 'authenticated' || !pendingAction || handled.current === pendingAction.id) return;
+    handled.current = pendingAction.id; setPendingAction(null);
+    const target = routeForActionUrl(pendingAction.actionUrl);
+    if (typeof target === 'string' && /^https?:\/\//.test(target)) void Linking.openURL(target);
+    else if (target) router.push(target);
+  }, [sessionStatus, pendingAction]);
 
   useEffect(() => {
     let active = true;
@@ -131,19 +120,19 @@ export function MobileNotificationsProvider({ children }: { children: ReactNode 
                 ? Notifications.AndroidImportance.HIGH
                 : Notifications.AndroidImportance.DEFAULT,
               vibrationPattern: [0, 250, 180, 250],
-              lightColor: '#237c52',
+              lightColor: colors.brand600,
             });
           }
         }
-        const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+        const onResponse = (response: import('expo-notifications').NotificationResponse) => {
           const actionUrl = response.notification.request.content.data?.actionUrl;
-          if (typeof actionUrl !== 'string') return;
-          const target = routeForActionUrl(actionUrl);
-          // Un destino que no reconocemos abre la app y la deja donde estaba: es
-          // mejor que llevar al cliente a una ruta inventada.
-          if (target) router.push(target);
-        });
-        removeListener = () => subscription.remove();
+          invalidateResource(undefined, { reset: false });
+          if (typeof actionUrl === 'string' && routeForActionUrl(actionUrl)) setPendingAction({ id: response.notification.request.identifier, actionUrl });
+        };
+        const subscription = Notifications.addNotificationResponseReceivedListener(onResponse);
+        const received = Notifications.addNotificationReceivedListener(() => invalidateResource(undefined, { reset: false }));
+        void Notifications.getLastNotificationResponseAsync().then((response) => { if (active && response) onResponse(response); }).catch(() => undefined);
+        removeListener = () => { subscription.remove(); received.remove(); };
       })
       .catch(() => {
         if (active) {
@@ -191,7 +180,7 @@ export function MobileNotificationsProvider({ children }: { children: ReactNode 
      */
     if (isExpoGo) {
       setStatus('unsupported');
-      setError('Instala Verde Bowl en tu teléfono para recibir avisos.');
+      setError('Instala Misky Challay en tu teléfono para recibir avisos.');
       return;
     }
     if (!Device.isDevice) {
@@ -208,7 +197,7 @@ export function MobileNotificationsProvider({ children }: { children: ReactNode 
     try {
       const Notifications = await loadNotifications();
       if (!Notifications) {
-        throw new Error('Instala Verde Bowl en tu teléfono para recibir avisos.');
+        throw new Error('Instala Misky Challay en tu teléfono para recibir avisos.');
       }
       const current = await Notifications.getPermissionsAsync();
       const permission = current.granted ? current : await Notifications.requestPermissionsAsync();

@@ -1,3 +1,8 @@
+import { useEffect } from 'react';
+import { useLiveRefresh } from '@services/realtime';
+import { useAppState } from '@context/AppStateContext';
+import { catalogApi } from '@features/catalog/services/catalog.service';
+import { replaceFavorites } from '../favoritesSlice';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -27,6 +32,10 @@ type FavoriteFilter = 'ALL' | FavoriteItem['type'];
 const FavoritesPage = () => {
   const dispatch = useAppDispatch();
   const items = useAppSelector((state) => state.favorites.items);
+  const { branchId } = useAppState();
+  const refresh = async () => { try { const products = await catalogApi.getProducts({ branchId }); const current = new Map(products.map((entry) => [entry.id, entry])); dispatch(replaceFavorites(items.map((item) => { const product = current.get(item.productId); return product ? { ...item, priceFrom: product.priceFrom, name: product.name, imageUrl: product.imageUrl, slug: product.slug } : item; }))); } catch { /* Keep the saved favorites during a temporary outage. */ } };
+  useLiveRefresh(['catalog', 'inventory', 'coverage'], refresh);
+  useEffect(() => { void refresh(); }, [branchId]);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<FavoriteFilter>('ALL');
 
@@ -65,7 +74,7 @@ const FavoritesPage = () => {
       <PageHeader
         eyebrow="Actividad"
         title="Mis favoritos"
-        description={items.length ? 'Encuentra rápidamente los bowls que guardaste para tu próxima compra.' : 'Guarda aquí los platos que más te gustan para encontrarlos rápidamente.'}
+        description={items.length ? 'Encuentra rápidamente los combinaciones que guardaste para tu próxima compra.' : 'Guarda aquí los platos que más te gustan para encontrarlos rápidamente.'}
         icon={Heart}
         crumbs={[{ label: 'Inicio', to: '/' }, { label: 'Mi cuenta' }, { label: 'Favoritos' }]}
         action={<Button component={Link} to={ROUTES.menu} variant="outline" leftIcon={<ShoppingBag className="size-4" />}>Explorar menú</Button>}
@@ -90,7 +99,7 @@ const FavoritesPage = () => {
           <section className="mb-5 rounded-card border border-line bg-white p-3 sm:p-4" aria-label="Buscar y filtrar favoritos">
             <Input
               label="Buscar en favoritos"
-              placeholder="Nombre del bowl..."
+              placeholder="Nombre del producto..."
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               startAdornment={<Search className="size-4 text-ink-muted" />}
@@ -125,14 +134,14 @@ const FavoritesPage = () => {
               variant="inset"
               icon={Search}
               title="No encontramos favoritos"
-              description="Prueba con otro nombre o vuelve a mostrar todos los bowls guardados."
+              description="Prueba con otro nombre o vuelve a mostrar todos los combinaciones guardados."
               action={<Button variant="outline" onClick={resetView}>Limpiar búsqueda</Button>}
             />
           ) : (
             <ul className="grid gap-4 sm:grid-cols-2">
               {filteredItems.map((item) => {
                 const isBuilder = item.type === 'CUSTOMIZABLE';
-                const to = isBuilder ? ROUTES.builder : ROUTES.product(item.slug);
+                const to = ROUTES.cake(item.slug);
                 return (
                   <li key={item.productId}>
                     <Card className="group flex h-full flex-col overflow-hidden rounded-card p-0 transition hover:border-brand-200 hover:shadow-e3">

@@ -18,6 +18,8 @@ export interface RemovedCartLine {
 }
 
 interface CartContextValue {
+  persistenceError: boolean;
+  replaceItems(items: CartItem[]): void;
   items: CartItem[];
   units: number;
   subtotal: number;
@@ -54,6 +56,7 @@ const lineTotalFor = (unitPrice: number, quantity: number) =>
   Number((unitPrice * quantity).toFixed(2));
 
 export function CartProvider({ children }: { children: ReactNode }) {
+  const [persistenceError, setPersistenceError] = useState(false);
   const [items, setItems] = useState<CartItem[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -84,7 +87,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (hydrated) void cartStorage.write(items);
+    if (hydrated) void cartStorage.write(items).then(() => setPersistenceError(false)).catch(() => setPersistenceError(true));
   }, [hydrated, items]);
 
   const addItem = useCallback((incoming: Omit<CartItem, 'id'>) => {
@@ -108,12 +111,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
       // Un plato fijo agregado varias veces desde la lista rápida conserva una
       // sola línea y aumenta su cantidad. Las recetas personalizadas nunca se
       // fusionan: dos bowls pueden parecer iguales y aun así ser intencionales.
-      if (incoming.selections.length === 0) {
+      if (incoming.selections.length === 0 && !incoming.designQuoteId && !incoming.requestedServings) {
         const fixedIndex = current.findIndex(
           (row) =>
             row.productId === incoming.productId &&
             row.variantId === incoming.variantId &&
-            row.selections.length === 0,
+            row.selections.length === 0 &&
+            !row.designQuoteId &&
+            !row.specialInstructions && !incoming.specialInstructions,
         );
         if (fixedIndex >= 0) {
           const existing = current[fixedIndex];
@@ -140,7 +145,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     const next = Math.min(MAX_QUANTITY, Math.max(1, Math.round(quantity)));
     setItems((current) =>
       current.map((item) =>
-        item.id === id
+        item.id === id && !item.designQuoteId
           ? { ...item, quantity: next, lineTotal: lineTotalFor(item.unitPrice, next) }
           : item,
       ),
@@ -175,6 +180,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const cancelEdit = useCallback(() => setEditingId(null), []);
+  const replaceItems = useCallback((rows: CartItem[]) => { itemsRef.current = rows; setItems(rows); setEditingId(null); }, []);
 
   const clear = useCallback(async () => {
     setItems([]);
@@ -195,6 +201,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       units,
       subtotal,
       hydrated,
+      persistenceError,
       editing,
       addItem,
       setQuantity,
@@ -202,15 +209,18 @@ export function CartProvider({ children }: { children: ReactNode }) {
       restoreItem,
       beginEdit,
       cancelEdit,
+      replaceItems,
       clear,
     }),
     [
       addItem,
       beginEdit,
       cancelEdit,
+      replaceItems,
       clear,
       editing,
       hydrated,
+      persistenceError,
       items,
       removeItem,
       restoreItem,

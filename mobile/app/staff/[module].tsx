@@ -56,6 +56,11 @@ const dateTime = (value: unknown): string => {
     day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
   }).format(date);
 };
+const todayInLima = (): string => {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  const value = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
+  return `${value('year')}-${value('month')}-${value('day')}`;
+};
 
 const settingValue = (value: unknown): string => {
   if (value === null || value === undefined || value === '') return 'No configurado';
@@ -109,6 +114,32 @@ function rowPresentation(module: StaffModuleKey, row: StaffRow): Presentation {
     detail: Number(row.suggestedPurchase ?? 0) > 0 ? `Compra sugerida: ${stringValue(row.suggestedPurchase)} ${stringValue(row.unit, '')}` : 'Stock suficiente para la demanda actual',
     danger: Boolean(row.isLow) || ['OUT', 'CRITICAL'].includes(String(row.stockStatus)),
   };
+  else if (module === 'procurement') {
+    const supplier = object(row.supplier);
+    const items = Array.isArray(row.items) ? row.items : [];
+    result = {
+      title: stringValue(row.orderNumber, `Orden #${row.id}`),
+      badge: stringValue(row.status, 'ORDERED'),
+      meta: `${stringValue(supplier.name, 'Proveedor pendiente')} · ${money(row.total)}`,
+      detail: `${items.length} insumos · ${row.receivedAt ? `recibida ${dateTime(row.receivedAt)}` : 'pendiente de recepción'}`,
+      danger: row.status === 'CANCELLED',
+    };
+  }
+  else if (module === 'cakes') {
+    const items = Array.isArray(order.items) ? order.items.map(object) : [];
+    const recipe = items.map((item) => {
+      const choices = Array.isArray(item.customizations) ? item.customizations.map(object) : [];
+      const selections = choices.map((choice) => `${stringValue(choice.groupNameSnapshot)}: ${stringValue(choice.optionNameSnapshot)}${Number(choice.quantity ?? 1) > 1 ? ` ×${choice.quantity}` : ''}`).join(' · ');
+      return `${stringValue(item.quantity, '1')}× ${stringValue(item.productNameSnapshot)}${item.variantNameSnapshot ? ` · ${item.variantNameSnapshot}` : ''}${item.requestedServings ? ` · ${item.requestedServings} porciones` : ''}${selections ? `\n${selections}` : ''}${item.specialInstructions ? `\nIndicación: ${item.specialInstructions}` : ''}${Array.isArray(item.allergenSnapshotJson) && item.allergenSnapshotJson.length ? `\nAlérgenos: ${item.allergenSnapshotJson.join(', ')}` : ''}${item.reference ? '\nIncluye imagen de referencia' : ''}`;
+    }).join('\n');
+    result = {
+      title: `Pedido ${stringValue(order.orderNumber, stringValue(row.orderId))}`,
+      badge: stringValue(row.status),
+      meta: `${stringValue(row.station)} · ${stringValue(row.workDate)}${row.status !== 'DONE' && String(row.workDate) < todayInLima() ? ' · ATRASADA' : ''} · entrega ${dateTime(order.scheduledAt)}`,
+      detail: `${recipe || 'Consulta la ficha del pedido para ver la receta.'}${order.notes ? `\nNota: ${order.notes}` : ''}${row.assignedTo ? '' : '\nSin responsable asignado'}`,
+      danger: row.status === 'BLOCKED' || (row.status !== 'DONE' && String(row.workDate) < todayInLima()),
+    };
+  }
   else if (module === 'kitchen') {
     const items = Array.isArray(order.items) ? order.items : [];
     const products = items.map((item) => {
@@ -152,6 +183,14 @@ function Summary({ module, data }: { module: StaffModuleKey; data: StaffRow }) {
     ];
     return <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.metrics}>{metrics.map(([label, value]) => <View key={label} style={[styles.metric, label === 'Atrasados' && Number(value) > 0 && styles.metricDanger]}><Text style={[styles.metricValue, label === 'Atrasados' && Number(value) > 0 && styles.metricValueDanger]}>{value}</Text><Text style={[styles.metricLabel, label === 'Atrasados' && Number(value) > 0 && styles.metricLabelDanger]}>{label}</Text></View>)}</ScrollView>;
   }
+  if (module === 'procurement') {
+    const metrics = [
+      ['Compras', money(data.purchasesTotal)],
+      ['Consumido', money(data.consumedCost)],
+      ['Stock valorizado', money(data.stockValue)],
+    ];
+    return <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.metrics}>{metrics.map(([label, value], index) => <View key={label} style={[styles.metric, index === 0 && styles.metricAccent]}><Text style={[styles.metricValue, index === 0 && styles.metricValueAccent]}>{value}</Text><Text style={[styles.metricLabel, index === 0 && styles.metricLabelAccent]}>{label}</Text></View>)}</ScrollView>;
+  }
   if (module !== 'dashboard' && module !== 'cash') return null;
   const sales = object(data.sales);
   const operations = object(data.operations);
@@ -175,17 +214,20 @@ interface FormState {
 }
 
 export default function StaffModuleScreen() {
-  const params = useLocalSearchParams<{ module?: string; branchId?: string; branchName?: string }>();
+  const params = useLocalSearchParams<{ module?: string; branchId?: string; branchName?: string; pedido?: string; tarea?: string; reparto?: string; solicitud?: string }>();
   const { status, user } = useSession();
   const toast = useToast();
   const [actingKey, setActingKey] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(params.pedido ?? '');
   const [page, setPage] = useState(1);
   const [allRows, setAllRows] = useState<StaffRow[]>([]);
   const [loadedPage, setLoadedPage] = useState(0);
   const [form, setForm] = useState<FormState | null>(null);
   const module = STAFF_MODULES.find((entry) => entry.key === params.module);
   const branchId = params.branchId ? Number(params.branchId) : undefined;
+  const sourceKey = `${module?.key}:${branchId ?? 'global'}`;
+  const [rowsSource, setRowsSource] = useState(sourceKey);
+  useEffect(() => { setAllRows([]); setLoadedPage(0); setPage(1); setForm(null); setSearch(params.pedido ?? ''); }, [sourceKey, params.pedido]);
   const allowed = Boolean(module && user && canAccessStaffModule(module, user));
   const remoteSearch = module?.key === 'orders' || module?.key === 'complaints' || module?.key === 'media' || module?.key === 'catalog';
   const deferredSearch = useDeferredValue(search.trim());
@@ -205,6 +247,7 @@ export default function StaffModuleScreen() {
   const currentRows = resource.data?.rows ?? [];
   useEffect(() => {
     if (!resource.data) return;
+    setRowsSource(sourceKey);
     if (page === 1) {
       setAllRows(currentRows);
       setLoadedPage(1);
@@ -213,8 +256,8 @@ export default function StaffModuleScreen() {
     if (loadedPage === page) return;
     setLoadedPage(page);
     setAllRows((previous) => [...previous, ...currentRows.filter((row) => !previous.some((old) => String(old.id ?? old.paymentId) === String(row.id ?? row.paymentId))) ]);
-  }, [currentRows, loadedPage, page, resource.data]);
-  const rows = allRows.length || page > 1 ? allRows : currentRows;
+  }, [currentRows, loadedPage, page, resource.data, sourceKey]);
+  const rows = rowsSource === sourceKey && (allRows.length || page > 1) ? allRows : currentRows;
   const can = (permission: string) => Boolean(user?.isSuperAdmin || user?.permissions.includes(permission));
   const mutate = useCallback(async (key: string, action: () => Promise<unknown>, success = 'Cambio guardado y sincronizado con la web.') => {
     setActingKey(key);
@@ -234,11 +277,13 @@ export default function StaffModuleScreen() {
   }, [resource, toast]);
 
   const visibleRows = useMemo(() => {
-    if (remoteSearch) return rows;
+    const target = Number(module?.key === 'cakes' ? params.tarea : module?.key === 'delivery' ? params.reparto : 0);
+    const prioritized = target ? [...rows].sort((a, b) => Number(Number(b.id) === target) - Number(Number(a.id) === target)) : rows;
+    if (remoteSearch) return prioritized;
     const term = search.trim().toLocaleLowerCase('es-PE');
-    if (!term) return rows;
-    return rows.filter((row) => rowPresentation(module!.key, row).searchText.includes(term));
-  }, [module, remoteSearch, rows, search]);
+    if (!term) return prioritized;
+    return prioritized.filter((row) => rowPresentation(module!.key, row).searchText.includes(term));
+  }, [module, remoteSearch, rows, search, params.tarea, params.reparto]);
 
   const openOrderStatus = (row: StaffRow, statusValue: string, label: string) => setForm({
     title: label,
@@ -284,7 +329,7 @@ export default function StaffModuleScreen() {
       ], submit: (values) => mutate(`branch:${id}`, () => staffApi.updateBranch(id, { prepMinutes: numberValue(values.prepMinutes), acceptsPickup: values.acceptsPickup, isActive: values.isActive })) });
       else setForm({ title: `Editar zona ${stringValue(row.name)}`, fields: [
         { key: 'deliveryFee', label: 'Costo de envío', kind: 'number', value: stringValue(row.deliveryFee, '0'), required: true },
-        { key: 'minimumOrder', label: 'Pedido mínimo', kind: 'number', value: stringValue(row.minimumOrder, '0'), required: true },
+        { key: 'minimumOrder', label: 'Mínimo opcional (0 = sin mínimo)', kind: 'number', value: stringValue(row.minimumOrder, '0'), required: true },
         { key: 'estimatedMinutes', label: 'Minutos estimados', kind: 'number', value: stringValue(row.estimatedMinutes, '30'), required: true },
         { key: 'isActive', label: 'Zona activa', kind: 'boolean', value: booleanValue(row.isActive) },
       ], submit: (values) => mutate(`zone:${id}`, () => staffApi.updateZone(id, { deliveryFee: numberValue(values.deliveryFee), minimumOrder: numberValue(values.minimumOrder), estimatedMinutes: numberValue(values.estimatedMinutes), isActive: values.isActive })) });
@@ -336,7 +381,7 @@ export default function StaffModuleScreen() {
 
   const openMediaUrlForm = () => setForm({
     title: 'Importar imagen desde URL',
-    subtitle: 'La imagen se descargará y quedará guardada en Verde Bowl.',
+    subtitle: 'La imagen se descargará y quedará guardada en Misky Challay.',
     submitLabel: 'Importar a la biblioteca',
     fields: [
       { key: 'sourceUrl', label: 'URL pública HTTPS', kind: 'url', required: true, placeholder: 'https://sitio.com/imagen.jpg' },
@@ -353,9 +398,9 @@ export default function StaffModuleScreen() {
   const openCreate = () => {
     if (!module || !branchId && module.branchScoped) return;
     if (module.key === 'inventory' && can('inventory.manage')) setForm({ title: 'Nuevo insumo', subtitle: 'Se habilitará en el local activo.', submitLabel: 'Crear insumo', fields: [
-      { key: 'code', label: 'Código', required: true, placeholder: 'LECHUGA-ROMANA' }, { key: 'name', label: 'Nombre', required: true }, { key: 'unit', label: 'Unidad', required: true, placeholder: 'kg' },
+      { key: 'name', label: 'Nombre', required: true }, { key: 'unit', label: 'Unidad', required: true, placeholder: 'kg' },
       { key: 'unitCost', label: 'Costo unitario', kind: 'number', value: '0', required: true }, { key: 'minLevel', label: 'Stock mínimo', kind: 'number', value: '0', required: true }, { key: 'initialStock', label: 'Stock inicial', kind: 'number', value: '0', required: true },
-    ], submit: (values) => mutate('inventory:create', () => staffApi.createInventoryItem({ branchId: branchId!, code: String(values.code).trim().toUpperCase(), name: String(values.name).trim(), unit: String(values.unit).trim(), unitCost: numberValue(values.unitCost), minLevel: numberValue(values.minLevel), initialStock: numberValue(values.initialStock) })) });
+    ], submit: (values) => mutate('inventory:create', () => staffApi.createInventoryItem({ branchId: branchId!, name: String(values.name).trim(), unit: String(values.unit).trim(), unitCost: numberValue(values.unitCost), minLevel: numberValue(values.minLevel), initialStock: numberValue(values.initialStock) })) });
     else if (module.key === 'dining' && can('dining.operate')) setForm({ title: 'Nueva mesa', subtitle: 'El QR se puede activar desde la tarjeta después de crearla.', submitLabel: 'Crear mesa', fields: [
       { key: 'code', label: 'Código de mesa', required: true, placeholder: 'M-08' }, { key: 'area', label: 'Área', required: true, value: 'Salón principal' }, { key: 'capacity', label: 'Capacidad', kind: 'number', value: '2', required: true },
     ], submit: (values) => mutate('table:create', () => staffApi.createDiningTable({ branchId: branchId!, code: String(values.code).trim(), area: String(values.area).trim(), capacity: numberValue(values.capacity, 2) })) });
@@ -397,7 +442,7 @@ export default function StaffModuleScreen() {
   };
 
   const createZone = () => setForm({ title: 'Nueva zona de reparto', submitLabel: 'Crear zona', fields: [
-    { key: 'cityId', label: 'ID de ciudad', kind: 'number', required: true }, { key: 'name', label: 'Nombre de zona', required: true }, { key: 'deliveryFee', label: 'Costo de envío', kind: 'number', value: '0', required: true }, { key: 'minimumOrder', label: 'Pedido mínimo', kind: 'number', value: '0', required: true }, { key: 'estimatedMinutes', label: 'Minutos estimados', kind: 'number', value: '30', required: true }, { key: 'priority', label: 'Prioridad', kind: 'number', value: '1', required: true },
+    { key: 'cityId', label: 'ID de ciudad', kind: 'number', required: true }, { key: 'name', label: 'Nombre de zona', required: true }, { key: 'deliveryFee', label: 'Costo de envío', kind: 'number', value: '0', required: true }, { key: 'minimumOrder', label: 'Mínimo opcional (0 = sin mínimo)', kind: 'number', value: '0', required: true }, { key: 'estimatedMinutes', label: 'Minutos estimados', kind: 'number', value: '30', required: true }, { key: 'priority', label: 'Prioridad', kind: 'number', value: '1', required: true },
   ], submit: (values) => mutate('zone:create', () => staffApi.createZone({ cityId: numberValue(values.cityId), name: values.name, deliveryFee: numberValue(values.deliveryFee), minimumOrder: numberValue(values.minimumOrder), estimatedMinutes: numberValue(values.estimatedMinutes, 30), priority: numberValue(values.priority, 1) })) });
 
   if (status !== 'authenticated' || !module || !allowed) {
@@ -455,6 +500,16 @@ export default function StaffModuleScreen() {
         </View>
         {presentation.detail ? <Text style={styles.cardDetail}>{presentation.detail}</Text> : null}
         {module.key === 'inventory' && presentation.danger ? <View style={styles.stockAlert}><MaterialCommunityIcons name="alert-circle" size={18} color={colors.danger} /><Text style={styles.stockAlertText}>Requiere reposición. Revisa los platos afectados antes de vender.</Text></View> : null}
+        {module.key === 'procurement' && can('procurement.manage') && !['RECEIVED', 'CANCELLED'].includes(String(row.status)) ? <PrimaryButton label="Registrar recepción y lote" variant="secondary" onPress={() => {
+          const firstItem = object(Array.isArray(row.items) ? row.items[0] : null);
+          const remaining = Math.max(0, Number(firstItem.quantityOrdered ?? 0) - Number(firstItem.quantityReceived ?? 0));
+          setForm({ title: `Recibir ${stringValue(firstItem.item && object(firstItem.item).name, 'insumo')}`, subtitle: `${stringValue(row.orderNumber)} · pendiente ${remaining}`, submitLabel: 'Actualizar inventario', fields: [
+            { key: 'quantity', label: 'Cantidad recibida', kind: 'number', value: String(remaining || 1), required: true },
+            { key: 'lotCode', label: 'Código de lote', required: true, placeholder: 'LOTE-2026-001' },
+            { key: 'expiresAt', label: 'Vencimiento (AAAA-MM-DD)', placeholder: '2026-12-31' },
+            { key: 'unitCost', label: 'Costo unitario (opcional)', kind: 'number', value: String(firstItem.unitCost ?? '') },
+          ], submit: (values) => mutate(key, () => staffApi.receivePurchaseOrder({ branchId: branchId!, orderId: Number(row.id), lines: [{ purchaseOrderItemId: Number(firstItem.id), quantity: numberValue(values.quantity), lotCode: String(values.lotCode).trim(), expiresAt: values.expiresAt ? String(values.expiresAt).trim() : null, unitCost: values.unitCost ? numberValue(values.unitCost) : undefined }] }), 'Recepción registrada y stock actualizado.') });
+        }} style={styles.action} /> : null}
         {module.key === 'builder' ? <PrimaryButton label="Administrar ingredientes" variant="secondary" onPress={() => router.push(`/staff/builder-editor?productId=${id}&branchId=${branchId ?? ''}` as never)} style={styles.action} /> : null}
         {kitchenNext && can('kitchen.operate') ? <PrimaryButton label={kitchenActionLabel ?? kitchenNext.label} loading={actingKey === key} onPress={() => void mutate(key, advanceKitchen)} style={styles.action} /> : null}
         {deliveryNext && can('delivery.operate') ? <PrimaryButton label={deliveryNext.label} loading={actingKey === key} onPress={() => void mutate(key, () => staffApi.advanceDelivery(id, deliveryNext.status))} style={styles.action} /> : null}
@@ -468,7 +523,7 @@ export default function StaffModuleScreen() {
         {module.key === 'cash' && can('payment.verify') ? <View style={styles.actionGrid}><PrimaryButton label="Rechazar" variant="danger" loading={actingKey === key} onPress={() => Alert.alert('Rechazar pago', 'Confirma que el código no coincide con el movimiento de caja.', [{ text: 'Volver', style: 'cancel' }, { text: 'Rechazar', style: 'destructive', onPress: () => void mutate(key, () => staffApi.reviewPayment(Number(row.paymentId ?? row.id), 'REJECT', 'No coincide con el pago verificado en caja.')) }])} style={styles.flexAction} /><PrimaryButton label="Aprobar" loading={actingKey === key} onPress={() => Alert.alert('Aprobar pago', 'Confirma que verificaste importe y código en Yape o Plin.', [{ text: 'Volver', style: 'cancel' }, { text: 'Aprobar', onPress: () => void mutate(key, () => staffApi.reviewPayment(Number(row.paymentId ?? row.id), 'APPROVE')) }])} style={styles.flexAction} /></View> : null}
         {module.key === 'dining' && can('dining.operate') ? <View style={styles.actionGrid}><PrimaryButton label={booleanValue(row.qrEnabled) ? 'Desactivar QR' : 'Activar QR'} variant="secondary" onPress={() => void mutate(key, () => staffApi.setDiningQr(id, { branchId: branchId!, enabled: !booleanValue(row.qrEnabled) }))} style={styles.flexAction} />{object(row.command).orderNumber ? <><PrimaryButton label="Agregar productos" variant="secondary" onPress={() => router.push(`/staff/dining-command?orderNumber=${encodeURIComponent(String(object(row.command).orderNumber))}&tableId=${id}&branchId=${branchId}` as never)} style={styles.flexAction} /><PrimaryButton label="Cobrar mesa" onPress={() => router.push(`/staff/dining-close?orderNumber=${encodeURIComponent(String(object(row.command).orderNumber))}&branchId=${branchId}&total=${encodeURIComponent(String(object(row.command).total ?? ''))}` as never)} style={styles.flexAction} /></> : <PrimaryButton label="Abrir comanda" onPress={() => router.push(`/staff/dining-command?tableId=${id}&branchId=${branchId}` as never)} style={styles.flexAction} />}</View> : null}
         {module.key === 'catalog' && can('catalog.product.publish') ? <View style={styles.actionGrid}>{row.status !== 'ACTIVE' ? <PrimaryButton label="Publicar" onPress={() => void mutate(key, () => staffApi.changeProductStatus(id, 'ACTIVE'))} style={styles.flexAction} /> : <PrimaryButton label="Retirar" variant="danger" onPress={() => void mutate(key, () => staffApi.changeProductStatus(id, 'INACTIVE'))} style={styles.flexAction} />}</View> : null}
-        {module.key === 'catalog' ? <PrimaryButton label="Precio, nutrición y disponibilidad" variant="secondary" onPress={() => router.push(`/staff/catalog-editor?productId=${id}&branchId=${branchId ?? ''}` as never)} style={styles.action} /> : null}
+        {module.key === 'catalog' ? <PrimaryButton label="Precio y disponibilidad" variant="secondary" onPress={() => router.push(`/staff/catalog-editor?productId=${id}&branchId=${branchId ?? ''}` as never)} style={styles.action} /> : null}
         {module.key === 'media' && (can('catalog.product.write') || can('catalog.customization.write')) ? <PrimaryButton label={row.deletedAt ? 'Restaurar imagen' : 'Mover a papelera'} variant={row.deletedAt ? 'secondary' : 'danger'} onPress={() => Alert.alert(row.deletedAt ? 'Restaurar imagen' : 'Mover a papelera', stringValue(row.originalName), [{ text: 'Volver', style: 'cancel' }, { text: row.deletedAt ? 'Restaurar' : 'Eliminar', style: row.deletedAt ? 'default' : 'destructive', onPress: () => void mutate(key, () => row.deletedAt ? staffApi.restoreMedia(id) : staffApi.removeMedia(id)) }])} style={styles.action} /> : null}
         {module.key === 'plans' && can('plan.manage') ? <View style={styles.actionGrid}><PrimaryButton label="Agregar beneficio" variant="secondary" onPress={() => setForm({ title: `Beneficio para ${stringValue(row.name)}`, fields: [{ key: 'type', label: 'Tipo', kind: 'choice', value: 'DISCOUNT_PERCENT', choices: [{ label: 'Descuento', value: 'DISCOUNT_PERCENT' }, { label: 'Envío gratis', value: 'FREE_DELIVERY' }] }, { key: 'value', label: 'Valor', kind: 'number', value: '0', required: true }, { key: 'maxAmountPerOrder', label: 'Tope por pedido', kind: 'number' }, { key: 'description', label: 'Descripción', kind: 'multiline', required: true }], submit: (values) => mutate(`benefit:${id}`, () => staffApi.setPlanBenefit(id, { type: values.type, value: numberValue(values.value), maxAmountPerOrder: values.maxAmountPerOrder ? numberValue(values.maxAmountPerOrder) : null, description: values.description })) })} style={styles.flexAction} /></View> : null}
         {editable ? <PrimaryButton label={module.key === 'roles' ? 'Eliminar rol' : module.key === 'coupons' || module.key === 'plans' ? 'Cambiar estado' : 'Administrar'} variant="secondary" onPress={() => openRowAction(row)} style={styles.action} /> : null}

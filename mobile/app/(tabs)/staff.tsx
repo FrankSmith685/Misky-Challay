@@ -21,7 +21,7 @@ import { geoApi } from '../../src/services/api/geo.service';
 import { colors, radius, shadow, spacing, type } from '../../src/theme/tokens';
 import type { Branch } from '../../src/types/domain';
 
-const GROUPS: StaffModule['group'][] = ['GENERAL', 'OPERACION', 'NEGOCIO', 'ADMINISTRACION'];
+const GROUPS: StaffModule['group'][] = ['GENERAL', 'OPERACION', 'ABASTECIMIENTO', 'NEGOCIO', 'ADMINISTRACION'];
 
 const roleLabel = (roles: string[], superAdmin: boolean): string => {
   if (superAdmin) return 'Superadministración';
@@ -253,7 +253,7 @@ const styles = StyleSheet.create({
   snapshotTitle: { ...type.heading, color: colors.ink, marginTop: 4 },
   snapshotCopy: { ...type.bodySm, color: colors.inkMuted, marginTop: 4 },
   snapshotSide: { minWidth: 76, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md, backgroundColor: colors.accent50 },
-  snapshotNumber: { ...type.title, color: colors.accent500 },
+  snapshotNumber: { ...type.title, color: colors.accent600 },
   snapshotLabel: { ...type.caption, color: colors.warning },
   priorityRail: { flexDirection: 'row', gap: spacing.sm, marginHorizontal: spacing.md, marginTop: spacing.md },
   priorityCard: { flex: 1, minHeight: 94, justifyContent: 'center', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.brand100, backgroundColor: colors.brand50, padding: spacing.md },

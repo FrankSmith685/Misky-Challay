@@ -35,6 +35,11 @@ export class Notification extends Model<
   declare errorMessage: CreationOptional<string | null>;
   declare orderId: CreationOptional<number | null>;
   declare actionUrl: CreationOptional<string | null>;
+  declare branchId: CreationOptional<number | null>;
+  declare permissionCode: CreationOptional<string | null>;
+  declare audience: CreationOptional<string>;
+  declare body: CreationOptional<string | null>;
+  declare deliveryState: CreationOptional<string | null>;
   /** Evita mandar el mismo aviso dos veces (ej. reintento del webhook). */
   declare idempotencyKey: string;
   declare sentAt: CreationOptional<Date | null>;
@@ -61,6 +66,11 @@ Notification.init(
     errorMessage: { type: DataTypes.STRING(500), allowNull: true },
     orderId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
     actionUrl: { type: DataTypes.STRING(255), allowNull: true },
+    branchId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
+    permissionCode: { type: DataTypes.STRING(80), allowNull: true },
+    audience: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'CUSTOMER' },
+    body: { type: DataTypes.TEXT, allowNull: true },
+    deliveryState: { type: DataTypes.STRING(20), allowNull: true },
     idempotencyKey: { type: DataTypes.STRING(120), allowNull: false },
     sentAt: { type: DataTypes.DATE, allowNull: true },
     readAt: { type: DataTypes.DATE, allowNull: true },
@@ -75,6 +85,8 @@ Notification.init(
       { name: 'uq_notifications_idempotency', unique: true, fields: ['idempotency_key'] },
       { name: 'idx_notifications_user', fields: ['user_id'] },
       { name: 'idx_notifications_order', fields: ['order_id'] },
+      { name: 'idx_notifications_feed', fields: ['user_id', 'audience', 'channel', 'status', 'id'] },
+      { name: 'idx_notifications_unread', fields: ['user_id', 'read_at', 'channel', 'status'] },
     ],
   },
 );

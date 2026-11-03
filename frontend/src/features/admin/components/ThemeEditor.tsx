@@ -4,7 +4,7 @@ import { RotateCcw, Save } from 'lucide-react';
 import toast from '@components/mui/MuiToast';
 import { useThemeSettings } from '@/theme/ThemeSettingsProvider';
 import { RADIUS_RANGE, type ThemeTokens } from '@/theme/tokens';
-import { isHex } from '@/theme/colorUtils';
+import { isHex, readableText } from '@/theme/colorUtils';
 
 /* -------------------------------------------------------------------------- */
 /* Control de un color individual (picker nativo + hex editable)              */
@@ -59,9 +59,9 @@ const ColorControl: FC<{
 /* Editor de tema                                                             */
 /* -------------------------------------------------------------------------- */
 const COLOR_FIELDS: Array<{ key: keyof ThemeTokens; label: string; help: string }> = [
-  { key: 'primary', label: 'Primary', help: 'Color de marca: botones y acciones principales.' },
-  { key: 'secondary', label: 'Secondary', help: 'Acento calido para lo secundario.' },
-  { key: 'tertiary', label: 'Tertiary', help: 'Tercer color (nuevo) para destacar sin competir.' },
+  { key: 'primary', label: 'Color principal', help: 'Rosa profundo para botones, enlaces y acciones.' },
+  { key: 'secondary', label: 'Caramelo de acento', help: 'Destacados y llamadas secundarias.' },
+  { key: 'tertiary', label: 'Verde de apoyo', help: 'Detalles de la identidad de pastelería.' },
 ];
 
 export const ThemeEditor: FC = () => {
@@ -126,27 +126,27 @@ export const ThemeEditor: FC = () => {
         <Card variant="outlined">
           <CardContent className="grid gap-4">
             <div className="flex flex-wrap gap-2">
-              <Button variant="contained">Primary</Button>
+              <Button variant="contained">Principal</Button>
               <Button variant="contained" color="secondary">
-                Secondary
+                Acento
               </Button>
               <Button variant="contained" color="tertiary">
-                Tertiary
+                Apoyo
               </Button>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="outlined">Primary</Button>
+              <Button variant="outlined">Principal</Button>
               <Button variant="outlined" color="secondary">
-                Secondary
+                Acento
               </Button>
               <Button variant="outlined" color="tertiary">
-                Tertiary
+                Apoyo
               </Button>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Chip label="Primary" color="primary" />
-              <Chip label="Secondary" color="secondary" />
-              <Chip label="Tertiary" color="tertiary" />
+              <Chip label="Principal" color="primary" />
+              <Chip label="Acento" color="secondary" />
+              <Chip label="Apoyo" color="tertiary" />
             </div>
             <TextField label="Campo de ejemplo" defaultValue="Escribe aqui" fullWidth />
             <Typography variant="body2" color="text.secondary">
@@ -158,8 +158,8 @@ export const ThemeEditor: FC = () => {
         {/* Muestra la cromatica de Tailwind reaccionando (clases de marca). */}
         <div className="grid grid-cols-3 gap-2">
           <div className="rounded-card bg-brand-600 px-3 py-4 text-center text-xs font-medium text-white">brand-600</div>
-          <div className="rounded-card bg-accent-500 px-3 py-4 text-center text-xs font-medium text-white">accent-500</div>
-          <div className="rounded-card bg-tertiary-600 px-3 py-4 text-center text-xs font-medium text-white">
+          <div className="rounded-card bg-accent-500 px-3 py-4 text-center text-xs font-medium" style={{ color: readableText(tokens.secondary) }}>accent-500</div>
+          <div className="rounded-card bg-tertiary-600 px-3 py-4 text-center text-xs font-medium" style={{ color: readableText(tokens.tertiary) }}>
             tertiary-600
           </div>
         </div>

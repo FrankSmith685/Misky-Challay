@@ -1,3 +1,4 @@
+import { CustomerWorkspace } from '@database/models/customerJourney.model';
 import {
   Branch,
   Complaint,
@@ -23,6 +24,7 @@ import {
   PUSH_CHANNEL,
   PUSH_TEMPLATE,
   type OrderStatus,
+  type PermissionCode,
   type PushChannelId,
   type PushTemplate,
 } from '@config/constants';
@@ -31,11 +33,16 @@ import { logger } from '@config/logger';
 import { getMailProvider } from '@integrations/mail';
 import { TEMPLATES, type OrderEmailData } from './templates';
 import { mobilePushService } from './mobilePush.service';
+import { staffAudienceService } from './staffAudience.service';
+import { communicationQueue } from '@modules/communications/communications.queue';
+import { messagingConfigService } from '@modules/communications/communications.config';
 
 /** Que estado del pedido dispara que correo. Los que no estan aqui no avisan. */
 const TEMPLATE_BY_STATUS: Partial<Record<OrderStatus, keyof typeof TEMPLATES>> = {
+  [ORDER_STATUS.PENDING_PAYMENT]: 'ORDER_RECEIVED',
   [ORDER_STATUS.CONFIRMED]: 'ORDER_CONFIRMED',
   [ORDER_STATUS.PREPARING]: 'ORDER_PREPARING',
+  [ORDER_STATUS.READY]: 'ORDER_READY',
   [ORDER_STATUS.OUT_FOR_DELIVERY]: 'ORDER_OUT_FOR_DELIVERY',
   [ORDER_STATUS.DELIVERED]: 'ORDER_DELIVERED',
   [ORDER_STATUS.CANCELLED]: 'ORDER_CANCELLED',
@@ -46,7 +53,7 @@ const escapeHtml = (value: string): string =>
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;',
   })[character] ?? character);
 
-type NotificationCategory = 'ORDER' | 'PLAN' | 'STAFF' | 'COMPLAINT' | 'SECURITY' | 'AVAILABILITY';
+type NotificationCategory = 'ORDER' | 'PLAN' | 'STAFF' | 'OPERATIONS' | 'COMPLAINT' | 'SECURITY' | 'AVAILABILITY';
 
 const eventIsEnabled = (
   category: NotificationCategory,
@@ -68,21 +75,28 @@ const deliver = async (input: {
   subject: string;
   html: string;
   text: string;
+  inAppBody?: string;
   userId?: number | null;
   orderId?: number | null;
   idempotencyKey: string;
   actionUrl?: string | null;
   sendEmail?: boolean;
   createInApp?: boolean;
+  branchId?: number | null;
+  permissionCode?: string | null;
+  audience?: 'STAFF' | 'CUSTOMER';
+  throwOnError?: boolean;
 }): Promise<boolean> => {
   try {
     const settings = await settingsService.getCommunicationSettings();
     if (!eventIsEnabled(input.category, settings)) return false;
 
+    const preferences = input.userId && input.audience !== 'STAFF' ? (await CustomerWorkspace.findByPk(input.userId))?.channelsJson : undefined;
     const isEssentialEmail = input.category === 'COMPLAINT' || input.category === 'SECURITY';
     const shouldSendEmail = input.sendEmail !== false
       && Boolean(input.to)
-      && (settings.emailNotificationsEnabled || isEssentialEmail);
+      && (settings.emailNotificationsEnabled || isEssentialEmail)
+      && (isEssentialEmail || preferences?.email !== false);
     const shouldCreateInApp = input.createInApp !== false
       && Boolean(input.userId)
       && settings.inAppNotificationsEnabled;
@@ -109,6 +123,10 @@ const deliver = async (input: {
           recipient: `user:${input.userId}`,
           subject: input.subject,
           actionUrl: input.actionUrl ?? null,
+          branchId: input.branchId ?? null,
+          permissionCode: input.permissionCode ?? null,
+          audience: input.audience ?? (input.category === 'STAFF' ? 'STAFF' : 'CUSTOMER'),
+          body: input.inAppBody ?? (input.category === 'STAFF' ? 'Tu acceso al panel está listo. Revisa el correo de bienvenida.' : input.text),
           status: NOTIFICATION_STATUS.SENT,
           provider: 'in_app',
           idempotencyKey: inAppKey,
@@ -119,6 +137,18 @@ const deliver = async (input: {
     }
 
     if (!shouldSendEmail) return delivered;
+
+    // Los avisos operativos se guardan antes de enviarse. Las comunicaciones de
+    // seguridad y reclamaciones conservan su entrega esencial inmediata.
+    if (!isEssentialEmail) {
+      await communicationQueue.enqueue({ channel: 'EMAIL', recipient: input.to, subject: input.subject,
+        event: input.template, key: `${input.idempotencyKey}:email`, orderId: input.orderId, userId: input.userId,
+        payload: { customerNotice: input.audience !== 'STAFF' && input.category !== 'STAFF', html: input.html, text: input.text, variables: { enlace: input.actionUrl ? new URL(input.actionUrl, env.FRONTEND_URL).toString() : '' } } });
+      return true;
+    }
+
+    const priorEmail = await Notification.findOne({ where: { idempotencyKey: `${input.idempotencyKey}:email` } });
+    if (priorEmail?.status === NOTIFICATION_STATUS.SENT) return true;
 
     const provider = getMailProvider({
       host: settings.smtpHost,
@@ -186,6 +216,7 @@ const deliver = async (input: {
     }
   } catch (error) {
     logger.error('Fallo el registro de la notificacion', error);
+    if (input.throwOnError) throw error;
     return false;
   }
 };
@@ -210,6 +241,10 @@ const pushToPhone = async (input: {
   template: PushTemplate;
   orderId?: number | null;
   idempotencyKey: string;
+  branchId?: number;
+  permission?: PermissionCode;
+  strict?: boolean;
+  sourceEventId?: number;
 }): Promise<boolean> => {
   // Pedido de invitado o reclamo sin cuenta: no hay dispositivos a los que avisar.
   if (!input.userId) return false;
@@ -226,9 +261,11 @@ const pushToPhone = async (input: {
       template: input.template,
       orderId: input.orderId ?? null,
       idempotencyKey: input.idempotencyKey,
+      branchId: input.branchId, permission: input.permission, sourceEventId: input.sourceEventId,
     });
   } catch (error) {
     logger.error('Fallo el aviso push movil', error);
+    if (input.strict) throw error;
     return false;
   }
 };
@@ -236,6 +273,79 @@ const pushToPhone = async (input: {
 const money = (value: number): string => `S/ ${value.toFixed(2)}`;
 
 export const notificationsService = {
+  async notifyEvent(input: { userId: number; branchId?: number | null; permissionCode?: PermissionCode; title: string; body: string; actionUrl: string; template: string; key: string; category: 'ORDER' | 'PLAN' | 'OPERATIONS'; sendEmail?: boolean; sourceEventId?: number }) {
+    const user = await User.findByPk(input.userId);
+    if (!user || user.status !== 'ACTIVE') return;
+    if (input.permissionCode && input.branchId && !(await staffAudienceService.userIds(input.branchId, input.permissionCode)).includes(user.id)) return;
+    const link = new URL(input.actionUrl, env.FRONTEND_URL).toString();
+    await deliver({ category: input.category, userId: user.id, branchId: input.branchId, permissionCode: input.permissionCode,
+      audience: input.permissionCode ? 'STAFF' : 'CUSTOMER', to: user.email ?? '', template: input.template,
+      subject: input.title, text: `${input.body}\n\n${link}`, inAppBody: input.body, html: `<p>${escapeHtml(input.body)}</p><p><a href="${escapeHtml(link)}">Ver detalles</a></p>`, actionUrl: input.actionUrl,
+      idempotencyKey: input.key, sendEmail: input.sendEmail, throwOnError: true });
+    await pushToPhone({ category: input.category, userId: user.id, title: input.title, body: input.body, actionUrl: input.actionUrl,
+      channel: input.permissionCode ? PUSH_CHANNEL.KITCHEN_OPERATIONS : input.category === 'PLAN' ? PUSH_CHANNEL.PLAN_UPDATES : PUSH_CHANNEL.ORDER_UPDATES,
+      template: input.permissionCode ? PUSH_TEMPLATE.KITCHEN_OPERATION : PUSH_TEMPLATE.ORDER_STATUS, idempotencyKey: input.key, strict: true, sourceEventId: input.sourceEventId, branchId: input.branchId ?? undefined, permission: input.permissionCode });
+  },
+  /**
+   * Aviso operativo para el equipo de una sucursal.
+   *
+   * Se resuelve la audiencia por permiso justo al enviar para respetar las
+   * asignaciones actuales de cada local. El mismo evento queda en correo,
+   * campana y push cuando los canales están habilitados; la clave de
+   * idempotencia evita duplicados si una recepción se reintenta.
+   */
+  async notifyStaffOperational(input: {
+    branchId: number;
+    permission: PermissionCode;
+    title: string;
+    body: string;
+    actionUrl: string;
+    template?: string;
+    idempotencyKey: string;
+    orderId?: number | null;
+  }): Promise<void> {
+    try {
+      // Las comandas usan una ruta de Expo en el push. En la web, la pantalla
+      // equivalente está bajo /admin y debe guardarse así en la campana y el correo.
+      const webActionUrl = input.actionUrl.replace(/^\/staff\/kitchen(?=\?|$)/, '/admin/cocina');
+      const userIds = await staffAudienceService.userIds(input.branchId, input.permission);
+      if (!userIds.length) return;
+      const users = await User.findAll({ where: { id: { [Op.in]: userIds } }, attributes: ['id', 'email'] });
+      await Promise.all(users.map(async (user) => {
+        const key = `${input.idempotencyKey}-${user.id}`;
+        await deliver({
+          category: 'OPERATIONS',
+          template: input.template ?? 'STAFF_OPERATIONAL',
+          to: user.email ?? '',
+          subject: input.title,
+          html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#15283d"><h2 style="color:#094d8a">${escapeHtml(input.title)}</h2><p>${escapeHtml(input.body)}</p><p><a href="${escapeHtml(`${env.FRONTEND_URL.replace(/\/$/, '')}${webActionUrl}`)}" style="display:inline-block;background:#0b5fa8;color:white;padding:12px 18px;border-radius:10px;text-decoration:none;font-weight:bold">Abrir Misky Challay</a></p></div>`,
+          text: `${input.title}\n\n${input.body}\n\n${env.FRONTEND_URL.replace(/\/$/, '')}${webActionUrl}`,
+          userId: user.id,
+          orderId: input.orderId ?? null,
+          idempotencyKey: key,
+          actionUrl: webActionUrl,
+          branchId: input.branchId,
+          permissionCode: input.permission,
+          audience: 'STAFF',
+        });
+        await pushToPhone({
+          category: 'OPERATIONS',
+          userId: user.id,
+          title: input.title,
+          body: input.body,
+          actionUrl: input.actionUrl,
+          channel: PUSH_CHANNEL.KITCHEN_OPERATIONS,
+          template: PUSH_TEMPLATE.KITCHEN_OPERATION,
+          orderId: input.orderId ?? null,
+          idempotencyKey: key,
+          branchId: input.branchId, permission: input.permission,
+        });
+      }));
+    } catch (error) {
+      logger.error('No se pudo enviar el aviso operativo al personal', error);
+    }
+  },
+
   async notifyProductAvailable(input: {
     subscriptionId: number;
     userId: number;
@@ -318,7 +428,7 @@ export const notificationsService = {
     const safeRoles = escapeHtml(roleNames);
     const safeScope = escapeHtml(scope);
     const text = [
-      `${displayName}, ya tienes acceso al panel de Verde Bowl.`,
+      `${displayName}, ya tienes acceso al panel de Misky Challay.`,
       '',
       `Usuario: ${user.email}`,
       `Contraseña temporal: ${input.temporaryPassword}`,
@@ -333,18 +443,18 @@ export const notificationsService = {
       category: 'STAFF',
       template: 'STAFF_ACCESS_CREATED',
       to: user.email,
-      subject: 'Tu acceso al panel de Verde Bowl',
-      html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#14201a">
-        <h2 style="color:#1c6243">Tu acceso está listo</h2>
-        <p>${safeName}, ya puedes ingresar al panel de trabajo de Verde Bowl.</p>
-        <div style="background:#f0f9f4;border:1px solid #bbe5cd;border-radius:12px;padding:16px">
+      subject: 'Tu acceso al panel de Misky Challay',
+      html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#15283d">
+        <h2 style="color:#094d8a">Tu acceso está listo</h2>
+        <p>${safeName}, ya puedes ingresar al panel de trabajo de Misky Challay.</p>
+        <div style="background:#f1f8ff;border:1px solid #b7dcf5;border-radius:12px;padding:16px">
           <p><strong>Usuario:</strong> ${safeEmail}</p>
           <p><strong>Contraseña temporal:</strong> ${safePassword}</p>
           <p><strong>Roles:</strong> ${safeRoles}</p>
           <p><strong>Alcance:</strong> ${safeScope}</p>
         </div>
-        <p><a href="${loginUrl}" style="display:inline-block;background:#237c52;color:white;padding:12px 18px;border-radius:10px;text-decoration:none;font-weight:bold">Ingresar al panel</a></p>
-        <p style="font-size:13px;color:#5d6b64">Cambia la contraseña temporal desde Mi perfil después de ingresar.</p>
+        <p><a href="${loginUrl}" style="display:inline-block;background:#0b5fa8;color:white;padding:12px 18px;border-radius:10px;text-decoration:none;font-weight:bold">Ingresar al panel</a></p>
+        <p style="font-size:13px;color:#536578">Cambia la contraseña temporal desde Mi perfil después de ingresar.</p>
       </div>`,
       text,
       userId: user.id,
@@ -358,7 +468,7 @@ export const notificationsService = {
    * Se llama DESPUES de que el cambio ya esta guardado, y en segundo plano: el
    * pedido no debe esperar al correo, y si el correo falla, el pedido sigue vivo.
    */
-  async notifyOrderStatus(orderId: number, status: OrderStatus): Promise<void> {
+  async notifyOrderStatus(orderId: number, status: OrderStatus, strict = false): Promise<void> {
     const templateName = TEMPLATE_BY_STATUS[status];
     if (!templateName) return;
     const communicationSettings = await settingsService.getCommunicationSettings();
@@ -372,6 +482,11 @@ export const notificationsService = {
     });
 
     if (!order) return;
+
+    if (status === ORDER_STATUS.PENDING_PAYMENT) {
+      const payment = await Payment.findOne({ where: { payableType: PAYABLE_TYPE.ORDER, payableId: order.id }, order: [['id', 'DESC']] });
+      if (payment && ['yape', 'plin'].includes(payment.provider)) return;
+    }
 
     // Sin correo no hay a quien avisar (checkout de invitado sin cuenta).
     const user = order.userId ? await User.findByPk(order.userId) : null;
@@ -393,13 +508,15 @@ export const notificationsService = {
       if (cash) cashDue = Number(cash.amount);
     }
 
-    const businessInfo = status === ORDER_STATUS.CANCELLED
-      ? await settingsService.getBusinessInfo()
-      : null;
+    const businessInfo = await settingsService.getBusinessInfo();
+    const messaging = await messagingConfigService.public();
     const data: OrderEmailData & { reason?: string | null; cashDue?: number | null } = {
+      deliveryVehicleType: order.deliveryVehicleType,
       orderNumber: order.orderNumber,
       customerName: order.contactName ?? user.firstName,
       grandTotal: Number(order.grandTotal),
+      depositAmount: order.paymentPlan === 'DEPOSIT_BALANCE' ? Number(order.depositAmount) : undefined,
+      balancePending: order.paymentPlan === 'DEPOSIT_BALANCE' && !order.balancePaidAt ? Number(order.balanceAmount) : 0,
       branchName: (order.get('branch') as { name: string } | undefined)?.name ?? null,
       items: (order.items ?? []).map((item) => ({
         quantity: item.quantity,
@@ -408,11 +525,13 @@ export const notificationsService = {
       reason: order.cancelReason,
       cashDue,
       supportEmail: businessInfo?.supportEmail,
+      supportWhatsappUrl: messaging.supportPhone ? `https://wa.me/51${messaging.supportPhone}?text=${encodeURIComponent(`Hola, quisiera coordinar mi pedido ${order.orderNumber}.`)}` : undefined,
+      scheduledAt: order.scheduledAt?.toISOString() ?? null,
     };
 
     const content = TEMPLATES[templateName](data as never);
 
-    const actionUrl = `/order/${order.orderNumber}`;
+    const actionUrl = `/cuenta/pedidos/${encodeURIComponent(order.orderNumber)}`;
     await deliver({
       category: 'ORDER',
       template: templateName,
@@ -424,6 +543,7 @@ export const notificationsService = {
       orderId: order.id,
       // Un aviso por pedido y estado: aunque el estado se toque dos veces, se manda uno.
       idempotencyKey: `order-${order.id}-${status}`,
+      throwOnError: strict,
       actionUrl,
     });
     await pushToPhone({
@@ -431,11 +551,12 @@ export const notificationsService = {
       userId: user.id,
       title: content.subject,
       body: content.text,
-      actionUrl,
+      actionUrl: `/order/${order.orderNumber}`,
       channel: PUSH_CHANNEL.ORDER_UPDATES,
       template: PUSH_TEMPLATE.ORDER_STATUS,
       orderId: order.id,
       idempotencyKey: `order-${order.id}-${status}`,
+      strict,
     });
   },
 
@@ -470,6 +591,7 @@ export const notificationsService = {
       text: content.text,
       userId: user.id,
       idempotencyKey,
+      actionUrl: '/cuenta/saldo',
     });
 
     // El plan se activa al confirmarse el pago, muchas veces con la app cerrada:
@@ -509,6 +631,7 @@ export const notificationsService = {
       text: content.text,
       userId: complaint.userId,
       idempotencyKey: `complaint-${complaint.id}-received`,
+      actionUrl: '/libro-de-reclamaciones',
     });
 
     // Aviso interno al buzon de reclamos: el consumidor no debe esperar a que alguien
@@ -546,6 +669,7 @@ export const notificationsService = {
       text: content.text,
       userId: complaint.userId,
       idempotencyKey,
+      actionUrl: '/libro-de-reclamaciones',
     });
 
     // Un reclamo tiene plazo legal de respuesta: el consumidor tiene que enterarse

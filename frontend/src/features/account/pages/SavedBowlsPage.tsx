@@ -45,7 +45,7 @@ const SavedBowlsPage = () => {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const { branchId } = useAppState();
-  const [bowls, setBowls] = useState<SavedBowl[]>([]);
+  const [combinaciones, setBowls] = useState<SavedBowl[]>([]);
   const [configs, setConfigs] = useState<Record<number, BuilderConfig>>({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -73,7 +73,7 @@ const SavedBowlsPage = () => {
       setConfigs(loadedConfigs);
       setLoadError(null);
     } catch (error) {
-      // Sin esta bandera la pagina decia "Aun no guardaste bowls" ante un timeout.
+      // Sin esta bandera la pagina decia "Aun no guardaste combinaciones" ante un timeout.
       setLoadError(getApiErrorMessage(error));
     } finally {
       setLoading(false);
@@ -114,7 +114,6 @@ const SavedBowlsPage = () => {
         imageUrl: bowl.product?.imageUrl ?? null, quantity: 1, unitPrice: quote.basePrice,
         extrasTotal: quote.extrasTotal, lineTotal: quote.lineTotal,
         selections: quote.selections.map((line) => ({ groupId: line.groupId, groupName: line.groupName, optionId: line.optionId, optionName: line.optionName, quantity: line.quantity, priceDelta: line.priceDelta })),
-        nutrition: quote.nutrition,
       }));
       toast.success('Bowl agregado al carrito');
       navigate(ROUTES.cart);
@@ -127,7 +126,7 @@ const SavedBowlsPage = () => {
 
   const visibleBowls = useMemo<SavedBowl[]>(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase('es-PE');
-    const filtered = bowls.filter((bowl) => {
+    const filtered = combinaciones.filter((bowl) => {
       if (!normalizedQuery) return true;
       const config = configs[bowl.productId];
       const optionNames = resolveSelections(bowl, config).map((selection) => selection.option?.name ?? '');
@@ -144,10 +143,10 @@ const SavedBowlsPage = () => {
       if (sort === 'PRICE') return (a.variant?.basePrice ?? 0) - (b.variant?.basePrice ?? 0);
       return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     });
-  }, [bowls, configs, query, sort]);
+  }, [combinaciones, configs, query, sort]);
 
-  const ingredientCount = bowls.reduce((total, bowl) => total + bowl.selections.reduce((sum, selection) => sum + selection.quantity, 0), 0);
-  const baseCount = new Set(bowls.map((bowl) => bowl.productId)).size;
+  const ingredientCount = combinaciones.reduce((total, bowl) => total + bowl.selections.reduce((sum, selection) => sum + selection.quantity, 0), 0);
+  const baseCount = new Set(combinaciones.map((bowl) => bowl.productId)).size;
 
   return (
     <div>
@@ -165,7 +164,7 @@ const SavedBowlsPage = () => {
         <SavedBowlsSkeleton />
       ) : loadError ? (
         <AccountLoadError
-          title="No pudimos cargar tus bowls guardados"
+          title="No pudimos cargar tus combinaciones guardados"
           message={loadError}
           onRetry={retryLoad}
           action={
@@ -174,22 +173,22 @@ const SavedBowlsPage = () => {
             </Button>
           }
         />
-      ) : bowls.length === 0 ? (
+      ) : combinaciones.length === 0 ? (
         <EmptyState
           icon={Salad}
-          title="Aún no guardaste bowls"
+          title="Aún no guardaste combinaciones"
           description="Crea una combinación y guárdala para volver a pedirla rápidamente."
           action={<Button leftIcon={<Plus className="size-4" />} onClick={() => navigate(ROUTES.builder)}>Armar mi primer bowl</Button>}
         />
       ) : (
         <>
-          <section className="mb-5 grid grid-cols-3 gap-2" aria-label="Resumen de bowls guardados">
-            <BowlStat value={bowls.length} label="Recetas" icon={BookmarkCheck} highlighted />
+          <section className="mb-5 grid grid-cols-3 gap-2" aria-label="Resumen de combinaciones guardados">
+            <BowlStat value={combinaciones.length} label="Recetas" icon={BookmarkCheck} highlighted />
             <BowlStat value={ingredientCount} label="Ingredientes" icon={Salad} />
             <BowlStat value={baseCount} label="Bases distintas" icon={Layers3} />
           </section>
 
-          <section className="mb-4 grid gap-3 rounded-card border border-line bg-white p-3 sm:grid-cols-[minmax(0,1fr)_220px] sm:p-4" aria-label="Buscar y ordenar bowls">
+          <section className="mb-4 grid gap-3 rounded-card border border-line bg-white p-3 sm:grid-cols-[minmax(0,1fr)_220px] sm:p-4" aria-label="Buscar y ordenar combinaciones">
             <Input
               label="Buscar receta o ingrediente"
               placeholder="Ej. pollo, quinua..."
@@ -197,7 +196,7 @@ const SavedBowlsPage = () => {
               onChange={(event) => setQuery(event.target.value)}
               startAdornment={<Search className="size-4 text-ink-muted" />}
             />
-            <Select id="saved-bowls-sort" label="Ordenar por" value={sort} onChange={(event) => setSort(event.target.value as BowlSort)}>
+            <Select id="saved-combinaciones-sort" label="Ordenar por" value={sort} onChange={(event) => setSort(event.target.value as BowlSort)}>
               <SelectOption value="RECENT">Actualizados recientemente</SelectOption>
               <SelectOption value="NAME">Nombre A–Z</SelectOption>
               <SelectOption value="PRICE">Menor precio base</SelectOption>

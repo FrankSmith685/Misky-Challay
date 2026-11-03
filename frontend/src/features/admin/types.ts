@@ -41,7 +41,9 @@ export interface OrderAddressSnapshot {
 }
 
 export interface TicketItem {
+  designImages?: import('@features/cakes/components/OrderCakeReference').OrderDesignImage[];
   id: number;
+  themeSnapshotJson?: import('@features/cakes/cakeThemes.service').ThemeSnapshot | null;
   name: string;
   quantity: number;
   description: string | null;
@@ -91,6 +93,7 @@ export interface ScheduledKitchenOrder {
   contactName: string | null;
   diningTable?: { id: number; code: string; area: string } | null;
   notes: string | null;
+  productionTasks?: Array<{ station: string; workDate: string; status: string; assigned: boolean }>;
   items: TicketItem[];
 }
 
@@ -174,7 +177,26 @@ export interface DiningReceipt {
   issuedAt: string;
 }
 
+export interface PosProduct {
+  productId: number;
+  name: string;
+  description: string | null;
+  imageUrl: string | null;
+  variantId: number;
+  variantName: string | null;
+  price: number;
+  cakeSaleMode: 'STANDARD' | 'SEMI_CUSTOM' | 'ADVANCED';
+}
+
+export interface PosSaleResult {
+  orderNumber: string;
+  status: string;
+  total: number;
+  reused: boolean;
+}
+
 export interface Driver {
+  vehicleType?: 'CAR' | 'MOTORCYCLE' | 'OTHER' | 'UNSPECIFIED';
   id: number;
   fullName: string;
   phone: string | null;
@@ -183,12 +205,16 @@ export interface Driver {
 }
 
 export interface DeliveryRow {
+  evidence?: string[];
+  proofJson?: Record<string, unknown> | null;
   id: number;
   status: DeliveryStatus;
   carrier: 'OWN' | 'EXTERNAL';
   cost: number;
   order: {
     orderNumber: string;
+    deliveryVehicleType?: 'CAR' | null;
+    deliveryHandlingInstructions?: string | null;
     /** Estado comercial/preparacion: impide retirar antes de que Cocina marque READY. */
     status: AdminOrderStatus;
     contactName: string | null;
@@ -203,11 +229,19 @@ export interface DeliveryRow {
 
 export interface StockRow {
   inventoryItemId: number;
+  itemType: 'INGREDIENT' | 'FINISHED_PRODUCT';
+  code: string;
+  imageUrl: string | null;
+  allergens: string[] | null;
+  usedInCake: boolean;
   name: string;
   unit: string;
   onHand: number;
   reserved: number;
   available: number;
+  unitCost: number;
+  averageUnitCost: number;
+  stockValue: number;
   minLevel: number;
   isLow: boolean;
   stockStatus: 'OUT' | 'CRITICAL' | 'LOW' | 'HEALTHY';
@@ -218,6 +252,24 @@ export interface StockRow {
   suggestedPurchase: number;
   impactedOptions: string[];
   suggestedSubstitutes: string[];
+}
+
+export interface StockMovementRow {
+  id: number;
+  inventoryItemId: number;
+  itemName: string;
+  unit: string;
+  type: 'PURCHASE' | 'RESERVE' | 'RELEASE' | 'CONSUME' | 'WASTE' | 'ADJUSTMENT';
+  quantity: number;
+  onHandAfter: number;
+  reservedAfter: number;
+  totalCost: number | null;
+  reason: string | null;
+  orderId: number | null;
+  purchaseOrderId: number | null;
+  lotId: number | null;
+  actorName: string | null;
+  createdAt: string;
 }
 
 export interface AuditLogRow {
@@ -235,6 +287,7 @@ export interface AuditLogRow {
 }
 
 export interface AdminOrderRow {
+  customerContactJson?: CustomerContactRecord | null;
   id: number;
   orderNumber: string;
   status: AdminOrderStatus | string;
@@ -256,14 +309,20 @@ export interface AdminOrderRow {
   branch?: { id: number; name: string; prepMinutes?: number } | null;
   diningTable?: { id: number; code: string; area: string } | null;
   kitchenTicket?: { id: number; status: TicketStatus } | null;
+  kitchenReleaseAt?: string | null;
+  cakeTasks?: Array<{ id: number; station: string; workDate: string; status: 'PENDING' | 'IN_PROGRESS' | 'BLOCKED' | 'DONE'; assigned: boolean }>;
   items: Array<{ id: number; productNameSnapshot: string; quantity: number }>;
 }
 
 /** Linea de la ficha del pedido, con lo que Soporte necesita por telefono. */
 export interface AdminOrderItemDetail {
+  designImages?: import('@features/cakes/components/OrderCakeReference').OrderDesignImage[];
   id: number;
+  hasReference?: boolean;
+  themeSnapshotJson?: import('@features/cakes/cakeThemes.service').ThemeSnapshot | null;
   productNameSnapshot: string;
   variantNameSnapshot: string | null;
+  descriptionSnapshot: string | null;
   quantity: number;
   unitPrice: number;
   lineTotal: number;
@@ -283,7 +342,7 @@ export interface AdminOrderPayment {
   failureReason: string | null;
   createdAt: string;
   mobileClaim: {
-    status: 'PENDING' | 'APPROVED' | 'REJECTED';
+    status: 'PENDING' | 'OBSERVED' | 'APPROVED' | 'REJECTED';
     operationCode: string;
     payerPhone: string | null;
     submittedAt: string;
@@ -307,6 +366,11 @@ export interface AdminOrderPayment {
  * pantalla y el servicio hablen el mismo idioma desde el primer dia.
  */
 export interface AdminOrderDetail extends AdminOrderRow {
+  customerEmail?: string | null;
+  termsAcceptanceJson?: import('@features/orders/components/OrderTermsEvidence').TermsAcceptance | null;
+  deliveryProof?: { id: number; status: string; recipientName: string | null; evidence: string[] } | null;
+  deliveryVehicleType?: 'CAR' | null;
+  deliveryHandlingInstructions?: string | null;
   serviceMode: 'ASAP' | 'SCHEDULED';
   scheduledAt: string | null;
   cancelReason: string | null;
@@ -351,6 +415,8 @@ export interface AdminOrderDetail extends AdminOrderRow {
   }>;
   payments: AdminOrderPayment[];
 }
+
+export interface CustomerContactRecord { contactedAt: string; actorId: number; channel: 'WHATSAPP' | 'EMAIL' | 'PHONE' | 'IN_PERSON'; note: string }
 
 export interface Reports {
   range: { from: string; to: string };

@@ -14,7 +14,6 @@ import {
   CircleUserRound,
 } from 'lucide-react';
 import { ROUTES } from '@constants/routes';
-import { PERM } from '@constants/permissions';
 import { ADMIN_NAV, ADMIN_NAV_GROUPS, type AdminNavEntry } from '@constants/adminNav';
 import { rolesLabel } from '@constants/roles';
 import { usePermissions } from '@hooks/usePermissions';
@@ -34,7 +33,7 @@ import { AdminOrderNotifications } from '@features/admin/components/AdminOrderNo
  * recibidor, el resumen de accesos y el router. Cada fila declara que permisos
  * necesita y el menu se arma con las que el usuario puede usar.
  *
- * Por eso el nutricionista y el superadmin entran al MISMO /admin y ven cosas
+ * Por eso cada responsable y el superadmin entran al MISMO /admin y ven cosas
  * distintas: es el mismo edificio, distintas llaves.
  *
  * Cuando esta tabla vivia aqui habia tres copias divergentes de las mismas
@@ -81,7 +80,7 @@ const visibleGroups = (links: AdminNavEntry[]) => {
 };
 
 export const AdminLayout = () => {
-  const { can, canAny, isSuperAdmin, branchIds } = usePermissions();
+  const { canAny, isSuperAdmin, branchIds } = usePermissions();
   const user = useAppSelector((state) => state.auth.user);
   const logout = useLogout();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -105,14 +104,17 @@ export const AdminLayout = () => {
     if (sidebarVisible) setDrawerOpen(false);
   }, [sidebarVisible]);
 
-  const links = ADMIN_NAV.filter((link) =>
+  const accessibleLinks = ADMIN_NAV.filter((link) =>
     link.superAdminOnly ? isSuperAdmin : canAny(...link.anyOf),
   );
+  // Las pantallas heredadas siguen resolviendo sus rutas y permisos, pero no
+  // contaminan el menu nuevo de Misky Challay.
+  const links = accessibleLinks.filter((link) => !link.hidden);
 
   const fullName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email;
   const roleText = isSuperAdmin ? 'Superadmin' : (user?.roles.length ? rolesLabel(user.roles) : 'Sin rol');
   const scopeText = isSuperAdmin || branchIds.length === 0 ? 'Alcance global' : `Sucursal #${branchIds.join(', #')}`;
-  const activeLink = links.find((link) => location.pathname.startsWith(link.to));
+  const activeLink = accessibleLinks.find((link) => location.pathname.startsWith(link.to));
   const initials = [user?.firstName, user?.lastName].filter(Boolean).map((part) => part?.[0]).join('').slice(0, 2).toUpperCase() || 'VB';
 
   const toggleSidebar = () => {
@@ -258,7 +260,7 @@ export const AdminLayout = () => {
   );
 
   return (
-    <div className="admin-shell flex min-h-screen bg-[radial-gradient(circle_at_100%_0%,rgba(96,32,96,.055),transparent_28%),#f8f6f8]">
+    <div className="admin-shell flex min-h-screen bg-surface-muted">
       <RouteEffects />
       <a href="#admin-content" className="skip-link">Saltar al contenido</a>
       {/* Barra lateral: desde 900 px (tablet horizontal), en iconos hasta 1024. */}
@@ -297,13 +299,14 @@ export const AdminLayout = () => {
               <span className="truncate">{scopeText}</span>
             </p>
           </div>
-          {!sidebarVisible && user && can(PERM.ORDER_READ) && <AdminOrderNotifications userId={user.id} />}
+          {!sidebarVisible && user && <AdminOrderNotifications userId={user.id} />}
           <Tooltip title={`${fullName} · ${roleText}`}>
             <Avatar src={user?.avatarUrl ?? undefined} alt={[user?.firstName, user?.lastName].filter(Boolean).join(' ') || 'Usuario'} sx={{ width: 34, height: 34, flexShrink: 0, bgcolor: 'primary.light', color: 'primary.dark', fontSize: 12, fontWeight: 800 }}>{initials}</Avatar>
           </Tooltip>
         </div>
 
-        <header className="hidden h-[76px] items-center justify-between gap-3 border-b border-line/80 bg-surface/90 px-5 backdrop-blur min-[900px]:flex lg:px-8">
+        <header className="hidden h-[76px] border-b border-line/80 bg-surface/90 backdrop-blur min-[900px]:flex">
+          <div className="mx-auto flex h-full w-full max-w-8xl items-center justify-between gap-3 px-5 lg:px-8">
           <div className="min-w-0">
             <Breadcrumbs
               className="text-xs"
@@ -318,16 +321,17 @@ export const AdminLayout = () => {
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            <MuiButton component={Link} to={ROUTES.home} variant="outlined" size="small" endIcon={<ExternalLink className="size-3.5" />} sx={{ mr: 1.5 }}>Ver tienda</MuiButton>
-            {sidebarVisible && user && can(PERM.ORDER_READ) && <AdminOrderNotifications userId={user.id} />}
+            <MuiButton component={Link} to={ROUTES.home} variant="outlined" size="small" endIcon={<ExternalLink className="size-3.5" />} sx={{ mr: 1.5 }}>Ver web</MuiButton>
+            {sidebarVisible && user && <AdminOrderNotifications userId={user.id} />}
             <Tooltip title={`${fullName} · ${roleText}`}>
               <Avatar src={user?.avatarUrl ?? undefined} alt={[user?.firstName, user?.lastName].filter(Boolean).join(' ') || 'Usuario'} sx={{ ml: .5, width: 36, height: 36, bgcolor: 'primary.light', color: 'primary.dark', fontSize: 12, fontWeight: 800 }}>{initials}</Avatar>
             </Tooltip>
           </div>
+          </div>
         </header>
 
         <main id="admin-content" tabIndex={-1} className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
-          <div className="mx-auto w-full max-w-[1500px] animate-fade-in"><Outlet /></div>
+          <div className="mx-auto w-full max-w-8xl animate-fade-in"><Outlet /></div>
         </main>
       </div>
 

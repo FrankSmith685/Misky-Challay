@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import toast from '@components/mui/MuiToast';
 import { Alert, Button, Checkbox, Input } from '@components/ui';
-import { useAppDispatch, useAppSelector } from '@app/hooks';
+import { useAppDispatch, useAppSelector, useAppStore } from '@app/hooks';
 import { ROUTES } from '@constants/routes';
 import { register as registerThunk } from '../authSlice';
 import { readReturnTo, resolveAfterAuthPath } from '../authRedirect';
@@ -60,6 +60,7 @@ type RegisterForm = z.infer<typeof registerSchema>;
 
 const RegisterPage = () => {
   const dispatch = useAppDispatch();
+  const store = useAppStore();
   const navigate = useNavigate();
   const location = useLocation();
   /** De donde venia: el carrito manda aqui a quien necesita cuenta para pedir. */
@@ -106,10 +107,10 @@ const RegisterPage = () => {
     );
 
     if (registerThunk.fulfilled.match(result)) {
-      toast.success('Cuenta creada. ¡Bienvenido a Verde Bowl!');
+      toast.success('Cuenta creada. ¡Bienvenido a Misky Challay!');
       // Si llego aqui desde el carrito para poder confirmar su pedido, vuelve alli.
       // Una cuenta recien creada nunca es del equipo, asi que el destino base es la portada.
-      navigate(resolveAfterAuthPath(from, false), { replace: true });
+      navigate(resolveAfterAuthPath(from, false, ROUTES.admin, store.getState().cart.items.length > 0), { replace: true });
       return;
     }
 
@@ -119,7 +120,7 @@ const RegisterPage = () => {
   return (
     <AuthShell
       wide
-      eyebrow="Únete a Verde Bowl"
+      eyebrow="Únete a Misky Challay"
       title="Crea tu cuenta"
       description="Guarda tus datos una vez y disfruta una compra más rápida y personalizada."
     >

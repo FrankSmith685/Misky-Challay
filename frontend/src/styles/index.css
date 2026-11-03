@@ -1,59 +1,78 @@
+/* Las utilidades de las vistas deben poder ajustar los componentes de MUI.
+ * Sin esta capa, su reset de margin: 0 anula mt/mb/space-y y pega botones,
+ * campos y encabezados en todas las rutas, incluidos los diálogos. */
+@layer theme, base, mui, components, utilities;
 @import 'tailwindcss';
 
+:root {
+  --content-max-width: 96rem;
+  --content-gutter: 1.125rem;
+}
+
+@media (min-width: 640px) {
+  :root { --content-gutter: 1.75rem; }
+}
+
+@media (min-width: 1024px) {
+  :root { --content-gutter: 2.5rem; }
+}
+
 /* ==========================================================================
- * Design tokens de Verde Bowl (Tailwind v4: se configuran en CSS, no en JS).
+ * Colores de Misky Challay (Tailwind v4: se configuran en CSS, no en JS).
  * Uso: bg-brand-600, text-brand-700, bg-surface, border-line...
  * ========================================================================== */
 @theme {
-  --color-brand-50: #f8f1f8;
-  --color-brand-100: #eddaed;
-  --color-brand-200: #ddbadf;
-  --color-brand-300: #c88dc9;
-  --color-brand-400: #aa62ad;
-  --color-brand-500: #813b86;
-  --color-brand-600: #602060;
-  --color-brand-700: #4e1a4e;
-  --color-brand-800: #3b143b;
-  --color-brand-900: #2a0e2a;
+  --container-8xl: 96rem;
+
+  --color-brand-50: #fcf5f6;
+  --color-brand-100: #f5e6eb;
+  --color-brand-200: #e9cbd6;
+  --color-brand-300: #d8a5b8;
+  --color-brand-400: #bf7893;
+  --color-brand-500: #a55475;
+  --color-brand-600: #8b3d59;
+  --color-brand-700: #713047;
+  --color-brand-800: #572538;
+  --color-brand-900: #391b28;
 
   /* Acento calido. Se ancla en el 500 (no en el 600 como brand), por eso las
      paradas oscuras arrancan ahi. La rampa va COMPLETA a proposito: Tailwind v4
      solo genera las utilidades de las paradas declaradas, y con solo 400/500 los
      avisos de bg-accent-50 / border-accent-300 / text-accent-700 se pintaban
      transparentes. */
-  --color-accent-50: #fff8ea;
-  --color-accent-100: #fdedcc;
-  --color-accent-200: #fbdb9a;
-  --color-accent-300: #f8c162;
-  --color-accent-400: #f5a524;
-  --color-accent-500: #e8940f;
-  --color-accent-600: #a76b0b;
-  --color-accent-700: #825308;
-  --color-accent-800: #644006;
-  --color-accent-900: #4d3105;
+  --color-accent-50: #fcf7ee;
+  --color-accent-100: #f6ecd8;
+  --color-accent-200: #ead6b1;
+  --color-accent-300: #dbba83;
+  --color-accent-400: #ce9f60;
+  --color-accent-500: #c28a47;
+  --color-accent-600: #a16b31;
+  --color-accent-700: #805027;
+  --color-accent-800: #633e23;
+  --color-accent-900: #442b1c;
 
   /* Tercer color de marca (gestionable desde el editor de tema). */
-  --color-tertiary-50: #f3f2fd;
-  --color-tertiary-100: #e8e5fb;
-  --color-tertiary-200: #d0caf8;
-  --color-tertiary-300: #b3a9f3;
-  --color-tertiary-400: #9385ee;
-  --color-tertiary-500: #7c6bea;
-  --color-tertiary-600: #6d5ae8;
-  --color-tertiary-700: #594abe;
-  --color-tertiary-800: #483b99;
-  --color-tertiary-900: #392f79;
+  --color-tertiary-50: #f2f7f3;
+  --color-tertiary-100: #e4eee6;
+  --color-tertiary-200: #c8dccd;
+  --color-tertiary-300: #a2bfa9;
+  --color-tertiary-400: #80a48c;
+  --color-tertiary-500: #658a73;
+  --color-tertiary-600: #527363;
+  --color-tertiary-700: #415c4e;
+  --color-tertiary-800: #33483d;
+  --color-tertiary-900: #24332c;
 
   --color-surface: #ffffff;
-  --color-surface-muted: #f8f6f8;
-  --color-line: #e7e0e7;
-  --color-ink: #201820;
-  --color-ink-muted: #675d68;
+  --color-surface-muted: #faf6f1;
+  --color-line: #e7ddd5;
+  --color-ink: #352721;
+  --color-ink-muted: #76665e;
 
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Inter', ui-sans-serif, system-ui, sans-serif;
 
-  /* Radio rectangular único: ningún componente supera 5px. */
-  --radius-xs: 2px;
+  --radius-xs: 3px;
   --radius-sm: 4px;
   --radius-md: 5px;
   --radius-lg: 5px;
@@ -66,11 +85,11 @@
   --radius-pill: 5px;
 
   /* Escala de ELEVACION (sombras tintadas de marca). Genera shadow-e1 .. shadow-e5. */
-  --shadow-e1: 0 1px 2px rgba(32, 24, 32, 0.04);
-  --shadow-e2: 0 1px 2px rgba(32, 24, 32, 0.025), 0 10px 30px rgba(32, 24, 32, 0.04);
-  --shadow-e3: 0 8px 28px rgba(32, 24, 32, 0.08);
-  --shadow-e4: 0 16px 48px rgba(32, 24, 32, 0.12);
-  --shadow-e5: 0 24px 70px rgba(32, 24, 32, 0.18);
+  --shadow-e1: 0 1px 2px rgba(23, 50, 77, 0.05);
+  --shadow-e2: 0 1px 2px rgba(23, 50, 77, 0.03), 0 10px 30px rgba(23, 50, 77, 0.06);
+  --shadow-e3: 0 8px 28px rgba(23, 50, 77, 0.10);
+  --shadow-e4: 0 16px 48px rgba(23, 50, 77, 0.14);
+  --shadow-e5: 0 24px 70px rgba(23, 50, 77, 0.20);
 
   /* Escala de MOVIMIENTO. Genera ease-standard; las duraciones se usan como var(--duration-*). */
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
@@ -82,6 +101,7 @@
 @layer base {
   html {
     scroll-behavior: smooth;
+    scroll-padding-top: 7rem;
   }
 
   body {
@@ -118,7 +138,7 @@
   left: 1rem;
   top: -4rem;
   z-index: 9999;
-  border-radius: 5px;
+  border-radius: var(--radius-field);
   background: var(--color-brand-800);
   color: white;
   padding: .65rem 1rem;
@@ -129,9 +149,33 @@
 
 .skip-link:focus { top: 1rem; }
 
-.public-shell main { background: linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-muted) 100%); }
+/* Contenedor común para vistas que no necesitan un fondo a sangre. */
+.container-shell {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--content-max-width);
+  margin-inline: auto;
+  padding-inline: var(--content-gutter);
+}
+
+.public-shell main {
+  background: var(--color-surface-muted);
+}
 
 .public-shell main { min-height: 55vh; }
+
+.public-shell main h1,
+.public-shell main h2 {
+  font-family: var(--font-sans);
+  font-weight: 800;
+  letter-spacing: -.035em;
+  text-wrap: balance;
+}
+
+.admin-shell main h1 {
+  font-family: var(--font-sans);
+  font-weight: 800;
+}
 
 img { max-width: 100%; }
 
@@ -141,20 +185,104 @@ img { max-width: 100%; }
 .admin-shell main .overflow-x-auto { scrollbar-width: thin; scrollbar-color: var(--color-brand-200) transparent; }
 
 .admin-shell main {
-  background:
-    radial-gradient(circle at 94% 2%, color-mix(in srgb, var(--color-brand-100) 42%, transparent) 0, transparent 24rem),
-    var(--color-surface-muted);
+  background: var(--color-surface-muted);
 }
 
 .admin-shell main > * { animation: ds-fade-in .22s ease-out; }
 .public-shell main > * { animation: ds-fade-in .28s ease-out; }
+
+/* Lenguaje visual del panel: las mismas superficies y controles en todos los módulos. */
+@layer components {
+  .admin-shell {
+    --admin-stroke: var(--color-line);
+    --admin-field-hover: var(--color-brand-300);
+    --admin-surface-shadow: 0 1px 2px rgba(23, 50, 77, .035), 0 10px 28px rgba(23, 50, 77, .045);
+  }
+
+  .admin-shell main [data-ui-card],
+  .admin-shell main [data-ui-form-section] {
+    border-color: var(--admin-stroke);
+    box-shadow: var(--admin-surface-shadow);
+  }
+
+  .admin-shell main [data-ui-card]:focus-within,
+  .admin-shell main [data-ui-form-section]:focus-within {
+    border-color: var(--color-brand-200);
+  }
+
+  .admin-shell main [data-ui-page-header] h1 {
+    color: var(--color-ink);
+    letter-spacing: -.035em;
+    line-height: 1.12;
+  }
+
+  .admin-shell main [data-ui-page-header] {
+    padding: clamp(1rem, 2vw, 1.5rem);
+    border: 1px solid var(--admin-stroke);
+    border-left: 4px solid var(--color-brand-600);
+    border-radius: var(--radius-card);
+    background: linear-gradient(120deg, white 55%, color-mix(in srgb, var(--color-brand-50) 70%, white));
+    box-shadow: var(--admin-surface-shadow);
+  }
+
+  .admin-shell main .MuiButton-root {
+    border-radius: var(--radius-field);
+    font-weight: 700;
+    letter-spacing: 0;
+  }
+
+  .admin-shell main .MuiTextField-root .MuiOutlinedInput-root,
+  body:has(.admin-shell) .MuiDialog-root .MuiOutlinedInput-root {
+    background-color: white;
+    transition: box-shadow var(--duration-base) var(--ease-standard), background-color var(--duration-base) var(--ease-standard);
+  }
+
+  .admin-shell main .MuiTextField-root .MuiOutlinedInput-root:hover:not(.Mui-error) .MuiOutlinedInput-notchedOutline,
+  body:has(.admin-shell) .MuiDialog-root .MuiOutlinedInput-root:hover:not(.Mui-error) .MuiOutlinedInput-notchedOutline {
+    border-color: var(--admin-field-hover);
+  }
+
+  .admin-shell main .MuiTextField-root .MuiOutlinedInput-root.Mui-focused,
+  body:has(.admin-shell) .MuiDialog-root .MuiOutlinedInput-root.Mui-focused {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-brand-200) 48%, transparent);
+  }
+
+  .admin-shell main .MuiFormHelperText-root {
+    margin-left: 2px;
+    line-height: 1.4;
+  }
+
+  .admin-shell main table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .admin-shell main table thead {
+    background: color-mix(in srgb, var(--color-brand-50) 70%, white);
+  }
+
+  .admin-shell main table th {
+    color: var(--color-ink-muted);
+    font-size: .7rem;
+    font-weight: 750;
+    letter-spacing: .045em;
+    line-height: 1.35;
+    padding-block: .7rem;
+  }
+
+  .admin-shell main table td {
+    vertical-align: middle;
+    padding-block: .65rem;
+  }
+}
 
 /* Controles nativos heredados conservan una apariencia coherente hasta migrarlos. */
 .admin-shell main select,
 .public-shell main select {
   min-height: 44px;
   border-color: var(--color-line);
-  border-radius: 5px;
+  border-radius: var(--radius-field);
   background-color: var(--color-surface);
 }
 

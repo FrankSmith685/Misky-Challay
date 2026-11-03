@@ -97,8 +97,6 @@ export const updateFoodPreferencesSchema = z.object({
     allergens: z.array(z.string().trim().min(1).max(80)).max(30).default([]),
     dietaryTags: z.array(z.string().trim().min(1).max(80)).max(30).default([]),
     dislikedOptionIds: z.array(z.coerce.number().int().positive()).max(100).default([]),
-    calorieTarget: z.coerce.number().int().min(300).max(5000).nullable().optional(),
-    proteinTarget: z.coerce.number().int().min(0).max(500).nullable().optional(),
   }),
 });
 

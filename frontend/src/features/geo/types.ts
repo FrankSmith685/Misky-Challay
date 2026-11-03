@@ -70,6 +70,8 @@ export interface CoverageResult {
   demandLevel?: 'LOW' | 'MEDIUM' | 'HIGH';
   etaSource?: 'LIVE_ROUTE' | 'ESTIMATE';
   routeDistanceKm?: number;
+  extraDistanceKm?: number;
+  extraDeliveryFee?: number;
   nearestPickup?: {
     id: number;
     name: string;

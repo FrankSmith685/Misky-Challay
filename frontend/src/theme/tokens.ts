@@ -21,10 +21,9 @@ export type ThemeTokens = {
 
 /** Valores por defecto. Coinciden con styles/index.css para no alterar el look inicial. */
 export const DEFAULT_TOKENS: ThemeTokens = {
-  // Morado mora: tomado de los tonos profundos de la referencia visual.
-  primary: '#602060', // brand-600
-  secondary: '#e8940f', // accent-500
-  tertiary: '#6d5ae8', // NUEVO: violeta de marca
+  primary: '#8b3d59',
+  secondary: '#c28a47',
+  tertiary: '#527363',
   radius: 5,
 };
 
@@ -33,16 +32,16 @@ export const DEFAULT_TOKENS: ThemeTokens = {
  * usuario no ha tocado el primary, para que el arranque sea pixel-identico.
  */
 export const DEFAULT_BRAND_RAMP: ColorRamp = {
-  50: '#f8f1f8',
-  100: '#eddaed',
-  200: '#ddbadf',
-  300: '#c88dc9',
-  400: '#aa62ad',
-  500: '#813b86',
-  600: '#602060',
-  700: '#4e1a4e',
-  800: '#3b143b',
-  900: '#2a0e2a',
+  50: '#fcf5f6',
+  100: '#f5e6eb',
+  200: '#e9cbd6',
+  300: '#d8a5b8',
+  400: '#bf7893',
+  500: '#a55475',
+  600: '#8b3d59',
+  700: '#713047',
+  800: '#572538',
+  900: '#391b28',
 };
 
 /**
@@ -50,16 +49,30 @@ export const DEFAULT_BRAND_RAMP: ColorRamp = {
  * ancla en el stop 500 (no en 600 como brand), asi que 600..900 son sombras.
  */
 export const DEFAULT_ACCENT_RAMP: ColorRamp = {
-  50: '#fff8ea',
-  100: '#fdedcc',
-  200: '#fbdb9a',
-  300: '#f8c162',
-  400: '#f5a524',
-  500: '#e8940f',
-  600: '#a76b0b',
-  700: '#825308',
-  800: '#644006',
-  900: '#4d3105',
+  50: '#fcf7ee',
+  100: '#f6ecd8',
+  200: '#ead6b1',
+  300: '#dbba83',
+  400: '#ce9f60',
+  500: '#c28a47',
+  600: '#a16b31',
+  700: '#805027',
+  800: '#633e23',
+  900: '#442b1c',
+};
+
+/** Color complementario compartido por Tailwind y Material UI. */
+export const DEFAULT_TERTIARY_RAMP: ColorRamp = {
+  50: '#f2f7f3',
+  100: '#e4eee6',
+  200: '#c8dccd',
+  300: '#a2bfa9',
+  400: '#80a48c',
+  500: '#658a73',
+  600: '#527363',
+  700: '#415c4e',
+  800: '#33483d',
+  900: '#24332c',
 };
 
 /**
@@ -83,14 +96,14 @@ export const DEFAULT_ERROR_RAMP: ColorRamp = {
 /**
  * Superficies y tintas neutras. Espejo en JS de los tokens --color-surface,
  * --color-line y --color-ink de styles/index.css, para que el tema de MUI y
- * Tailwind pinten EL MISMO neutro morado en lugar de cuatro casi identicos.
+ * Tailwind pinten los mismos neutros.
  */
 export const SURFACE = {
   base: '#ffffff',
-  muted: '#f8f6f8',
-  line: '#e7e0e7',
-  ink: '#201820',
-  inkMuted: '#675d68',
+  muted: '#faf6f1',
+  line: '#e7ddd5',
+  ink: '#352721',
+  inkMuted: '#76665e',
 } as const;
 
 /** Rampas completas 50..900 derivadas de los tokens gestionables. */
@@ -109,17 +122,15 @@ export type ThemeRamps = {
 export const rampsFromTokens = (tokens: ThemeTokens): ThemeRamps => ({
   brand: tokens.primary === DEFAULT_TOKENS.primary ? DEFAULT_BRAND_RAMP : rampFromHex(tokens.primary),
   accent: tokens.secondary === DEFAULT_TOKENS.secondary ? DEFAULT_ACCENT_RAMP : rampFromHexAt500(tokens.secondary),
-  tertiary: rampFromHex(tokens.tertiary),
+  tertiary: tokens.tertiary === DEFAULT_TOKENS.tertiary ? DEFAULT_TERTIARY_RAMP : rampFromHex(tokens.tertiary),
   error: DEFAULT_ERROR_RAMP,
 });
 
 /** Limites del control de radio (px). */
 export const RADIUS_RANGE = { min: 0, max: 5 } as const;
 
-// v3 reinicia el color por defecto para que el cambio de identidad visual se
-// aplique también a navegadores que ya guardaron los tokens verdes anteriores.
-// La clave nueva evita que un tema verde guardado vuelva a pintar la app.
-const STORAGE_KEY = 'vb.theme.tokens.v3';
+// Conserva la clave del editor y las paletas personalizadas.
+const STORAGE_KEY = 'misky-challay.theme.tokens.v2';
 
 /** Lee los tokens guardados y los combina con los valores por defecto. */
 export const loadTokens = (): ThemeTokens => {
@@ -127,6 +138,12 @@ export const loadTokens = (): ThemeTokens => {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_TOKENS;
     const saved = JSON.parse(raw) as Partial<ThemeTokens>;
+    // Actualiza solo la combinación azul anterior; conserva las paletas elegidas.
+    if (saved.primary?.toLowerCase() === '#006acb'
+      && saved.secondary?.toLowerCase() === '#ff8a0b'
+      && saved.tertiary?.toLowerCase() === '#008dd4') {
+      return { ...DEFAULT_TOKENS, radius: typeof saved.radius === 'number' ? Math.min(RADIUS_RANGE.max, Math.max(RADIUS_RANGE.min, saved.radius)) : DEFAULT_TOKENS.radius };
+    }
     return {
       primary: isHex(saved.primary ?? '') ? saved.primary! : DEFAULT_TOKENS.primary,
       secondary: isHex(saved.secondary ?? '') ? saved.secondary! : DEFAULT_TOKENS.secondary,

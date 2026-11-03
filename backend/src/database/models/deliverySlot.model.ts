@@ -23,6 +23,7 @@ export class DeliverySlot extends Model<
   declare startsAt: Date;
   declare endsAt: Date;
   declare capacity: CreationOptional<number>;
+  declare carCapacity: CreationOptional<number>;
   declare reservedCount: CreationOptional<number>;
   declare confirmedCount: CreationOptional<number>;
   declare orderCutoffAt: Date;
@@ -44,6 +45,7 @@ DeliverySlot.init(
     startsAt: { type: DataTypes.DATE, allowNull: false },
     endsAt: { type: DataTypes.DATE, allowNull: false },
     capacity: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 20 },
+    carCapacity: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
     reservedCount: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
     confirmedCount: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
     orderCutoffAt: { type: DataTypes.DATE, allowNull: false },

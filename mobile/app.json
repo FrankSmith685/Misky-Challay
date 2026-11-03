@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Verde Bowl",
+    "name": "Misky Challay",
     "slug": "frank-smith",
     "scheme": "verdebowl",
     "version": "0.9.0",
@@ -21,9 +21,8 @@
       "package": "com.verdebowl.app",
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#FFFAF4",
         "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
@@ -47,20 +46,20 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Verde Bowl necesita la cámara para leer el QR de tu mesa."
+          "cameraPermission": "Misky Challay necesita la cámara para leer el QR de tu mesa."
         }
       ],
       [
         "expo-notifications",
         {
-          "color": "#237c52",
+          "color": "#0b5fa8",
           "defaultChannel": "order-updates"
         }
       ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Verde Bowl usa tu ubicación mientras eliges una dirección para comprobar la cobertura y ubicar el punto de entrega."
+          "locationWhenInUsePermission": "Misky Challay usa tu ubicación mientras eliges una dirección para comprobar la cobertura y ubicar el punto de entrega."
         }
       ],
       [
@@ -74,12 +73,12 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#123d2b",
+          "backgroundColor": "#FFFAF4",
           "image": "./assets/splash-icon.png",
           "imageWidth": 180,
           "resizeMode": "contain",
           "dark": {
-            "backgroundColor": "#123d2b"
+            "backgroundColor": "#FFFAF4"
           }
         }
       ],

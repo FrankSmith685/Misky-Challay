@@ -54,7 +54,7 @@ const pushCopy = (
     case 'unsupported':
       return {
         title: 'Disponible en la app instalada',
-        text: 'Instala Verde Bowl en tu teléfono para recibir los avisos aunque tengas la app cerrada.',
+        text: 'Instala Misky Challay en tu teléfono para recibir los avisos aunque tengas la app cerrada.',
         action: 'No disponible',
       };
     default:
@@ -108,7 +108,7 @@ export default function AccountScreen() {
 
           <Text style={styles.guestTitle}>Haz que cada pedido sea más fácil</Text>
           <Text style={styles.guestCopy}>
-            Guarda direcciones, preferencias y bowls favoritos. Tu sesión se protege en el
+            Guarda direcciones, preferencias y tortas favoritas. Tu sesión se protege en el
             almacenamiento seguro del teléfono.
           </Text>
 
@@ -142,7 +142,7 @@ export default function AccountScreen() {
   const phone = profile.data?.phone ?? user.phone;
 
   const initials = `${firstName?.[0] ?? ''}${lastName?.[0] ?? ''}`.toUpperCase() || 'VB';
-  const fullName = [firstName, lastName].filter(Boolean).join(' ') || 'Cliente Verde Bowl';
+  const fullName = [firstName, lastName].filter(Boolean).join(' ') || 'Cliente Misky Challay';
   const isStaff = user.isSuperAdmin || user.permissions.length > 0;
 
   const unread = feed.data?.unreadCount ?? 0;
@@ -157,18 +157,6 @@ export default function AccountScreen() {
       copy: unread > 0 ? `${unread} sin leer` : 'Pedidos, saldo y novedades',
       to: '/notifications' as Href,
       badge: unread,
-    },
-    {
-      icon: 'wallet-outline',
-      title: 'Mi saldo',
-      copy: 'Vigencias, bonos y movimientos',
-      to: '/wallet' as Href,
-    },
-    {
-      icon: 'crown-outline',
-      title: 'Planes Verde Bowl',
-      copy: 'Recarga y recibe beneficios',
-      to: '/plans' as Href,
     },
     {
       icon: 'account-edit-outline',
@@ -190,9 +178,15 @@ export default function AccountScreen() {
     },
     {
       icon: 'bookmark-multiple-outline',
-      title: 'Bowls guardados',
+      title: 'Recetas guardadas',
       copy: 'Tus recetas listas para repetir',
       to: '/saved-bowls' as Href,
+    },
+    {
+      icon: 'cake-variant-outline',
+      title: 'Mis diseños de torta',
+      copy: 'Solicitudes, referencias y cotizaciones',
+      to: '/cakes' as Href,
     },
     {
       icon: 'star-check-outline',
@@ -408,7 +402,7 @@ export default function AccountScreen() {
           <Text style={styles.logoutText}>{isBusy ? 'Cerrando…' : 'Cerrar sesión'}</Text>
         </Pressable>
 
-        <Text style={styles.version}>Verde Bowl · versión {appVersion()}</Text>
+        <Text style={styles.version}>Misky Challay · versión {appVersion()}</Text>
       </ScrollView>
     </ScreenScaffold>
   );
@@ -491,7 +485,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 4,
-    backgroundColor: colors.accent500,
+    backgroundColor: colors.accent600,
   },
   bellBadgeText: {
     ...type.caption,
@@ -678,7 +672,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: radius.pill,
-    backgroundColor: colors.accent500,
+    backgroundColor: colors.accent600,
   },
   rowBadgeText: {
     ...type.caption,

@@ -1,3 +1,4 @@
+import { OrderDirectPayment } from '../../src/components/OrderDirectPayment';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Linking, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -142,6 +143,8 @@ export default function CheckoutResultScreen() {
 
   const statusRef = useRef(status);
   statusRef.current = status;
+  const refetchRef = useRef(order.refetch);
+  refetchRef.current = order.refetch;
 
   // El sondeo se apaga en cuanto el pedido deja de esperar el pago.
   useEffect(() => {
@@ -159,7 +162,12 @@ export default function CheckoutResultScreen() {
       setPolling(
         (current) => current || statusRef.current === null || statusRef.current === 'PENDING_PAYMENT',
       );
-    }, []),
+      if (orderNumber) {
+        void ordersApi.reconcilePayment(orderNumber)
+          .then(() => refetchRef.current())
+          .catch(() => undefined);
+      }
+    }, [orderNumber]),
   );
 
   useEffect(() => {
@@ -198,18 +206,7 @@ export default function CheckoutResultScreen() {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      const stored = payment?.checkoutUrl ?? null;
-      /*
-       * Solo se reabre el enlace guardado si el backend confirma que sigue vivo.
-       * `checkoutUrlIsLive` puede faltar contra un servidor que aún no lo
-       * despliega: en ese caso no se afirma nada y se intenta con el guardado.
-       */
-      if (payment?.checkoutUrlIsLive !== false && isSafeCheckoutUrl(stored)) {
-        await openUrl(stored);
-        return;
-      }
-
-      // Sesión caducada: se pide una nueva en lugar de abrir un enlace muerto.
+      // El backend consulta el estado real antes de devolver una URL vigente.
       const retry = await ordersApi.retryPayment(orderNumber);
       if (!isSafeCheckoutUrl(retry.checkoutUrl)) {
         toast.show({
@@ -237,7 +234,7 @@ export default function CheckoutResultScreen() {
     } finally {
       setResuming(false);
     }
-  }, [openUrl, order, orderNumber, payment, toast]);
+  }, [openUrl, order, orderNumber, toast]);
 
   const copy = useMemo<StatusCopy | null>(() => {
     if (status === null) return null;
@@ -301,6 +298,7 @@ export default function CheckoutResultScreen() {
           />
         }
       >
+        <OrderDirectPayment payment={payment?.directPayment} onChanged={() => void order.refetch()} />
         {order.error && !detail ? (
           <EmptyState
             tone="dark"
@@ -362,7 +360,7 @@ export default function CheckoutResultScreen() {
                     {detail.deliveryType === 'PICKUP' ? 'Recojo en' : 'Entrega'}
                   </Text>
                   <Text style={styles.value} numberOfLines={1}>
-                    {detail.branch?.name ?? 'Verde Bowl'}
+                    {detail.branch?.name ?? 'Misky Challay'}
                   </Text>
                 </View>
               ) : null}
@@ -568,8 +566,8 @@ const styles = StyleSheet.create({
   primaryAction: {
     width: '100%',
     marginTop: spacing.lg,
-    backgroundColor: colors.accent500,
-    borderColor: colors.accent500,
+    backgroundColor: colors.accent600,
+    borderColor: colors.accent600,
   },
   action: {
     width: '100%',

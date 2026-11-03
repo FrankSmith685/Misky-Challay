@@ -98,7 +98,7 @@ const PlansPage = () => {
 
       <main className="pb-20 sm:pb-24">
         <section id="planes-disponibles" className="scroll-mt-24">
-          <div className="mx-auto max-w-7xl px-4 pt-12 sm:px-6 sm:pt-16 lg:px-8">
+          <div className="mx-auto max-w-8xl px-4 pt-12 sm:px-6 sm:pt-16 lg:px-8">
             {wallet && wallet.activePlans.length > 0 && (
               <div className="mb-8">
               <Card className="flex flex-col justify-between gap-4 rounded-card border-brand-200 bg-brand-50 p-5 shadow-none sm:flex-row sm:items-center">

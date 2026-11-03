@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getApiErrorMessage } from '@services/api/client';
 import { catalogApi } from '@features/catalog/services/catalog.service';
 import { builderApi } from '../services/builder.service';
@@ -12,11 +12,6 @@ export interface Selection {
   quantity: number;
 }
 
-/**
- * Estado del constructor.
- * La UI decide que se puede pulsar; el PRECIO y la NUTRICION siempre vienen del
- * backend (RN-007/RN-008): una combinacion completa dispara una cotizacion.
- */
 export const useBowlBuilder = (branchId: number | null) => {
   const [config, setConfig] = useState<BuilderConfig | null>(null);
   const [variantId, setVariantId] = useState<number | null>(null);
@@ -72,7 +67,7 @@ export const useBowlBuilder = (branchId: number | null) => {
                 : [];
             });
             if (restoredSelections.length < (saved.selections ?? []).length) {
-              setRestoredNotice('Actualizamos tu bowl guardado porque uno o más ingredientes ya no están disponibles. Revisa las alternativas sugeridas.');
+              setRestoredNotice('Actualizamos tu bowl guardado porque uno o mÃ¡s ingredientes ya no estÃ¡n disponibles. Revisa las alternativas sugeridas.');
             }
           }
         } catch {
@@ -123,7 +118,7 @@ export const useBowlBuilder = (branchId: number | null) => {
     if (!isOnline) {
       setQuote(null);
       setIsQuoting(false);
-      setValidationMessage('Sin conexión. Conservamos tu bowl y actualizaremos el precio cuando vuelvas.');
+      setValidationMessage('Sin conexiÃ³n. Conservamos tu bowl y actualizaremos el precio cuando vuelvas.');
       return;
     }
 
@@ -293,3 +288,4 @@ export const useBowlBuilder = (branchId: number | null) => {
     restoredNotice,
   };
 };
+

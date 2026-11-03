@@ -11,15 +11,6 @@ export type OrderStatus =
   | 'CANCELLED'
   | 'REFUNDED';
 
-export interface Nutrition {
-  calories: number;
-  protein: number;
-  carbs: number;
-  fat: number;
-  fiber?: number;
-  sodium?: number;
-}
-
 export interface Category {
   id: number;
   name: string;
@@ -33,7 +24,6 @@ export interface ProductVariant {
   name: string;
   sku: string;
   basePrice: number;
-  nutrition?: Nutrition | null;
 }
 
 export interface Product {
@@ -48,7 +38,6 @@ export interface Product {
   variants: ProductVariant[];
   dietaryTags: string[];
   allergens: string[];
-  nutrition?: Nutrition | null;
   isAvailable: boolean;
 }
 
@@ -56,7 +45,6 @@ export interface CustomizationOption {
   id: number;
   name: string;
   priceDelta: number;
-  nutrition?: Nutrition | null;
   isAvailable: boolean;
 }
 
@@ -83,6 +71,7 @@ export interface CartItemSelection {
 export interface CartItem {
   id: string;
   productId: number;
+  slug?: string;
   variantId: number;
   name: string;
   variantName: string;
@@ -92,7 +81,20 @@ export interface CartItem {
   extrasTotal: number;
   lineTotal: number;
   selections: CartItemSelection[];
-  nutrition?: Nutrition | null;
+  designQuoteId?: number;
+  approvedDesignSummary?: string;
+  theme?: import('@features/cakes/cakeThemes.service').ThemeSnapshot;
+  requestedServings?: number;
+  preferredSlotId?: number;
+  requiresScheduledDelivery?: boolean;
+  requiresCarDelivery?: boolean;
+  minLeadHours?: number;
+  specialInstructions?: string;
+  referenceDataUrl?: string;
+  cakeAiProposal?: { dataUrl: string; recipe: Omit<import('@features/cakes/cakes.service').CakeVisualPreviewInput, 'referenceDataUrl'> };
+  designDetails?: { inscription: string; occasion: string; finish: string };
+  archivedAiProposalDataUrl?: string;
+  cakeVisualDesign?: import('@features/cakes/utils/cakeVisualDesign').CakeVisualDesign;
 }
 
 export interface User {

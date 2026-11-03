@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import type { ReactNode } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radius, shadow, spacing, type } from '../theme/tokens';
 import { BrandLogo } from './BrandLogo';
@@ -32,6 +32,7 @@ export function AuthScaffold({ eyebrow, title, description, children }: AuthScaf
           <View style={styles.backSpacer} />
         </View>
         <View style={styles.intro}>
+          <Image source={require('../../assets/misky-challay-square.jpeg')} style={styles.brandArtwork} resizeMode="cover" accessibilityLabel="Misky Challay, Pastelería Personalizada" />
           <Text style={styles.eyebrow}>{eyebrow}</Text>
           <Text style={styles.title}>{title}</Text>
           <Text style={styles.description}>{description}</Text>
@@ -50,6 +51,7 @@ const styles = StyleSheet.create({
   back: { width: 46, height: 46, borderRadius: 16, backgroundColor: colors.surfaceDarkRaised, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,.12)' },
   backSpacer: { width: 42 },
   intro: { paddingHorizontal: spacing.sm, paddingTop: spacing.xxl, paddingBottom: spacing.xl },
+  brandArtwork: { width: 112, height: 112, borderRadius: radius.lg, marginBottom: spacing.lg },
   eyebrow: { ...type.label, color: colors.accent400, letterSpacing: 1.3, textTransform: 'uppercase' },
   title: { ...type.hero, color: colors.onDark, marginTop: 8 },
   description: { ...type.body, color: colors.onDarkMuted, marginTop: 10 },

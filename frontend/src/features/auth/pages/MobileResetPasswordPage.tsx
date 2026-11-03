@@ -28,7 +28,7 @@ const MobileResetPasswordPage = () => {
   return (
     <AuthShell
       eyebrow="Recuperación desde la app"
-      title={token ? 'Continúa en Verde Bowl' : 'El enlace está incompleto'}
+      title={token ? 'Continúa en Misky Challay' : 'El enlace está incompleto'}
       description={
         token
           ? 'Estamos abriendo la app para que crees tu nueva contraseña de forma segura.'
@@ -47,7 +47,7 @@ const MobileResetPasswordPage = () => {
             className="w-full"
             leftIcon={<Smartphone className="size-4" />}
           >
-            Abrir la app Verde Bowl
+            Abrir la app Misky Challay
           </Button>
           <Button
             component={Link}

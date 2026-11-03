@@ -44,9 +44,9 @@ export const LocationModal = () => {
           ? 'Las direcciones y locales elegidos pertenecen a una cuenta y no se guardan para visitantes.'
           : hasPickup
           ? 'Tu pedido se preparará en este local. Para recojo no necesitas ingresar una dirección de entrega.'
-          : 'Busca la dirección, confirma la entrada en el mapa y validaremos la cobertura automáticamente.'
+          : 'Busca la dirección, confirma la entrada en el mapa y comprobaremos si llegamos hasta allí.'
       }
-      eyebrow={requiresAuth ? 'Acceso necesario' : hasPickup ? 'Recojo seleccionado' : 'Cobertura de delivery'}
+      eyebrow={requiresAuth ? 'Acceso necesario' : hasPickup ? 'Recojo seleccionado' : 'Zona de entrega'}
       icon={requiresAuth ? LockKeyhole : hasPickup ? Store : MapPinned}
       maxWidth="xl"
     >

@@ -4,9 +4,9 @@ import { asyncHandler } from '@shared/utils/asyncHandler';
 import { ApiError } from '@shared/errors/ApiError';
 import { audit } from '@shared/utils/audit';
 import { accountService } from './account.service';
-import { notificationsService } from '@modules/notifications/notifications.service';
 import { availabilityAlertsService } from '@modules/catalog/availabilityAlerts.service';
 import { mobilePushService } from '@modules/notifications/mobilePush.service';
+import { notificationFeed, type FeedAudience } from '@modules/notifications/notificationFeed.service';
 
 const requireUserId = (req: Request): number => {
   if (!req.user) throw ApiError.unauthorized();
@@ -47,10 +47,13 @@ export const accountController = {
     return noContent(res);
   }),
   listNotifications: asyncHandler(async (req: Request, res: Response) =>
-    ok(res, await notificationsService.listForUser(requireUserId(req))),
+    ok(res, (await notificationFeed.list(req.user!, 'ALL', 1, 50)).items),
+  ),
+  notificationFeed: asyncHandler(async (req: Request, res: Response) =>
+    ok(res, await notificationFeed.list(req.user!, req.query.audience as FeedAudience, Number(req.query.page), Number(req.query.pageSize))),
   ),
   markNotificationsRead: asyncHandler(async (req: Request, res: Response) => {
-    await notificationsService.markAllRead(requireUserId(req));
+    await notificationFeed.read(req.user!, req.body ?? { all: true });
     return ok(res, null, 'Notificaciones marcadas como leidas');
   }),
   getFoodPreferences: asyncHandler(async (req: Request, res: Response) =>

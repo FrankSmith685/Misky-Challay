@@ -289,7 +289,7 @@ export default function WalletScreen() {
           <Text style={styles.cardCopy}>Tu saldo pagado vigente puede seguir utilizándose.</Text>
 
           <PrimaryButton
-            label="Comparar planes"
+            label="Ver cajas mensuales"
             variant="secondary"
             onPress={() => router.push('/plans' as Href)}
             style={styles.cardButton}
@@ -320,7 +320,7 @@ export default function WalletScreen() {
 
                 <View style={styles.lotText}>
                   <Text style={styles.lotName}>
-                    {lot.planName || (lot.kind === 'REFUND' ? 'Devolución' : 'Saldo Verde Bowl')}
+                    {lot.planName || (lot.kind === 'REFUND' ? 'Devolución' : 'Saldo Misky Challay')}
                   </Text>
 
                   <Text style={styles.lotDate}>
@@ -361,7 +361,7 @@ export default function WalletScreen() {
       headerRight={
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Ver los planes"
+          accessibilityLabel="Ver cajas mensuales"
           onPress={() => router.push('/plans' as Href)}
           style={({ pressed }) => [styles.plansLink, pressed && styles.pressed]}
         >

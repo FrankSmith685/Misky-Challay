@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import axios from 'axios';
+import { useAppSelector } from '@app/hooks';
+import { useConfirm } from '@components/ui/ConfirmDialog';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import {
   Armchair, Banknote, CalendarDays, ChefHat, CirclePlus, Clock3, Copy, FileText,
@@ -38,6 +41,8 @@ interface CartLine extends DiningProduct { quantity: number }
 interface PaymentPart { method: DiningPaymentMethod; amount: string }
 
 const DiningPage = () => {
+  const userId = useAppSelector((state) => state.auth.user?.id);
+  const confirm = useConfirm();
   const receiptSettings = useReceiptSettings();
   const fiscalEnabled = receiptSettings.mode !== 'INTERNAL_ONLY';
   const { branchId, branches, setBranchId, isLoadingBranches, branchesError, reloadBranches } = useActiveBranch();
@@ -53,6 +58,15 @@ const DiningPage = () => {
   const [guestName, setGuestName] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [pendingCommand, setPendingCommand] = useState(false);
+  const commandAttempt = useRef<{ key: string; table: DiningTableRow; cart: CartLine[]; guestName: string; notes: string } | null>(null);
+  const attemptStorage = `dulceflow:dining-attempt:${userId}:${branchId}`;
+  const currentBranch = useRef(branchId); currentBranch.current = branchId;
+  const changeBranch = async (next: number) => {
+    if (saving || pendingCommand) { toast.error('Recupera primero la comanda pendiente.'); return; }
+    if ((cart.length || closing) && !(await confirm({ title: 'Cambiar de sucursal', message: 'Se descartará el borrador de esta sucursal.', confirmLabel: 'Descartar y cambiar' })).confirmed) return;
+    setBranchId(next);
+  };
   const [tableModal, setTableModal] = useState(false);
   const [newTable, setNewTable] = useState({ code: '', area: 'Salón principal', capacity: '2' });
   const [closing, setClosing] = useState<DiningTableRow | null>(null);
@@ -66,24 +80,34 @@ const DiningPage = () => {
   const [offering, setOffering] = useState({ productKey: '', name: '', price: '', weekdays: [1, 2, 3, 4, 5], startsAt: '11:00', endsAt: '16:00', dailyLimit: '' });
 
   useEffect(() => {
-    setSelectedTable(null); setCart([]); setClosing(null); setQrTable(null); setCatalog([]); setOfferings([]);
-  }, [branchId]);
+    setSelectedTable(null); setCart([]); setClosing(null); setQrTable(null); setCatalog([]); setOfferings([]); setCatalogLoading(false);
+    commandAttempt.current = null; setPendingCommand(false);
+    try {
+      const stored = sessionStorage.getItem(attemptStorage);
+      if (stored) { const restored = JSON.parse(stored) as { key: string; table: DiningTableRow; cart: CartLine[]; guestName: string; notes: string };
+        commandAttempt.current = restored; setPendingCommand(true); setSelectedTable(restored.table); setCart(restored.cart); setGuestName(restored.guestName); setNotes(restored.notes);
+      }
+    } catch { toast.error('No se pudo recuperar la comanda pendiente. Revisa las mesas antes de enviar otra.'); setPendingCommand(true); }
+  }, [branchId, attemptStorage]);
 
   const activeBranch = branches.find((branch) => branch.id === branchId);
   const loadCatalog = async () => {
     if (!branchId || catalogLoading) return;
     setCatalogLoading(true);
-    try { setCatalog(await adminApi.diningCatalog(branchId)); }
+    const source = branchId;
+    try { const rows = await adminApi.diningCatalog(branchId); if (currentBranch.current === source) setCatalog(rows); }
     catch (loadError) { toast.error(getApiErrorMessage(loadError)); }
-    finally { setCatalogLoading(false); }
+    finally { if (currentBranch.current === source) setCatalogLoading(false); }
   };
 
   const openOrderModal = (table: DiningTableRow) => {
+    if (pendingCommand || saving) return;
     setSelectedTable(table); setCart([]); setGuestName(''); setNotes(''); setCatalogQuery('');
     void loadCatalog();
   };
 
   const changeQuantity = (product: DiningProduct, delta: number) => {
+    if (pendingCommand || saving) return;
     setCart((current) => {
       const existing = current.find((line) => line.productId === product.productId && line.variantId === product.variantId);
       const quantity = (existing?.quantity ?? 0) + delta;
@@ -101,20 +125,21 @@ const DiningPage = () => {
   }, [catalog, catalogQuery]);
 
   const submitCommand = async () => {
-    if (!branchId || !selectedTable || cart.length === 0) return;
+    if (!canOperate || saving || !branchId || !selectedTable || !cart.length || (pendingCommand && !commandAttempt.current)) return;
+    const attempt = commandAttempt.current ?? { key: crypto.randomUUID(), table: selectedTable, cart, guestName, notes };
+    commandAttempt.current = attempt;
     setSaving(true);
-    const items = cart.map((line) => ({ productId: line.productId, variantId: line.variantId, offeringId: line.offering?.id, quantity: line.quantity }));
+    const items = attempt.cart.map((line) => ({ productId: line.productId, variantId: line.variantId, offeringId: line.offering?.id, quantity: line.quantity }));
     try {
-      if (selectedTable.command) {
-        await adminApi.addDiningCommandItems(selectedTable.command.orderNumber, branchId, items);
-        toast.success('Productos agregados y avisados a cocina');
-      } else {
-        const result = await adminApi.openDiningCommand({ branchId, tableId: selectedTable.id, guestName: guestName.trim() || undefined, notes: notes.trim() || undefined, items });
-        toast.success(`Comanda ${result.orderNumber} enviada a cocina`);
-      }
-      setSelectedTable(null); setCart([]); refresh();
-    } catch (submitError) { toast.error(getApiErrorMessage(submitError)); }
-    finally { setSaving(false); }
+      sessionStorage.setItem(attemptStorage, JSON.stringify(attempt)); setPendingCommand(true);
+      if (attempt.table.command) await adminApi.addDiningCommandItems(attempt.table.command.orderNumber, branchId, items, attempt.key);
+      else await adminApi.openDiningCommand({ branchId, tableId: attempt.table.id, guestName: attempt.guestName.trim() || undefined, notes: attempt.notes.trim() || undefined, items, idempotencyKey: attempt.key });
+      sessionStorage.removeItem(attemptStorage); commandAttempt.current = null; setPendingCommand(false);
+      toast.success('Comanda registrada y enviada a cocina'); setSelectedTable(null); setCart([]); refresh();
+    } catch (cause) {
+      if (axios.isAxiosError(cause) && cause.response && cause.response.status < 500) { sessionStorage.removeItem(attemptStorage); commandAttempt.current = null; setPendingCommand(false); }
+      toast.error(getApiErrorMessage(cause));
+    } finally { setSaving(false); }
   };
 
   const submitTable = async () => {
@@ -181,7 +206,7 @@ const DiningPage = () => {
   const qrUrl = qrTable ? `${window.location.origin}/mesa/${qrTable.qrToken}` : '';
   useEffect(() => {
     if (!qrUrl) { setQrImage(''); return; }
-    void QRCode.toDataURL(qrUrl, { width: 420, margin: 2, color: { dark: '#4e1a4e', light: '#ffffff' } })
+    void QRCode.toDataURL(qrUrl, { width: 420, margin: 2, color: { dark: '#0050a6', light: '#ffffff' } })
       .then(setQrImage)
       .catch(() => toast.error('No se pudo generar el QR'));
   }, [qrUrl]);
@@ -192,7 +217,7 @@ const DiningPage = () => {
   const tables = data ?? [];
   const occupied = tables.filter((table) => table.status === 'OCCUPIED');
   const ready = occupied.filter((table) => table.command?.status === 'READY');
-  const header = <PageHeader eyebrow="Atención en restaurante" title="Salón y comandas" description="Controla mesas, carta del día, cocina, precuenta y cobro por cada local." icon={Armchair} action={<><BranchSelector value={branchId} branches={branches} onChange={setBranchId} hasError={Boolean(branchesError)} />{canOperate && <Button variant="outline" leftIcon={<CalendarDays className="size-4" />} onClick={() => void openOfferings()}>Menús del día</Button>}{canOperate && <Button leftIcon={<CirclePlus className="size-4" />} onClick={() => setTableModal(true)}>Agregar mesa</Button>}</>} />;
+  const header = <PageHeader eyebrow="Atención en restaurante" title="Salón y comandas" description="Controla mesas, carta del día, cocina, precuenta y cobro por cada local." icon={Armchair} action={<><BranchSelector value={branchId} branches={branches} disabled={saving || pendingCommand} onChange={(next) => void changeBranch(next)} hasError={Boolean(branchesError)} />{canOperate && <Button variant="outline" leftIcon={<CalendarDays className="size-4" />} onClick={() => void openOfferings()}>Menús del día</Button>}{canOperate && <Button leftIcon={<CirclePlus className="size-4" />} onClick={() => setTableModal(true)}>Agregar mesa</Button>}</>} />;
   if (branchesError) return <div>{header}<LoadError message={branchesError} onRetry={() => void reloadBranches()} /></div>;
   if (error && !data) return <div>{header}<LoadError title="No pudimos cargar el salón" message={error} onRetry={refresh} /></div>;
 
@@ -207,16 +232,16 @@ const DiningPage = () => {
       const status = table.command ? STATUS_LABEL[table.command.status] ?? { label: table.command.status, variant: 'brand' as const } : null;
       return <Card key={table.id} className={cn('overflow-hidden p-0', table.status === 'AVAILABLE' ? 'border-brand-200' : table.command?.status === 'READY' ? 'border-brand-400 shadow-e3' : 'border-amber-200')}>
         <div className={cn('flex items-start justify-between gap-3 border-b p-4', table.status === 'AVAILABLE' ? 'border-brand-100 bg-brand-50/60' : table.command?.status === 'READY' ? 'border-brand-100 bg-brand-50' : 'border-amber-100 bg-amber-50/60')}><div><p className="text-lg font-black">{table.code}</p><p className="text-xs text-ink-muted">{table.area} · {table.capacity} personas</p></div>{table.status === 'AVAILABLE' ? <Badge variant="success">Disponible</Badge> : status && <Badge variant={status.variant}>{status.label}</Badge>}</div>
-        <div className="p-4">{table.command ? <><div className="flex items-start justify-between gap-3"><div><b>{table.command.guestName}</b><p className="mt-1 text-xs text-ink-muted">{table.command.waiterName} · {formatRelative(new Date(table.command.openedAt))}</p></div><b className="text-lg text-brand-800">{formatCurrency(table.command.total)}</b></div><div className="mt-4 rounded-card bg-surface-muted p-3"><p className="text-[10px] font-bold uppercase tracking-wide text-ink-muted">{table.command.orderNumber}</p><div className="mt-2 space-y-1">{table.command.items.map((item) => <div key={item.id} className="flex justify-between gap-3 text-sm"><span>{item.quantity}× {item.name}</span><span className="font-semibold">{formatCurrency(item.total)}</span></div>)}</div></div><div className="mt-4 grid grid-cols-2 gap-2"><Button size="sm" variant="outline" leftIcon={<Printer className="size-4" />} onClick={() => printPrebill(table, activeBranch?.name ?? 'Verde Bowl')}>Precuenta</Button>{table.command.status === 'READY' ? <Button size="sm" leftIcon={<Banknote className="size-4" />} onClick={() => openClose(table)}>Cobrar</Button> : table.command.canAddItems ? <Button size="sm" leftIcon={<Plus className="size-4" />} onClick={() => openOrderModal(table)}>Agregar</Button> : <Button size="sm" variant="outline" disabled leftIcon={<Clock3 className="size-4" />}>En cocina</Button>}</div></> : <><p className="text-sm text-ink-muted">Lista para recibir comensales.</p>{canOperate && <Button className="mt-4 w-full" variant="outline" leftIcon={<ReceiptText className="size-4" />} onClick={() => openOrderModal(table)}>Abrir comanda</Button>}</>}
+        <div className="p-4">{table.command ? <><div className="flex items-start justify-between gap-3"><div><b>{table.command.guestName}</b><p className="mt-1 text-xs text-ink-muted">{table.command.waiterName} · {formatRelative(new Date(table.command.openedAt))}</p></div><b className="text-lg text-brand-800">{formatCurrency(table.command.total)}</b></div><div className="mt-4 rounded-card bg-surface-muted p-3"><p className="text-[10px] font-bold uppercase tracking-wide text-ink-muted">{table.command.orderNumber}</p><div className="mt-2 space-y-1">{table.command.items.map((item) => <div key={item.id} className="flex justify-between gap-3 text-sm"><span>{item.quantity}× {item.name}</span><span className="font-semibold">{formatCurrency(item.total)}</span></div>)}</div></div><div className="mt-4 grid grid-cols-2 gap-2"><Button size="sm" variant="outline" leftIcon={<Printer className="size-4" />} onClick={() => printPrebill(table, activeBranch?.name ?? 'Misky Challay')}>Precuenta</Button>{table.command.status === 'READY' ? <Button size="sm" leftIcon={<Banknote className="size-4" />} onClick={() => openClose(table)}>Cobrar</Button> : table.command.canAddItems ? <Button size="sm" leftIcon={<Plus className="size-4" />} onClick={() => openOrderModal(table)}>Agregar</Button> : <Button size="sm" variant="outline" disabled leftIcon={<Clock3 className="size-4" />}>En cocina</Button>}</div></> : <><p className="text-sm text-ink-muted">Lista para recibir comensales.</p>{canOperate && <Button className="mt-4 w-full" variant="outline" leftIcon={<ReceiptText className="size-4" />} onClick={() => openOrderModal(table)}>Abrir comanda</Button>}</>}
           <Button className="mt-2 w-full" size="sm" variant="ghost" leftIcon={<QrCode className="size-4" />} onClick={() => setQrTable(table)}>QR de esta mesa</Button>
         </div>
       </Card>;
     })}</div>}
 
-    <Modal isOpen={selectedTable !== null} onClose={() => setSelectedTable(null)} title={`${selectedTable?.command ? 'Agregar a' : 'Nueva comanda'} · ${selectedTable?.code ?? ''}`} description={selectedTable?.command ? 'Los productos nuevos se sumarán al total y cocina los verá en la comanda.' : `Se enviará a la cocina de ${activeBranch?.name ?? 'este local'}.`} icon={ChefHat} eyebrow="Toma de pedido" maxWidth="xl" disableBackdropClose actions={<><Button variant="outline" onClick={() => setSelectedTable(null)}>Cancelar</Button><Button isLoading={saving} disabled={!cart.length} onClick={() => void submitCommand()}>{selectedTable?.command ? 'Agregar' : 'Enviar'} {cartUnits} · {formatCurrency(cartTotal)}</Button></>}>
+    <Modal isOpen={selectedTable !== null} onClose={() => { if (!saving && !pendingCommand) setSelectedTable(null); }} title={`${selectedTable?.command ? 'Agregar a' : 'Nueva comanda'} · ${selectedTable?.code ?? ''}`} description={selectedTable?.command ? 'Los productos nuevos se sumarán al total y cocina los verá en la comanda.' : `Se enviará a la cocina de ${activeBranch?.name ?? 'este local'}.`} icon={ChefHat} eyebrow="Toma de pedido" maxWidth="xl" disableBackdropClose actions={<><Button disabled={saving || pendingCommand} variant="outline" onClick={() => setSelectedTable(null)}>Cancelar</Button><Button isLoading={saving} disabled={!cart.length} onClick={() => void submitCommand()}>{pendingCommand ? 'Recuperar comanda pendiente' : selectedTable?.command ? 'Agregar' : 'Enviar'} {cartUnits} · {formatCurrency(cartTotal)}</Button></>}>
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]"><section><div className="mb-4 flex items-center gap-2 rounded-field border border-line bg-white px-3"><Search className="size-4 text-ink-muted" /><input className="h-11 min-w-0 flex-1 bg-transparent outline-none" value={catalogQuery} onChange={(event) => setCatalogQuery(event.target.value)} placeholder="Buscar plato" /></div>
         {catalogLoading ? <div className="grid min-h-52 place-items-center text-ink-muted">Cargando carta…</div> : <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{visibleCatalog.map((product) => { const line = cart.find((item) => item.productId === product.productId && item.variantId === product.variantId); return <button type="button" key={`${product.productId}-${product.variantId}`} disabled={!product.isAvailable} onClick={() => changeQuantity(product, 1)} className={cn('group overflow-hidden rounded-card border bg-white text-left transition hover:border-brand-300 hover:shadow-e3 disabled:opacity-50', line ? 'border-brand-500 ring-1 ring-brand-500' : 'border-line')}><div className="relative aspect-[16/9] overflow-hidden bg-surface-muted">{product.imageUrl ? <img src={product.imageUrl} alt="" className="size-full object-cover transition group-hover:scale-105" /> : <span className="grid size-full place-items-center"><ChefHat className="size-8 text-brand-500" /></span>}{product.offering && <Badge className="absolute left-2 top-2" variant="warning">Menú · {product.offering.remaining ?? '∞'} disp.</Badge>}{line && <span className="absolute right-2 top-2 grid size-7 place-items-center rounded-full bg-brand-700 text-xs font-black text-white">{line.quantity}</span>}</div><div className="p-3"><b className="line-clamp-2 text-sm">{product.name}</b><p className="text-xs text-ink-muted">{product.variantName}</p><p className="mt-3 font-black text-brand-800">{formatCurrency(product.price)}</p></div></button>; })}</div>}
-      </section><aside className="h-fit rounded-card border border-line bg-surface-muted/70 p-4 lg:sticky lg:top-0"><div className="flex justify-between"><div><p className="text-xs font-bold uppercase text-brand-700">Resumen</p><h3 className="font-black">{selectedTable?.code}</h3></div><Badge variant={cartUnits ? 'solid' : 'neutral'}>{cartUnits}</Badge></div>{!selectedTable?.command && <div className="mt-4 grid gap-3"><Input label="Cliente (opcional)" value={guestName} onChange={(event) => setGuestName(event.target.value)} /><Input label="Nota para cocina" value={notes} onChange={(event) => setNotes(event.target.value)} /></div>}<div className="mt-4 max-h-72 space-y-2 overflow-y-auto">{cart.length ? cart.map((line) => <div key={`${line.productId}-${line.variantId}`} className="rounded-card border border-line bg-white p-3"><div className="flex justify-between gap-2"><b className="truncate text-sm">{line.name}</b><b className="text-sm">{formatCurrency(line.price * line.quantity)}</b></div><div className="mt-2 flex items-center gap-2"><Button size="sm" variant="outline" onClick={() => changeQuantity(line, -1)}><Minus className="size-4" /></Button><b>{line.quantity}</b><Button size="sm" variant="outline" onClick={() => changeQuantity(line, 1)}><Plus className="size-4" /></Button></div></div>) : <p className="rounded-card border border-dashed p-6 text-center text-sm text-ink-muted">Toca un plato para agregarlo.</p>}</div><div className="mt-4 flex justify-between border-t border-line pt-4"><b>Total</b><b className="text-xl text-brand-800">{formatCurrency(cartTotal)}</b></div></aside></div>
+      </section><aside className="h-fit rounded-card border border-line bg-surface-muted/70 p-4 lg:sticky lg:top-0"><div className="flex justify-between"><div><p className="text-xs font-bold uppercase text-brand-700">Resumen</p><h3 className="font-black">{selectedTable?.code}</h3></div><Badge variant={cartUnits ? 'solid' : 'neutral'}>{cartUnits}</Badge></div>{!selectedTable?.command && <div className="mt-4 grid gap-3"><Input label="Cliente (opcional)" disabled={saving || pendingCommand} value={guestName} onChange={(event) => setGuestName(event.target.value)} /><Input label="Nota para cocina" disabled={saving || pendingCommand} value={notes} onChange={(event) => setNotes(event.target.value)} /></div>}<div className="mt-4 max-h-72 space-y-2 overflow-y-auto">{cart.length ? cart.map((line) => <div key={`${line.productId}-${line.variantId}`} className="rounded-card border border-line bg-white p-3"><div className="flex justify-between gap-2"><b className="truncate text-sm">{line.name}</b><b className="text-sm">{formatCurrency(line.price * line.quantity)}</b></div><div className="mt-2 flex items-center gap-2"><Button size="sm" variant="outline" onClick={() => changeQuantity(line, -1)}><Minus className="size-4" /></Button><b>{line.quantity}</b><Button size="sm" variant="outline" onClick={() => changeQuantity(line, 1)}><Plus className="size-4" /></Button></div></div>) : <p className="rounded-card border border-dashed p-6 text-center text-sm text-ink-muted">Toca un plato para agregarlo.</p>}</div><div className="mt-4 flex justify-between border-t border-line pt-4"><b>Total</b><b className="text-xl text-brand-800">{formatCurrency(cartTotal)}</b></div></aside></div>
     </Modal>
 
     <Modal isOpen={tableModal} onClose={() => setTableModal(false)} title="Agregar mesa" description={`Se creará únicamente en ${activeBranch?.name ?? 'este local'}.`} icon={Armchair} eyebrow="Configuración del salón" actions={<><Button variant="outline" onClick={() => setTableModal(false)}>Cancelar</Button><Button isLoading={saving} disabled={!newTable.code.trim()} onClick={() => void submitTable()}>Crear mesa</Button></>}><div className="grid gap-4 sm:grid-cols-2"><Input label="Código" value={newTable.code} onChange={(event) => setNewTable((value) => ({ ...value, code: event.target.value }))} placeholder="Mesa 01" /><Input label="Zona" value={newTable.area} onChange={(event) => setNewTable((value) => ({ ...value, area: event.target.value }))} /><Input label="Capacidad" type="number" min="1" max="20" value={newTable.capacity} onChange={(event) => setNewTable((value) => ({ ...value, capacity: event.target.value }))} /></div></Modal>
@@ -240,7 +265,7 @@ const DiningPage = () => {
 
     <Modal isOpen={offeringsModal} onClose={() => setOfferingsModal(false)} title="Menús del día" description="Programa por local, días, horario, precio y número de porciones." icon={CalendarDays} eyebrow="Carta de salón" maxWidth="lg" actions={<Button variant="outline" onClick={() => setOfferingsModal(false)}>Cerrar</Button>}><div className="grid gap-6 lg:grid-cols-[1fr_1.1fr]"><section className="rounded-card border border-line bg-surface-muted/50 p-4"><h3 className="font-black">Nueva programación</h3><div className="mt-4 grid gap-3"><label className="text-sm font-bold">Producto<select className="mt-1 h-12 w-full rounded-field border border-line bg-white px-3 font-normal" value={offering.productKey} onChange={(event) => { const product = catalog.find((row) => `${row.productId}:${row.variantId}` === event.target.value); setOffering((value) => ({ ...value, productKey: event.target.value, name: product?.name ?? '', price: product ? String(product.price) : '' })); }}><option value="">Selecciona un plato</option>{catalog.map((product) => <option key={`${product.productId}:${product.variantId}`} value={`${product.productId}:${product.variantId}`}>{product.name} · {formatCurrency(product.price)}</option>)}</select></label><Input label="Nombre visible" value={offering.name} onChange={(event) => setOffering((value) => ({ ...value, name: event.target.value }))} /><div className="grid grid-cols-2 gap-3"><Input label="Precio salón" type="number" step=".10" value={offering.price} onChange={(event) => setOffering((value) => ({ ...value, price: event.target.value }))} /><Input label="Porciones (vacío = sin límite)" type="number" value={offering.dailyLimit} onChange={(event) => setOffering((value) => ({ ...value, dailyLimit: event.target.value }))} /><Input label="Desde" type="time" value={offering.startsAt} onChange={(event) => setOffering((value) => ({ ...value, startsAt: event.target.value }))} /><Input label="Hasta" type="time" value={offering.endsAt} onChange={(event) => setOffering((value) => ({ ...value, endsAt: event.target.value }))} /></div><div><p className="mb-2 text-xs font-bold uppercase text-ink-muted">Días</p><div className="flex gap-2">{WEEKDAYS.map((day, index) => <button key={index} type="button" onClick={() => setOffering((value) => ({ ...value, weekdays: value.weekdays.includes(index) ? value.weekdays.filter((valueIndex) => valueIndex !== index) : [...value.weekdays, index] }))} className={cn('grid size-9 place-items-center rounded-full border font-bold', offering.weekdays.includes(index) ? 'border-brand-600 bg-brand-700 text-white' : 'border-line bg-white')}>{day}</button>)}</div></div><Button isLoading={saving} disabled={!offering.productKey || !offering.name || !offering.price || !offering.weekdays.length} onClick={() => void submitOffering()}>Programar menú</Button></div></section><section><h3 className="font-black">Programaciones del local</h3><div className="mt-4 space-y-3">{offerings.length ? offerings.map((row) => <div key={row.id} className="rounded-card border border-line p-4"><div className="flex items-start justify-between gap-3"><div><div className="flex flex-wrap gap-2"><Badge variant={row.activeNow ? 'success' : row.isActive ? 'warning' : 'neutral'}>{row.activeNow ? 'Disponible ahora' : row.isActive ? 'Fuera de horario' : 'Pausado'}</Badge>{row.remaining !== null && <Badge variant={row.remaining <= 3 ? 'danger' : 'neutral'}>{row.remaining} porciones</Badge>}</div><b className="mt-2 block">{row.name}</b><p className="text-xs text-ink-muted">{row.startsAt}–{row.endsAt} · {row.weekdays.map((day) => WEEKDAYS[day]).join(' ')} · {formatCurrency(row.price)}</p></div><Button size="sm" variant="outline" onClick={() => void toggleOffering(row)}>{row.isActive ? 'Pausar' : 'Activar'}</Button></div></div>) : <div className="rounded-card border border-dashed p-8 text-center text-sm text-ink-muted">Aún no hay menús programados en este local.</div>}</div></section></div></Modal>
 
-    <Modal isOpen={qrTable !== null} onClose={() => setQrTable(null)} title={`QR · ${qrTable?.code ?? ''}`} description="El comensal abre la carta de este local y su pedido llega a la mesa correcta." icon={QrCode} eyebrow="Pedido autónomo en mesa" actions={<Button variant="outline" onClick={() => setQrTable(null)}>Cerrar</Button>}><div className="grid gap-4"><div className="rounded-card border border-brand-100 bg-brand-50 p-5 text-center">{qrImage ? <img src={qrImage} alt={`QR de ${qrTable?.code ?? 'mesa'}`} className="mx-auto size-56 rounded-card bg-white p-2 shadow-e2" /> : <Smartphone className="mx-auto size-9 text-brand-700" />}<b className="mt-3 block">Carta digital de {qrTable?.code}</b><p className="mt-2 break-all text-xs text-ink-muted">{qrUrl}</p></div><div className="grid gap-2 sm:grid-cols-2"><Button variant="outline" leftIcon={<Copy className="size-4" />} onClick={() => void navigator.clipboard.writeText(qrUrl).then(() => toast.success('Enlace copiado'))}>Copiar enlace</Button>{qrTable && <Button variant="outline" disabled={!qrImage} leftIcon={<Printer className="size-4" />} onClick={() => printTableQrCard(qrTable, activeBranch?.name ?? 'Verde Bowl', qrUrl, qrImage)}>Imprimir cartel</Button>}</div><p className="flex gap-2 rounded-field bg-surface-muted p-3 text-xs text-ink-muted"><FileText className="size-4 shrink-0" /> Si renuevas el token, los carteles anteriores dejan de funcionar. Esto permite revocar un enlace compartido fuera del local.</p>{qrTable && branchId && <div className="flex flex-wrap gap-2"><Button size="sm" variant="ghost" leftIcon={<WalletCards className="size-4" />} onClick={() => void adminApi.updateDiningTableQr(qrTable.id, { branchId, enabled: !qrTable.qrEnabled }).then(() => { toast.success(qrTable.qrEnabled ? 'QR desactivado' : 'QR activado'); setQrTable(null); refresh(); })}>{qrTable.qrEnabled ? 'Desactivar QR' : 'Activar QR'}</Button><Button size="sm" variant="ghost" leftIcon={<QrCode className="size-4" />} onClick={() => void adminApi.updateDiningTableQr(qrTable.id, { branchId, regenerate: true }).then(() => { toast.success('Enlace renovado'); setQrTable(null); refresh(); })}>Renovar enlace</Button></div>}</div></Modal>
+    <Modal isOpen={qrTable !== null} onClose={() => setQrTable(null)} title={`QR · ${qrTable?.code ?? ''}`} description="El comensal abre la carta de este local y su pedido llega a la mesa correcta." icon={QrCode} eyebrow="Pedido autónomo en mesa" actions={<Button variant="outline" onClick={() => setQrTable(null)}>Cerrar</Button>}><div className="grid gap-4"><div className="rounded-card border border-brand-100 bg-brand-50 p-5 text-center">{qrImage ? <img src={qrImage} alt={`QR de ${qrTable?.code ?? 'mesa'}`} className="mx-auto size-56 rounded-card bg-white p-2 shadow-e2" /> : <Smartphone className="mx-auto size-9 text-brand-700" />}<b className="mt-3 block">Carta digital de {qrTable?.code}</b><p className="mt-2 break-all text-xs text-ink-muted">{qrUrl}</p></div><div className="grid gap-2 sm:grid-cols-2"><Button variant="outline" leftIcon={<Copy className="size-4" />} onClick={() => void navigator.clipboard.writeText(qrUrl).then(() => toast.success('Enlace copiado'))}>Copiar enlace</Button>{qrTable && <Button variant="outline" disabled={!qrImage} leftIcon={<Printer className="size-4" />} onClick={() => printTableQrCard(qrTable, activeBranch?.name ?? 'Misky Challay', qrUrl, qrImage)}>Imprimir cartel</Button>}</div><p className="flex gap-2 rounded-field bg-surface-muted p-3 text-xs text-ink-muted"><FileText className="size-4 shrink-0" /> Si renuevas el token, los carteles anteriores dejan de funcionar. Esto permite revocar un enlace compartido fuera del local.</p>{qrTable && branchId && <div className="flex flex-wrap gap-2"><Button size="sm" variant="ghost" leftIcon={<WalletCards className="size-4" />} onClick={() => void adminApi.updateDiningTableQr(qrTable.id, { branchId, enabled: !qrTable.qrEnabled }).then(() => { toast.success(qrTable.qrEnabled ? 'QR desactivado' : 'QR activado'); setQrTable(null); refresh(); })}>{qrTable.qrEnabled ? 'Desactivar QR' : 'Activar QR'}</Button><Button size="sm" variant="ghost" leftIcon={<QrCode className="size-4" />} onClick={() => void adminApi.updateDiningTableQr(qrTable.id, { branchId, regenerate: true }).then(() => { toast.success('Enlace renovado'); setQrTable(null); refresh(); })}>Renovar enlace</Button></div>}</div></Modal>
   </div>;
 };
 

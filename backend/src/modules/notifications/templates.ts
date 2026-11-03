@@ -14,27 +14,28 @@ const escapeHtml = (value: string): string => value.replace(/[&<>"']/g, (charact
 })[character] ?? character);
 
 const layout = (title: string, body: string, cta?: { label: string; url: string }): string => `
-<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#14201a">
-  <div style="background:#237c52;padding:20px;text-align:center">
-    <span style="color:#fff;font-size:20px;font-weight:bold">Verde Bowl</span>
+<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#15283d">
+  <div style="background:#0b5fa8;padding:20px;text-align:center">
+    <span style="color:#fff;font-size:20px;font-weight:bold">Misky Challay</span>
   </div>
-  <div style="padding:24px;background:#ffffff;border:1px solid #e3e8e5;border-top:none">
+  <div style="padding:24px;background:#ffffff;border:1px solid #dce6f0;border-top:none">
     <h1 style="font-size:20px;margin:0 0 12px">${title}</h1>
     ${body}
     ${
       cta
         ? `<p style="margin:24px 0 0">
-            <a href="${cta.url}" style="background:#237c52;color:#fff;text-decoration:none;padding:12px 20px;border-radius:999px;display:inline-block">${cta.label}</a>
+            <a href="${cta.url}" style="background:#0b5fa8;color:#fff;text-decoration:none;padding:12px 20px;border-radius:999px;display:inline-block">${cta.label}</a>
           </p>`
         : ''
     }
   </div>
-  <p style="font-size:12px;color:#5d6b64;text-align:center;padding:16px">
-    Verde Bowl - comida saludable a tu medida
+  <p style="font-size:12px;color:#536578;text-align:center;padding:16px">
+    Misky Challay - pastelería personalizada
   </p>
 </div>`;
 
 export interface OrderEmailData {
+  deliveryVehicleType?: 'CAR' | null;
   orderNumber: string;
   customerName: string | null;
   grandTotal: number;
@@ -43,7 +44,11 @@ export interface OrderEmailData {
   items: Array<{ quantity: number; name: string }>;
   /** Pago contra entrega: monto en efectivo a cobrar al recibir. */
   cashDue?: number | null;
+  depositAmount?: number;
+  balancePending?: number;
   supportEmail?: string;
+  supportWhatsappUrl?: string;
+  scheduledAt?: string | null;
 }
 
 export interface PlanEmailData {
@@ -65,7 +70,7 @@ export interface ComplaintEmailData {
 }
 
 const itemsList = (items: OrderEmailData['items']): string =>
-  `<ul style="padding-left:18px;color:#5d6b64">${items
+  `<ul style="padding-left:18px;color:#536578">${items
     .map((item) => `<li>${item.quantity}x ${item.name}</li>`)
     .join('')}</ul>`;
 
@@ -77,7 +82,11 @@ const itemsList = (items: OrderEmailData['items']): string =>
  * cliente que le cobraron sin generar el pedido.
  */
 const orderUrl = (orderNumber: string): string =>
-  `${env.FRONTEND_URL}/cuenta/pedidos/${orderNumber}`;
+  `${env.FRONTEND_URL}/cuenta/pedidos/${encodeURIComponent(orderNumber)}`;
+
+const coordinationDetails = (data: OrderEmailData): string => `Coordinemos contigo el diseño, las imágenes de referencia y la entrega o el recojo.${data.scheduledAt ? ` Fecha programada: ${new Date(data.scheduledAt).toLocaleString('es-PE', { timeZone: 'America/Lima', dateStyle: 'medium', timeStyle: 'short' })}.` : ''}`;
+const coordinationText = (data: OrderEmailData): string => `${coordinationDetails(data)} ${data.supportWhatsappUrl ? `Escríbenos por WhatsApp: ${data.supportWhatsappUrl}.` : data.supportEmail ? `Escríbenos a ${data.supportEmail}.` : 'Puedes contactar al taller desde el detalle de tu pedido.'}`;
+const coordinationHtml = (data: OrderEmailData): string => `<p>${escapeHtml(coordinationDetails(data))}</p><p>${data.supportWhatsappUrl ? `<a href="${escapeHtml(data.supportWhatsappUrl)}">Coordinar por WhatsApp</a>` : ''}${data.supportWhatsappUrl && data.supportEmail ? ' · ' : ''}${data.supportEmail ? `<a href="mailto:${escapeHtml(data.supportEmail)}">Escribir al taller</a>` : ''}</p>`;
 
 export const TEMPLATES = {
   PRODUCT_AVAILABLE: (data: {
@@ -100,27 +109,33 @@ export const TEMPLATES = {
       text: `${body} ${env.FRONTEND_URL}/menu/${data.productSlug}`,
       html: layout(
         'Tu plato volvio',
-        `<p>${escapeHtml(body).replaceAll('\n', '<br/>')}</p><p style="color:#5d6b64">Este aviso se envia una sola vez por solicitud.</p>`,
+        `<p>${escapeHtml(body).replaceAll('\n', '<br/>')}</p><p style="color:#536578">Este aviso se envia una sola vez por solicitud.</p>`,
         { label: 'Ver el plato', url: `${env.FRONTEND_URL}/menu/${data.productSlug}` },
       ),
     };
   },
 
+  ORDER_RECEIVED: (data: OrderEmailData) => ({
+    subject: `Recibimos tu pedido ${data.orderNumber}`,
+    text: `Hola${data.customerName ? ` ${data.customerName}` : ''}, registramos tu pedido ${data.orderNumber}. El pago está pendiente de confirmación; la preparación aún no está confirmada. ${coordinationText(data)}`,
+    html: layout('Recibimos tu pedido', `<p>Registramos tu pedido <strong>${escapeHtml(data.orderNumber)}</strong>.</p><p>El pago está pendiente de confirmación; la preparación aún no está confirmada.</p>${coordinationHtml(data)}`, { label: 'Revisar mi pedido', url: orderUrl(data.orderNumber) }),
+  }),
+
   ORDER_CONFIRMED: (data: OrderEmailData) => {
     const isCash = data.cashDue != null && data.cashDue > 0;
+    const paymentText = isCash ? `Paga ${money(data.cashDue!)} en efectivo al recibirlo.` : (data.balancePending ?? 0) > 0 ? `Recibimos tu anticipo de ${money(data.depositAmount ?? 0)}. Queda un saldo de ${money(data.balancePending!)} antes de la entrega.` : 'Recibimos tu pago.';
     return {
       subject: `Tu pedido ${data.orderNumber} esta confirmado`,
-      text: isCash
-        ? `Hola${data.customerName ? ` ${data.customerName}` : ''}, confirmamos tu pedido ${data.orderNumber} y ya esta en cocina. Paga ${money(data.cashDue!)} en efectivo al recibirlo.`
-        : `Hola${data.customerName ? ` ${data.customerName}` : ''}, recibimos tu pago. Tu pedido ${data.orderNumber} (${money(data.grandTotal)}) ya esta en cocina.`,
+      text: `Hola${data.customerName ? ` ${data.customerName}` : ''}, tu pedido ${data.orderNumber} está confirmado. ${paymentText} ${coordinationText(data)} Revisa el seguimiento en tu cuenta.`,
       html: layout(
         'Pedido confirmado',
-        `<p>Hola${data.customerName ? ` <strong>${data.customerName}</strong>` : ''}, ${isCash ? 'confirmamos tu pedido y ya estamos preparandolo.' : 'recibimos tu pago y ya estamos preparando tu pedido.'}</p>
+        `<p>Hola${data.customerName ? ` <strong>${escapeHtml(data.customerName)}</strong>` : ''}, tu pedido está confirmado.</p><p>${escapeHtml(paymentText)}</p>
+         ${coordinationHtml(data)}
          ${itemsList(data.items)}
          <p style="margin-top:16px"><strong>Total:</strong> ${money(data.grandTotal)}<br/>
          ${data.branchName ? `<strong>Prepara:</strong> ${data.branchName}<br/>` : ''}
          ${data.etaMinutes ? `<strong>Llega en:</strong> ~${data.etaMinutes} minutos` : ''}</p>
-         ${isCash ? `<p style="margin-top:16px;padding:12px 16px;background:#f3f6f4;border-left:3px solid #237c52"><strong>Pago contra entrega:</strong> ten listos ${money(data.cashDue!)} en efectivo para pagar al recibir tu pedido.</p>` : ''}`,
+         ${isCash ? `<p style="margin-top:16px;padding:12px 16px;background:#f1f8ff;border-left:3px solid #0b5fa8"><strong>Pago contra entrega:</strong> ten listos ${money(data.cashDue!)} en efectivo para pagar al recibir tu pedido.</p>` : ''}`,
         { label: 'Seguir mi pedido', url: orderUrl(data.orderNumber) },
       ),
     };
@@ -136,22 +151,29 @@ export const TEMPLATES = {
     ),
   }),
 
+  ORDER_READY: (data: OrderEmailData) => ({
+    subject: `Tu pedido ${data.orderNumber} está listo`,
+    text: `Tu pedido ${data.orderNumber} está listo. Revisa en el seguimiento cómo recibirlo.`,
+    html: layout('Tu pedido está listo', `<p>Tu pedido <strong>${escapeHtml(data.orderNumber)}</strong> está listo. Consulta el seguimiento para la entrega o el recojo.</p>`, { label: 'Ver mi pedido', url: orderUrl(data.orderNumber) }),
+  }),
+
   ORDER_OUT_FOR_DELIVERY: (data: OrderEmailData) => ({
     subject: `Tu pedido ${data.orderNumber} va en camino`,
-    text: `Tu pedido ${data.orderNumber} salio a reparto.`,
+    text: `Tu pedido ${data.orderNumber} salió a reparto${data.deliveryVehicleType === 'CAR' ? ' en auto' : ''}.`,
     html: layout(
       'Va en camino',
-      `<p>Tu pedido <strong>${data.orderNumber}</strong> ya salio. Atento a la puerta.</p>`,
+      `<p>Tu pedido <strong>${data.orderNumber}</strong> ya salió${data.deliveryVehicleType === 'CAR' ? ' en auto' : ''}. Atento a la puerta.</p>`,
       { label: 'Ver el estado', url: orderUrl(data.orderNumber) },
     ),
   }),
 
   ORDER_DELIVERED: (data: OrderEmailData) => ({
     subject: `Entregado: ${data.orderNumber}`,
-    text: `Tu pedido ${data.orderNumber} fue entregado. Buen provecho.`,
+    text: `Tu pedido ${data.orderNumber} fue entregado. Gracias por confiar en Misky Challay. Esperamos que disfrutes tu celebración. Si necesitas ayuda, contáctanos desde el detalle de tu pedido.`,
     html: layout(
-      'Buen provecho',
-      `<p>Tu pedido <strong>${data.orderNumber}</strong> fue entregado. Esperamos que lo disfrutes.</p>`,
+      'Gracias por confiar en nosotros',
+      `<p>Tu pedido <strong>${escapeHtml(data.orderNumber)}</strong> fue entregado.</p><p>Gracias por confiar en Misky Challay. Esperamos que disfrutes tu celebración.</p><p>Si necesitas ayuda, contáctanos desde el detalle de tu pedido.</p>`,
+      { label: 'Ver mi pedido', url: orderUrl(data.orderNumber) },
     ),
   }),
 
@@ -164,15 +186,15 @@ export const TEMPLATES = {
       // todavia NO se devuelve de forma automatica. No se puede afirmar por escrito
       // un reembolso que el sistema no ejecuta: eso es material de reclamo.
       `<p>Tu pedido <strong>${data.orderNumber}</strong> fue cancelado.</p>
-       ${data.reason ? `<p style="color:#5d6b64">Motivo: ${data.reason}</p>` : ''}
+       ${data.reason ? `<p style="color:#536578">Motivo: ${data.reason}</p>` : ''}
        <p>Si usaste saldo de tu plan o un cupon, ya estan disponibles de nuevo en tu cuenta.</p>
-       <p style="color:#5d6b64">Si pagaste con tarjeta, escribenos a ${data.supportEmail ?? 'nuestro canal de soporte'} con el numero de tu pedido y gestionamos la devolucion.</p>`,
+       <p style="color:#536578">Si pagaste con tarjeta, escribenos a ${data.supportEmail ?? 'nuestro canal de soporte'} con el numero de tu pedido y gestionamos la devolucion.</p>`,
       { label: 'Volver al menu', url: `${env.FRONTEND_URL}/menu` },
     ),
   }),
 
   PASSWORD_RESET: (data: { customerName: string | null; resetUrl: string; ttlMinutes: number }) => ({
-    subject: 'Restablece tu contrasena de Verde Bowl',
+    subject: 'Restablece tu contrasena de Misky Challay',
     text: `Hola${data.customerName ? ` ${data.customerName}` : ''}, recibimos una solicitud para restablecer tu contrasena. Abre este enlace (vence en ${data.ttlMinutes} minutos): ${data.resetUrl}. Si no fuiste tu, ignora este correo.`,
     html: layout(
       'Restablece tu contrasena',
@@ -188,10 +210,10 @@ export const TEMPLATES = {
     html: layout(
       'Tu plan esta activo',
       `<p>Hola${data.customerName ? ` <strong>${data.customerName}</strong>` : ''}, tu <strong>${data.planName}</strong> ya esta activo.</p>
-       <p style="font-size:24px;color:#237c52;font-weight:bold;margin:16px 0">${money(data.credit)} de saldo</p>
-       <p style="color:#5d6b64"><strong>${money(data.paidCredit)}</strong> corresponden a dinero pagado${data.paidExpiresAt ? ` y vencen el ${data.paidExpiresAt.toLocaleDateString('es-PE')}` : ''}.</p>
-       <p style="color:#5d6b64"><strong>${money(data.bonusCredit)}</strong> son bono promocional${data.expiresAt ? ` y vencen el ${data.expiresAt.toLocaleDateString('es-PE')}, junto con los beneficios` : ''}.</p>
-       <p style="color:#5d6b64">Tus pedidos usarán primero el saldo que venza antes. Consulta cada lote en Mi saldo.</p>`,
+       <p style="font-size:24px;color:#0b5fa8;font-weight:bold;margin:16px 0">${money(data.credit)} de saldo</p>
+       <p style="color:#536578"><strong>${money(data.paidCredit)}</strong> corresponden a dinero pagado${data.paidExpiresAt ? ` y vencen el ${data.paidExpiresAt.toLocaleDateString('es-PE')}` : ''}.</p>
+       <p style="color:#536578"><strong>${money(data.bonusCredit)}</strong> son bono promocional${data.expiresAt ? ` y vencen el ${data.expiresAt.toLocaleDateString('es-PE')}, junto con los beneficios` : ''}.</p>
+       <p style="color:#536578">Tus pedidos usarán primero el saldo que venza antes. Consulta cada lote en Mi saldo.</p>`,
       { label: 'Ver mi saldo', url: `${env.FRONTEND_URL}/cuenta/saldo` },
     ),
   }),
@@ -204,11 +226,11 @@ export const TEMPLATES = {
       'Constancia de tu registro',
       `<p>Hola${data.consumerName ? ` <strong>${data.consumerName}</strong>` : ''}, dejamos constancia de tu ${data.type === 'QUEJA' ? 'queja' : 'reclamo'} en nuestro Libro de Reclamaciones.</p>
        <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px">
-         <tr><td style="padding:6px 0;color:#5d6b64">Codigo</td><td style="padding:6px 0;text-align:right;font-weight:bold">${data.code}</td></tr>
-         <tr><td style="padding:6px 0;color:#5d6b64">Tipo</td><td style="padding:6px 0;text-align:right">${data.type === 'QUEJA' ? 'Queja' : 'Reclamo'}</td></tr>
-         <tr><td style="padding:6px 0;color:#5d6b64">Respuesta a mas tardar</td><td style="padding:6px 0;text-align:right">${data.dueAt}</td></tr>
+         <tr><td style="padding:6px 0;color:#536578">Codigo</td><td style="padding:6px 0;text-align:right;font-weight:bold">${data.code}</td></tr>
+         <tr><td style="padding:6px 0;color:#536578">Tipo</td><td style="padding:6px 0;text-align:right">${data.type === 'QUEJA' ? 'Queja' : 'Reclamo'}</td></tr>
+         <tr><td style="padding:6px 0;color:#536578">Respuesta a mas tardar</td><td style="padding:6px 0;text-align:right">${data.dueAt}</td></tr>
        </table>
-       <p style="color:#5d6b64">Guarda este codigo: con el y tu numero de documento puedes consultar el estado en cualquier momento. La respuesta a tu ${data.type === 'QUEJA' ? 'queja' : 'reclamo'} no impide que acudas a otras instancias que la ley te reconoce.</p>`,
+       <p style="color:#536578">Guarda este codigo: con el y tu numero de documento puedes consultar el estado en cualquier momento. La respuesta a tu ${data.type === 'QUEJA' ? 'queja' : 'reclamo'} no impide que acudas a otras instancias que la ley te reconoce.</p>`,
       { label: 'Consultar el estado', url: `${env.FRONTEND_URL}/libro-de-reclamaciones` },
     ),
   }),
@@ -219,8 +241,8 @@ export const TEMPLATES = {
     html: layout(
       'Tenemos una respuesta',
       `<p>Hola${data.consumerName ? ` <strong>${data.consumerName}</strong>` : ''}, esta es nuestra respuesta a tu ${data.type === 'QUEJA' ? 'queja' : 'reclamo'} <strong>${data.code}</strong>:</p>
-       <div style="background:#f3f6f4;border-left:3px solid #237c52;padding:12px 16px;margin:16px 0;white-space:pre-line">${data.response}</div>
-       <p style="color:#5d6b64">Si no estas conforme, puedes acudir a las instancias que la ley te reconoce (INDECOPI).</p>`,
+       <div style="background:#f1f8ff;border-left:3px solid #0b5fa8;padding:12px 16px;margin:16px 0;white-space:pre-line">${data.response}</div>
+       <p style="color:#536578">Si no estas conforme, puedes acudir a las instancias que la ley te reconoce (INDECOPI).</p>`,
       { label: 'Ver el estado', url: `${env.FRONTEND_URL}/libro-de-reclamaciones` },
     ),
   }),

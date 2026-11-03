@@ -21,7 +21,7 @@ export interface CreateCheckoutInput {
 }
 
 export interface CreateCheckoutResult {
-  /** Id del proveedor (Checkout Session de Stripe). */
+  /** Id de la sesión u order creada por la pasarela. */
   providerReference: string;
   /** URL a la que se envia al cliente para pagar. */
   checkoutUrl: string;
@@ -30,7 +30,7 @@ export interface CreateCheckoutResult {
 }
 
 export type WebhookOutcome =
-  | { kind: 'PAID'; eventId: string; eventType: string; providerReference: string; method?: string }
+  | { kind: 'PAID'; eventId: string; eventType: string; providerReference: string; method?: string; amount?: number; currency?: string }
   | {
       kind: 'FAILED';
       eventId: string;
@@ -44,6 +44,12 @@ export interface RefundInput {
   providerReference: string;
   amount: number;
   reason: string;
+  idempotencyKey?: string;
+}
+
+export interface WebhookContext {
+  requestId?: string;
+  resourceId?: string;
 }
 
 export interface RefundResult {
@@ -62,7 +68,10 @@ export interface PaymentProvider {
    * Verifica la firma del webhook con el body CRUDO y traduce el evento del
    * proveedor a un resultado del dominio. Si la firma no valida, lanza.
    */
-  parseWebhook(rawBody: Buffer, signature: string | undefined): WebhookOutcome;
+  parseWebhook(rawBody: Buffer, signature: string | undefined, context?: WebhookContext): WebhookOutcome | Promise<WebhookOutcome>;
+
+  /** Consulta autenticada al proveedor para recuperar una confirmacion cuyo webhook no llego. */
+  lookupCheckout?(providerReference: string): Promise<WebhookOutcome>;
 
   refund(input: RefundInput): Promise<RefundResult>;
 }

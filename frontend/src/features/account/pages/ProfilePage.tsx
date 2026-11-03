@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { NotificationPreferences } from '../components/NotificationPreferences';
+﻿import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -17,7 +18,6 @@ import {
   Phone,
   Save,
   ShieldCheck,
-  Target,
   Trash2,
   User2,
 } from 'lucide-react';
@@ -43,8 +43,6 @@ const EMPTY_PREFERENCES: FoodPreferences = {
   allergens: [],
   dietaryTags: [],
   dislikedOptionIds: [],
-  calorieTarget: null,
-  proteinTarget: null,
 };
 
 const profileSchema = z.object({
@@ -94,6 +92,7 @@ const ProfilePage = () => {
   const [allergens, setAllergens] = useState<Allergen[]>([]);
   const [dietaryTags, setDietaryTags] = useState<DietaryTag[]>([]);
   const [savingPreferences, setSavingPreferences] = useState(false);
+  const [preferencesError, setPreferencesError] = useState(false);
   const [preferencesDirty, setPreferencesDirty] = useState(false);
   const [showPasswords, setShowPasswords] = useState(false);
   const [savingAvatar, setSavingAvatar] = useState(false);
@@ -134,10 +133,10 @@ const ProfilePage = () => {
       .then(([allergenRows, tagRows, saved]) => {
         setAllergens(allergenRows);
         setDietaryTags(tagRows);
-        setPreferences(saved);
+        setPreferences(saved); setPreferencesError(false);
         setPreferencesDirty(false);
       })
-      .catch(() => undefined);
+      .catch(() => setPreferencesError(true));
     // Solo el reintento explicito vuelve a cargar la pantalla.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retryNonce]);
@@ -298,6 +297,7 @@ const ProfilePage = () => {
   return (
     <div>
       {header}
+      <NotificationPreferences />
 
       <section
         className="mb-5 overflow-hidden rounded-card border border-brand-700 p-5 text-white shadow-e3 sm:p-6"
@@ -542,53 +542,15 @@ const ProfilePage = () => {
               </fieldset>
             </div>
 
-            <div className="rounded-card border border-line bg-surface-muted/45 p-4 sm:p-5">
-              <div className="mb-3 flex items-center gap-2">
-                <Target className="size-4 text-brand-700" />
-                <p className="text-sm font-extrabold text-ink">Metas orientativas por bowl</p>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Input
-                  label="Máximo de calorías"
-                  type="number"
-                  min={300}
-                  max={5000}
-                  placeholder="Ej. 650"
-                  value={preferences.calorieTarget ?? ''}
-                  onChange={(event) => {
-                    setPreferencesDirty(true);
-                    setPreferences((current) => ({
-                      ...current,
-                      calorieTarget: event.target.value ? Number(event.target.value) : null,
-                    }));
-                  }}
-                />
-                <Input
-                  label="Mínimo de proteína (g)"
-                  type="number"
-                  min={0}
-                  max={500}
-                  placeholder="Ej. 30"
-                  value={preferences.proteinTarget ?? ''}
-                  onChange={(event) => {
-                    setPreferencesDirty(true);
-                    setPreferences((current) => ({
-                      ...current,
-                      proteinTarget: event.target.value ? Number(event.target.value) : null,
-                    }));
-                  }}
-                />
-              </div>
-            </div>
-
             <div className="flex flex-col-reverse gap-3 border-t border-line pt-5 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-xs leading-5 text-ink-muted">
                 Estas preferencias sirven como guía y puedes modificarlas cuando quieras.
               </p>
+              {preferencesError && <p role="alert">No pudimos cargar tus preferencias. Recarga antes de modificarlas.</p>}
               <Button
                 type="button"
                 className="w-full sm:w-auto"
-                disabled={!preferencesDirty}
+                disabled={!preferencesDirty || preferencesError}
                 onClick={savePreferences}
                 isLoading={savingPreferences}
                 leftIcon={<Save className="size-4" />}
@@ -759,3 +721,4 @@ const ProfileSkeleton = () => (
 );
 
 export default ProfilePage;
+

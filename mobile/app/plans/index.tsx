@@ -1,535 +1,160 @@
-import { useCallback, useRef, useState } from 'react';
-import { FlatList, Linking, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { env } from '../../src/config/env';
+import { useResource } from '../../src/hooks/useResource';
+import { useEffect, useState } from 'react';
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { router, type Href } from 'expo-router';
-import * as Haptics from 'expo-haptics';
-import { BottomSheet } from '../../src/components/BottomSheet';
-import { EmptyState } from '../../src/components/EmptyState';
+import { router, useLocalSearchParams, type Href } from 'expo-router';
 import { PrimaryButton } from '../../src/components/PrimaryButton';
 import { ScreenScaffold } from '../../src/components/ScreenScaffold';
-import { Skeleton } from '../../src/components/Skeleton';
-import { useResource } from '../../src/hooks/useResource';
 import { useSession } from '../../src/providers/SessionProvider';
 import { useToast } from '../../src/providers/ToastProvider';
-import { plansApi } from '../../src/services/api/plans.service';
-import { colors, radius, shadow, spacing, type } from '../../src/theme/tokens';
-import type { Plan, WalletSummary } from '../../src/types/domain';
+import { subscriptionsApi, type CustomerSubscription, type PickupBranch, type PickupSlot, type SubscriptionCycle, type SubscriptionPlan } from '../../src/services/api/subscriptions.service';
+import { colors, radius, spacing, type } from '../../src/theme/tokens';
 
-const money = (value: number | string): string => `S/ ${Number(value).toFixed(2)}`;
-
-/**
- * Clave de idempotencia de la compra. Nace al elegir el plan, no al pulsar
- * «pagar»: si la pasarela tarda y el cliente reintenta, el backend reconoce el
- * mismo intento y devuelve el enlace ya creado en vez de cobrar dos veces.
- */
-const buildKey = (): string =>
-  `mobile-plan-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+const money = (value: number) => `S/ ${Number(value).toFixed(2)}`;
+const date = (value: string) => new Intl.DateTimeFormat('es-PE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 
 export default function PlansScreen() {
-  const { status } = useSession();
+  const params = useLocalSearchParams<{ suscripcion?: string }>();
+  const linkedSubscription = Number(params.suscripcion);
+  const { status, user } = useSession();
   const toast = useToast();
-
-  const plans = useResource<Plan[]>({
-    key: 'plans:list',
-    fetcher: () => plansApi.list(),
-  });
-
-  const wallet = useResource<WalletSummary>({
-    key: status === 'authenticated' ? 'plans:wallet' : null,
-    fetcher: () => plansApi.wallet(),
-  });
-
-  const [selected, setSelected] = useState<Plan | null>(null);
+  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
+  const [mine, setMine] = useState<CustomerSubscription[]>([]);
+  const [branches, setBranches] = useState<PickupBranch[]>([]);
+  const [slots, setSlots] = useState<PickupSlot[]>([]);
+  const [termsVersion, setTermsVersion] = useState('');
+  const [available, setAvailable] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<number | null>(null);
+  const [branchId, setBranchId] = useState<number | null>(null);
   const [accepted, setAccepted] = useState(false);
-  const [buying, setBuying] = useState(false);
+  const [selectedCycle, setSelectedCycle] = useState<number | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  const idempotency = useRef('');
-
-  const choose = useCallback(
-    (plan: Plan) => {
-      if (status !== 'authenticated') {
-        router.push({ pathname: '/(auth)/login', params: { returnTo: '/plans' } });
-        return;
-      }
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      idempotency.current = buildKey();
-      setAccepted(false);
-      setSelected(plan);
-    },
-    [status],
-  );
-
-  const close = useCallback(() => {
-    if (buying) return;
-    setSelected(null);
-  }, [buying]);
-
-  const confirm = async () => {
-    if (!selected || !accepted || buying) return;
-
-    setBuying(true);
-    try {
-      const purchase = await plansApi.purchase(selected.code, idempotency.current || buildKey());
-      if (!purchase.checkoutUrl) throw new Error('La pasarela no devolvió un enlace de pago.');
-
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      setSelected(null);
-      await Linking.openURL(purchase.checkoutUrl);
-    } catch (caught) {
-      toast.show({
-        message: caught instanceof Error ? caught.message : 'No pudimos iniciar la compra.',
-        tone: 'error',
-        placement: 'top',
-      });
-    } finally {
-      setBuying(false);
+  const resource = useResource({
+    key: status === 'bootstrapping' ? null : `subscriptions:plans:${user?.id ?? 'public'}`,
+    fetcher: () => Promise.all([subscriptionsApi.plans(), subscriptionsApi.branches(), subscriptionsApi.config(), status === 'authenticated' ? subscriptionsApi.mine() : Promise.resolve([])]),
+    pollIntervalMs: 30000,
+  });
+  useEffect(() => {
+    if (resource.data) {
+      const [planRows, locations, config, own] = resource.data;
+      setPlans(planRows); setBranches(locations); setTermsVersion(config.termsVersion); setAvailable(config.available); setMine(own); setLoading(false);
     }
+    if (resource.error) { setLoading(false); toast.show({ message: resource.error.message, tone: 'error' }); }
+  }, [resource.data, resource.error, toast]);
+  useEffect(() => { setSelectedCycle(null); setSelectedSlot(null); }, [user?.id]);
+  const refresh = async () => { await resource.refresh(); };
+
+  const run = async (action: () => Promise<unknown>, message: string) => {
+    setBusy(true);
+    try { await action(); toast.show({ message, tone: 'success' }); await refresh(); }
+    catch (error) { toast.show({ message: error instanceof Error ? error.message : 'No se pudo completar la acción.', tone: 'error' }); }
+    finally { setBusy(false); }
   };
 
-  const refresh = useCallback(() => {
-    void plans.refresh();
-    void wallet.refresh();
-  }, [plans, wallet]);
+  const start = async () => {
+    const plan = plans.find((entry) => entry.id === selectedPlan);
+    if (!plan || plan.remainingSubscriptions <= 0 || !branchId || !accepted || !branches.some((branch) => branch.id === branchId && branch.acceptsPickup && plan.branchIds.includes(branch.id))) return;
+    setBusy(true);
+    try {
+      const response = await subscriptionsApi.subscribe(plan.id, branchId, termsVersion);
+      await Linking.openURL(response.checkoutUrl);
+      setSelectedPlan(null); setAccepted(false);
+      await refresh();
+    } catch (error) {
+      toast.show({ message: error instanceof Error ? error.message : 'No pudimos abrir Mercado Pago.', tone: 'error' });
+    } finally { setBusy(false); }
+  };
 
-  const summary = wallet.data;
+  const openCycle = async (cycle: SubscriptionCycle, row: CustomerSubscription) => {
+    setBusy(true);
+    try {
+      const rows = await subscriptionsApi.slots(row.branchId);
+      setSlots(rows.filter((slot) => slot.available > 0 && new Date(slot.startsAt).getTime() >= Date.now() + row.leadDays * 86_400_000 && new Date(slot.startsAt).getTime() <= new Date(cycle.expiresAt).getTime()));
+      setSelectedCycle(cycle.id); setSelectedSlot(null);
+    } catch (error) {
+      toast.show({ message: error instanceof Error ? error.message : 'No pudimos cargar los horarios.', tone: 'error' });
+    } finally { setBusy(false); }
+  };
 
-  const header = (
-    <View>
-      <View style={styles.hero}>
-        <View style={styles.heroIcon}>
-          <MaterialCommunityIcons name="wallet-giftcard" size={30} color={colors.surface} />
-        </View>
-
-        <Text style={styles.heroTitle}>Recarga con beneficio</Text>
-
-        <Text style={styles.heroCopy}>
-          Pagas una vez, recibes saldo y disfrutas beneficios durante la vigencia del plan. No es
-          una suscripción: no se renueva sola ni guarda tu tarjeta.
-        </Text>
-      </View>
-
-      {summary && summary.balance > 0 ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Tu saldo disponible es ${money(summary.balance)}. Ver la billetera`}
-          onPress={() => router.push('/wallet' as Href)}
-          style={({ pressed }) => [styles.walletBanner, pressed && styles.pressed]}
-        >
-          <View style={styles.walletText}>
-            <Text style={styles.walletLabel}>MI SALDO DISPONIBLE</Text>
-
-            <Text style={styles.walletAmount}>{money(summary.balance)}</Text>
-
-            <Text style={styles.walletDetail}>
-              {money(summary.paidBalance)} pagados · {money(summary.bonusBalance)} de bono
-            </Text>
-          </View>
-
-          <MaterialCommunityIcons name="chevron-right" size={26} color={colors.brand700} />
-        </Pressable>
-      ) : null}
-    </View>
-  );
-
-  if (plans.loading && !plans.data) {
-    return (
-      <ScreenScaffold title="Planes Verde Bowl" padded>
-        <Skeleton height={168} rounded="lg" style={styles.skeletonTop} />
-
-        <Skeleton height={230} rounded="lg" count={2} gap={spacing.md} />
-      </ScreenScaffold>
-    );
-  }
-
-  return (
-    <ScreenScaffold title="Planes Verde Bowl" subtitle="Más saldo, mejores pedidos">
-      <FlatList
-        data={plans.data ?? []}
-        keyExtractor={(item) => String(item.id)}
-        contentContainerStyle={styles.content}
-        ListHeaderComponent={header}
-        refreshControl={
-          <RefreshControl
-            refreshing={plans.refreshing}
-            onRefresh={refresh}
-            tintColor={colors.brand600}
-          />
-        }
-        renderItem={({ item }) => {
-          const price = Number(item.price);
-          const credit = Number(item.grantedCredit);
-          const bonus = Math.max(0, credit - price);
-          const percent = price > 0 ? Math.round((bonus / price) * 100) : 0;
-
-          return (
-            <View style={[styles.plan, shadow.sm, item.isFeatured && styles.planFeatured]}>
-              {item.isFeatured ? (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>MÁS ELEGIDO</Text>
-                </View>
-              ) : null}
-
-              <View style={styles.planTop}>
-                <View style={styles.planMark}>
-                  <MaterialCommunityIcons name="sprout" size={22} color={colors.brand700} />
-                </View>
-
-                <View style={styles.planText}>
-                  <Text style={styles.planName}>{item.name}</Text>
-
-                  <Text style={styles.planDescription}>
-                    {item.description || `Beneficios por ${item.validityDays} días`}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.amounts}>
-                <View>
-                  <Text style={styles.amountLabel}>PAGAS</Text>
-
-                  <Text style={styles.price}>{money(price)}</Text>
-                </View>
-
-                <MaterialCommunityIcons name="arrow-right" size={20} color={colors.inkMuted} />
-
-                <View>
-                  <Text style={styles.amountLabel}>RECIBES</Text>
-
-                  <Text style={styles.credit}>{money(credit)}</Text>
-                </View>
-              </View>
-
-              {bonus > 0 ? (
-                <View style={styles.bonus}>
-                  <MaterialCommunityIcons name="gift-outline" size={17} color={colors.accent500} />
-
-                  <Text style={styles.bonusText}>
-                    Ganas {money(bonus)} extra{percent > 0 ? ` (${percent}%)` : ''}
-                  </Text>
-                </View>
-              ) : null}
-
-              <View style={styles.benefits}>
-                {item.benefits.map((benefit) => (
-                  <View key={benefit.id} style={styles.benefit}>
-                    <MaterialCommunityIcons name="check-circle" size={17} color={colors.success} />
-
-                    <Text style={styles.benefitText}>{benefit.description}</Text>
-                  </View>
-                ))}
-              </View>
-
-              <Text style={styles.validity}>
-                Beneficios vigentes por {item.validityDays} días
-              </Text>
-
-              <PrimaryButton
-                label={status === 'authenticated' ? `Elegir ${item.name}` : 'Ingresar para elegir'}
-                onPress={() => choose(item)}
-                style={styles.planButton}
-              />
-            </View>
-          );
-        }}
-        ListEmptyComponent={
-          plans.error ? (
-            <EmptyState
-              icon="cloud-alert-outline"
-              title="No pudimos cargar los planes"
-              message={plans.error.message}
-              actionLabel="Reintentar"
-              onAction={() => void plans.refetch()}
-            />
-          ) : (
-            <EmptyState
-              icon="calendar-clock"
-              title="No hay planes disponibles"
-              message="Puedes seguir pidiendo desde el menú mientras preparamos nuevas opciones."
-              actionLabel="Ver el menú"
-              onAction={() => router.push('/(tabs)/menu')}
-            />
-          )
-        }
-        ListFooterComponent={
-          <View style={styles.info}>
-            <MaterialCommunityIcons name="information-outline" size={21} color={colors.brand700} />
-
-            <Text style={styles.infoText}>
-              El dinero pagado y el bono conservan fechas separadas. Al pedir se usa primero el
-              lote que vence antes.
-            </Text>
-          </View>
-        }
-      />
-
-      <BottomSheet
-        visible={selected !== null}
-        onClose={close}
-        title="Confirma tu plan"
-        subtitle={selected?.name}
-        dismissible={!buying}
-        footer={
-          <View style={styles.sheetFooter}>
-            <PrimaryButton
-              label="Continuar al pago seguro"
-              loading={buying}
-              disabled={!accepted}
-              onPress={() => void confirm()}
-            />
-            <PrimaryButton label="Ahora no" variant="ghost" disabled={buying} onPress={close} />
-          </View>
-        }
-      >
-        <View style={styles.sheetIcon}>
-          <MaterialCommunityIcons name="shield-check-outline" size={26} color={colors.brand700} />
-        </View>
-
-        <Text style={styles.sheetCopy}>
-          Pagarás {money(selected?.price ?? 0)} y, cuando el proveedor confirme el cobro, recibirás{' '}
-          {money(selected?.grantedCredit ?? 0)} de saldo en tu billetera.
-        </Text>
-
-        <Pressable
-          accessibilityRole="checkbox"
-          accessibilityLabel="Acepto las condiciones del plan"
-          accessibilityState={{ checked: accepted }}
-          onPress={() => setAccepted((value) => !value)}
-          style={({ pressed }) => [styles.terms, pressed && styles.pressed]}
-        >
-          <MaterialCommunityIcons
-            name={accepted ? 'checkbox-marked' : 'checkbox-blank-outline'}
-            size={24}
-            color={accepted ? colors.brand600 : colors.inkMuted}
-          />
-
-          <Text style={styles.termsText}>
-            Acepto las condiciones, vigencias y beneficios mostrados para este plan.
-          </Text>
-        </Pressable>
-
-      </BottomSheet>
-    </ScreenScaffold>
-  );
+  return <ScreenScaffold title="Suscripciones" subtitle="Una caja de postres cada mes">
+    <ScrollView contentContainerStyle={styles.content}>
+      <View style={styles.hero}><MaterialCommunityIcons name="gift-outline" size={31} color={colors.surface} /><Text style={styles.heroTitle}>Postres para compartir</Text><Text style={styles.heroCopy}>Cada pago mensual confirmado habilita una caja. Programa el recojo desde aquí y cancela los próximos cobros cuando quieras.</Text></View>
+      {loading && <Text style={styles.muted}>Cargando suscripciones…</Text>}
+      {!loading && plans.length === 0 && <Text style={styles.muted}>Aún no hay cajas mensuales publicadas.</Text>}
+      {plans.map((plan) => {
+        const allowed = branches.filter((branch) => branch.acceptsPickup && plan.branchIds.includes(branch.id));
+        return <View key={plan.id} style={styles.card}>
+          <View style={styles.cardHeader}><MaterialCommunityIcons name="gift-outline" size={22} color={colors.brand700} /><Text style={styles.capacity}>{plan.remainingSubscriptions > 0 ? `${plan.remainingSubscriptions} cupos disponibles` : 'Cupos agotados'}</Text></View>
+          <Text style={styles.name}>{plan.name}</Text><Text style={styles.muted}>{plan.description}</Text>
+          <View style={styles.pricePanel}><Text style={styles.muted}>Precio mensual</Text><Text style={styles.price}>{money(plan.monthlyPrice)} <Text style={styles.priceSuffix}>/ mes</Text></Text></View>
+          {plan.items.map((item) => <Text key={item.variantId} style={styles.item}>✓ {item.quantity} × {item.productName} · {item.variantName}</Text>)}
+          <Text style={styles.muted}>Recojo con {plan.leadDays} días de anticipación.</Text>
+          {selectedPlan === plan.id ? <View style={styles.selection}>
+            <Text style={styles.label}>Sucursal de recojo</Text>
+            {allowed.map((branch) => <Pressable key={branch.id} accessibilityRole="radio" accessibilityState={{ checked: branchId === branch.id }} onPress={() => setBranchId(branch.id)} style={[styles.choice, branchId === branch.id && styles.choiceActive]}><Text style={styles.item}>{branchId === branch.id ? '◉' : '○'} {branch.name}</Text><Text style={styles.muted}>{branch.addressLine}</Text></Pressable>)}
+            <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: accepted }} onPress={() => setAccepted(!accepted)} style={styles.terms}><MaterialCommunityIcons name={accepted ? 'checkbox-marked' : 'checkbox-blank-outline'} size={23} color={colors.brand700} /><Text style={styles.item}>Autorizo el cobro recurrente de {money(plan.monthlyPrice)} cada mes. Cada cobro pagado habilita una caja; puedo cancelar las siguientes renovaciones aquí.</Text></Pressable>
+            <Pressable onPress={() => void Linking.openURL(env.webUrl + '/terminos?documento=suscripcion')}><Text style={[styles.item, { color: colors.brand700, fontWeight: '700' }]}>Leer las condiciones de suscripción</Text></Pressable>
+            <PrimaryButton label="Continuar a Mercado Pago" disabled={!branchId || !accepted || !available || plan.remainingSubscriptions <= 0} loading={busy} onPress={() => void start()} />
+            <PrimaryButton label="Volver" variant="ghost" onPress={() => setSelectedPlan(null)} />
+          </View> : <PrimaryButton label={plan.remainingSubscriptions <= 0 ? 'Cupos agotados' : status === 'authenticated' ? 'Elegir suscripción' : 'Ingresar para elegir'} disabled={!available || allowed.length === 0 || plan.remainingSubscriptions <= 0} onPress={() => {
+            if (status !== 'authenticated') { router.push({ pathname: '/(auth)/login', params: { returnTo: '/plans' } }); return; }
+            setSelectedPlan(plan.id); setBranchId(allowed[0]?.id ?? null); setAccepted(false);
+          }} />}
+          {!available && <Text style={styles.muted}>Contratación disponible al configurar el cobro recurrente.</Text>}
+        </View>;
+      })}
+      {status === 'authenticated' && <><Text style={styles.section}>Mis suscripciones</Text>
+        {mine.length === 0 && <Text style={styles.muted}>Aún no tienes cajas mensuales contratadas.</Text>}
+        {[...mine].sort((a, b) => Number(b.id === linkedSubscription) - Number(a.id === linkedSubscription)).map((row) => <View key={row.id} style={styles.card}>
+          <Text style={styles.name}>{row.name}</Text><Text style={styles.item}>{money(row.price)} / mes · {branches.find((branch) => branch.id === row.branchId)?.name ?? 'Recojo en sucursal'}</Text>
+          <Text style={styles.muted}>Estado: {row.status === 'ACTIVE' ? 'Activa' : row.status === 'CANCELED' ? 'Renovación cancelada' : row.status === 'PAST_DUE' ? 'Cobro pendiente' : 'Esperando autorización'}</Text>
+          {row.nextChargeAt && row.status !== 'CANCELED' && <Text style={styles.muted}>Próximo cobro: {date(row.nextChargeAt)}</Text>}
+          {row.termsAcceptance && <View><Text style={styles.label}>Condiciones aceptadas · Versión {row.termsAcceptance.version}</Text><Text style={styles.muted}>{row.termsAcceptance.content}</Text></View>}
+          {row.cycles.map((cycle) => <View key={cycle.id} style={styles.cycle}>
+            <Text style={styles.item}>Caja pagada el {date(cycle.paidAt)}</Text>
+            <Text style={styles.muted}>{cycle.orderId ? `Recojo programado: ${cycle.scheduledAt ? date(cycle.scheduledAt) : 'ver en pedidos'}` : `Programa antes del ${date(cycle.expiresAt)}`}</Text>
+            {!cycle.orderId && new Date(cycle.expiresAt).getTime() > Date.now() && <PrimaryButton label="Programar recojo" variant="secondary" disabled={busy} onPress={() => void openCycle(cycle, row)} />}
+            {!cycle.orderId && new Date(cycle.expiresAt).getTime() <= Date.now() && <Text style={styles.muted}>El plazo para programar esta caja terminó.</Text>}
+            {selectedCycle === cycle.id && !cycle.orderId && new Date(cycle.expiresAt).getTime() > Date.now() && <View style={styles.selection}>
+              <Text style={styles.label}>Elige fecha y horario</Text>
+              {slots.map((slot) => <Pressable key={slot.id} accessibilityRole="radio" accessibilityState={{ checked: selectedSlot === slot.id }} onPress={() => setSelectedSlot(slot.id)} style={[styles.choice, selectedSlot === slot.id && styles.choiceActive]}><Text style={styles.item}>{selectedSlot === slot.id ? '◉' : '○'} {date(slot.startsAt)}</Text></Pressable>)}
+              {slots.length === 0 && <Text style={styles.muted}>No hay horarios disponibles. Intenta más tarde.</Text>}
+              <PrimaryButton label="Confirmar recojo" disabled={!selectedSlot || busy} loading={busy} onPress={() => void run(() => subscriptionsApi.redeem(cycle.id, selectedSlot!), 'Caja programada. Revisa Mis pedidos.')} />
+            </View>}
+          </View>)}
+          {row.status === 'PENDING' && <PrimaryButton label="Continuar autorización" disabled={busy} onPress={() => void run(async () => { const link = await subscriptionsApi.checkout(row.id); await Linking.openURL(link.checkoutUrl); }, 'Abriendo autorización')} />}
+          <PrimaryButton label="Actualizar pagos" variant="secondary" disabled={busy} onPress={() => void run(() => subscriptionsApi.sync(row.id), 'Estado actualizado')} />
+          {row.status !== 'CANCELED' && <PrimaryButton label="Cancelar próximos cobros" variant="ghost" disabled={busy} onPress={() => Alert.alert('Cancelar suscripción', 'No habrá nuevos cobros. Tus cajas pagadas se mantienen disponibles hasta su vencimiento.', [{ text: 'Volver', style: 'cancel' }, { text: 'Cancelar renovación', style: 'destructive', onPress: () => void run(() => subscriptionsApi.cancel(row.id), 'Renovación cancelada') }])} />}
+        </View>)}
+        <PrimaryButton label="Ver saldo de compras anteriores" variant="ghost" onPress={() => router.push('/wallet' as Href)} />
+      </>}
+    </ScrollView>
+  </ScreenScaffold>;
 }
 
 const styles = StyleSheet.create({
-  sheetFooter: { gap: spacing.xs },
-  skeletonTop: {
-    marginBottom: spacing.md,
-  },
-  content: {
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.xl,
-    flexGrow: 1,
-  },
-  hero: {
-    backgroundColor: colors.surfaceDark,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-  },
-  heroIcon: {
-    width: 54,
-    height: 54,
-    borderRadius: radius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.brand600,
-  },
-  heroTitle: {
-    ...type.title,
-    color: colors.onDark,
-    marginTop: spacing.md,
-  },
-  heroCopy: {
-    ...type.body,
-    color: colors.onDarkMuted,
-    marginTop: spacing.sm,
-  },
-  walletBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-    backgroundColor: colors.brand50,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.brand100,
-    padding: spacing.md,
-    marginTop: spacing.sm + spacing.xs,
-  },
-  walletText: {
-    flex: 1,
-  },
-  walletLabel: {
-    ...type.label,
-    color: colors.brand700,
-  },
-  walletAmount: {
-    ...type.title,
-    color: colors.brand900,
-    marginTop: 3,
-  },
-  walletDetail: {
-    ...type.bodySm,
-    color: colors.inkMuted,
-    marginTop: 3,
-  },
-  plan: {
-    overflow: 'hidden',
-    backgroundColor: colors.surfaceRaised,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.lineSoft,
-    padding: spacing.lg,
-    marginTop: spacing.md,
-  },
-  planFeatured: {
-    borderColor: '#e9b04e',
-    borderWidth: 2,
-  },
-  badge: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    backgroundColor: colors.accent500,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderBottomLeftRadius: radius.md,
-  },
-  badgeText: {
-    ...type.label,
-    color: colors.surface,
-  },
-  planTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm + spacing.xs,
-    paddingRight: 96,
-  },
-  planMark: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.sm + 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.brand50,
-  },
-  planText: {
-    flex: 1,
-  },
-  planName: {
-    ...type.heading,
-    color: colors.ink,
-  },
-  planDescription: {
-    ...type.bodySm,
-    color: colors.inkMuted,
-    marginTop: 3,
-  },
-  amounts: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginTop: spacing.md,
-  },
-  amountLabel: {
-    ...type.label,
-    color: colors.inkMuted,
-  },
-  price: {
-    ...type.heading,
-    color: colors.ink,
-    marginTop: 3,
-  },
-  credit: {
-    ...type.title,
-    color: colors.brand700,
-    marginTop: 3,
-  },
-  bonus: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: '#fff8e8',
-    borderRadius: radius.sm,
-    padding: spacing.sm + spacing.xs,
-    marginTop: spacing.sm + spacing.xs,
-  },
-  bonusText: {
-    ...type.bodySm,
-    fontWeight: '800',
-    color: '#7d5400',
-  },
-  benefits: {
-    gap: spacing.sm,
-    marginTop: spacing.md,
-  },
-  benefit: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-  },
-  benefitText: {
-    ...type.bodySm,
-    flex: 1,
-    fontWeight: '700',
-    color: colors.ink,
-  },
-  validity: {
-    ...type.caption,
-    color: colors.inkMuted,
-    marginTop: spacing.md,
-  },
-  planButton: {
-    marginTop: spacing.sm + spacing.xs,
-  },
-  info: {
-    flexDirection: 'row',
-    gap: spacing.sm + spacing.xs,
-    backgroundColor: colors.brand50,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginTop: spacing.lg,
-  },
-  infoText: {
-    ...type.bodySm,
-    flex: 1,
-    color: colors.brand700,
-  },
-  sheetIcon: {
-    width: 54,
-    height: 54,
-    borderRadius: radius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.brand50,
-  },
-  sheetCopy: {
-    ...type.body,
-    color: colors.inkMuted,
-    marginTop: spacing.md,
-  },
-  terms: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm + spacing.xs,
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginTop: spacing.md,
-  },
-  termsText: {
-    ...type.bodySm,
-    flex: 1,
-    color: colors.ink,
-  },
-  confirm: {
-    marginTop: spacing.md,
-  },
-  pressed: {
-    opacity: 0.85,
-  },
+  content: { padding: spacing.md, paddingBottom: spacing.xl, gap: spacing.md },
+  hero: { backgroundColor: colors.surfaceDark, borderRadius: radius.lg, padding: spacing.lg, gap: spacing.sm },
+  heroTitle: { ...type.title, color: colors.onDark },
+  heroCopy: { ...type.body, color: colors.onDarkMuted },
+  card: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, padding: spacing.md, gap: spacing.sm },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  capacity: { ...type.bodySm, color: colors.brand700, fontWeight: '700' },
+  name: { ...type.heading, color: colors.ink },
+  price: { ...type.title, color: colors.brand700 },
+  pricePanel: { backgroundColor: colors.brand50, borderRadius: radius.md, padding: spacing.md, gap: spacing.xs },
+  priceSuffix: { ...type.bodySm, color: colors.inkMuted },
+  section: { ...type.title, color: colors.ink, marginTop: spacing.md },
+  item: { ...type.bodySm, color: colors.ink, flexShrink: 1 },
+  muted: { ...type.bodySm, color: colors.inkMuted },
+  label: { ...type.label, color: colors.ink },
+  selection: { gap: spacing.sm, marginTop: spacing.sm },
+  choice: { borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, padding: spacing.sm },
+  choiceActive: { borderColor: colors.brand600, backgroundColor: colors.brand50 },
+  terms: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start', marginVertical: spacing.sm },
+  cycle: { gap: spacing.sm, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceMuted },
 });

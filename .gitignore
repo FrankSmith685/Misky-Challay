@@ -31,6 +31,7 @@ Thumbs.db
 # Uploads locales / temporales
 backend/uploads/
 backend/tmp/
+backend/tools/photo3d/__pycache__/
 # Anclado a la raiz a proposito: sin la barra inicial ignoraba CUALQUIER carpeta
 # llamada coverage del repositorio, incluida una ruta de la app movil.
 /coverage/
@@ -38,3 +39,5 @@ backend/coverage/
 frontend/coverage/
 playwright-report/
 test-results/
+/backups/
+.env.docker

@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { Umzug, SequelizeStorage, type MigrationParams } from 'umzug';
 import type { QueryInterface } from 'sequelize';
 import { sequelize } from './connection';
@@ -26,6 +26,7 @@ import { logger } from '@config/logger';
 
 // __dirname: en dist/ apunta a dist/database, y las migraciones se copian ahi en el build.
 export const MIGRATIONS_DIR = path.resolve(__dirname, 'migrations');
+const requireMigration = createRequire(__filename);
 
 /** Primera migracion: el esquema completo tal como existia al adoptar migraciones. */
 export const BASELINE_NAME = '0001-baseline.sql';
@@ -98,9 +99,8 @@ export const migrator = new Umzug({
 
       // En Windows una ruta absoluta ("c:\...") no es una URL valida para import():
       // el cargador la interpreta como el protocolo "c:". pathToFileURL la normaliza.
-      const moduleUrl = pathToFileURL(filePath).href;
       const load = async (): Promise<MigrationModule> =>
-        (await import(moduleUrl)) as MigrationModule;
+        requireMigration(filePath) as MigrationModule;
 
       return {
         name,

@@ -1,6 +1,7 @@
 import { forwardRef } from 'react';
 import MenuItem, { type MenuItemProps } from '@mui/material/MenuItem';
 import TextField, { type TextFieldProps } from '@mui/material/TextField';
+import type { SxProps, Theme } from '@mui/material/styles';
 
 interface SelectProps extends Omit<TextFieldProps, 'select' | 'error' | 'helperText'> {
   label?: string;
@@ -8,9 +9,20 @@ interface SelectProps extends Omit<TextFieldProps, 'select' | 'error' | 'helperT
   hint?: string;
 }
 
-/** Selector de producto sobre MUI: accesibilidad, foco, menu y tema centralizados. */
+const selectAppearance: SxProps<Theme> = {
+  '& .MuiOutlinedInput-root': {
+    minHeight: 52,
+    borderRadius: 'var(--radius-field)',
+    backgroundColor: 'var(--color-surface)',
+  },
+  '& .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--color-line)' },
+  '& .MuiSelect-select': { display: 'flex', alignItems: 'center' },
+  '& .MuiSelect-icon': { right: 14, fontSize: 20, color: 'var(--color-ink-muted)' },
+};
+
+/** Apariencia del selector compartida por todos los usos de Select. */
 export const Select = forwardRef<HTMLDivElement, SelectProps>(
-  ({ label, error, hint, fullWidth = true, size = 'medium', children, ...props }, ref) => (
+  ({ label, error, hint, fullWidth = true, size = 'medium', children, sx, ...props }, ref) => (
     <TextField
       select
       inputRef={ref}
@@ -20,6 +32,7 @@ export const Select = forwardRef<HTMLDivElement, SelectProps>(
       fullWidth={fullWidth}
       size={size}
       {...props}
+      sx={[selectAppearance, ...(Array.isArray(sx) ? sx : sx ? [sx] : [])]}
     >
       {children}
     </TextField>

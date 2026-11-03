@@ -25,7 +25,7 @@ const qrSvgDataUrl = (value: string): string => {
       ? `M${index % size} ${Math.floor(index / size)}h1v1h-1z`
       : '')
     .join('');
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 -2 ${size + 4} ${size + 4}" shape-rendering="crispEdges"><rect x="-2" y="-2" width="${size + 4}" height="${size + 4}" fill="#fff"/><path d="${path}" fill="#13231b"/></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 -2 ${size + 4} ${size + 4}" shape-rendering="crispEdges"><rect x="-2" y="-2" width="${size + 4}" height="${size + 4}" fill="#fff"/><path d="${path}" fill="#15283d"/></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 };
 
@@ -44,12 +44,12 @@ const receiptHtml = async (order: StaffRow): Promise<string> => {
   const paperWidth = Number(settings.paperWidth) === 58 ? 58 : 80;
 
   return `<!doctype html><html><head><meta charset="utf-8"><style>
-    @page{size:${paperWidth}mm auto;margin:0}*{box-sizing:border-box}body{margin:0;color:#13231b;font-family:Arial,sans-serif;font-size:11px}
-    .ticket{width:${paperWidth}mm;padding:4mm}.center{text-align:center}.brand{font-size:20px;font-weight:900;color:#176842}.box{border:2px solid #176842;border-radius:10px;padding:9px;margin-top:8px}
-    .warning{font-weight:900;color:#b42318;text-transform:uppercase}.meta{margin:10px 0;padding:8px;background:#f1f6f3;border-radius:8px;line-height:1.55}
-    table{width:100%;border-collapse:collapse}th{background:#176842;color:#fff;text-align:left;padding:6px}td{padding:7px 5px;border-bottom:1px solid #dbe5df;vertical-align:top}.right{text-align:right}.total{font-size:16px;font-weight:900;border-top:2px solid #176842;padding-top:7px}.qr{width:72px;height:72px}.footer{display:flex;justify-content:space-between;align-items:end;margin-top:12px;padding-top:8px;border-top:1px solid #dbe5df}
+    @page{size:${paperWidth}mm auto;margin:0}*{box-sizing:border-box}body{margin:0;color:#15283d;font-family:Arial,sans-serif;font-size:11px}
+    .ticket{width:${paperWidth}mm;padding:4mm}.center{text-align:center}.brand{font-size:20px;font-weight:900;color:#0b5fa8}.box{border:2px solid #0b5fa8;border-radius:10px;padding:9px;margin-top:8px}
+    .warning{font-weight:900;color:#b42318;text-transform:uppercase}.meta{margin:10px 0;padding:8px;background:#f1f8ff;border-radius:8px;line-height:1.55}
+    table{width:100%;border-collapse:collapse}th{background:#0b5fa8;color:#fff;text-align:left;padding:6px}td{padding:7px 5px;border-bottom:1px solid #dce6f0;vertical-align:top}.right{text-align:right}.total{font-size:16px;font-weight:900;border-top:2px solid #0b5fa8;padding-top:7px}.qr{width:72px;height:72px}.footer{display:flex;justify-content:space-between;align-items:end;margin-top:12px;padding-top:8px;border-top:1px solid #dce6f0}
   </style></head><body><main class="ticket">
-    <header class="center"><div class="brand">Verde Bowl</div><div>${escape(branch.name)}</div><div class="box"><b>TICKET INTERNO</b><div style="font-size:16px;font-weight:900;margin:4px">Pedido ${escape(order.orderNumber)}</div><div class="warning">No es un comprobante de pago</div></div></header>
+    <header class="center"><div class="brand">Misky Challay</div><div>${escape(branch.name)}</div><div class="box"><b>TICKET INTERNO</b><div style="font-size:16px;font-weight:900;margin:4px">Pedido ${escape(order.orderNumber)}</div><div class="warning">No es un comprobante de pago</div></div></header>
     <section class="meta"><div><b>Fecha:</b> ${escape(order.placedAt)}</div><div><b>Cliente:</b> ${escape(order.contactName || 'Sin nombre')}</div><div><b>Telefono:</b> ${escape(order.contactPhone || 'Sin telefono')}</div><div><b>Canal:</b> ${escape(order.deliveryType)}</div><div><b>Pago:</b> ${escape(methods)}</div>${address.line1 ? `<div><b>Direccion:</b> ${escape(address.line1)}${address.reference ? ` · ${escape(address.reference)}` : ''}</div>` : ''}${order.notes ? `<div><b>Indicaciones:</b> ${escape(order.notes)}</div>` : ''}</section>
     <table><thead><tr><th>Producto</th><th>Cant.</th><th class="right">Importe</th></tr></thead><tbody>${items.map((item) => `<tr><td><b>${escape(item.productNameSnapshot)}</b>${item.variantNameSnapshot ? `<br><small>${escape(item.variantNameSnapshot)}</small>` : ''}${item.specialInstructions ? `<br><small>Nota: ${escape(item.specialInstructions)}</small>` : ''}</td><td>${escape(item.quantity)}</td><td class="right">${amount(item.lineTotal)}</td></tr>`).join('')}</tbody></table>
     <div style="margin-top:10px"><div class="right">Subtotal: ${amount(order.subtotal)}</div>${Number(order.deliveryFee) > 0 ? `<div class="right">Delivery: ${amount(order.deliveryFee)}</div>` : ''}${Number(order.discountTotal) > 0 ? `<div class="right">Descuentos: -${amount(order.discountTotal)}</div>` : ''}<div class="right total">Total: ${amount(Number(order.grandTotal ?? 0) + Number(order.walletAmount ?? 0))}</div></div>

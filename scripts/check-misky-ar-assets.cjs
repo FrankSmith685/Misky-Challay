@@ -1,0 +1,13 @@
+const { readFileSync } = require('node:fs');
+const { createHash } = require('node:crypto');
+const path = require('node:path');
+const assert = require('node:assert/strict');
+const root = path.resolve(__dirname, '../frontend/public');
+const manifest = JSON.parse(readFileSync(path.join(root, 'ar/misky-card-v1.json'), 'utf8'));
+const hash = value => createHash('sha256').update(value).digest('hex');
+assert.equal(manifest.mindar, '1.2.5');
+assert.equal(manifest.target, '/images/brand/patisserie-chocolate-v1.jpg');
+assert.deepEqual(manifest.dimensions, [[1536, 1024]]);
+assert.equal(hash(readFileSync(path.join(root, manifest.target))), manifest.sha256, 'La foto AR cambió. Ejecuta scripts/compile-misky-ar-target.cjs antes de publicar.');
+assert.equal(hash(readFileSync(path.join(root, 'ar/misky-card-v1.mind'))), manifest.compiledSha256, 'El archivo de reconocimiento no coincide con su manifiesto.');
+console.log('MindAR assets OK: exact target photo and compiled recognition file.');

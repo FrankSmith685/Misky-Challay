@@ -50,7 +50,7 @@ export default function ScanTableScreen() {
         setLocked(true);
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
         toast.show({
-          message: 'Ese código no pertenece a una mesa Verde Bowl.',
+          message: 'Ese código no pertenece a una mesa Misky Challay.',
           tone: 'warning',
           placement: 'top',
           haptic: false,
@@ -209,7 +209,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.4)',
   },
   circleActive: {
-    backgroundColor: colors.accent500,
+    backgroundColor: colors.accent600,
   },
   eyebrow: {
     ...type.label,
@@ -231,7 +231,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 54,
     height: 54,
-    borderColor: colors.accent500,
+    borderColor: colors.accent600,
   },
   topLeft: {
     left: 0,

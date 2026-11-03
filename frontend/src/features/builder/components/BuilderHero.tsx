@@ -1,4 +1,4 @@
-import { ArrowDown, CheckCircle2, Scale, ShieldCheck, Sparkles } from 'lucide-react';
+import { ArrowDown, Scale, ShieldCheck, Sparkles } from 'lucide-react';
 import { Button } from '@components/ui/Button';
 import { formatCurrency } from '@lib/format';
 import type { BuilderConfig } from '../types';
@@ -11,7 +11,6 @@ interface BuilderHeroProps {
 const BENEFITS = [
   { icon: Scale, title: 'Precio en vivo' },
   { icon: ShieldCheck, title: 'Selección validada' },
-  { icon: CheckCircle2, title: 'Nutrición visible' },
 ];
 
 /** Entrada del constructor: explica el valor y lleva al primer paso. */
@@ -19,10 +18,10 @@ export const BuilderHero = ({ product, variants }: BuilderHeroProps) => {
   const priceFrom = Math.min(...variants.map((entry) => entry.basePrice));
 
   return (
-    <section className="relative isolate overflow-hidden bg-[#2a0e2a] text-white">
+    <section className="relative isolate overflow-hidden bg-brand-900 text-white">
       <div className="pointer-events-none absolute inset-0 opacity-25 [background-image:linear-gradient(rgba(255,255,255,.08)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.08)_1px,transparent_1px)] [background-size:42px_42px]" />
       <div className="pointer-events-none absolute -left-24 top-1/2 size-72 -translate-y-1/2 rounded-full bg-brand-400/20 blur-3xl" />
-      <div className="relative mx-auto grid max-w-7xl items-center gap-9 px-4 py-10 sm:px-6 sm:py-12 lg:grid-cols-[1.08fr_.92fr] lg:gap-14 lg:px-8 lg:py-14">
+      <div className="relative mx-auto grid max-w-8xl items-center gap-9 px-4 py-10 sm:px-6 sm:py-12 lg:grid-cols-[1.08fr_.92fr] lg:gap-14 lg:px-8 lg:py-14">
         <div className="relative z-10 max-w-2xl">
           <span className="inline-flex items-center gap-2 rounded-pill border border-white/12 bg-white/8 px-3.5 py-2 text-xs font-extrabold text-brand-200 backdrop-blur">
             <Sparkles className="size-3.5" aria-hidden="true" />
@@ -33,7 +32,7 @@ export const BuilderHero = ({ product, variants }: BuilderHeroProps) => {
             <span className="text-brand-300"> realmente tuyo.</span>
           </h1>
           <p className="mt-5 max-w-xl text-base leading-7 text-brand-100 sm:text-lg">
-            Elige el tamaño, combina tus ingredientes y revisa el precio y la nutrición antes de agregarlo al carrito.
+            Elige el tamaño, combina tus ingredientes y revisa el precio antes de agregarlo al carrito.
           </p>
 
           <ul className="mt-6 flex flex-wrap gap-x-5 gap-y-2" aria-label="Ventajas del constructor">
@@ -81,7 +80,7 @@ export const BuilderHero = ({ product, variants }: BuilderHeroProps) => {
                 <p className="text-[10px] font-bold uppercase tracking-[.17em] text-white/70">Vista en tiempo real</p>
                 <p className="mt-1 text-sm font-extrabold text-white">Tu combinación, paso a paso</p>
               </div>
-              <span className="rounded-pill bg-accent-500 px-3 py-1.5 text-xs font-extrabold text-white">
+              <span className="rounded-pill bg-accent-500 px-3 py-1.5 text-xs font-extrabold text-ink">
                 A tu manera
               </span>
             </div>

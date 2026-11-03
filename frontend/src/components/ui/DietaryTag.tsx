@@ -5,9 +5,8 @@ import { cn } from '@lib/cn';
 export const DIETARY_LABELS: Record<string, string> = {
   vegano: 'Vegano',
   vegetariano: 'Vegetariano',
-  'alto-en-proteina': 'Alto en proteína',
   'sin-gluten': 'Sin gluten',
-  'bajo-en-calorias': 'Bajo en calorías',
+  'sin-azucar': 'Sin azúcar',
 };
 
 /** Etiqueta dietética individual, apariencia única en toda la app. */

@@ -1,0 +1,19 @@
+# Isolated environment: retain Pascal / GTX 1060 support with PyTorch cu118.
+# Install torch==2.5.1 and torchvision==0.20.1 from the official cu118 index first.
+numpy==1.26.4
+Pillow>=11.0,<13
+einops==0.7.0
+jaxtyping==0.2.31
+omegaconf==2.3.0
+transformers==4.42.3
+open_clip_torch==2.24.0
+huggingface-hub==0.36.2
+trimesh>=4.4,<5
+rembg==2.0.60
+onnxruntime>=1.20,<1.24
+scipy>=1.13,<1.15
+gpytoolbox==0.2.0
+pynanoinstantmeshes==0.0.3
+# Prebuilt Windows libraries for UV packing and texture rasterization.
+xatlas==0.0.11
+moderngl==5.12.0

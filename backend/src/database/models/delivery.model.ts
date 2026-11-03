@@ -49,6 +49,7 @@ export class Delivery extends Model<InferAttributes<Delivery>, InferCreationAttr
   declare externalReference: CreationOptional<string | null>;
   declare status: CreationOptional<DeliveryStatus>;
   declare cost: CreationOptional<number>;
+  declare vehicleType: CreationOptional<string | null>;
   declare etaMinutes: CreationOptional<number | null>;
   declare assignedAt: CreationOptional<Date | null>;
   declare pickedUpAt: CreationOptional<Date | null>;
@@ -84,6 +85,7 @@ Delivery.init(
       defaultValue: DELIVERY_STATUS.PENDING,
     },
     cost: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
+    vehicleType: { type: DataTypes.STRING(16), allowNull: true },
     etaMinutes: { type: DataTypes.INTEGER, allowNull: true },
     assignedAt: { type: DataTypes.DATE, allowNull: true },
     pickedUpAt: { type: DataTypes.DATE, allowNull: true },

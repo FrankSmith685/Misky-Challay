@@ -11,7 +11,11 @@ import { env, isProduction } from '@config/env';
 import { getMailProvider } from '@integrations/mail';
 import { ApiError } from '@shared/errors/ApiError';
 import { logger } from '@config/logger';
+import { messagingConfigService } from '@modules/communications/communications.config';
 import { settingsService, type MobilePlatform } from './settings.service';
+import { storefrontService } from './storefront.service';
+import { storefrontUpdateSchema } from './storefront.schema';
+import { checkoutTermsService, checkoutTermsUpdateSchema } from './checkoutTerms.service';
 
 const router = Router();
 
@@ -30,6 +34,7 @@ const communicationBody = z.object({
   emailNotificationsEnabled: z.boolean(),
   inAppNotificationsEnabled: z.boolean(),
   orderUpdatesEnabled: z.boolean(),
+  whatsappUpdatesEnabled: z.boolean(),
   planUpdatesEnabled: z.boolean(),
   staffAccessEnabled: z.boolean(),
   availabilityAlertsEnabled: z.boolean(),
@@ -50,15 +55,23 @@ const communicationBody = z.object({
   }
 });
 
-const localPaymentsBody = z.object({
+const qrImageUrl = z.union([
+  z.string().trim().url().max(500).refine((value) => /^https?:\/\//i.test(value), 'Usa una URL HTTP o HTTPS'),
+  z.string().trim().max(500).regex(/^\/(?:images\/payments\/|api\/v1\/media\/files\/)[a-zA-Z0-9_./-]+$/, 'Usa la ruta de una imagen de la tienda'),
+  z.literal(''),
+]);
+
+export const localPaymentsBody = z.object({
+  paymentWindowMinutes: z.coerce.number().int().min(5).max(120).default(15),
+  reviewAlertMinutes: z.coerce.number().int().min(1).max(120).default(10),
   yapeEnabled: z.boolean(),
   yapePhone: z.string().trim().max(30),
   yapeRecipient: z.string().trim().max(120),
-  yapeQrImageUrl: z.union([z.string().trim().url().max(500), z.literal('')]),
+  yapeQrImageUrl: qrImageUrl,
   plinEnabled: z.boolean(),
   plinPhone: z.string().trim().max(30),
   plinRecipient: z.string().trim().max(120),
-  plinQrImageUrl: z.union([z.string().trim().url().max(500), z.literal('')]),
+  plinQrImageUrl: qrImageUrl,
   instructions: z.string().trim().min(10).max(500),
 }).superRefine((value, context) => {
   for (const provider of ['yape', 'plin'] as const) {
@@ -96,9 +109,9 @@ router.get(
       settingsService.getReceiptSettings(),
     ]);
     return ok(res, {
-      business,
+      business: { ...business, whatsappPhone: (await messagingConfigService.public()).supportPhone },
       igvRate: env.IGV_RATE,
-      cod: { enabled: env.COD_ENABLED, maxAmount: env.COD_MAX_AMOUNT },
+      cod: { enabled: false, maxAmount: env.COD_MAX_AMOUNT },
       invoicing: { boletaDniThreshold: env.BOLETA_DNI_THRESHOLD },
       localPayments,
       receipts,
@@ -110,7 +123,10 @@ router.get(
        * al confirmar. Fuera de producción vale el simulador local, que cumple el
        * mismo ciclo y su webhook.
        */
-      payments: { onlineEnabled: Boolean(env.STRIPE_SECRET_KEY) || !isProduction },
+      payments: {
+        onlineEnabled: Boolean(env.STRIPE_SECRET_KEY || env.MERCADOPAGO_ACCESS_TOKEN) || !isProduction,
+        onlineProvider: env.MERCADOPAGO_ACCESS_TOKEN ? 'mercadopago' : env.STRIPE_SECRET_KEY ? 'stripe' : 'mock',
+      },
       // La app compara su propia versión con esto al arrancar: es la unica forma de
       // forzar una actualización en instalaciones que ya están en la calle.
       mobile: settingsService.getMobileAppSettings(requestedPlatform(req.query.platform)),
@@ -118,7 +134,30 @@ router.get(
   }),
 );
 
+// Editorial content is public; writing it requires the same authority as business settings.
+router.get('/storefront', asyncHandler(async (_req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  return ok(res, await storefrontService.get());
+}));
+
+router.get('/terms', asyncHandler(async (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  return ok(res, await checkoutTermsService.get());
+}));
+
 router.use(authenticate, requireSuperAdmin);
+
+router.put('/terms', validate(checkoutTermsUpdateSchema), asyncHandler(async (req, res) => {
+  const result = await checkoutTermsService.update(req.body, req.user!.sub);
+  await audit(req, { action: 'CHECKOUT_TERMS_PUBLISHED', entity: 'checkout_terms', entityId: 1, before: result.before, after: result.after });
+  return ok(res, result.after);
+}));
+
+router.put('/storefront', validate(storefrontUpdateSchema), asyncHandler(async (req, res) => {
+  const result = await storefrontService.update(req.body.content, req.body.version, req.user!.sub);
+  await audit(req, { action: 'STOREFRONT_UPDATED', entity: 'storefront_settings', entityId: 1, before: result.before, after: result.after });
+  return ok(res, result.after);
+}));
 
 router.get(
   '/business',
@@ -230,6 +269,11 @@ router.get(
   asyncHandler(async (_req, res) => ok(res, await settingsService.getNotificationOverview())),
 );
 
+router.get(
+  '/integrations',
+  asyncHandler(async (_req, res) => ok(res, await settingsService.getIntegrationStatus())),
+);
+
 router.post(
   '/communication/test',
   validate(z.object({ body: z.object({ recipient: z.string().trim().email().max(160) }) })),
@@ -248,9 +292,9 @@ router.post(
       });
       const result = await provider.send({
         to: req.body.recipient,
-        subject: 'Prueba de correo de Verde Bowl',
+        subject: 'Prueba de correo de Misky Challay',
         text: 'La configuracion de correo funciona correctamente.',
-        html: '<div style="font-family:Arial,sans-serif"><h2>Configuracion correcta</h2><p>Verde Bowl puede enviar correos con esta cuenta.</p></div>',
+        html: '<div style="font-family:Arial,sans-serif"><h2>Configuracion correcta</h2><p>Misky Challay puede enviar correos con esta cuenta.</p></div>',
       });
       await audit(req, {
         action: 'settings.communication.test',

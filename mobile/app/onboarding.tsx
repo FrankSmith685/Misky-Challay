@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import {
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,6 +18,7 @@ import * as Location from 'expo-location';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PrimaryButton } from '../src/components/PrimaryButton';
+import { BrandLogo } from '../src/components/BrandLogo';
 import { useMobileNotifications } from '../src/providers/MobileNotificationsProvider';
 import { useToast } from '../src/providers/ToastProvider';
 import { mobileAnalytics } from '../src/services/analytics';
@@ -131,14 +133,7 @@ export default function OnboardingScreen() {
       <StatusBar style="light" />
 
       <View style={styles.topBar}>
-        <View style={styles.brand}>
-          <View style={styles.brandMark}>
-            <MaterialCommunityIcons name="leaf" size={18} color={colors.brand800} />
-          </View>
-          <Text style={styles.brandName}>
-            Verde<Text style={styles.accent}>Bowl</Text>
-          </Text>
-        </View>
+        <BrandLogo inverse />
 
         <Pressable
           accessibilityRole="button"
@@ -166,20 +161,20 @@ export default function OnboardingScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.hero}>
-            <MaterialCommunityIcons name="bowl-mix" size={54} color={colors.onDark} />
+            <Image source={require('../assets/misky-challay-square.jpeg')} style={styles.heroImage} resizeMode="cover" accessibilityLabel="Misky Challay, Pastelería Personalizada" />
           </View>
 
-          <Text style={styles.eyebrow}>BIENVENIDO A VERDE BOWL</Text>
-          <Text style={styles.title}>Comida real, armada a tu manera</Text>
+          <Text style={styles.eyebrow}>BIENVENIDO A MISKY CHALLAY</Text>
+          <Text style={styles.title}>La torta de tu celebración</Text>
           <Text style={styles.copy}>
-            Arma tu bowl ingrediente a ingrediente y mira cómo cambian las calorías, la proteína y el
-            precio antes de pedir. Nosotros calculamos; tú decides.
+            Personaliza porciones, bizcocho, relleno y decoración. Consulta el precio y reserva
+            una fecha disponible antes de confirmar.
           </Text>
 
           <View style={styles.bullets}>
-            <Bullet icon="tune-variant" text="Personaliza cada bowl y guárdalo para repetirlo." />
-            <Bullet icon="bike-fast" text="Delivery, recojo en local o pedido desde tu mesa." />
-            <Bullet icon="shield-check-outline" text="Precios con IGV incluido y alérgenos siempre a la vista." />
+            <Bullet icon="tune-variant" text="Combina sabores y añade un mensaje especial." />
+            <Bullet icon="bike-fast" text="Elige delivery o recojo para el día de tu celebración." />
+            <Bullet icon="shield-check-outline" text="Consulta ingredientes y precio antes de pedir." />
           </View>
         </ScrollView>
 
@@ -209,7 +204,7 @@ export default function OnboardingScreen() {
           <PermissionCard
             icon="bell-ring-outline"
             title="Avisos del pedido"
-            description="Te avisamos cuando el pago se confirma, cuando tu bowl entra en cocina y cuando sale hacia ti. Nada de publicidad."
+            description="Te avisamos cuando el pago se confirma, cuando tu torta entra en producción y cuando sale hacia ti. Nada de publicidad."
             actionLabel="Activar avisos"
             grantedLabel="Avisos activados"
             deniedLabel={
@@ -363,26 +358,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
-  brand: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  brandMark: {
-    width: 34,
-    height: 34,
-    borderRadius: radius.sm + 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.onDark,
-  },
-  brandName: {
-    ...type.heading,
-    color: colors.onDark,
-  },
-  accent: {
-    color: colors.accent500,
-  },
   skip: {
     minHeight: layout.minTouch,
     justifyContent: 'center',
@@ -405,14 +380,14 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.lg,
   },
   hero: {
-    width: 96,
-    height: 96,
+    width: 156,
+    height: 156,
     borderRadius: radius.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surfaceDarkRaised,
+    overflow: 'hidden',
+    backgroundColor: colors.surface,
     marginBottom: spacing.lg,
   },
+  heroImage: { width: '100%', height: '100%' },
   eyebrow: {
     ...type.label,
     color: colors.brand100,
@@ -473,8 +448,8 @@ const styles = StyleSheet.create({
   },
   permissionAction: {
     marginTop: spacing.md,
-    backgroundColor: colors.accent500,
-    borderColor: colors.accent500,
+    backgroundColor: colors.accent600,
+    borderColor: colors.accent600,
   },
   permissionHint: {
     ...type.caption,
@@ -513,11 +488,11 @@ const styles = StyleSheet.create({
   },
   dotActive: {
     width: 26,
-    backgroundColor: colors.accent500,
+    backgroundColor: colors.accent600,
   },
   cta: {
-    backgroundColor: colors.accent500,
-    borderColor: colors.accent500,
+    backgroundColor: colors.accent600,
+    borderColor: colors.accent600,
   },
   decline: {
     minHeight: layout.minTouch,

@@ -1,12 +1,14 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { authenticate } from '@middlewares/auth.middleware';
-import { requireAnyPermission, requirePermissions } from '@middlewares/rbac.middleware';
+import { requireAnyPermission, requirePermissions, requirePlatformOwner, requireSuperAdmin } from '@middlewares/rbac.middleware';
 import { validate } from '@middlewares/validate.middleware';
 import { PERMISSIONS } from '@config/constants';
 import { adminController } from './admin.controller';
 import catalogAdminRoutes from './catalogAdmin.routes';
 import commercialAdminRoutes from './commercialAdmin.routes';
+import cakeFinanceRoutes from '@modules/cakes/cakeFinance.routes';
+import { orderContactBody } from './orderContact.service';
 
 /**
  * Modulo ADMIN (M13).
@@ -18,6 +20,7 @@ const router = Router();
 // ABM de catalogo y ABM comercial (cada uno con su autenticacion y permisos).
 router.use('/catalog', catalogAdminRoutes);
 router.use(commercialAdminRoutes);
+router.use('/cake-finance', cakeFinanceRoutes);
 
 router.use(authenticate);
 
@@ -57,6 +60,8 @@ router.get(
   ),
   adminController.orderDetail,
 );
+
+router.post('/orders/:orderNumber/customer-contact', requirePermissions(PERMISSIONS.ORDER_READ), requireAnyPermission(PERMISSIONS.ORDER_UPDATE_STATUS, PERMISSIONS.COMMUNICATION_REPLY), validate(z.object({ params: z.object({ orderNumber: z.string().min(5).max(20) }), body: orderContactBody })), adminController.recordCustomerContact);
 
 router.post(
   '/orders/:orderNumber/invoice',
@@ -124,6 +129,42 @@ router.get(
     }),
   ),
   adminController.reports,
+);
+
+router.get(
+  '/reports/export',
+  requireAnyPermission(PERMISSIONS.REPORT_SALES_READ, PERMISSIONS.REPORT_OPERATIONS_READ),
+  validate(
+    z.object({
+      query: z.object({
+        branchId: z.coerce.number().int().positive().optional(),
+        from: z.string().optional(),
+        to: z.string().optional(),
+      }),
+    }),
+  ),
+  adminController.reportsExport,
+);
+
+router.get(
+  '/cake-commissions',
+  requireSuperAdmin,
+  validate(z.object({ query: z.object({ branchId: z.coerce.number().int().positive().optional(), from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), status: z.enum(['PENDING', 'LIQUIDATED']).optional() }) })),
+  adminController.cakeCommissions,
+);
+
+router.patch(
+  '/cake-commissions/:id/adjustment',
+  requirePlatformOwner,
+  validate(z.object({ params: z.object({ id: z.coerce.number().int().positive() }), body: z.object({ adjustmentAmount: z.coerce.number().min(-100000).max(100000), notes: z.string().trim().max(500).optional() }) })),
+  adminController.adjustCakeCommission,
+);
+
+router.post(
+  '/cake-commissions/:id/liquidate',
+  requirePlatformOwner,
+  validate(z.object({ params: z.object({ id: z.coerce.number().int().positive() }), body: z.object({ reference: z.string().trim().min(3).max(120), amount: z.coerce.number().positive().max(1000000).optional(), notes: z.string().trim().max(500).optional() }) })),
+  adminController.liquidateCakeCommission,
 );
 
 router.get(

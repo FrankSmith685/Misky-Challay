@@ -11,7 +11,7 @@ export const MOBILE_PAYMENT_PROVIDER = { YAPE: 'yape', PLIN: 'plin' } as const;
 export type MobilePaymentProvider = (typeof MOBILE_PAYMENT_PROVIDER)[keyof typeof MOBILE_PAYMENT_PROVIDER];
 
 export const MOBILE_PAYMENT_CLAIM_STATUS = {
-  PENDING: 'PENDING', APPROVED: 'APPROVED', REJECTED: 'REJECTED',
+  PENDING: 'PENDING', OBSERVED: 'OBSERVED', APPROVED: 'APPROVED', REJECTED: 'REJECTED',
 } as const;
 export type MobilePaymentClaimStatus = (typeof MOBILE_PAYMENT_CLAIM_STATUS)[keyof typeof MOBILE_PAYMENT_CLAIM_STATUS];
 
@@ -25,6 +25,9 @@ export class MobilePaymentClaim extends Model<
   declare provider: MobilePaymentProvider;
   declare operationCode: string;
   declare payerPhone: CreationOptional<string | null>;
+  declare payerName: CreationOptional<string | null>;
+  declare paidAt: CreationOptional<Date | null>;
+  declare declaredAmount: CreationOptional<number | null>;
   declare status: CreationOptional<MobilePaymentClaimStatus>;
   declare submittedAt: CreationOptional<Date>;
   declare reviewedBy: CreationOptional<number | null>;
@@ -41,6 +44,9 @@ MobilePaymentClaim.init(
     provider: { type: DataTypes.ENUM(...Object.values(MOBILE_PAYMENT_PROVIDER)), allowNull: false },
     operationCode: { type: DataTypes.STRING(24), allowNull: false },
     payerPhone: { type: DataTypes.STRING(20), allowNull: true },
+    payerName: { type: DataTypes.STRING(120), allowNull: true },
+    paidAt: { type: DataTypes.DATE, allowNull: true },
+    declaredAmount: { type: DataTypes.DECIMAL(12, 2), allowNull: true },
     status: {
       type: DataTypes.ENUM(...Object.values(MOBILE_PAYMENT_CLAIM_STATUS)),
       allowNull: false,

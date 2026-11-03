@@ -12,8 +12,8 @@ interface MenuModeSelectorProps {
 
 const options = [
   { value: 'ALL' as const, icon: 'view-grid-outline' as const, title: 'Todo' },
-  { value: 'CUSTOM' as const, icon: 'bowl-mix-outline' as const, title: 'Arma tu bowl' },
-  { value: 'READY' as const, icon: 'chef-hat' as const, title: 'Platos listos' },
+  { value: 'CUSTOM' as const, icon: 'cake-variant' as const, title: 'Personaliza' },
+  { value: 'READY' as const, icon: 'chef-hat' as const, title: 'Clásicas' },
 ];
 
 /** Selector compacto: el constructor es una categoría principal del menú. */

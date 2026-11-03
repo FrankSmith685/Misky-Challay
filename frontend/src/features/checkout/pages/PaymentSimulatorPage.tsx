@@ -44,8 +44,7 @@ const PaymentSimulatorPage = () => {
         <div className="flex items-start gap-2 rounded-xl bg-accent-400/10 p-3">
           <TriangleAlert className="mt-0.5 size-4 shrink-0 text-accent-500" />
           <p className="text-xs text-ink-muted">
-            Simulador de pago (solo desarrollo). Configura <code>STRIPE_SECRET_KEY</code> en{' '}
-            <code>backend/.env</code> y esta pantalla se reemplaza por la de Stripe.
+            Pago simulado para pruebas. No se realizará ningún cobro real.
           </p>
         </div>
 

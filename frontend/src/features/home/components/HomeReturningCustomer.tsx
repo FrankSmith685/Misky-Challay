@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { ChevronRight, Heart, PackageCheck, RotateCcw, Wallet } from 'lucide-react';
 import { useAppSelector } from '@app/hooks';
 import { Button } from '@components/ui/Button';
-import { Skeleton } from '@components/ui/Skeleton';
 import { useWalletBalance } from '@hooks/useWalletBalance';
 import { ordersApi } from '@features/orders/services/orders.service';
 import { useReorder } from '@features/orders/hooks/useReorder';
@@ -26,12 +25,11 @@ const chipClass =
   'inline-flex min-h-9 items-center gap-1.5 rounded-pill border px-3 text-xs font-extrabold transition-colors';
 
 /**
- * BLOQUE DE CONTINUIDAD PARA QUIEN YA COMPRO
+ * BIENVENIDA Y CONTINUIDAD PARA CLIENTES CON SESION
  *
- * La portada era identica para un invitado y para un cliente con diez pedidos: el
- * mas visitado de la tienda aterrizaba en un discurso de captacion y tenia que ir
- * a /cuenta a buscar lo suyo. Aqui arriba estan su pedido en curso, sus tres
- * ultimas compras repetibles, su saldo y sus favoritos.
+ * Quien todavia no compro recibe una bienvenida breve y un acceso al catalogo.
+ * Quien ya compro encuentra su pedido en curso, sus tres ultimas compras
+ * repetibles, su saldo y sus favoritos.
  *
  * Lo monta HomePage solo con sesion iniciada: el invitado ve exactamente la misma
  * portada de antes y no dispara ni una peticion de mas.
@@ -46,7 +44,7 @@ export const HomeReturningCustomer = () => {
   const favoriteCount = useAppSelector((state) => state.favorites.items.length);
   const { balance } = useWalletBalance();
   const { reorder, isReordering } = useReorder();
-  /** `null` mientras carga; `[]` cuando no hay pedidos O cuando la consulta fallo. */
+  /** `null` mientras carga; `[]` cuando no hay pedidos o falla la consulta. */
   const [orders, setOrders] = useState<OrderDetail[] | null>(null);
   /** Que tarjeta lanzo el "Volver a pedir": el spinner va solo en su boton. */
   const [reorderingNumber, setReorderingNumber] = useState<string | null>(null);
@@ -55,6 +53,7 @@ export const HomeReturningCustomer = () => {
     if (userId === null) return undefined;
 
     let cancelled = false;
+    setOrders(null);
     void ordersApi
       .list()
       .then((rows) => {
@@ -75,6 +74,8 @@ export const HomeReturningCustomer = () => {
   const sorted = orders
     ? [...orders].sort((a, b) => new Date(b.placedAt).getTime() - new Date(a.placedAt).getTime())
     : [];
+  // El saludo breve tambien sirve mientras carga o si el historial no responde.
+  const showCompactWelcome = orders === null || orders.length === 0;
   const activeOrder = sorted.find((order) => ACTIVE_STATUSES.includes(order.status)) ?? null;
   /* Un pedido sin pagar no se repite, se paga; y el que ya esta arriba no se ofrece
    * dos veces en la misma pantalla. */
@@ -92,14 +93,15 @@ export const HomeReturningCustomer = () => {
   };
 
   return (
-    <section aria-label="Tu actividad en Verde Bowl" className="border-b border-line bg-white">
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-7">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <section aria-label="Tu actividad en Misky Challay" className="border-b border-line bg-white">
+      <div className={`container-shell ${showCompactWelcome ? 'py-4 sm:py-5' : 'py-6 lg:py-7'}`}>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
-            <p className="text-xs font-black uppercase tracking-[.2em] text-brand-700">Qué gusto verte de nuevo</p>
-            <h2 className="mt-2 text-2xl font-black tracking-[-.04em] text-ink sm:text-3xl">
+            {!showCompactWelcome && <p className="text-xs font-black uppercase tracking-[.2em] text-brand-700">Qué gusto verte de nuevo</p>}
+            <h2 className={`${showCompactWelcome ? 'text-xl sm:text-2xl' : 'mt-2 text-2xl sm:text-3xl'} font-black tracking-[-.04em] text-ink`}>
               {firstName ? `Hola, ${firstName}` : 'Hola de nuevo'}
             </h2>
+            {showCompactWelcome && <p className="mt-1 text-sm text-ink-muted">¿Qué celebraremos contigo?</p>}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -119,12 +121,18 @@ export const HomeReturningCustomer = () => {
                 <Heart className="size-3.5" aria-hidden="true" /> Mis favoritos ({favoriteCount})
               </Link>
             )}
-            <Link
-              to={ROUTES.account}
-              className={`${chipClass} border-line bg-surface text-ink-muted hover:border-brand-300 hover:text-brand-800`}
-            >
-              Mi cuenta <ChevronRight className="size-3.5" aria-hidden="true" />
-            </Link>
+            {showCompactWelcome ? (
+              <Button component={Link} to={ROUTES.menu} size="sm">
+                Explorar tortas <ChevronRight className="size-3.5" aria-hidden="true" />
+              </Button>
+            ) : (
+              <Link
+                to={ROUTES.account}
+                className={`${chipClass} border-line bg-surface text-ink-muted hover:border-brand-300 hover:text-brand-800`}
+              >
+                Mi cuenta <ChevronRight className="size-3.5" aria-hidden="true" />
+              </Link>
+            )}
           </div>
         </div>
 
@@ -158,7 +166,7 @@ export const HomeReturningCustomer = () => {
           </div>
         )}
 
-        {(orders === null || repeatable.length > 0) && (
+        {repeatable.length > 0 && (
           <div className="mt-6">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <h3 className="text-xs font-black uppercase tracking-[.16em] text-ink-muted">Vuelve a pedir</h3>
@@ -171,49 +179,43 @@ export const HomeReturningCustomer = () => {
             </div>
 
             <ul className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {orders === null
-                ? Array.from({ length: 3 }, (_, index) => (
-                    <li key={index}>
-                      <Skeleton className="h-[132px] w-full rounded-card" />
-                    </li>
-                  ))
-                : repeatable.map((order) => (
-                    <li
-                      key={order.id}
-                      className="flex flex-col justify-between gap-3 rounded-card border border-line bg-surface p-4 transition hover:border-brand-200"
+              {repeatable.map((order) => (
+                <li
+                  key={order.id}
+                  className="flex flex-col justify-between gap-3 rounded-card border border-line bg-surface p-4 transition hover:border-brand-200"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center justify-between gap-2 text-xs text-ink-muted">
+                      <span>{formatDate(order.placedAt)}</span>
+                      <span className="font-black text-brand-800">{formatCurrency(order.grandTotal)}</span>
+                    </div>
+                    <p className="mt-2 line-clamp-2 text-sm font-bold leading-5 text-ink">
+                      {summarizeItems(order)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      leftIcon={<RotateCcw className="size-3.5" />}
+                      isLoading={reorderingNumber === order.orderNumber}
+                      disabled={isReordering}
+                      onClick={() => void handleReorder(order.orderNumber)}
+                      className="flex-1"
                     >
-                      <div className="min-w-0">
-                        <div className="flex items-center justify-between gap-2 text-xs text-ink-muted">
-                          <span>{formatDate(order.placedAt)}</span>
-                          <span className="font-black text-brand-800">{formatCurrency(order.grandTotal)}</span>
-                        </div>
-                        <p className="mt-2 line-clamp-2 text-sm font-bold leading-5 text-ink">
-                          {summarizeItems(order)}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          leftIcon={<RotateCcw className="size-3.5" />}
-                          isLoading={reorderingNumber === order.orderNumber}
-                          disabled={isReordering}
-                          onClick={() => void handleReorder(order.orderNumber)}
-                          className="flex-1"
-                        >
-                          Volver a pedir
-                        </Button>
-                        <Button
-                          component={Link}
-                          to={ROUTES.accountOrderDetail(order.orderNumber)}
-                          size="sm"
-                          variant="ghost"
-                        >
-                          Detalle
-                        </Button>
-                      </div>
-                    </li>
-                  ))}
+                      Volver a pedir
+                    </Button>
+                    <Button
+                      component={Link}
+                      to={ROUTES.accountOrderDetail(order.orderNumber)}
+                      size="sm"
+                      variant="ghost"
+                    >
+                      Detalle
+                    </Button>
+                  </div>
+                </li>
+              ))}
             </ul>
           </div>
         )}

@@ -1,3 +1,4 @@
+import { geoService } from '@modules/geo/geo.service';
 import { Op, col, fn } from 'sequelize';
 import {
   Branch,
@@ -392,6 +393,8 @@ export const commercialAdminService = {
         cityId: zone.cityId,
         name: zone.name,
         deliveryFee: Number(zone.deliveryFee),
+        extraCoverageKm: Number(zone.extraCoverageKm),
+        extraFeePerKm: Number(zone.extraFeePerKm),
         minimumOrder: Number(zone.minimumOrder),
         estimatedMinutes: zone.estimatedMinutes,
         priority: zone.priority,
@@ -554,17 +557,26 @@ export const commercialAdminService = {
     cityId: number;
     name: string;
     deliveryFee: number;
-    minimumOrder: number;
+    extraCoverageKm?: number;
+    extraFeePerKm?: number;
+    minimumOrder?: number;
     estimatedMinutes: number;
     priority: number;
     polygon?: GeoPoint[];
   }) {
     try { assertValidPolygon(input.polygon); } catch (error) { throw ApiError.badRequest((error as Error).message); }
+    const extraCoverageKm = input.extraCoverageKm ?? 0;
+    const extraFeePerKm = input.extraFeePerKm ?? 0;
+    if ((extraCoverageKm > 0 && extraFeePerKm <= 0) || (extraFeePerKm > 0 && !input.polygon)) {
+      throw ApiError.badRequest('La extensión requiere un polígono y un recargo por kilómetro; 0 km significa sin límite');
+    }
     return CoverageZone.create({
       cityId: input.cityId,
       name: input.name,
       deliveryFee: input.deliveryFee,
-      minimumOrder: input.minimumOrder,
+      extraCoverageKm: input.extraCoverageKm ?? 0,
+      extraFeePerKm: input.extraFeePerKm ?? 0,
+      minimumOrder: input.minimumOrder ?? 0,
       estimatedMinutes: input.estimatedMinutes,
       priority: input.priority,
       polygon: input.polygon ?? null,
@@ -577,6 +589,8 @@ export const commercialAdminService = {
     input: {
       name?: string;
       deliveryFee?: number;
+      extraCoverageKm?: number;
+      extraFeePerKm?: number;
       minimumOrder?: number;
       estimatedMinutes?: number;
       priority?: number;
@@ -591,6 +605,8 @@ export const commercialAdminService = {
     const before = {
       name: zone.name,
       deliveryFee: Number(zone.deliveryFee),
+      extraCoverageKm: Number(zone.extraCoverageKm),
+      extraFeePerKm: Number(zone.extraFeePerKm),
       minimumOrder: Number(zone.minimumOrder),
       estimatedMinutes: zone.estimatedMinutes,
       priority: zone.priority,
@@ -600,11 +616,19 @@ export const commercialAdminService = {
 
     if (input.name !== undefined) zone.name = input.name;
     if (input.deliveryFee !== undefined) zone.deliveryFee = input.deliveryFee;
+    if (input.extraCoverageKm !== undefined) zone.extraCoverageKm = input.extraCoverageKm;
+    if (input.extraFeePerKm !== undefined) zone.extraFeePerKm = input.extraFeePerKm;
     if (input.minimumOrder !== undefined) zone.minimumOrder = input.minimumOrder;
     if (input.estimatedMinutes !== undefined) zone.estimatedMinutes = input.estimatedMinutes;
     if (input.priority !== undefined) zone.priority = input.priority;
     if (input.isActive !== undefined) zone.isActive = input.isActive;
     if (input.polygon !== undefined) zone.polygon = input.polygon;
+
+    const extraCoverageKm = Number(zone.extraCoverageKm);
+    const extraFeePerKm = Number(zone.extraFeePerKm);
+    if ((extraCoverageKm > 0 && extraFeePerKm <= 0) || (extraFeePerKm > 0 && !zone.polygon)) {
+      throw ApiError.badRequest('La extensión requiere un polígono y un recargo por kilómetro; 0 km significa sin límite');
+    }
 
     await zone.save();
     return { zone, before };
@@ -658,10 +682,11 @@ export const commercialAdminService = {
     days: number;
     windows: Array<{ startHour: number; endHour: number }>;
     capacity: number;
+    carCapacity?: number;
     cutoffHours: number;
   }) {
     const branch = await Branch.findByPk(input.branchId, {
-      include: [{ model: City, as: 'city', attributes: ['timezone'] }],
+      include: [{ model: City, as: 'city', attributes: ['timezone'] }, { model: BranchSchedule, as: 'schedules' }],
     });
     if (!branch) throw ApiError.notFound('Sucursal no encontrada');
 
@@ -686,6 +711,7 @@ export const commercialAdminService = {
         const startsAt = zonedDateAt(isoDate, window.startHour, 0, timeZone);
         const endsAt = zonedDateAt(isoDate, window.endHour, 0, timeZone);
 
+        if (!geoService.slotWithinSchedule(branch, { startsAt, endsAt })) continue;
         const orderCutoffAt = new Date(startsAt.getTime() - input.cutoffHours * 60 * 60 * 1000);
 
         // Una franja cuyo cierre de pedidos ya paso no sirve a nadie.
@@ -700,6 +726,7 @@ export const commercialAdminService = {
             endsAt,
             orderCutoffAt,
             capacity: input.capacity,
+            carCapacity: Math.min(input.capacity, input.carCapacity ?? branch.defaultCarCapacity ?? 0),
             reservedCount: 0,
             confirmedCount: 0,
           },

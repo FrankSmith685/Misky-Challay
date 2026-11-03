@@ -12,7 +12,7 @@ const serviceSignals = [
   {
     icon: Bike,
     title: 'Entrega coordinada',
-    description: 'Asignamos la cocina adecuada según tu ubicación.',
+    description: 'Asignamos la pastelería adecuada según tu ubicación.',
   },
   {
     icon: ShieldCheck,
@@ -53,7 +53,7 @@ const CoveragePage = () => {
     <div className="bg-surface-muted">
       <CoverageHero branchCount={branches.length} />
 
-      <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
+      <div className="mx-auto max-w-8xl px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
         <section id="verificar-cobertura" className="scroll-mt-24">
           <div className="mx-auto mb-8 max-w-3xl text-center">
             <p className="text-xs font-extrabold uppercase tracking-[.18em] text-brand-700">
@@ -80,7 +80,7 @@ const CoveragePage = () => {
                 Nuestra red
               </p>
               <h2 className="mt-2 text-2xl font-black tracking-[-.02em] text-ink sm:text-3xl">
-                Cocinas listas para atenderte
+                Pastelerías listas para atenderte
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-muted">
                 La asignación final depende de tu dirección, los horarios y la disponibilidad del

@@ -7,6 +7,7 @@ import { PrimaryButton } from '../../src/components/PrimaryButton';
 import { ScreenScaffold } from '../../src/components/ScreenScaffold';
 import { primeResource } from '../../src/hooks/useResource';
 import { plansApi } from '../../src/services/api/plans.service';
+import { subscriptionsApi } from '../../src/services/api/subscriptions.service';
 import { colors, radius, spacing, type } from '../../src/theme/tokens';
 import type { WalletSummary } from '../../src/types/domain';
 
@@ -46,7 +47,7 @@ const ICON: Record<State, keyof typeof MaterialCommunityIcons.glyphMap> = {
   pending: 'clock-alert-outline',
 };
 
-export default function PlanResultScreen() {
+function LegacyPlanResultScreen() {
   const { planId = '', payment = '' } = useLocalSearchParams<{
     planId: string;
     payment: string;
@@ -287,3 +288,51 @@ const styles = StyleSheet.create({
     color: colors.onDarkMuted,
   },
 });
+
+function SubscriptionResultScreen({ subscriptionId }: { subscriptionId: number }) {
+  const [state, setState] = useState<'checking' | 'active' | 'pending'>('checking');
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let count = 0;
+    const check = async () => {
+      try {
+        await subscriptionsApi.sync(subscriptionId);
+        const rows = await subscriptionsApi.mine();
+        if (!active) return;
+        const current = rows.find((row) => row.id === subscriptionId);
+        if (current?.cycles.length) {
+          setState('active');
+          return;
+        }
+      } catch { /* El cliente puede volver a comprobar cuando la red se recupere. */ }
+      if (!active) return;
+      count += 1;
+      if (count >= 8) { setState('pending'); return; }
+      timer = setTimeout(() => void check(), 2_000);
+    };
+    setState('checking');
+    void check();
+    return () => { active = false; if (timer) clearTimeout(timer); };
+  }, [subscriptionId, attempt]);
+
+  return <ScreenScaffold tone="dark" showBack={false}>
+    <ScrollView contentContainerStyle={styles.content}>
+      <View style={styles.icon}><MaterialCommunityIcons name={state === 'active' ? 'check-circle-outline' : 'calendar-clock'} size={46} color={colors.surface} /></View>
+      <Text style={styles.eyebrow}>SUSCRIPCIÓN MENSUAL</Text>
+      <Text style={styles.title}>{state === 'active' ? 'Tu caja está pagada' : state === 'checking' ? 'Verificando el primer cobro…' : 'La activación sigue pendiente'}</Text>
+      <Text style={styles.copy}>{state === 'active' ? 'Ya puedes programar el recojo de tu primera caja.' : 'Solo un cobro confirmado habilita una caja. Puedes revisar el estado en Mis suscripciones.'}</Text>
+      <PrimaryButton label="Ver mis suscripciones" onPress={() => router.replace('/plans' as Href)} style={styles.button} />
+      {state === 'pending' && <PrimaryButton label="Comprobar de nuevo" variant="secondary" onPress={() => setAttempt((value) => value + 1)} style={styles.secondary} />}
+    </ScrollView>
+  </ScreenScaffold>;
+}
+
+export default function PlanResultScreen() {
+  const { subscriptionId } = useLocalSearchParams<{ subscriptionId?: string }>();
+  return subscriptionId && /^\d+$/.test(subscriptionId)
+    ? <SubscriptionResultScreen subscriptionId={Number(subscriptionId)} />
+    : <LegacyPlanResultScreen />;
+}

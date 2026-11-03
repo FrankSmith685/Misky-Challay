@@ -13,7 +13,7 @@ const easeOutCubic = (t: number): number => 1 - (1 - t) ** 3;
 
 /**
  * Interpola una cifra con requestAnimationFrame (easeOutCubic). Da vida a totales,
- * nutrición y precios. Respeta prefers-reduced-motion (salta al valor final).
+ * precios. Respeta prefers-reduced-motion (salta al valor final).
  */
 export const AnimatedNumber = ({
   value,

@@ -12,6 +12,8 @@ export const PAYABLE_TYPE = {
   ORDER: 'ORDER',
   PLAN_PURCHASE: 'PLAN_PURCHASE',
 } as const;
+export const PAYMENT_STAGE = { FULL: 'FULL', DEPOSIT: 'DEPOSIT', BALANCE: 'BALANCE' } as const;
+export type PaymentStage = (typeof PAYMENT_STAGE)[keyof typeof PAYMENT_STAGE];
 export type PayableType = (typeof PAYABLE_TYPE)[keyof typeof PAYABLE_TYPE];
 
 /**
@@ -26,11 +28,12 @@ export class Payment extends Model<InferAttributes<Payment>, InferCreationAttrib
   declare userId: CreationOptional<number | null>;
 
   declare provider: string;
-  /** id del PaymentIntent / Checkout Session de Stripe. */
+  /** Referencia de la sesión u order en la pasarela. */
   declare providerReference: CreationOptional<string | null>;
   declare method: CreationOptional<string | null>;
 
   declare amount: number;
+  declare stage: CreationOptional<PaymentStage>;
   declare currency: CreationOptional<string>;
   declare status: CreationOptional<PaymentStatus>;
   /** RN-015: la misma clave no crea dos cobros. */
@@ -63,6 +66,7 @@ Payment.init(
     method: { type: DataTypes.STRING(30), allowNull: true },
 
     amount: { type: DataTypes.DECIMAL(12, 2), allowNull: false },
+    stage: { type: DataTypes.ENUM(...Object.values(PAYMENT_STAGE)), allowNull: false, defaultValue: PAYMENT_STAGE.FULL },
     currency: { type: DataTypes.CHAR(3), allowNull: false, defaultValue: CURRENCY },
     status: {
       type: DataTypes.ENUM(...Object.values(PAYMENT_STATUS)),

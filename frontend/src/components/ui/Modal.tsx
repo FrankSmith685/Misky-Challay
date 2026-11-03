@@ -65,7 +65,7 @@ export const Modal = ({
   const descriptionId = `app-dialog-description-${generatedId}`;
   const toneStyles = {
     brand: {
-      background: 'linear-gradient(135deg, rgba(248,241,248,.98) 0%, rgba(252,249,252,.98) 58%, rgba(255,246,225,.92) 100%)',
+      background: 'linear-gradient(135deg, var(--color-brand-50), var(--color-surface-muted) 65%, var(--color-accent-50))',
       iconBg: 'primary.main',
       iconColor: 'primary.contrastText',
       accent: 'linear-gradient(90deg, var(--color-brand-700), var(--color-brand-400), var(--color-accent-400))',
@@ -77,10 +77,10 @@ export const Modal = ({
       accent: 'linear-gradient(90deg, #b91c1c, #ef4444, #fb923c)',
     },
     neutral: {
-      background: 'linear-gradient(135deg, rgba(248,246,248,.98) 0%, rgba(255,255,255,.98) 100%)',
+      background: 'linear-gradient(135deg, var(--color-surface-muted), var(--color-surface))',
       iconBg: 'text.primary',
       iconColor: 'background.paper',
-      accent: 'linear-gradient(90deg, #3b143b, #76647a, #b9a9ba)',
+      accent: 'linear-gradient(90deg, var(--color-ink), var(--color-brand-600), var(--color-accent-400))',
     },
   }[tone];
 
@@ -181,7 +181,7 @@ export const Modal = ({
           overflowY: 'auto',
           // El gris de fondo es el del token, no un cuarto verdoso casi igual.
           backgroundColor: 'background.default',
-          backgroundImage: 'radial-gradient(circle at 100% 0%, rgba(96,32,96,.055), transparent 30%), radial-gradient(circle at 0% 100%, rgba(245,158,11,.035), transparent 28%)',
+          backgroundImage: 'radial-gradient(circle at 100% 0%, rgba(139,61,89,.035), transparent 30%), radial-gradient(circle at 0% 100%, rgba(245,158,11,.035), transparent 28%)',
           px: { xs: 2, sm: 3.5 },
           pt: { xs: 2.5, sm: 3.5 },
           // Con pie de acciones el safe-area lo pone el pie; sin él, el último

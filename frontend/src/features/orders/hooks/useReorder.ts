@@ -1,3 +1,5 @@
+import { cakesApi } from '@features/cakes/cakes.service';
+import type { CartItem } from '@/types/domain';
 import { useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from '@components/mui/MuiToast';
@@ -40,7 +42,7 @@ const joinNames = (names: string[]): string =>
 /**
  * "Volver a pedir": repite un pedido anterior en un toque.
  *
- * El pedido guarda una fotografia (RN-017), no un carrito: el precio, la nutricion
+ * El pedido guarda una fotografia (RN-017), no un carrito: el precio y la disponibilidad
  * y la disponibilidad de hoy los decide el backend (RN-007), asi que cada linea se
  * recotiza antes de entrar al carrito. Lo que ya no se puede rehacer no se sustituye
  * en silencio: se agrega el resto y se dice cual quedo fuera.
@@ -76,9 +78,11 @@ export const useReorder = (): UseReorderResult => {
         const unavailable: string[] = [];
         let added = 0;
 
+        const repeatDesign = order.items.some((item) => item.specialInstructions || item.designImages?.length) && window.confirm('¿Quieres repetir también el diseño y las indicaciones? Revisa el mensaje de la torta antes de comprar. Cancelar conserva solo la combinación.');
+        const readImage = (blob: Blob): Promise<string> => new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(blob); });
         for (const item of order.items) {
           const selections = toSelections(item);
-          if (item.productId === null || item.variantId === null || selections === null) {
+          if (item.productId === null || item.variantId === null || selections === null || item.designQuoteId) {
             unavailable.push(item.productNameSnapshot);
             continue;
           }
@@ -90,16 +94,36 @@ export const useReorder = (): UseReorderResult => {
               quantity: item.quantity,
               branchId,
               selections,
+              requestedServings: item.requestedServings ?? undefined,
+              themeId: item.themeSnapshotJson?.id,
+              themeVersion: item.themeSnapshotJson?.version,
             });
             const product = catalog.get(item.productId);
 
+            const design: Partial<CartItem> = {};
+            if (repeatDesign) {
+              design.designDetails = item.designDetailsJson ?? undefined;
+              design.specialInstructions = item.designDetailsJson?.originalInstructions ?? item.specialInstructions ?? undefined;
+              for (const image of item.designImages ?? []) {
+                if (image.position > 0) continue;
+                const dataUrl = await readImage(await cakesApi.orderImage(order.orderNumber, item.id, image.id));
+                if (image.kind === 'AI_PROPOSAL') design.archivedAiProposalDataUrl = dataUrl; else design.referenceDataUrl = dataUrl;
+              }
+            }
             dispatch(addItem({
+              ...design,
               id: crypto.randomUUID(),
               productId: item.productId,
               variantId: item.variantId,
-              name: product?.name ?? item.productNameSnapshot,
+              name: quote.theme?.name ?? product?.name ?? item.productNameSnapshot,
               variantName: quote.description,
-              imageUrl: product?.imageUrl ?? null,
+              imageUrl: quote.theme?.imageUrl ?? product?.imageUrl ?? null,
+              slug: product?.slug,
+              theme: quote.theme ?? undefined,
+              requestedServings: quote.requestedServings ?? undefined,
+              requiresScheduledDelivery: Boolean(product?.cakeSaleMode),
+              requiresCarDelivery: product?.family === 'CAKE',
+              minLeadHours: product?.minLeadHours,
               quantity: item.quantity,
               unitPrice: quote.basePrice,
               extrasTotal: quote.extrasTotal,
@@ -112,7 +136,6 @@ export const useReorder = (): UseReorderResult => {
                 quantity: line.quantity,
                 priceDelta: line.priceDelta,
               })),
-              nutrition: quote.nutrition,
             }));
             added += 1;
           } catch {
@@ -131,7 +154,7 @@ export const useReorder = (): UseReorderResult => {
         }
 
         if (unavailable.length > 0) {
-          toast.warning(`Agregamos ${added} de ${order.items.length} productos: ${joinNames(unavailable)} ya no está disponible.`);
+          toast.warning(`Agregamos ${added} de ${order.items.length} productos: ${joinNames(unavailable)} requiere una nueva selección o cotización.`);
         } else {
           toast.success(`Agregamos tu pedido ${order.orderNumber} al carrito.`);
         }

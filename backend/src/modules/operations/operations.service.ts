@@ -1,12 +1,15 @@
+import { orderDesignImages } from '@modules/cakes/cakeOrderImages.service';
 import { Op, Transaction } from 'sequelize';
 import {
   Branch,
+  CakeProductionTask,
   DiningTable,
   KitchenTicket,
   KitchenTicketEvent,
   Order,
   OrderItem,
   OrderItemCustomization,
+  OrderItemReference,
   Payment,
   sequelize,
 } from '@database/models';
@@ -30,6 +33,8 @@ import { ApiError } from '@shared/errors/ApiError';
 import type { BranchScopeCheck } from '@shared/utils/scope';
 import { ordersService } from '@modules/orders/orders.service';
 import { inventoryService } from './inventory.service';
+import { cakeProductionService } from '@modules/cakes/cakeProduction.service';
+import { kitchenReleaseAtForTasks } from './kitchenSchedule';
 import { publishKitchenEvent } from './kitchenEvents';
 import { kitchenPushService } from './kitchenPush.service';
 import { sendMobilePushToStaff } from '@modules/notifications/mobilePush.service';
@@ -42,8 +47,8 @@ const TICKET_INCLUDE = [
       { model: DiningTable, as: 'diningTable', attributes: ['id', 'code', 'area'] },
       {
         model: OrderItem,
-        as: 'items',
-        include: [{ model: OrderItemCustomization, as: 'customizations' }],
+        as: 'items', where: { itemKind: 'PRODUCT' }, required: false,
+        include: [{ model: OrderItemCustomization, as: 'customizations' }, { model: OrderItemReference, as: 'designImages', attributes: ['id', 'kind', 'position'] }],
       },
     ],
   },
@@ -100,13 +105,19 @@ export const operationsService = {
     const branch = await Branch.findByPk(order.branchId, { transaction });
     const prepMinutes = branch?.prepMinutes ?? 20;
 
-    // Un pedido programado ya esta confirmado y conserva sus reservas, pero no
-    // debe ocupar el tablero durante horas. El job de liberacion vuelve a llamar
-    // este metodo cuando llega scheduledAt - prepMinutes.
+    const cakeTasks = order.scheduledAt
+      ? await CakeProductionTask.findAll({
+          where: { orderId: order.id },
+          attributes: ['workDate', 'plannedMinutes', 'station'],
+          transaction,
+        })
+      : [];
+    // Produccion ve la torta desde la confirmacion. La comanda de cierre entra
+    // cuando el trabajo previsto para el dia de entrega ya debe estar en marcha.
     if (
       order.scheduledAt
       && !options.releaseScheduled
-      && kitchenReleaseAt(order.scheduledAt, prepMinutes) > (options.now ?? new Date())
+      && kitchenReleaseAtForTasks(order.scheduledAt, prepMinutes, cakeTasks) > (options.now ?? new Date())
     ) {
       return null;
     }
@@ -243,9 +254,11 @@ export const operationsService = {
               items: (order.items ?? []).map((item) => ({
                 id: item.id,
                 name: item.productNameSnapshot,
+                themeSnapshotJson: item.themeSnapshotJson,
                 quantity: item.quantity,
                 description: item.descriptionSnapshot,
                 specialInstructions: item.specialInstructions,
+                designImages: orderDesignImages(item),
                 // Seguridad alimentaria: los alergenos se congelan al comprar
                 // (checkout) y ya viajaban en la fila, pero esta proyeccion no los
                 // mapeaba, asi que la cocina preparaba el plato SIN VERLOS.
@@ -283,8 +296,8 @@ export const operationsService = {
         { model: DiningTable, as: 'diningTable', attributes: ['id', 'code', 'area'] },
         {
           model: OrderItem,
-          as: 'items',
-          include: [{ model: OrderItemCustomization, as: 'customizations' }],
+          as: 'items', where: { itemKind: 'PRODUCT' }, required: false,
+          include: [{ model: OrderItemCustomization, as: 'customizations' }, { model: OrderItemReference, as: 'designImages', attributes: ['id', 'kind', 'position'] }],
         },
       ],
       order: [['scheduledAt', 'ASC']],
@@ -292,6 +305,18 @@ export const operationsService = {
       // items convierta el LIMIT en una agenda incompleta.
       limit: SCHEDULED_BOARD_LIMIT * 2,
     });
+
+    const cakeTasks = orders.length ? await CakeProductionTask.findAll({
+      where: { orderId: { [Op.in]: orders.map((order) => order.id) } },
+      attributes: ['orderId', 'station', 'workDate', 'plannedMinutes', 'status', 'assignedTo'],
+      order: [['workDate', 'ASC'], ['sequence', 'ASC']],
+    }) : [];
+    const tasksByOrder = new Map<number, CakeProductionTask[]>();
+    for (const task of cakeTasks) {
+      const list = tasksByOrder.get(task.orderId) ?? [];
+      list.push(task);
+      tasksByOrder.set(task.orderId, list);
+    }
 
     const scheduled = orders
       .filter((order) => !order.get('kitchenTicket'))
@@ -304,7 +329,13 @@ export const operationsService = {
           deliveryType: order.deliveryType,
           serviceMode: order.serviceMode,
           scheduledAt,
-          releaseAt: kitchenReleaseAt(scheduledAt, branch.prepMinutes),
+          releaseAt: kitchenReleaseAtForTasks(scheduledAt, branch.prepMinutes, tasksByOrder.get(order.id) ?? []),
+          productionTasks: (tasksByOrder.get(order.id) ?? []).map((task) => ({
+            station: task.station,
+            workDate: task.workDate,
+            status: task.status,
+            assigned: task.assignedTo != null,
+          })),
           contactName: order.contactName,
           diningTable: order.get('diningTable') ?? null,
           notes: order.notes,
@@ -314,6 +345,8 @@ export const operationsService = {
             quantity: item.quantity,
             description: item.descriptionSnapshot,
             specialInstructions: item.specialInstructions,
+            designImages: orderDesignImages(item),
+            themeSnapshotJson: item.themeSnapshotJson,
             allergens: item.allergenSnapshotJson ?? [],
             customizations: (item.customizations ?? []).map((customization) => ({
               group: customization.groupNameSnapshot,
@@ -349,11 +382,22 @@ export const operationsService = {
       limit: 200,
     });
 
+    const tasks = candidates.length ? await CakeProductionTask.findAll({
+      where: { orderId: { [Op.in]: candidates.map((order) => order.id) } },
+      attributes: ['orderId', 'station', 'workDate', 'plannedMinutes'],
+    }) : [];
+    const tasksByOrder = new Map<number, CakeProductionTask[]>();
+    for (const task of tasks) {
+      const list = tasksByOrder.get(task.orderId) ?? [];
+      list.push(task);
+      tasksByOrder.set(task.orderId, list);
+    }
+
     let released = 0;
     for (const candidate of candidates) {
       if (candidate.get('kitchenTicket')) continue;
       const branch = candidate.get('branch') as Branch | undefined;
-      if (!candidate.scheduledAt || kitchenReleaseAt(candidate.scheduledAt, branch?.prepMinutes ?? 20) > now) {
+      if (!candidate.scheduledAt || kitchenReleaseAtForTasks(candidate.scheduledAt, branch?.prepMinutes ?? 20, tasksByOrder.get(candidate.id) ?? []) > now) {
         continue;
       }
 
@@ -415,6 +459,7 @@ export const operationsService = {
       if (next === TICKET_STATUS.ACCEPTED) ticket.acceptedAt = now;
       if (next === TICKET_STATUS.PREPARING) ticket.startedAt = now;
       if (next === TICKET_STATUS.READY) {
+        await cakeProductionService.assertQualityComplete(order.id, transaction);
         ticket.readyAt = now;
         const reference = ticket.startedAt ?? ticket.acceptedAt ?? ticket.createdAt;
         ticket.prepMinutesActual = Math.round((now.getTime() - reference.getTime()) / 60000);

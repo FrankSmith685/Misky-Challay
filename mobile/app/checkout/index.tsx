@@ -22,6 +22,7 @@ import { Skeleton } from '../../src/components/Skeleton';
 import { useResource } from '../../src/hooks/useResource';
 import { isValidDni, isValidRuc } from '../../src/lib/peruDocs';
 import { money } from '../../src/lib/format';
+import { whatsappNumber } from '../../src/lib/whatsapp';
 import { useCart } from '../../src/providers/CartProvider';
 import { usePurchase } from '../../src/providers/PurchaseProvider';
 import { useSession } from '../../src/providers/SessionProvider';
@@ -30,6 +31,7 @@ import { mobileAnalytics } from '../../src/services/analytics';
 import { accountApi } from '../../src/services/api/account.service';
 import { businessApi } from '../../src/services/api/business.service';
 import { checkoutApi } from '../../src/services/api/checkout.service';
+import { checkoutTermsApi } from '../../src/services/api/checkoutTerms.service';
 import { geoApi } from '../../src/services/api/geo.service';
 import { colors, layout, radius, shadow, spacing, type } from '../../src/theme/tokens';
 import type {
@@ -40,7 +42,7 @@ import type {
   PublicSettings,
 } from '../../src/types/domain';
 
-type PaymentMethod = 'ONLINE' | 'CASH' | 'YAPE' | 'PLIN';
+type PaymentMethod = 'ONLINE' | 'YAPE' | 'PLIN';
 type Timing = 'ASAP' | 'SCHEDULED';
 type DocumentType = 'BOLETA' | 'FACTURA';
 
@@ -114,6 +116,7 @@ const cartFingerprint = (input: CheckoutInput): string =>
       item.productId,
       item.variantId,
       item.quantity,
+      item.designQuoteId ?? null,
       item.selections.map((selection) => [selection.optionId, selection.quantity]),
     ]),
     deliveryType: input.deliveryType,
@@ -123,6 +126,7 @@ const cartFingerprint = (input: CheckoutInput): string =>
     address: input.address?.line1 ?? null,
     coupon: input.couponCode ?? null,
     wallet: input.useWallet ?? false,
+    whatsappOptIn: input.whatsappOptIn ?? false,
   });
 
 interface SectionProps {
@@ -194,6 +198,7 @@ function OptionRow({ icon, title, subtitle, selected, onPress }: OptionRowProps)
 export default function CheckoutScreen() {
   const { status, user } = useSession();
   const { items, clear } = useCart();
+  const approvedDesignSlotId = items.find((item) => item.designQuoteId)?.preferredSlotId ?? null;
   const {
     serviceMode,
     branch,
@@ -204,15 +209,17 @@ export default function CheckoutScreen() {
   const toast = useToast();
 
   const [addressId, setAddressId] = useState<number | null>(null);
-  const [timing, setTiming] = useState<Timing>('ASAP');
+  const [timing, setTiming] = useState<Timing>('SCHEDULED');
   const [slots, setSlots] = useState<DeliverySlot[]>([]);
   const [slotId, setSlotId] = useState<number | null>(null);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [slotsError, setSlotsError] = useState('');
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
-  const [operationCode, setOperationCode] = useState('');
-  const [payerPhone, setPayerPhone] = useState('');
+  const terms = useResource({ key: 'settings:terms', fetcher: checkoutTermsApi.get, cacheMs: 0, pollIntervalMs: 30000 });
+  const [acceptedTermsVersion, setAcceptedTermsVersion] = useState<number | null>(null);
+  const acceptedTerms = Boolean(terms.data && !terms.error && acceptedTermsVersion === terms.data.version);
+  useEffect(() => { setAcceptedTermsVersion(null); }, [user?.id]);
 
   const [documentType, setDocumentType] = useState<DocumentType>('BOLETA');
   const [dni, setDni] = useState('');
@@ -223,6 +230,10 @@ export default function CheckoutScreen() {
   const profileName = [user?.firstName, user?.lastName].filter(Boolean).join(' ');
   const [contactName, setContactName] = useState(profileName);
   const [contactPhone, setContactPhone] = useState(user?.phone ?? '');
+  const [isGift,setIsGift]=useState(false);
+  const [gift,setGift]=useState({recipientName:'',recipientPhone:'',hidePrices:true,message:''});
+  const [whatsappOptIn, setWhatsappOptIn] = useState(false);
+  const whatsappAvailable = Boolean(whatsappNumber(user?.phone));
   const [kitchenNotes, setKitchenNotes] = useState('');
   const [deliveryNotes, setDeliveryNotes] = useState('');
 
@@ -264,6 +275,7 @@ export default function CheckoutScreen() {
     () => addressRows.find((row) => row.id === addressId) ?? null,
     [addressId, addressRows],
   );
+  const hasPreciseDeliveryAddress = selectedAddress?.latitude != null && selectedAddress.longitude != null;
 
   // --- Guardas de entrada ------------------------------------------------
   useEffect(() => {
@@ -314,6 +326,11 @@ export default function CheckoutScreen() {
   }, [addressRows, purchaseAddress?.id]);
 
   const chooseAddress = useCallback(async (row: Address) => {
+    if (row.latitude == null || row.longitude == null) {
+      toast.show({ message: 'Esta dirección necesita un punto exacto para calcular el delivery. Actualízala en el mapa.', tone: 'warning', placement: 'top' });
+      router.push(`/addresses/${row.id}`);
+      return;
+    }
     setAddressId(row.id);
     setQuoteError('');
     try {
@@ -342,7 +359,7 @@ export default function CheckoutScreen() {
       return;
     }
     if (serviceMode === 'PICKUP' && !branch) return;
-    if (serviceMode === 'DELIVERY' && !selectedAddress) return;
+    if (serviceMode === 'DELIVERY' && !hasPreciseDeliveryAddress) return;
 
     let active = true;
 
@@ -377,12 +394,13 @@ export default function CheckoutScreen() {
         }
         if (!targetBranchId) throw new Error('Elige primero el local de recojo.');
 
-        const rows = await geoApi.slots(targetBranchId, 7);
+        const response = await checkoutApi.availability({ items: items.map((item) => ({ productId:item.productId,variantId:item.variantId,quantity:item.quantity,selections:item.selections.map((entry)=>({optionId:entry.optionId,quantity:entry.quantity})),requestedServings:item.requestedServings,designQuoteId:item.designQuoteId })), branchId:targetBranchId,deliveryType:serviceMode === 'DELIVERY' ? 'DELIVERY' : 'PICKUP',serviceMode:'ASAP',...(serviceMode === 'DELIVERY' && selectedAddress ? {address:{line1:selectedAddress.line1,latitude:selectedAddress.latitude ?? undefined,longitude:selectedAddress.longitude ?? undefined,districtId:selectedAddress.districtId ?? undefined}} : {}) });
+        const rows = response.slots;
         if (!active) return;
 
         setSlots(rows);
-        if (rows.length > 0) setSlotId(rows[0].id);
-        else setSlotsError('No hay franjas con cupo para los próximos 7 días.');
+        if (rows.length > 0) setSlotId(approvedDesignSlotId && rows.some((slot) => slot.id === approvedDesignSlotId) ? approvedDesignSlotId : rows[0].id);
+        else setSlotsError(response.reasons.map((entry) => entry.message).join(' ') || 'No hay franjas disponibles para este pedido.');
       } catch (caught) {
         if (active) {
           setSlotsError(caught instanceof Error ? caught.message : 'No pudimos cargar las franjas.');
@@ -396,7 +414,7 @@ export default function CheckoutScreen() {
     return () => {
       active = false;
     };
-  }, [branch, purchaseAddress?.id, purchaseCoverage, selectedAddress, serviceMode, timing]);
+  }, [approvedDesignSlotId, branch, hasPreciseDeliveryAddress, items, purchaseAddress?.id, purchaseCoverage, selectedAddress, serviceMode, timing]);
 
   // --- Cotización automática ---------------------------------------------
   /**
@@ -406,18 +424,20 @@ export default function CheckoutScreen() {
    */
   const quoteInput = useMemo<CheckoutInput | null>(() => {
     if (items.length === 0) return null;
-    if (serviceMode === 'PICKUP' ? !branch : !selectedAddress) return null;
+    if (serviceMode === 'PICKUP' ? !branch : !hasPreciseDeliveryAddress) return null;
     if (timing === 'SCHEDULED' && !slotId) return null;
 
     return {
       items: items.map((item) => ({
         productId: item.productId,
         variantId: item.variantId,
+        ...(item.requestedServings ? { requestedServings: item.requestedServings } : {}),
         quantity: item.quantity,
         selections: item.selections.map((selection) => ({
           optionId: selection.optionId,
           quantity: selection.quantity,
         })),
+        ...(item.designQuoteId ? { designQuoteId: item.designQuoteId } : {}),
         ...(item.specialInstructions ? { specialInstructions: item.specialInstructions } : {}),
       })),
       deliveryType: serviceMode === 'PICKUP' ? 'PICKUP' : 'DELIVERY',
@@ -443,7 +463,7 @@ export default function CheckoutScreen() {
       paymentMethod: 'ONLINE',
       billing: { documentType: 'BOLETA' },
     };
-  }, [appliedCoupon, branch, items, selectedAddress, serviceMode, slotId, timing, useWallet]);
+  }, [appliedCoupon, branch, hasPreciseDeliveryAddress, items, selectedAddress, serviceMode, slotId, timing, useWallet]);
 
   useEffect(() => {
     if (!quoteInput) {
@@ -505,14 +525,9 @@ export default function CheckoutScreen() {
   const boletaNeedsDni =
     fiscalEnabled && documentType === 'BOLETA' && boletaThreshold !== null && invoiceTotal >= boletaThreshold;
 
-  const codAvailable =
-    Boolean(config?.cod.enabled) &&
-    quote !== null &&
-    quote.grandTotal > 0 &&
-    quote.grandTotal <= (config?.cod.maxAmount ?? 0);
-
   /** Con el saldo cubriendo todo no hay nada que cobrar ni medio que elegir. */
   const needsPayment = quote === null || quote.grandTotal > 0;
+  const depositPlan = quote?.paymentPlan === 'DEPOSIT_BALANCE';
 
   const paymentOptions = useMemo<PaymentOption[]>(() => {
     // Sin la configuración del negocio no se ofrece ningún medio: hacerlo a ciegas
@@ -533,14 +548,6 @@ export default function CheckoutScreen() {
       });
     }
 
-    if (codAvailable) {
-      rows.push({
-        value: 'CASH',
-        label: 'Efectivo al recibir',
-        hint: `Disponible hasta ${money(config.cod.maxAmount)}.`,
-        icon: 'cash',
-      });
-    }
     if (config.localPayments.yapeEnabled) {
       rows.push({
         value: 'YAPE',
@@ -559,7 +566,7 @@ export default function CheckoutScreen() {
     }
 
     return rows;
-  }, [codAvailable, config, needsPayment]);
+  }, [config, needsPayment]);
 
   useEffect(() => {
     if (paymentOptions.length === 0) return;
@@ -598,15 +605,11 @@ export default function CheckoutScreen() {
 
     return {
       ...quoteInput,
+      items: quoteInput.items.map((entry,index) => ({...entry,referenceDataUrl:items[index]?.referenceDataUrl,aiProposalDataUrl:items[index]?.aiProposalDataUrl,designDetails:items[index]?.designDetails})),
       paymentMethod: paymentMethod ?? 'ONLINE',
-      ...(isMobilePayment
-        ? {
-            mobilePayment: {
-              operationCode: operationCode.trim(),
-              payerPhone: payerPhone.trim() || undefined,
-            },
-          }
-        : {}),
+      termsAccepted: acceptedTerms,
+      gift:isGift?gift:undefined,
+      termsVersion: terms.data?.version,
       billing:
         documentType === 'FACTURA'
           ? {
@@ -623,21 +626,25 @@ export default function CheckoutScreen() {
             },
       contactName: contactName.trim() || undefined,
       contactPhone: contactPhone.trim() || undefined,
+      whatsappOptIn: whatsappOptIn && whatsappAvailable,
       notes: notes || undefined,
     };
   }, [
     billingAddress,
+    acceptedTerms,
+    gift,isGift,
+    terms.data?.version,
     billingName,
     boletaNeedsDni,
     contactName,
     contactPhone,
+    whatsappOptIn,
+    whatsappAvailable,
     deliveryNotes,
     dni,
     documentType,
     isMobilePayment,
     kitchenNotes,
-    operationCode,
-    payerPhone,
     paymentMethod,
     quoteInput,
     ruc,
@@ -670,17 +677,6 @@ export default function CheckoutScreen() {
       }
     }
 
-    if (isMobilePayment) {
-      if (!/^[A-Za-z0-9-]{6,24}$/.test(operationCode.trim())) {
-        found.operationCode = 'Ingresa el código de operación que aparece en tu aplicativo.';
-      }
-      // El backend exige los 9 dígitos completos si el celular viaja: medio
-      // número hacía fallar el pedido entero por un campo opcional.
-      if (payerPhone.trim() && !/^\d{9}$/.test(payerPhone.trim())) {
-        found.payerPhone = 'El celular debe tener 9 dígitos, o déjalo vacío.';
-      }
-    }
-
     return found;
   }, [
     billingAddress,
@@ -692,8 +688,6 @@ export default function CheckoutScreen() {
     documentType,
     invoiceTotal,
     isMobilePayment,
-    operationCode,
-    payerPhone,
     ruc,
   ]);
 
@@ -724,6 +718,10 @@ export default function CheckoutScreen() {
   }, []);
 
   const place = useCallback(async () => {
+    if (!acceptedTerms || !terms.data || terms.error) {
+      toast.show({ message: 'Revisa y acepta los términos y condiciones antes de confirmar el pedido.', tone: 'error', placement: 'top' });
+      return;
+    }
     const input = buildPlaceInput();
     if (!input || !quote) return;
 
@@ -792,6 +790,7 @@ export default function CheckoutScreen() {
           .catch(() => undefined);
       }
     } catch (caught) {
+      void terms.refetch();
       const message = caught instanceof Error ? caught.message : 'No pudimos crear el pedido.';
       void mobileAnalytics.track(
         'CHECKOUT_ERROR',
@@ -802,10 +801,10 @@ export default function CheckoutScreen() {
     } finally {
       setPlacing(false);
     }
-  }, [buildPlaceInput, clear, quote, toast, validate, warnReusedOrder]);
+  }, [acceptedTerms, terms.data, terms.error, terms.refetch, buildPlaceInput, clear, quote, toast, validate, warnReusedOrder]);
 
   // --- Estado del botón principal ----------------------------------------
-  const missingDestination = serviceMode === 'PICKUP' ? !branch : !selectedAddress;
+  const missingDestination = serviceMode === 'PICKUP' ? !branch : !hasPreciseDeliveryAddress;
   /** Todavía no hay ningún importe que enseñar y tampoco un fallo que resolver. */
   const awaitingFirstQuote = quoteInput !== null && quote === null && quoteError === '';
   const missingForMinimum = quote ? Math.max(0, quote.minimumOrder - quote.subtotal) : 0;
@@ -820,8 +819,8 @@ export default function CheckoutScreen() {
           }
         : {
             label: 'Elegir dirección',
-            detail: 'Falta tu dirección de entrega',
-            run: () => router.push('/addresses'),
+            detail: selectedAddress ? 'Falta el punto exacto para calcular delivery' : 'Falta tu dirección de entrega',
+            run: () => router.push(selectedAddress ? `/addresses/${selectedAddress.id}` : '/addresses'),
           };
     }
     if (timing === 'SCHEDULED' && !slotId) {
@@ -867,6 +866,7 @@ export default function CheckoutScreen() {
     return null;
   }, [
     missingDestination,
+    selectedAddress,
     missingForMinimum,
     needsPayment,
     paymentMethod,
@@ -882,9 +882,8 @@ export default function CheckoutScreen() {
   const confirmLabel = useMemo(() => {
     if (!quote) return 'Calculando tu total…';
     if (quote.grandTotal === 0) return 'Confirmar con mi saldo';
-    if (paymentMethod === 'CASH') return `Confirmar · ${money(quote.grandTotal)} al recibir`;
-    if (isMobilePayment) return `Ya pagué ${money(quote.grandTotal)}, confirmar`;
-    return `Pagar ${money(quote.grandTotal)}`;
+    if (isMobilePayment) return 'Crear pedido y ver instrucciones';
+    return `Pagar ${money(depositPlan ? quote.depositAmount ?? 0 : quote.grandTotal)}`;
   }, [isMobilePayment, paymentMethod, quote]);
 
   const loadingScreen = addresses.loading || settings.loading;
@@ -909,6 +908,19 @@ export default function CheckoutScreen() {
           <Text style={styles.changeAddressText}>Cambiar dirección</Text>
         </Pressable>
       ) : null}
+
+      <View style={{ gap: spacing.xs }}>
+        {terms.data && !terms.error ? <>
+          <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: acceptedTerms, disabled: placing }} disabled={placing} onPress={() => setAcceptedTermsVersion(acceptedTerms ? null : terms.data!.version)} style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start', paddingVertical: spacing.xs }}>
+            <MaterialCommunityIcons name={acceptedTerms ? 'checkbox-marked' : 'checkbox-blank-outline'} size={24} color={colors.brand700} />
+            <Text style={{ ...type.bodySm, flex: 1, color: colors.ink }}>{terms.data.acceptanceLabel}</Text>
+          </Pressable>
+          <Pressable accessibilityRole="link" onPress={() => router.push({ pathname: '/legal/[slug]', params: { slug: 'terminos' } })}>
+            <Text style={{ ...type.caption, color: colors.brand700, textDecorationLine: 'underline' }}>Leer {terms.data.title} · versión {terms.data.version}</Text>
+          </Pressable>
+          {acceptedTermsVersion !== null && acceptedTermsVersion !== terms.data.version && <Text style={{ ...type.caption, color: colors.inkMuted }}>Las condiciones cambiaron. Revisa y acepta la nueva versión.</Text>}
+        </> : <Pressable onPress={() => void terms.refetch()}><Text style={{ ...type.bodySm, color: colors.brand700 }}>{terms.error ? 'No pudimos cargar las condiciones. Toca para reintentar.' : 'Cargando condiciones de compra…'}</Text></Pressable>}
+      </View>
 
       <PrimaryButton
         loading={placing || (!blockAction && awaitingFirstQuote)}
@@ -994,7 +1006,7 @@ export default function CheckoutScreen() {
                         key={row.id}
                         icon="map-marker-outline"
                         title={row.label}
-                        subtitle={row.line1}
+                        subtitle={row.latitude == null || row.longitude == null ? `${row.line1} · falta punto exacto` : row.line1}
                         selected={row.id === addressId}
                         onPress={() => void chooseAddress(row)}
                       />
@@ -1031,13 +1043,6 @@ export default function CheckoutScreen() {
                 description="Preparación inmediata o una franja reservada."
               >
                 <OptionRow
-                  icon="clock-fast"
-                  title="Lo antes posible"
-                  subtitle={quote ? `Aprox. ${quote.etaMinutes} min` : 'Salimos apenas esté listo'}
-                  selected={timing === 'ASAP'}
-                  onPress={() => setTiming('ASAP')}
-                />
-                <OptionRow
                   icon="calendar-clock"
                   title="Programar pedido"
                   subtitle="Eliges el día y la franja horaria"
@@ -1073,6 +1078,10 @@ export default function CheckoutScreen() {
                             accessibilityState={{ selected: active }}
                             accessibilityLabel={`${label.day}, ${label.range}`}
                             onPress={() => {
+                              if (approvedDesignSlotId && slot.id !== approvedDesignSlotId) {
+                                toast.show({ tone: 'warning', message: 'La torta cotizada conserva la fecha aprobada.' });
+                                return;
+                              }
                               void Haptics.selectionAsync();
                               setSlotId(slot.id);
                             }}
@@ -1139,6 +1148,23 @@ export default function CheckoutScreen() {
                   }
                 />
 
+                <Pressable
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: whatsappOptIn, disabled: !whatsappAvailable }}
+                  disabled={!whatsappAvailable}
+                  onPress={() => setWhatsappOptIn((current) => !current)}
+                  style={[styles.wallet, whatsappOptIn && styles.walletActive]}
+                >
+                  <MaterialCommunityIcons name={whatsappOptIn ? 'checkbox-marked' : 'checkbox-blank-outline'} size={23} color={whatsappOptIn ? colors.brand600 : colors.inkMuted} />
+                  <View style={styles.optionCopy}>
+                    <Text style={styles.optionTitle}>Avisos por WhatsApp (opcional)</Text>
+                    <Text style={styles.optionSubtitle}>Acepto recibir de Misky Challay avisos de confirmación, pedido listo y reparto en el celular de mi cuenta.</Text>
+                  </View>
+                </Pressable>
+                {!whatsappAvailable ? <Pressable onPress={() => router.push('/profile')}><Text style={styles.optionSubtitle}>Agrega un celular válido en Mi perfil para activar estos avisos.</Text></Pressable> : null}
+
+                <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: isGift }} onPress={() => setIsGift(!isGift)} style={styles.wallet}><Text style={styles.optionTitle}>{isGift ? '☑' : '☐'} Es un regalo</Text></Pressable>
+                {isGift && <><FormField label="Nombre del destinatario" maxLength={120} value={gift.recipientName} onChangeText={value => setGift({...gift,recipientName:value})} /><FormField label="Teléfono del destinatario (opcional)" maxLength={30} value={gift.recipientPhone} onChangeText={value => setGift({...gift,recipientPhone:value})} /><FormField label="Dedicatoria del regalo" maxLength={500} value={gift.message} onChangeText={value => setGift({...gift,message:value})} multiline /><Pressable accessibilityRole="checkbox" accessibilityState={{checked:gift.hidePrices}} onPress={()=>setGift({...gift,hidePrices:!gift.hidePrices})} style={styles.wallet}><Text>{gift.hidePrices?'☑':'☐'} Ocultar precios en la ficha del destinatario</Text></Pressable><Text style={styles.optionSubtitle}>Los avisos de compra llegan a tu cuenta. Podrás compartir la ficha del regalo desde el pedido.</Text></>}
                 <FormField
                   label="Indicaciones para cocina"
                   value={kitchenNotes}
@@ -1317,73 +1343,7 @@ export default function CheckoutScreen() {
                       />
                     ))}
 
-                    {config.cod.enabled && !codAvailable && quote !== null ? (
-                      <Text style={styles.hint}>
-                        El efectivo está disponible hasta {money(config.cod.maxAmount)}.
-                      </Text>
-                    ) : null}
-
-                    {localPayment && quote ? (
-                      <View style={styles.mobilePayment}>
-                        <Text style={styles.mobilePaymentEyebrow}>PAGA EL IMPORTE EXACTO</Text>
-                        <Text style={styles.mobilePaymentAmount}>{money(quote.grandTotal)}</Text>
-
-                        {localPayment.qr ? (
-                          <AppImage
-                            uri={localPayment.qr}
-                            contentFit="contain"
-                            style={styles.qr}
-                            accessibilityLabel={`Código QR de ${localPayment.name}`}
-                            fallbackIcon="qrcode"
-                          />
-                        ) : null}
-
-                        <Text style={styles.mobilePaymentAccount}>
-                          {localPayment.name} · {localPayment.phone}
-                        </Text>
-                        <Text style={styles.mobilePaymentRecipient}>{localPayment.recipient}</Text>
-                        <Text style={styles.mobilePaymentCopy}>{localPayment.instructions}</Text>
-
-                        <FormField
-                          label="Código de operación"
-                          value={operationCode}
-                          onChangeText={(value) => {
-                            setOperationCode(value.replace(/[^A-Za-z0-9-]/g, '').toUpperCase());
-                            setErrors((current) => ({ ...current, operationCode: undefined }));
-                          }}
-                          placeholder="Ej. 12345678"
-                          maxLength={24}
-                          autoCapitalize="characters"
-                          icon="identifier"
-                          error={errors.operationCode}
-                        />
-                        <FormField
-                          label="Celular desde el que pagaste (opcional)"
-                          value={payerPhone}
-                          onChangeText={(value) => {
-                            setPayerPhone(value.replace(/\D/g, '').slice(0, 9));
-                            setErrors((current) => ({ ...current, payerPhone: undefined }));
-                          }}
-                          placeholder="999999999"
-                          keyboardType="number-pad"
-                          maxLength={9}
-                          icon="cellphone"
-                          error={errors.payerPhone}
-                        />
-
-                        <View style={styles.notice}>
-                          <MaterialCommunityIcons
-                            name="shield-check-outline"
-                            size={19}
-                            color={colors.brand700}
-                          />
-                          <Text style={styles.noticeText}>
-                            Caja contrasta el código con el movimiento real. Cocina recibe tu pedido
-                            solo después de esa aprobación.
-                          </Text>
-                        </View>
-                      </View>
-                    ) : null}
+                    {localPayment && quote ? (<View style={styles.notice}><Text style={styles.noticeText}>Primero crearemos tu pedido y reservaremos su cupo. En la siguiente pantalla verás las instrucciones para pagar {money(quote.paymentPlan === 'DEPOSIT_BALANCE' ? quote.depositAmount ?? 0 : quote.grandTotal)} por {localPayment.name} y reportar la operación.</Text></View>) : null}
                   </>
                 )}
               </Section>
@@ -1469,7 +1429,7 @@ export default function CheckoutScreen() {
 
                   {[
                     ['Subtotal', quote.subtotal],
-                    [serviceMode === 'PICKUP' ? 'Recojo en tienda' : 'Delivery', quote.deliveryFee],
+                    [serviceMode === 'PICKUP' ? 'Recojo en taller' : 'Delivery', quote.deliveryFee],
                     ...(quote.discountTotal > 0
                       ? ([['Descuentos', -quote.discountTotal]] as Array<[string, number]>)
                       : []),
@@ -1522,6 +1482,15 @@ export default function CheckoutScreen() {
                     <View style={styles.summaryRow}>
                       <Text style={styles.summaryPositive}>Saldo aplicado</Text>
                       <Text style={styles.summaryPositive}>− {money(quote.walletAmount)}</Text>
+                    </View>
+                  ) : null}
+
+                  {quote.paymentPlan === 'DEPOSIT_BALANCE' ? (
+                    <View style={styles.notice}>
+                      <MaterialCommunityIcons name="calendar-clock" size={19} color={colors.brand700} />
+                      <Text style={styles.noticeText}>
+                        Anticipo: {money(quote.depositAmount ?? 0)} · saldo antes de entrega: {money(quote.balanceAmount ?? 0)}
+                      </Text>
                     </View>
                   ) : null}
 

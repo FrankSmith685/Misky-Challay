@@ -29,9 +29,8 @@ export const applyCssVars = (tokens: ThemeTokens): void => {
   setRamp(root, 'accent', ramp.accent);
   setRamp(root, 'tertiary', ramp.tertiary);
 
-  // Todos los radios rectangulares respetan el límite visual de 5px.
-  const radius = `${Math.min(5, Math.max(0, tokens.radius))}px`;
-  root.setProperty('--radius-field', radius);
-  root.setProperty('--radius-card', radius);
-  root.setProperty('--radius-pill', radius);
+  const radius = Math.min(5, Math.max(0, tokens.radius));
+  root.setProperty('--radius-field', `${radius}px`);
+  root.setProperty('--radius-card', `${radius}px`);
+  root.setProperty('--radius-pill', `${radius}px`);
 };

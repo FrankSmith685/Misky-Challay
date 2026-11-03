@@ -22,7 +22,7 @@ export const ProductReviewsSection = ({ productId }: { productId: number }) => {
 
   return (
     <section className="border-t border-line bg-surface-muted py-12 sm:py-16" aria-labelledby="product-reviews-heading">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-8xl px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-black uppercase tracking-[.16em] text-brand-700">Compras verificadas</p>

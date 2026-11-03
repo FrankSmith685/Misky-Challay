@@ -1,0 +1,15 @@
+{
+  "mindar": "1.2.5",
+  "target": "/images/brand/patisserie-chocolate-v1.jpg",
+  "sha256": "f58ebf4d2e5528991eb4355d55c9b915b9b7b08a89da570f31d4544b84f08b9b",
+  "compiledSha256": "d0e4fdecb5cb7a39bb49e3f84c8e7e9438aba20503127208974e35f91f484f6c",
+  "dimensions": [
+    [
+      1536,
+      1024
+    ]
+  ],
+  "matchingFrames": [
+    11
+  ]
+}

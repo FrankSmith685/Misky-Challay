@@ -20,7 +20,7 @@ const CookiesPage = () => {
       title: 'Qué tecnologías usamos',
       body: (
         <p>
-          Verde Bowl utiliza almacenamiento local y de sesión del navegador. Estas tecnologías cumplen
+          Misky Challay utiliza almacenamiento local y de sesión del navegador. Estas tecnologías cumplen
           funciones similares a las cookies: recordar tu sesión, carrito, dirección seleccionada,
           borradores y preferencias. No usamos actualmente redes de publicidad ni píxeles de terceros.
         </p>

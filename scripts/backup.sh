@@ -18,7 +18,7 @@ cd "$(dirname "$0")/.."
 
 [ -f .env ] && . ./.env
 
-DB_NAME="${DB_NAME:-verde_bowl_v3}"
+DB_NAME="${DB_NAME:-DulceFlow}"
 DB_USER="${DB_USER:-root}"
 DB_PASSWORD="${DB_PASSWORD:-}"
 RETENTION_DAYS="${RETENTION_DAYS:-14}"

@@ -22,11 +22,11 @@ export const PlansHero = ({ planCount, featuredPlan }: PlansHeroProps) => {
     : 0;
 
   return (
-    <section className="relative isolate overflow-hidden bg-[#2a0e2a] text-white">
+    <section className="relative isolate overflow-hidden bg-brand-900 text-white">
       <div className="pointer-events-none absolute inset-0 opacity-25 [background-image:linear-gradient(rgba(255,255,255,.08)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.08)_1px,transparent_1px)] [background-size:42px_42px]" />
       <div className="pointer-events-none absolute -left-24 top-1/2 size-72 -translate-y-1/2 rounded-full bg-brand-400/20 blur-3xl" />
 
-      <div className="relative mx-auto grid max-w-7xl gap-9 px-4 py-10 sm:px-6 sm:py-12 lg:grid-cols-[1.08fr_.92fr] lg:items-center lg:gap-14 lg:px-8 lg:py-14">
+      <div className="relative mx-auto grid max-w-8xl gap-9 px-4 py-10 sm:px-6 sm:py-12 lg:grid-cols-[1.08fr_.92fr] lg:items-center lg:gap-14 lg:px-8 lg:py-14">
         <div>
           <Badge className="border border-white/15 bg-white/10 px-3 py-1.5 text-white" variant="neutral">
             <Sparkles className="size-3.5 text-brand-200" />

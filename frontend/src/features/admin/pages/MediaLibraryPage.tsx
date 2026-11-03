@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Tooltip } from '@mui/material';
-import { ArchiveRestore, Crop, FileImage, ImagePlus, Link2, Pencil, Search, Trash2, Upload } from 'lucide-react';
+import { ArchiveRestore, Crop, FileImage, ImagePlus, Link2, Pencil, Search, Sparkles, Trash2, Upload } from 'lucide-react';
 import toast from '@components/mui/MuiToast';
 import { LoadError } from '@components/common/LoadError';
 import { PageHeader } from '@components/common/PageHeader';
@@ -16,8 +16,9 @@ import { getApiErrorMessage } from '@services/api/client';
 import { cn } from '@lib/cn';
 import { formatRelative } from '@lib/format';
 import { mediaAdminApi, optimizeImage, type MediaAsset, type MediaListParams } from '../services/mediaAdmin.service';
+import { AiImageGenerator } from '../components/AiImageGenerator';
 
-const CATEGORIES = ['ingredients', 'products', 'builder-presets', 'marketing'];
+const CATEGORIES = ['ingredients', 'products', 'categories', 'builder-presets', 'marketing'];
 /** Tamano de pagina del servidor. Cuatro columnas en xl: seis filas completas. */
 const PAGE_SIZE = 24;
 
@@ -39,7 +40,7 @@ const SORTS = [
 type SortValue = (typeof SORTS)[number]['value'];
 
 const usageCount = (asset: MediaAsset) =>
-  asset.usage.products.length + asset.usage.options.length + asset.usage.presets.length;
+  asset.usage.products.length + asset.usage.options.length + asset.usage.presets.length + asset.usage.categories.length + (asset.usage.inventoryItems?.length ?? 0) + (asset.usage.themes?.length ?? 0);
 
 const MediaLibraryPage = () => {
   const confirm = useConfirm();
@@ -57,7 +58,7 @@ const MediaLibraryPage = () => {
   const [replacementId, setReplacementId] = useState<number | ''>('');
   const [candidates, setCandidates] = useState<MediaAsset[]>([]);
   const [candidateQuery, setCandidateQuery] = useState('');
-  const [sourceMode, setSourceMode] = useState<'file' | 'url'>('file');
+  const [sourceMode, setSourceMode] = useState<'file' | 'url' | 'ai'>('file');
   const [sourceUrl, setSourceUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [uploadAlt, setUploadAlt] = useState('');
@@ -195,13 +196,32 @@ const MediaLibraryPage = () => {
       <Card className="mb-5 overflow-hidden p-0">
         <div className="border-b border-line bg-gradient-to-r from-brand-50 to-white px-5 py-4">
           <p className="flex items-center gap-2 font-extrabold text-ink"><ImagePlus className="size-4 text-brand-700" /> Agregar una imagen</p>
-          <p className="mt-1 text-xs text-ink-muted">Selecciona el archivo, describe lo que contiene y revisa el recorte antes de publicarlo.</p>
+          <p className="mt-1 text-xs text-ink-muted">Sube una foto, importa una URL o genera una propuesta visual. Revisa el resultado antes de usarlo en una ficha.</p>
         </div>
         <div className="flex flex-wrap gap-2 border-b border-line px-4 py-3 sm:px-5">
           <Button size="sm" variant={sourceMode === 'file' ? 'primary' : 'secondary'} leftIcon={<Upload className="size-4" />} onClick={() => setSourceMode('file')}>Desde archivo</Button>
           <Button size="sm" variant={sourceMode === 'url' ? 'primary' : 'secondary'} leftIcon={<Link2 className="size-4" />} onClick={() => setSourceMode('url')}>Desde URL</Button>
+          <Button size="sm" variant={sourceMode === 'ai' ? 'primary' : 'secondary'} leftIcon={<Sparkles className="size-4" />} onClick={() => setSourceMode('ai')}>Generar con IA</Button>
         </div>
-        <div className="grid min-w-0 gap-5 p-4 sm:p-5 lg:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]">
+        {sourceMode === 'ai' ? (
+          <div className="grid max-w-8xl gap-4 p-4 sm:p-5">
+            <div className="max-w-xs">
+              <Select id="ai-upload-category" label="Carpeta de la biblioteca" value={uploadCategory} onChange={(event) => setUploadCategory(event.target.value)}>
+                {CATEGORIES.map((value) => <SelectOption key={value} value={value}>{value}</SelectOption>)}
+              </Select>
+            </div>
+            <AiImageGenerator category={uploadCategory} onSaved={(asset) => {
+              const alreadyShowingNewest = category === asset.category && !includeDeleted && sort === 'recent' && page === 1 && !query && !search;
+              setQuery('');
+              setSearch('');
+              setCategory(asset.category);
+              setIncludeDeleted(false);
+              setSort('recent');
+              setPage(1);
+              if (alreadyShowingNewest) void load();
+            }} />
+          </div>
+        ) : <div className="grid min-w-0 gap-5 p-4 sm:p-5 lg:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]">
           {sourceMode === 'file' ? <Dropzone
             className="min-w-0"
             accept={['image/jpeg', 'image/png', 'image/webp']}
@@ -237,7 +257,7 @@ const MediaLibraryPage = () => {
               </Button>
             </div>
           </div>
-        </div>
+        </div>}
         {sourceMode === 'file' && previewUrl && (
           <div className="grid gap-5 border-t border-line bg-surface-muted/35 p-5 md:grid-cols-[240px_1fr]">
             <div className="overflow-hidden rounded-card bg-surface-muted shadow-inner" style={{ aspectRatio: uploadAspect }}>
@@ -280,9 +300,9 @@ const MediaLibraryPage = () => {
           const usage = usageCount(asset);
           const acting = busyId === asset.id;
           return <article key={asset.id} className={cn('group overflow-hidden rounded-card border bg-white shadow-e1', asset.deletedAt ? 'border-dashed border-red-200 opacity-65' : 'border-line')}>
-            <div className="relative aspect-square overflow-hidden bg-surface-muted"><img src={asset.url} alt={asset.altText ?? ''} loading="lazy" width={700} height={700} className="size-full object-cover transition duration-300 group-hover:scale-[1.02]" />{asset.deletedAt && <span className="absolute left-2 top-2 rounded-pill bg-red-600 px-2 py-1 text-[10px] font-bold text-white">Papelera</span>}</div>
+            <div className="relative aspect-square overflow-hidden bg-surface-muted"><img src={asset.url} alt={asset.altText ?? ''} loading="lazy" width={700} height={700} className="size-full object-cover transition duration-300 group-hover:scale-[1.02]" />{asset.deletedAt ? <span className="absolute left-2 top-2 rounded-pill bg-red-600 px-2 py-1 text-[10px] font-bold text-white">Papelera</span> : asset.originalName.startsWith('flux-') ? <span className="absolute left-2 top-2 rounded-pill bg-brand-700 px-2 py-1 text-[10px] font-bold text-white">Generada con IA</span> : null}</div>
             <div className="p-3"><p className="truncate font-bold text-ink">{asset.altText || asset.originalName}</p><div className="mt-1 flex items-center justify-between text-xs text-ink-muted"><span className="truncate">{asset.category} · {formatRelative(asset.createdAt)}</span><span className="inline-flex shrink-0 items-center gap-1"><Link2 className="size-3" /> {usage} usos</span></div>
-              {usage > 0 && <p className="mt-2 line-clamp-2 text-[11px] text-ink-muted">{[...asset.usage.products, ...asset.usage.options, ...asset.usage.presets].map((item) => item.name).join(', ')}</p>}
+              {usage > 0 && <p className="mt-2 line-clamp-2 text-[11px] text-ink-muted">{[...asset.usage.products, ...asset.usage.options, ...asset.usage.presets, ...asset.usage.categories, ...(asset.usage.inventoryItems ?? []), ...(asset.usage.themes ?? [])].map((item) => item.name).join(', ')}</p>}
               {/* `flex-wrap`: en la columna xl las tres acciones suman ~281 px sobre
                   ~198 utiles, y la etiqueta "Reemplazar" acababa encima de la papelera. */}
               <div className="mt-3 flex flex-wrap gap-1">{asset.deletedAt

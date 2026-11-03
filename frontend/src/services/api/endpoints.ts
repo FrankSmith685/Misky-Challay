@@ -91,6 +91,7 @@ export const ENDPOINTS = {
     communication: '/settings/communication',
     communicationTest: '/settings/communication/test',
     notificationHistory: '/settings/notification-history',
+    integrations: '/settings/integrations',
   },
 
   engagement: {

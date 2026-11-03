@@ -1,11 +1,13 @@
 import type { Request, Response } from 'express';
-import { created, ok } from '@shared/http/ApiResponse';
+import { created, noContent, ok } from '@shared/http/ApiResponse';
 import { asyncHandler } from '@shared/utils/asyncHandler';
 import { audit } from '@shared/utils/audit';
 import { resolveBranchId } from '@shared/utils/scope';
 import { Allergen, DietaryTag } from '@database/models';
+import { ensureAllergenOptions } from '@database/seeders/foodTaxonomy.seeder';
 import type { ProductStatus } from '@database/models/product.model';
 import { catalogAdminService } from './catalogAdmin.service';
+import { demoProductPurgeService } from './demoProductPurge.service';
 
 /** ABM de catalogo (M04). Cada endpoint exige su permiso; los cambios sensibles se auditan. */
 export const catalogAdminController = {
@@ -14,6 +16,7 @@ export const catalogAdminController = {
       search: req.query.search as string | undefined,
       categoryId: req.query.categoryId ? Number(req.query.categoryId) : undefined,
       status: req.query.status as string | undefined,
+      archived: req.query.archived === 'true',
     });
 
     return ok(res, products, `${products.length} productos`);
@@ -28,6 +31,11 @@ export const catalogAdminController = {
     ]);
 
     return ok(res, { categories, allergens, dietaryTags: tags });
+  }),
+
+  categories: asyncHandler(async (_req: Request, res: Response) => {
+    const categories = await catalogAdminService.listCategories();
+    return ok(res, categories, `${categories.length} categorias`);
   }),
 
   createProduct: asyncHandler(async (req: Request, res: Response) => {
@@ -78,6 +86,46 @@ export const catalogAdminController = {
     return ok(res, { id: product.id, status: product.status }, 'Estado actualizado');
   }),
 
+  deleteDraftProduct: asyncHandler(async (req: Request, res: Response) => {
+    const productId = Number(req.params.productId);
+    const product = await catalogAdminService.deleteDraftProduct(productId);
+    await audit(req, {
+      action: 'catalog.product.delete',
+      entity: 'products',
+      entityId: productId,
+      before: product,
+    });
+    return noContent(res);
+  }),
+
+  archiveProduct: asyncHandler(async (req: Request, res: Response) => {
+    const product = await catalogAdminService.archiveProduct(Number(req.params.productId));
+    await audit(req, {
+      action: 'catalog.product.archive', entity: 'products', entityId: product.id,
+      before: product, after: { ...product, archived: true },
+    });
+    return ok(res, { id: product.id }, 'Producto archivado');
+  }),
+
+  restoreProduct: asyncHandler(async (req: Request, res: Response) => {
+    const product = await catalogAdminService.restoreProduct(Number(req.params.productId));
+    await audit(req, {
+      action: 'catalog.product.restore', entity: 'products', entityId: product.id,
+      before: { ...product, archived: true }, after: product,
+    });
+    return ok(res, { id: product.id }, 'Producto restaurado como retirado');
+  }),
+
+  previewDemoProductPurge: asyncHandler(async (req: Request, res: Response) => {
+    const plan = await demoProductPurgeService.preview(Number(req.params.productId));
+    return ok(res, plan, 'Vista previa del borrado definitivo');
+  }),
+
+  purgeDemoProduct: asyncHandler(async (req: Request, res: Response) => {
+    const result = await demoProductPurgeService.execute(Number(req.params.productId), req.body.slug);
+    return ok(res, result, 'Ficha de prueba eliminada definitivamente');
+  }),
+
   addVariant: asyncHandler(async (req: Request, res: Response) => {
     const variant = await catalogAdminService.addVariant(Number(req.params.productId), req.body);
 
@@ -85,7 +133,7 @@ export const catalogAdminController = {
       action: 'catalog.variant.create',
       entity: 'product_variants',
       entityId: variant.id,
-      after: { name: variant.name, basePrice: Number(variant.basePrice) },
+      after: { name: variant.name, basePrice: Number(variant.basePrice), servingSize: variant.servingSize },
     });
 
     return created(res, { id: variant.id }, 'Presentacion agregada');
@@ -106,29 +154,12 @@ export const catalogAdminController = {
       after: {
         name: variant.name,
         basePrice: Number(variant.basePrice),
+        servingSize: variant.servingSize,
         isActive: variant.isActive,
       },
     });
 
     return ok(res, { id: variant.id }, 'Presentacion actualizada');
-  }),
-
-  /** Lo unico que toca el nutricionista. */
-  updateNutrition: asyncHandler(async (req: Request, res: Response) => {
-    const { nutrition, before } = await catalogAdminService.updateNutrition(
-      Number(req.params.variantId),
-      req.body,
-    );
-
-    await audit(req, {
-      action: 'catalog.nutrition.update',
-      entity: 'product_nutrition',
-      entityId: nutrition.id,
-      before,
-      after: req.body,
-    });
-
-    return ok(res, { id: nutrition.id }, 'Nutricion actualizada');
   }),
 
   setAllergens: asyncHandler(async (req: Request, res: Response) => {
@@ -144,6 +175,19 @@ export const catalogAdminController = {
     });
 
     return ok(res, { productId }, 'Alergenos actualizados');
+  }),
+
+  initializeAllergens: asyncHandler(async (req: Request, res: Response) => {
+    const before = await Allergen.count();
+    await ensureAllergenOptions();
+    const allergens = await Allergen.findAll({ order: [['name', 'ASC']] });
+    await audit(req, {
+      action: 'catalog.allergens.initialize',
+      entity: 'allergens',
+      before: { count: before },
+      after: { count: allergens.length },
+    });
+    return ok(res, allergens, 'Opciones básicas de alérgenos disponibles');
   }),
 
   setDietaryTags: asyncHandler(async (req: Request, res: Response) => {
@@ -196,9 +240,45 @@ export const catalogAdminController = {
       action: 'catalog.category.create',
       entity: 'categories',
       entityId: category.id,
-      after: { name: category.name },
+      after: {
+        name: category.name,
+        slug: category.slug,
+        sortOrder: category.sortOrder,
+        isActive: category.isActive,
+        imageUrl: category.imageUrl,
+      },
     });
 
     return created(res, { id: category.id }, 'Categoria creada');
+  }),
+
+  updateCategory: asyncHandler(async (req: Request, res: Response) => {
+    const categoryId = Number(req.params.categoryId);
+    const category = await catalogAdminService.updateCategory(categoryId, req.body);
+    await audit(req, {
+      action: 'catalog.category.update',
+      entity: 'categories',
+      entityId: categoryId,
+      after: {
+        name: category.name,
+        slug: category.slug,
+        sortOrder: category.sortOrder,
+        isActive: category.isActive,
+        imageUrl: category.imageUrl,
+      },
+    });
+    return ok(res, { id: category.id, imageUrl: category.imageUrl }, 'Categoria actualizada');
+  }),
+
+  deleteCategory: asyncHandler(async (req: Request, res: Response) => {
+    const categoryId = Number(req.params.categoryId);
+    const category = await catalogAdminService.deleteCategory(categoryId);
+    await audit(req, {
+      action: 'catalog.category.delete',
+      entity: 'categories',
+      entityId: categoryId,
+      before: category,
+    });
+    return noContent(res);
   }),
 };

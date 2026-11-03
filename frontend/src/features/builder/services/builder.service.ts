@@ -1,4 +1,4 @@
-import { api } from '@services/api/client';
+﻿import { api } from '@services/api/client';
 import { ENDPOINTS } from '@services/api/endpoints';
 import type { ApiSuccess } from '@/types/api';
 import type { BuilderConfig, QuoteInput, QuoteResult, SavedBowl } from '../types';
@@ -11,10 +11,8 @@ export const builderApi = {
     );
     return data.data;
   },
-
-  /** RN-007: el precio y la nutricion validos son los que devuelve el backend. */
   async quote(input: QuoteInput, signal?: AbortSignal): Promise<QuoteResult> {
-    // `null` no representa una sucursal: si no hay dirección, se omite el campo.
+    // `null` no representa una sucursal: si no hay direcciÃ³n, se omite el campo.
     const { branchId, ...baseInput } = input;
     const payload = branchId ? { ...baseInput, branchId } : baseInput;
     const { data } = await api.post<ApiSuccess<QuoteResult>>(
@@ -54,3 +52,4 @@ export const builderApi = {
     await api.post('/customizations/events', input);
   },
 };
+

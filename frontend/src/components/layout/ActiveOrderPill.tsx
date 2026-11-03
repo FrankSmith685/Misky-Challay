@@ -6,9 +6,11 @@ import { useAppSelector } from '@app/hooks';
 import { ROUTES } from '@constants/routes';
 import { formatDate } from '@lib/format';
 import { cn } from '@lib/cn';
+import { DATA_CHANGED } from '@services/realtime';
 import { ordersApi } from '@features/orders/services/orders.service';
 import { ORDER_STATUS } from '@features/orders/components/OrderStatusBadge';
 import type { OrderDetail } from '@features/checkout/types';
+import { ORDER_CHANGED_EVENT } from '@features/orders/orderChanged';
 
 /** Mismos estados que el filtro "En curso" de Mis pedidos. */
 const ACTIVE_STATUSES = ['PENDING_PAYMENT', 'CONFIRMED', 'PREPARING', 'READY', 'OUT_FOR_DELIVERY'];
@@ -33,7 +35,7 @@ const DISMISSED_KEY = 'verde-bowl.active-order.dismissed';
  */
 export const ActiveOrderPill = () => {
   const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated);
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [dismissed, setDismissed] = useState(() => localStorage.getItem(DISMISSED_KEY) ?? '');
 
@@ -44,11 +46,13 @@ export const ActiveOrderPill = () => {
     }
 
     let cancelled = false;
-    const load = () =>
-      ordersApi
-        .list()
+    let requestVersion = 0;
+    const load = () => {
+      const version = ++requestVersion;
+      return ordersApi
+        .active()
         .then((orders) => {
-          if (cancelled) return;
+          if (cancelled || version !== requestVersion) return;
           const active = orders
             .filter((candidate) => ACTIVE_STATUSES.includes(candidate.status))
             .sort((a, b) => new Date(b.placedAt).getTime() - new Date(a.placedAt).getTime());
@@ -57,27 +61,55 @@ export const ActiveOrderPill = () => {
         // Es una señal secundaria: si el API falla, calla. Quien informa del fallo es
         // la pantalla que el cliente abrio a proposito, no una barra de aviso.
         .catch(() => undefined);
+    };
 
+    const onOrderChanged = (event: Event) => {
+      // Una consulta iniciada antes de la confirmacion no puede devolver la barra
+      // al estado "sin pagar" cuando ya llego un pedido confirmado del backend.
+      requestVersion += 1;
+      const changed = (event as CustomEvent<OrderDetail | undefined>).detail;
+      if (changed) {
+        setOrder((current) => {
+          if (current?.orderNumber === changed.orderNumber) {
+            return ACTIVE_STATUSES.includes(changed.status) ? changed : null;
+          }
+          if (!ACTIVE_STATUSES.includes(changed.status)) return current;
+          if (!current || new Date(changed.placedAt).getTime() > new Date(current.placedAt).getTime()) {
+            return changed;
+          }
+          return current;
+        });
+      }
+      void load();
+    };
+
+    window.addEventListener(DATA_CHANGED, load);
+    window.addEventListener(ORDER_CHANGED_EVENT, onOrderChanged);
     void load();
-    // Mismo pulso que la campana del header: el estado del pedido no cambia mas rapido.
+    // Sondeo de respaldo para cambios hechos desde otro dispositivo o por el webhook.
     const timer = window.setInterval(load, 60_000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
+      window.removeEventListener(DATA_CHANGED, load);
+      window.removeEventListener(ORDER_CHANGED_EVENT, onOrderChanged);
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, pathname]);
 
   if (!order) return null;
 
-  const token = `${order.orderNumber}:${order.status}`;
+  const token = `${order.orderNumber}:${order.status}:${order.directPaymentState ?? ''}`;
   if (dismissed === token) return null;
 
   const detailPath = ROUTES.accountOrderDetail(order.orderNumber);
   // Estando en el propio seguimiento, la barra solo repetiria lo que ya se ve.
   if (pathname === detailPath) return null;
+  if (pathname === ROUTES.checkoutSuccess && new URLSearchParams(search).get('pedido') === order.orderNumber) return null;
 
   const isUnpaid = order.status === 'PENDING_PAYMENT';
-  const statusLabel = ORDER_STATUS[order.status]?.label ?? 'En curso';
+  const reviewing = isUnpaid && order.directPaymentState === 'REVIEW';
+  const observed = isUnpaid && order.directPaymentState === 'OBSERVED';
+  const statusLabel = reviewing ? 'Estamos verificando tu pago' : observed ? 'Corrige los datos del reporte' : ORDER_STATUS[order.status]?.label ?? 'En curso';
   const scheduledAt = order.serviceMode === 'SCHEDULED' ? order.scheduledAt : null;
 
   const dismiss = () => {
@@ -90,7 +122,7 @@ export const ActiveOrderPill = () => {
       aria-label="Pedido en curso"
       className={cn('border-b', isUnpaid ? 'border-amber-300 bg-amber-50' : 'border-brand-200 bg-brand-50')}
     >
-      <div className="mx-auto flex w-full max-w-7xl items-center gap-2 px-4 py-2 sm:gap-3 lg:px-6">
+      <div className="mx-auto flex w-full max-w-8xl items-center gap-2 px-4 py-2 sm:gap-3 lg:px-6">
         <span
           className={cn(
             'grid size-7 shrink-0 place-items-center rounded-card text-white',
@@ -101,7 +133,7 @@ export const ActiveOrderPill = () => {
         </span>
 
         <p className="min-w-0 flex-1 truncate text-xs text-ink sm:text-sm">
-          <span className="font-extrabold">{isUnpaid ? 'Pedido sin pagar' : 'Pedido'} {order.orderNumber}</span>
+          <span className="font-extrabold">{reviewing ? 'Pago en revisión' : observed ? 'Corrección solicitada' : isUnpaid ? 'Pedido pendiente de pago' : 'Pedido'} {order.orderNumber}</span>
           <span className="text-ink-muted"> · {statusLabel}</span>
           {scheduledAt && (
             <span className="hidden text-ink-muted sm:inline"> · Programado: {formatDate(scheduledAt)}</span>
@@ -115,7 +147,7 @@ export const ActiveOrderPill = () => {
             isUnpaid ? 'text-amber-700' : 'text-brand-700',
           )}
         >
-          {isUnpaid ? 'Ver el pedido' : 'Ver seguimiento'}
+          {reviewing ? 'Ver revisión' : observed ? 'Revisar observación' : isUnpaid ? 'Retomar pago' : 'Ver seguimiento'}
           <ChevronRight className="size-3.5" />
         </Link>
 

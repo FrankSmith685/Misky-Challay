@@ -9,6 +9,7 @@ import {
   Store,
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import toast from '@components/mui/MuiToast';
 import { Button } from '@components/ui/Button';
 import { FormSection } from '@components/ui/FormSection';
@@ -20,6 +21,7 @@ import { getApiErrorMessage } from '@services/api/client';
 import { trackUxEvent } from '@services/analytics';
 import { accountApi } from '@features/account/services/account.service';
 import { geoApi } from '../services/geo.service';
+import { DELIVERY_REFERENCE_MAX_LENGTH } from '../utils/deliveryAddress';
 import type { Address, AddressSuggestion, CoverageResult, District } from '../types';
 import { AddressAutocomplete } from './AddressAutocomplete';
 import { AddressMapPicker, type MapPosition } from './AddressMapPicker';
@@ -67,6 +69,7 @@ export const CoverageChecker = ({ onConfirmed }: CoverageCheckerProps) => {
     district: null,
   });
   const [line1, setLine1] = useState('');
+  const [houseNumber, setHouseNumber] = useState('');
   const [unit, setUnit] = useState('');
   const [reference, setReference] = useState('');
   const [position, setPosition] = useState<MapPosition | null>(null);
@@ -76,6 +79,7 @@ export const CoverageChecker = ({ onConfirmed }: CoverageCheckerProps) => {
   const [isConfirming, setIsConfirming] = useState(false);
   const [isResolvingPin, setIsResolvingPin] = useState(false);
   const [locationError, setLocationError] = useState('');
+  const [checkError, setCheckError] = useState('');
 
   const formRef = useRef<HTMLDivElement>(null);
   const resultRef = useRef<HTMLDivElement>(null);
@@ -89,9 +93,17 @@ export const CoverageChecker = ({ onConfirmed }: CoverageCheckerProps) => {
       Math.abs(resolvedLocation.latitude - position.latitude) < 0.000001 &&
       Math.abs(resolvedLocation.longitude - position.longitude) < 0.000001,
   );
+  const hasGeocodedHouseNumber = resolvedLocation?.hasHouseNumber === true;
+  const enteredHouseNumber = houseNumber.trim();
+  const houseNumberIsValid = !enteredHouseNumber || /^\d{1,6}[a-zA-Z]?(?:[-/]\d{1,6}[a-zA-Z]?)?$/.test(enteredHouseNumber);
+  const deliveryReference = [unit.trim() ? `Departamento/piso: ${unit.trim()}` : '', reference.trim()].filter(Boolean).join(' · ');
+  const referenceIsValid = deliveryReference.length <= DELIVERY_REFERENCE_MAX_LENGTH;
+  const deliveryLine1 = [line1.trim(), !hasGeocodedHouseNumber && houseNumberIsValid ? enteredHouseNumber : '']
+    .filter(Boolean)
+    .join(' ');
   const progressSteps = [
     { label: 'Zona', ready: location.districtCode !== '' },
-    { label: 'Dirección', ready: line1.trim().length >= 5 },
+    { label: 'Dirección', ready: line1.trim().length >= 5 && houseNumberIsValid && referenceIsValid },
     { label: 'Punto exacto', ready: isAddressSynchronized },
   ];
   const isReady = progressSteps.every((step) => step.ready) && !isResolvingPin;
@@ -117,30 +129,30 @@ export const CoverageChecker = ({ onConfirmed }: CoverageCheckerProps) => {
   const activeDistrictName = isAddressSynchronized
     ? resolvedLocation?.district ?? undefined
     : selectedDistrictName;
-  const addressLabel = [line1.trim(), activeDistrictName, activeProvinceName]
+  const addressLabel = [deliveryLine1, activeDistrictName, activeProvinceName]
     .filter(Boolean)
     .join(', ');
 
-  const nextRequirement =
-    location.districtCode === ''
-      ? 'Selecciona departamento, provincia y distrito de entrega.'
-      : line1.trim().length < 5
-        ? 'Ahora escribe y selecciona la dirección.'
-        : !position
-          ? 'Marca la entrada exacta en el mapa.'
-          : isResolvingPin
-            ? 'Estamos sincronizando la dirección con el pin.'
-            : !isAddressSynchronized
-              ? 'Ajusta el pin para confirmar la zona administrativa correcta.'
-              : 'Todo listo para calcular tu cobertura.';
+  const nextRequirement = (() => {
+    if (!location.districtCode) return 'Selecciona departamento, provincia y distrito de entrega.';
+    if (line1.trim().length < 5) return 'Ahora escribe y selecciona la dirección.';
+    if (!houseNumberIsValid) return 'Escribe un número de puerta válido, por ejemplo 123 o 123A.';
+    if (!referenceIsValid) return 'El departamento/piso y la referencia juntos admiten hasta 200 caracteres.';
+    if (!position) return 'Marca la entrada exacta en el mapa.';
+    if (isResolvingPin) return 'Estamos sincronizando la dirección con el pin.';
+    if (!isAddressSynchronized) return 'Ajusta el pin para confirmar la zona administrativa correcta.';
+    return 'Todo listo para comprobar si llegamos a tu dirección.';
+  })();
 
   const resetAddressFields = () => {
     setLine1('');
+    setHouseNumber('');
     setUnit('');
     setReference('');
     setPosition(null);
     setResolvedLocation(null);
     setResult(null);
+    setCheckError('');
   };
 
   const selectLocation = (next: PeruLocationValue) => {
@@ -157,6 +169,7 @@ export const CoverageChecker = ({ onConfirmed }: CoverageCheckerProps) => {
       : { ...address, ubigeoCode: resolvedUbigeo };
 
     setLine1(address.line1);
+    if (address.hasHouseNumber) setHouseNumber('');
     if (resolvedUbigeo) {
       setLocation({
         departmentCode: resolvedUbigeo.slice(0, 2),
@@ -169,6 +182,7 @@ export const CoverageChecker = ({ onConfirmed }: CoverageCheckerProps) => {
     }
     setResolvedLocation(synchronizedAddress);
     setResult(null);
+    setCheckError('');
     if (address.latitude != null && address.longitude != null) {
       setPosition({
         latitude: address.latitude,
@@ -208,9 +222,10 @@ export const CoverageChecker = ({ onConfirmed }: CoverageCheckerProps) => {
     }
 
     setIsChecking(true);
+    setCheckError('');
     try {
       const coverage = await geoApi.checkCoverage({
-        cityId: cityId ?? undefined,
+        cityId: operationalDistrict?.cityId,
         districtId: operationalDistrict?.id,
         latitude: position.latitude,
         longitude: position.longitude,
@@ -228,7 +243,11 @@ export const CoverageChecker = ({ onConfirmed }: CoverageCheckerProps) => {
     } catch (error) {
       const message = getApiErrorMessage(error);
       void trackUxEvent('COVERAGE_ERROR', { message: message.slice(0, 120) });
-      toast.error(message);
+      setCheckError(
+        axios.isAxiosError(error) && (error.response?.status ?? 0) >= 500
+          ? 'No pudimos consultar la cobertura. Los datos siguen en este formulario; vuelve a intentarlo más tarde.'
+          : message,
+      );
     } finally {
       setIsChecking(false);
     }
@@ -247,6 +266,8 @@ export const CoverageChecker = ({ onConfirmed }: CoverageCheckerProps) => {
       const existing = await accountApi.listAddresses();
       const duplicate = existing.find(
         (saved) =>
+          saved.line1.trim().toLowerCase() === selected.line1.trim().toLowerCase() &&
+          (saved.reference ?? '').trim().toLowerCase() === (selected.reference ?? '').trim().toLowerCase() &&
           saved.latitude != null &&
           saved.longitude != null &&
           selected.latitude != null &&
@@ -278,7 +299,7 @@ export const CoverageChecker = ({ onConfirmed }: CoverageCheckerProps) => {
   };
 
   const handleConfirm = async () => {
-    if (!result?.covered || !result.branch || isConfirming) return;
+    if (!isReady || !result?.covered || !result.branch || isConfirming) return;
 
     // Consultar cobertura es público; asociar una dirección a una compra o a una
     // libreta es una acción personal. No dejamos un contexto que parezca guardado
@@ -293,15 +314,12 @@ export const CoverageChecker = ({ onConfirmed }: CoverageCheckerProps) => {
 
     const selected: SelectedAddress = {
       label: activeDistrictName ?? 'Mi dirección',
-      line1: line1.trim() || (activeDistrictName ?? ''),
+      line1: deliveryLine1 || (activeDistrictName ?? ''),
       districtId: operationalDistrict?.id,
       latitude: position?.latitude,
       longitude: position?.longitude,
-      reference:
-        [unit.trim() ? `Departamento/piso: ${unit.trim()}` : '', reference.trim()]
-          .filter(Boolean)
-          .join(' · ')
-          .slice(0, 200) || undefined,
+      hasHouseNumber: hasGeocodedHouseNumber || Boolean(enteredHouseNumber),
+      reference: deliveryReference || undefined,
     };
 
     setIsConfirming(true);
@@ -375,7 +393,7 @@ export const CoverageChecker = ({ onConfirmed }: CoverageCheckerProps) => {
             <CheckCircle2 className="size-4" /> No necesitas elegir una dirección de entrega.
           </p>
           <p className="mt-1 text-xs leading-5 text-ink-muted">
-            Tu pedido quedará asociado directamente a este local para recogerlo en tienda.
+            Tu pedido quedará asociado directamente a este local para recogerlo en el taller.
           </p>
         </div>
 
@@ -387,7 +405,7 @@ export const CoverageChecker = ({ onConfirmed }: CoverageCheckerProps) => {
   }
 
   return (
-    <div ref={formRef} className="grid gap-6">
+    <div ref={formRef} className="grid min-w-0 grid-cols-1 gap-6">
       <CoverageProgress steps={progressSteps} />
 
       {locationError && (
@@ -403,8 +421,8 @@ export const CoverageChecker = ({ onConfirmed }: CoverageCheckerProps) => {
         </div>
       )}
 
-      <div className="grid items-start gap-6 xl:gap-8 lg:grid-cols-[minmax(0,1.02fr)_minmax(380px,.98fr)]">
-        <div className="grid gap-5">
+      <div className="grid min-w-0 grid-cols-1 items-stretch gap-5 lg:grid-cols-[minmax(0,1.02fr)_minmax(380px,.98fr)]">
+        <div className="grid min-w-0 grid-cols-1 content-start gap-5">
           <FormSection
             title={isAddressSynchronized ? '1. Ubicación confirmada' : '1. Elige tu zona'}
             description={
@@ -475,7 +493,7 @@ export const CoverageChecker = ({ onConfirmed }: CoverageCheckerProps) => {
 
           <FormSection
             title="2. Busca tu dirección"
-            description="Selecciona una coincidencia y añade una referencia que ayude al repartidor."
+            description="Selecciona tu dirección y confirma la entrada en el mapa. Los detalles adicionales son opcionales."
             icon={Search}
             className="rounded-card"
           >
@@ -483,9 +501,11 @@ export const CoverageChecker = ({ onConfirmed }: CoverageCheckerProps) => {
               value={line1}
               onChange={(value) => {
                 setLine1(value);
+                setHouseNumber('');
                 setPosition(null);
                 setResolvedLocation(null);
                 setResult(null);
+                setCheckError('');
               }}
               onSelect={applyResolvedAddress}
               cityId={cityId}
@@ -498,6 +518,19 @@ export const CoverageChecker = ({ onConfirmed }: CoverageCheckerProps) => {
               disabled={isResolvingPin}
             />
 
+            {!hasGeocodedHouseNumber && (
+              <Input
+                className="mt-5"
+                label="Número de puerta (si tiene)"
+                placeholder="Ej. 123 o 123A"
+                value={houseNumber}
+                onChange={(event) => setHouseNumber(event.target.value)}
+                error={!houseNumberIsValid ? 'Escribe solo el número de puerta, por ejemplo 123 o 123A.' : undefined}
+                inputMode="text"
+                maxLength={15}
+              />
+            )}
+
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
               <Input
                 label="Dpto. / interior / piso"
@@ -505,48 +538,29 @@ export const CoverageChecker = ({ onConfirmed }: CoverageCheckerProps) => {
                 value={unit}
                 onChange={(event) => setUnit(event.target.value)}
                 autoComplete="address-line2"
+                maxLength={60}
               />
               <Input
-                label="Referencia"
+                label="Referencia para el repartidor (opcional)"
                 placeholder="Puerta verde, frente al parque…"
                 value={reference}
                 onChange={(event) => setReference(event.target.value)}
+                maxLength={DELIVERY_REFERENCE_MAX_LENGTH}
+                error={!referenceIsValid ? 'El departamento/piso y la referencia juntos admiten hasta 200 caracteres.' : undefined}
+                hint="Puedes añadir una referencia si ayuda a encontrar la entrada."
               />
             </div>
 
-            {line1.trim().length >= 5 && !/\d/.test(line1) && (
-              <p
-                role="status"
-                className="mt-3 flex items-start gap-2 rounded-card bg-amber-50 p-3 text-xs leading-5 text-amber-800"
-              >
-                <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-                No vemos un número de puerta. Añádelo o ajusta la entrada exacta en el mapa.
-              </p>
-            )}
           </FormSection>
         </div>
 
-        <div className="grid gap-5 lg:sticky lg:top-24">
-          {result && (
-            <div ref={resultRef}>
-              <CoverageResultCard
-                result={result}
-                addressLabel={addressLabel}
-                isConfirming={isConfirming}
-                isAuthenticated={isAuthenticated}
-                onConfirm={() => void handleConfirm()}
-                onPickup={handlePickup}
-                onEdit={handleEdit}
-              />
-            </div>
-          )}
-
+        <div className="flex min-w-0 flex-col">
           <FormSection
             title="3. Confirma el punto exacto"
             description="Mueve el pin hasta la puerta o entrada por donde recibirás el pedido."
             icon={MapPin}
             tone="brand"
-            className="rounded-card"
+            className="flex flex-1 flex-col rounded-card"
           >
             <AddressMapPicker
               value={position}
@@ -567,6 +581,7 @@ export const CoverageChecker = ({ onConfirmed }: CoverageCheckerProps) => {
               onChange={(next) => {
                 setPosition(next);
                 setResult(null);
+                setCheckError('');
               }}
               address={resolvedLocation}
               onAddressResolved={(address) => {
@@ -585,39 +600,56 @@ export const CoverageChecker = ({ onConfirmed }: CoverageCheckerProps) => {
               }}
               onResolvingChange={setIsResolvingPin}
               autoLocate
+              fillAvailableSpace
               coveragePolygon={result?.zone?.polygon}
             />
           </FormSection>
         </div>
       </div>
 
-      <div className="grid gap-4 rounded-card border border-line bg-white p-4 shadow-e2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-6 sm:p-5">
-        <div className="flex items-start gap-3 px-1 py-1">
-          <span
-            className={`grid size-9 shrink-0 place-items-center rounded-card ${
-              isReady ? 'bg-brand-50 text-brand-700' : 'bg-neutral-100 text-ink-muted'
-            }`}
-          >
-            {isReady ? <CheckCircle2 className="size-4" /> : <Map className="size-4" />}
-          </span>
-          <div>
-            <p className="text-xs font-extrabold text-ink">
-              {isReady ? 'Dirección lista para validar' : 'Completa tu ubicación'}
-            </p>
-            <p className="mt-0.5 text-xs leading-5 text-ink-muted">{nextRequirement}</p>
-          </div>
+      {result && isReady ? (
+        <div ref={resultRef}>
+          <CoverageResultCard
+            result={result}
+            addressLabel={addressLabel}
+            isConfirming={isConfirming}
+            isAuthenticated={isAuthenticated}
+            onConfirm={() => void handleConfirm()}
+            onPickup={handlePickup}
+            onEdit={handleEdit}
+          />
         </div>
-        <Button
-          className="w-full sm:w-auto sm:min-w-56"
-          size="lg"
-          disabled={!isReady || isChecking}
-          isLoading={isChecking}
-          leftIcon={<MapPin className="size-4" />}
-          onClick={() => void handleCheck()}
-        >
-          Verificar cobertura
-        </Button>
-      </div>
+      ) : (
+        <div className="grid gap-4 rounded-card border border-line bg-white p-4 shadow-e2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-6 sm:p-5">
+          <div className="flex items-start gap-3 px-1 py-1">
+            <span
+              className={`grid size-9 shrink-0 place-items-center rounded-card ${
+                checkError ? 'bg-red-50 text-red-700' : isReady ? 'bg-brand-50 text-brand-700' : 'bg-neutral-100 text-ink-muted'
+              }`}
+            >
+              {checkError ? <AlertTriangle className="size-4" /> : isReady ? <CheckCircle2 className="size-4" /> : <Map className="size-4" />}
+            </span>
+            <div>
+              <p className="text-xs font-extrabold text-ink">
+                {checkError ? 'No pudimos comprobar la cobertura' : isReady ? 'Dirección lista para comprobar' : 'Completa tu ubicación'}
+              </p>
+              <p className={`mt-0.5 text-xs leading-5 ${checkError ? 'text-red-700' : 'text-ink-muted'}`} role={checkError ? 'alert' : undefined}>
+                {checkError || nextRequirement}
+              </p>
+            </div>
+          </div>
+          <Button
+            className="w-full sm:w-auto sm:min-w-56"
+            size="lg"
+            disabled={!isReady || isChecking}
+            isLoading={isChecking}
+            leftIcon={<MapPin className="size-4" />}
+            onClick={() => void handleCheck()}
+          >
+            {checkError ? 'Reintentar comprobación' : 'Comprobar zona de entrega'}
+          </Button>
+        </div>
+      )}
     </div>
   );
 };

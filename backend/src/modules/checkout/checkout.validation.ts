@@ -5,6 +5,7 @@ import { coordinatePairIssue, hasCoordinatePair } from '@shared/utils/coordinate
 const itemSchema = z.object({
   productId: z.coerce.number().int().positive(),
   variantId: z.coerce.number().int().positive(),
+  requestedServings: z.coerce.number().int().min(1).max(500).optional(),
   quantity: z.coerce.number().int().min(1).max(20),
   selections: z
     .array(
@@ -15,13 +16,20 @@ const itemSchema = z.object({
     )
     .max(30)
     .default([]),
-  specialInstructions: z.string().max(255).optional(),
+  designDetails: z.object({ inscription: z.string().trim().max(150), occasion: z.string().trim().max(100), finish: z.string().trim().max(300) }).optional(),
+  specialInstructions: z.string().max(900).optional(),
+  referenceDataUrl: z.string().max(300_000).optional(),
+  aiProposalDataUrl: z.string().max(300_000).optional(),
+  designQuoteId: z.coerce.number().int().positive().optional(),
+  themeId: z.coerce.number().int().positive().optional(),
+  themeVersion: z.coerce.number().int().positive().optional(),
 });
 
 const addressSchema = z.object({
   label: z.string().max(50).optional(),
   line1: z.string().min(5).max(200),
-  reference: z.string().max(200).optional(),
+  reference: z.string().trim().max(200).optional(),
+  hasHouseNumber: z.boolean().optional(),
   districtId: z.coerce.number().int().positive().optional(),
   latitude: z.coerce.number().min(-90).max(90).optional(),
   longitude: z.coerce.number().min(-180).max(180).optional(),
@@ -57,6 +65,7 @@ const billingSchema = z
 
 const checkoutBody = z
   .object({
+    experience: z.object({ packageId: z.number().int().positive(), expectedVersion: z.number().int().positive(), brief: z.string().trim().max(1500) }).optional(),
     items: z.array(itemSchema).min(1, 'El carrito esta vacio').max(30),
     deliveryType: z.enum(['DELIVERY', 'PICKUP']),
     serviceMode: z.enum(['ASAP', 'SCHEDULED']).default('ASAP'),
@@ -66,8 +75,10 @@ const checkoutBody = z
     couponCode: z.string().max(40).optional(),
     /** El cliente decide si gasta el saldo de su plan en este pedido. */
     useWallet: z.boolean().optional(),
-    /** ONLINE = tarjeta; CASH = contra entrega; YAPE/PLIN esperan validacion de Caja. */
-    paymentMethod: z.enum(['ONLINE', 'CASH', 'YAPE', 'PLIN']).default('ONLINE'),
+    /** ONLINE = pasarela; YAPE/PLIN = transferencia directa verificada por la tienda. */
+    paymentMethod: z.enum(['ONLINE', 'YAPE', 'PLIN'], {
+      errorMap: () => ({ message: 'Elige pago en línea, Yape o Plin. El efectivo no está disponible en el checkout.' }),
+    }).default('ONLINE'),
     mobilePayment: z.object({
       operationCode: z.string().trim().regex(/^[A-Za-z0-9-]{6,24}$/, 'Codigo de operacion invalido'),
       payerPhone: z.string().trim().regex(/^\d{9}$/, 'Ingresa los 9 digitos del celular').optional(),
@@ -76,8 +87,10 @@ const checkoutBody = z
     client: z.enum(['WEB', 'MOBILE']).default('WEB'),
     /** Comprobante: boleta (por defecto) o factura con RUC. */
     billing: billingSchema.optional(),
+    gift: z.object({ recipientName: z.string().trim().min(2).max(120), recipientPhone: z.string().trim().max(30).optional(), hidePrices: z.boolean().default(true), message: z.string().trim().max(500).optional() }).optional(),
     contactName: z.string().max(120).optional(),
     contactPhone: z.string().max(30).optional(),
+    whatsappOptIn: z.boolean().optional(),
     // Cocina y reparto se guardan juntos con etiquetas; admite ambos campos de 250 caracteres.
     notes: z.string().max(600).optional(),
   })
@@ -85,6 +98,10 @@ const checkoutBody = z
     message: 'Para delivery necesitas enviar la direccion',
     path: ['address'],
   })
+  .refine(
+    (value) => value.deliveryType === 'PICKUP' || (value.address?.latitude != null && value.address.longitude != null),
+    { message: 'Marca la ubicacion exacta para calcular el delivery', path: ['address', 'latitude'] },
+  )
   .refine((value) => value.deliveryType === 'DELIVERY' || value.branchId !== undefined, {
     message: 'Para recojo necesitas elegir el local',
     path: ['branchId'],
@@ -98,15 +115,12 @@ export const placeSchema = z.object({
     z.object({
       /** RN-015: el frontend genera esta clave UNA vez por intento de compra. */
       idempotencyKey: z.string().min(8).max(80),
+      termsAccepted: z.literal(true, { errorMap: () => ({ message: 'Acepta los términos y condiciones antes de confirmar el pedido.' }) }),
+      termsVersion: z.number().int().positive(),
     }),
-  ).superRefine((value, context) => {
-    if ((value.paymentMethod === 'YAPE' || value.paymentMethod === 'PLIN') && !value.mobilePayment) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['mobilePayment', 'operationCode'],
-        message: 'Ingresa el codigo de operacion despues de pagar',
-      });
-    }
+  ).refine((value) => !value.experience || value.experience.brief.length >= 10, { message: 'Describe tu idea en al menos 10 caracteres.', path: ['experience', 'brief'] }).refine((value) => value.serviceMode !== 'SCHEDULED' || value.deliverySlotId !== undefined, {
+    message: 'Elige una fecha y franja para tu pedido',
+    path: ['deliverySlotId'],
   }),
 });
 

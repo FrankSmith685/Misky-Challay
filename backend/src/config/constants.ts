@@ -82,6 +82,8 @@ export type PaymentStatus = (typeof PAYMENT_STATUS)[keyof typeof PAYMENT_STATUS]
  */
 export const PAYMENT_PROVIDER = {
   STRIPE: 'stripe',
+  MERCADOPAGO: 'mercadopago',
+  MERCADOPAGO_SUBSCRIPTION: 'mercadopago_subscription',
   WALLET: 'wallet',
   CASH: 'cash',
   YAPE: 'yape',
@@ -144,13 +146,13 @@ export type UserStatus = (typeof USER_STATUS)[keyof typeof USER_STATUS];
 export const ROLES = {
   CUSTOMER: 'customer',
   KITCHEN: 'kitchen',
+  PURCHASING: 'purchasing',
   WAITER: 'waiter',
   CASHIER: 'cashier',
   DISPATCHER: 'dispatcher',
   DRIVER: 'driver',
   SUPPORT: 'support',
   CATALOG_MANAGER: 'catalog_manager',
-  NUTRITIONIST: 'nutritionist',
   BRANCH_ADMIN: 'branch_admin',
   ADMIN: 'admin',
   AUDITOR: 'auditor',
@@ -177,9 +179,6 @@ export const PERMISSIONS = {
   CATALOG_AVAILABILITY_WRITE: 'catalog.availability.write',
   CATALOG_CUSTOMIZATION_WRITE: 'catalog.customization.write',
 
-  // --- Nutricion (el nutricionista toca esto y nada mas) ---
-  NUTRITION_READ: 'nutrition.read',
-  NUTRITION_WRITE: 'nutrition.write',
   ALLERGEN_WRITE: 'allergen.write',
   DIETARY_TAG_WRITE: 'dietary_tag.write',
 
@@ -193,6 +192,9 @@ export const PERMISSIONS = {
   ORDER_CANCEL: 'order.cancel',
 
   // --- Cocina ---
+  EXPERIENCE_READ: 'experience.read',
+  EXPERIENCE_WRITE: 'experience.write',
+  EXPERIENCE_PUBLISH: 'experience.publish',
   KITCHEN_READ: 'kitchen.read',
   KITCHEN_OPERATE: 'kitchen.operate',
 
@@ -203,6 +205,8 @@ export const PERMISSIONS = {
   // --- Inventario ---
   INVENTORY_READ: 'inventory.read',
   INVENTORY_MANAGE: 'inventory.manage',
+  PROCUREMENT_READ: 'procurement.read',
+  PROCUREMENT_MANAGE: 'procurement.manage',
 
   // --- Delivery ---
   DELIVERY_READ: 'delivery.read',
@@ -223,6 +227,8 @@ export const PERMISSIONS = {
   // --- Reportes ---
   REPORT_SALES_READ: 'report.sales.read',
   REPORT_OPERATIONS_READ: 'report.operations.read',
+  CAKE_FINANCE_READ: 'cake.finance.read',
+  CAKE_FINANCE_MANAGE: 'cake.finance.manage',
 
   // --- Gobierno de accesos ---
   USER_READ: 'user.read',
@@ -231,6 +237,8 @@ export const PERMISSIONS = {
   ROLE_MANAGE: 'role.manage',
   AUDIT_READ: 'audit.read',
   SETTINGS_MANAGE: 'settings.manage',
+  COMMUNICATION_READ: 'communication.read',
+  COMMUNICATION_REPLY: 'communication.reply',
   COMPLAINT_MANAGE: 'complaint.manage',
 } as const;
 export type PermissionCode = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -253,16 +261,8 @@ export const PERMISSION_CATALOG: Array<{
       { code: PERMISSIONS.CATALOG_PRODUCT_PUBLISH, label: 'Publicar o retirar productos' },
       { code: PERMISSIONS.CATALOG_CATEGORY_WRITE, label: 'Gestionar categorias' },
       { code: PERMISSIONS.CATALOG_AVAILABILITY_WRITE, label: 'Marcar disponibilidad por sucursal' },
-      { code: PERMISSIONS.CATALOG_CUSTOMIZATION_WRITE, label: 'Editar el constructor de bowls' },
-    ],
-  },
-  {
-    module: 'nutrition',
-    label: 'Nutricion',
-    permissions: [
-      { code: PERMISSIONS.NUTRITION_READ, label: 'Ver informacion nutricional' },
-      { code: PERMISSIONS.NUTRITION_WRITE, label: 'Editar calorias y macros' },
-      { code: PERMISSIONS.ALLERGEN_WRITE, label: 'Gestionar alergenos' },
+      { code: PERMISSIONS.CATALOG_CUSTOMIZATION_WRITE, label: 'Editar el constructor de tortas' },
+      { code: PERMISSIONS.ALLERGEN_WRITE, label: 'Gestionar alérgenos' },
       { code: PERMISSIONS.DIETARY_TAG_WRITE, label: 'Gestionar etiquetas dietarias' },
     ],
   },
@@ -287,6 +287,9 @@ export const PERMISSION_CATALOG: Array<{
     module: 'kitchen',
     label: 'Cocina',
     permissions: [
+      { code: PERMISSIONS.EXPERIENCE_READ, label: 'Ver experiencias QR' },
+      { code: PERMISSIONS.EXPERIENCE_WRITE, label: 'Crear y editar experiencias QR' },
+      { code: PERMISSIONS.EXPERIENCE_PUBLISH, label: 'Publicar experiencias QR' },
       { code: PERMISSIONS.KITCHEN_READ, label: 'Ver el tablero de cocina' },
       { code: PERMISSIONS.KITCHEN_OPERATE, label: 'Aceptar, preparar y despachar tickets' },
     ],
@@ -305,6 +308,8 @@ export const PERMISSION_CATALOG: Array<{
     permissions: [
       { code: PERMISSIONS.INVENTORY_READ, label: 'Ver el stock' },
       { code: PERMISSIONS.INVENTORY_MANAGE, label: 'Registrar entradas, mermas y ajustes' },
+      { code: PERMISSIONS.PROCUREMENT_READ, label: 'Ver proveedores, compras, lotes y costos' },
+      { code: PERMISSIONS.PROCUREMENT_MANAGE, label: 'Gestionar proveedores y órdenes de compra' },
     ],
   },
   {
@@ -341,6 +346,8 @@ export const PERMISSION_CATALOG: Array<{
     permissions: [
       { code: PERMISSIONS.REPORT_SALES_READ, label: 'Ver reportes de ventas' },
       { code: PERMISSIONS.REPORT_OPERATIONS_READ, label: 'Ver reportes de operacion' },
+      { code: PERMISSIONS.CAKE_FINANCE_READ, label: 'Ver costos y margen de tortas' },
+      { code: PERMISSIONS.CAKE_FINANCE_MANAGE, label: 'Registrar gastos, pagos y tarifas de tortas' },
     ],
   },
   {
@@ -353,6 +360,8 @@ export const PERMISSION_CATALOG: Array<{
       { code: PERMISSIONS.ROLE_MANAGE, label: 'Crear y editar roles' },
       { code: PERMISSIONS.AUDIT_READ, label: 'Ver la bitacora de auditoria' },
       { code: PERMISSIONS.SETTINGS_MANAGE, label: 'Cambiar la configuracion del sistema' },
+      { code: PERMISSIONS.COMMUNICATION_READ, label: 'Consultar conversaciones y avisos (alcance global)' },
+      { code: PERMISSIONS.COMMUNICATION_REPLY, label: 'Atender conversaciones y reintentar avisos (alcance global)' },
       { code: PERMISSIONS.COMPLAINT_MANAGE, label: 'Gestionar el Libro de Reclamaciones' },
     ],
   },

@@ -1,4 +1,4 @@
-export type ServiceMode = 'DELIVERY' | 'PICKUP' | 'DINE_IN';
+﻿export type ServiceMode = 'DELIVERY' | 'PICKUP' | 'DINE_IN';
 
 export interface User {
   id: number;
@@ -32,15 +32,6 @@ export interface Category {
   sortOrder: number;
 }
 
-export interface Nutrition {
-  calories: number;
-  protein: number;
-  carbs: number;
-  fat: number;
-  fiber?: number;
-  sodium?: number;
-}
-
 export interface Product {
   id: number;
   name: string;
@@ -54,10 +45,10 @@ export interface Product {
   defaultVariantId: number | null;
   defaultVariantName: string | null;
   defaultVariantPrice: number;
-  nutrition: Nutrition | null;
   dietaryTags: string[];
   allergens: string[];
   isAvailable: boolean;
+  cakeSaleMode: 'STANDARD' | 'SEMI_CUSTOM' | 'ADVANCED';
 }
 
 export interface ProductVariant {
@@ -66,7 +57,6 @@ export interface ProductVariant {
   sku: string;
   basePrice: number;
   isDefault: boolean;
-  nutrition: Nutrition | null;
 }
 
 export interface ProductDetail {
@@ -78,20 +68,19 @@ export interface ProductDetail {
   categoryId: number;
   imageUrl: string | null;
   isAvailable: boolean;
+  cakeSaleMode: 'STANDARD' | 'SEMI_CUSTOM' | 'ADVANCED';
   variants: ProductVariant[];
   dietaryTags: Array<{ code: string; name: string }>;
   allergens: Array<{ code: string; name: string; warning: string | null }>;
 }
 
-/** GET /catalog/allergens — RN-009: informamos, no garantizamos ausencia de trazas. */
+/** GET /catalog/allergens â€” RN-009: informamos, no garantizamos ausencia de trazas. */
 export interface Allergen {
   id: number;
   code: string;
   name: string;
   warning: string | null;
 }
-
-/** GET /catalog/dietary-tags — vegano, sin gluten, alto en proteina... */
 export interface DietaryTag {
   id: number;
   code: string;
@@ -112,8 +101,6 @@ export interface ProductFilters {
   dietaryTags?: string[];
   /** Codigos de alergeno: el producto no debe tener NINGUNO. */
   excludeAllergens?: string[];
-  maxCalories?: number;
-  minProtein?: number;
   featured?: boolean;
 }
 
@@ -158,6 +145,7 @@ export interface PublicSettings {
     ruc: string;
     address: string;
     phone: string;
+    whatsappPhone?: string;
     email: string;
     supportEmail: string;
     complaintResponseDays: number;
@@ -229,6 +217,11 @@ export interface OrderSummary {
 }
 
 export interface OrderItemDetail {
+  designQuoteId?: number|null;
+  requestedServings?: number|null;
+  designDetailsJson?: {inscription:string;occasion:string;finish:string; originalInstructions?: string }|null;
+  designImages?: Array<{id:number;kind:'CUSTOMER_REFERENCE'|'AI_PROPOSAL';position:number}>;
+  specialInstructions?: string|null;
   id: number;
   productId: number | null;
   variantId: number | null;
@@ -238,7 +231,6 @@ export interface OrderItemDetail {
   quantity: number;
   unitPrice: number | string;
   lineTotal: number | string;
-  nutritionSnapshotJson: Nutrition | null;
   allergenSnapshotJson: string[] | null;
   customizations?: Array<{
     id: number; groupId: number | null; groupNameSnapshot: string; optionId: number | null;
@@ -247,6 +239,8 @@ export interface OrderItemDetail {
 }
 
 export interface OrderDetail extends OrderSummary {
+  branchId?: number;
+  termsAcceptanceJson?: {title:string;content:string;version:number;acceptedAt:string}|null;
   serviceMode: 'ASAP' | 'SCHEDULED';
   scheduledAt: string | null;
   subtotal: number | string;
@@ -255,7 +249,14 @@ export interface OrderDetail extends OrderSummary {
   taxRate?: number | string;
   taxTotal: number | string;
   confirmedAt: string | null;
+  whatsappOptInAt?: string | null;
   cancelReason: string | null;
+  paymentPlan?: 'FULL' | 'DEPOSIT_BALANCE';
+  depositAmount?: number | string;
+  balanceAmount?: number | string;
+  balanceDueAt?: string | null;
+  depositPaidAt?: string | null;
+  balancePaidAt?: string | null;
   documentType?: 'BOLETA' | 'FACTURA';
   invoiceStatus?: 'PENDING' | 'ISSUED' | 'FAILED' | 'VOIDED';
   invoiceSeries?: string | null;
@@ -271,9 +272,10 @@ export interface OrderDetail extends OrderSummary {
 }
 
 export interface OrderWithPayment {
+  customerSummary?: {cancellation:{allowed:boolean;reason:string|null};financial:{paid:number;refunded:number;refundPending:number}};
   order: OrderDetail;
   payment: null | {
-    id: number; status: string; provider: string; providerReference?: string | null;
+    id: number; status: string; provider: string; stage?: 'FULL' | 'DEPOSIT' | 'BALANCE'; providerReference?: string | null;
     checkoutUrl: string | null; amount: number | string; currency?: string; failureReason?: string | null;
     /**
      * Si el enlace de pago guardado todavia sirve para cobrar. En false, y con el
@@ -282,6 +284,7 @@ export interface OrderWithPayment {
      * sesion caducada y el cliente se queda sin poder pagar.
      */
     checkoutUrlIsLive?: boolean;
+    directPayment?: {paymentId:number;provider:'yape'|'plin';amount:number;state:string;canReport:boolean;recipient:{phone:string;recipient:string;qrImageUrl:string;instructions:string;expiresAt:string|null}};
     mobileClaim?: null | { status: 'PENDING' | 'APPROVED' | 'REJECTED'; operationCode: string; submittedAt: string; reviewedAt: string | null; rejectionReason: string | null };
   };
 }
@@ -296,7 +299,7 @@ export interface BuilderOption {
   spiceLevel: number;
   priceDelta: number;
   chargeAlways: boolean;
-  nutrition: Nutrition;
+  cakeScaleWithServings: boolean;
   maxPerItem: number;
   isAvailable: boolean;
   incompatibleWith: number[];
@@ -304,6 +307,7 @@ export interface BuilderOption {
 }
 
 export interface BuilderGroup {
+  variantId: number | null;
   id: number;
   code: string;
   name: string;
@@ -317,8 +321,9 @@ export interface BuilderGroup {
 }
 
 export interface BuilderConfig {
+  customServings?: { enabled: boolean; baseVariantId: number | null; minServings: number; maxServings: number; pricePerExtraServing: number } | null;
   product: { id: number; name: string; slug: string; type: string; imageUrl: string | null };
-  variants: Array<{ id: number; name: string; basePrice: number; isDefault: boolean; nutrition: Nutrition }>;
+  variants: Array<{ id: number; name: string; basePrice: number; servingSize: number | null; isDefault: boolean }>;
   groups: BuilderGroup[];
   presets: Array<{
     id: number; code: string; name: string; description: string | null; imageUrl: string | null;
@@ -330,12 +335,12 @@ export interface CustomizationQuote {
   productId: number;
   variantId: number;
   variantName?: string;
+  requestedServings?: number | null;
   quantity: number;
   basePrice: number;
   extrasTotal: number;
   unitPrice: number;
   lineTotal: number;
-  nutrition: Nutrition;
   selections: Array<{
     groupId: number; groupName: string; optionId: number; optionName: string;
     quantity: number; chargedQuantity: number; priceDelta: number; lineExtra: number;
@@ -344,9 +349,13 @@ export interface CustomizationQuote {
 }
 
 export interface CartItem {
+  referenceDataUrl?: string;
+  aiProposalDataUrl?: string;
+  designDetails?: {inscription:string;occasion:string;finish:string};
   id: string;
   productId: number;
   variantId: number;
+  requestedServings?: number;
   productName: string;
   variantName: string;
   imageUrl: string | null;
@@ -356,6 +365,8 @@ export interface CartItem {
   description: string;
   selections: Array<{ optionId: number; quantity: number; groupName?: string; optionName?: string }>;
   specialInstructions?: string;
+  designQuoteId?: number;
+  preferredSlotId?: number;
 }
 
 export interface Address {
@@ -395,12 +406,15 @@ export interface CoverageResult {
   demandLevel?: 'LOW' | 'MEDIUM' | 'HIGH';
   etaSource?: 'LIVE_ROUTE' | 'ESTIMATE';
   routeDistanceKm?: number;
-  /** Local mas cercano cuando el punto queda fuera de reparto: «recoge aqui». */
+  /** Local mas cercano cuando el punto queda fuera de reparto: Â«recoge aquiÂ». */
   nearestPickup?: { id: number; name: string; addressLine: string; distanceKm: number; isOpenNow: boolean };
 }
 
 export interface CheckoutInput {
-  items: Array<{ productId: number; variantId: number; quantity: number; selections: Array<{ optionId: number; quantity: number }>; specialInstructions?: string }>;
+  gift?:{recipientName:string;recipientPhone?:string;hidePrices:boolean;message?:string};
+  termsAccepted?: boolean;
+  termsVersion?: number;
+  items: Array<{referenceDataUrl?:string;aiProposalDataUrl?:string;designDetails?:{inscription:string;occasion:string;finish:string}; productId: number; variantId: number; quantity: number; requestedServings?: number; selections: Array<{ optionId: number; quantity: number }>; specialInstructions?: string; designQuoteId?: number }>;
   deliveryType: 'DELIVERY' | 'PICKUP';
   serviceMode: 'ASAP' | 'SCHEDULED';
   deliverySlotId?: number;
@@ -414,6 +428,7 @@ export interface CheckoutInput {
   billing: { documentType: 'BOLETA' | 'FACTURA'; docNumber?: string; name?: string; address?: string };
   contactName?: string;
   contactPhone?: string;
+  whatsappOptIn?: boolean;
   notes?: string;
 }
 
@@ -469,6 +484,7 @@ export interface PlanPurchase {
 export interface OrderQuote {
   subtotal: number; deliveryFee: number; discountTotal: number; walletAmount: number; walletBalance: number;
   taxRate: number; taxableBase: number; taxTotal: number; grandTotal: number; currency: string;
+  paymentPlan?: 'FULL' | 'DEPOSIT_BALANCE'; depositAmount?: number; balanceAmount?: number; balanceDueAt?: string | null;
   minimumOrder: number; meetsMinimum: boolean; branchId: number; branchName: string; isOpenNow: boolean;
   etaMinutes: number; demandLevel: 'LOW' | 'MEDIUM' | 'HIGH'; routeDistanceKm?: number;
   discounts: Array<{ source: string; code: string; description: string; amount: number }>;
@@ -524,8 +540,6 @@ export interface FoodPreferences {
   allergens: string[];
   dietaryTags: string[];
   dislikedOptionIds: number[];
-  calorieTarget: number | null;
-  proteinTarget: number | null;
 }
 
 export interface SavedBowlSelection {
@@ -597,7 +611,7 @@ export interface DeleteAccountSummary {
 
 export type NotificationStatus = 'SENT' | 'FAILED';
 
-/** GET /account/notifications — la campana. Devuelve como mucho 50, las mas nuevas primero. */
+/** GET /account/notifications â€” la campana. Devuelve como mucho 50, las mas nuevas primero. */
 export interface AccountNotification {
   id: number;
   subject: string;
@@ -618,12 +632,15 @@ export interface AccountNotification {
  * para que la campana no lo recuente en cada render.
  */
 export interface AccountNotificationsFeed {
+  newestId?: number;
+  page?: number;
+  totalPages?: number;
   items: AccountNotification[];
   unreadCount: number;
 }
 
 /**
- * GET /account/purchase-context — donde entregamos, para rehidratar la app en un
+ * GET /account/purchase-context â€” donde entregamos, para rehidratar la app en un
  * dispositivo nuevo. `source` distingue lo que el cliente eligio de lo que
  * estamos suponiendo:
  *   SAVED           su ultima seleccion real

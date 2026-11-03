@@ -134,8 +134,8 @@ export default function OrdersScreen() {
   const [live, setLive] = useState(false);
 
   const firstPage = useResource<PagedResult<OrderSummary>>({
-    key: authenticated ? 'orders:list:1' : null,
-    fetcher: () => ordersApi.listPaged({ page: 1, pageSize: PAGE_SIZE }),
+    key: authenticated ? `orders:list:${filter}:1` : null,
+    fetcher: () => ordersApi.listPaged({ page: 1, pageSize: PAGE_SIZE, filter }),
     cacheMs: 15_000,
     // Con un pedido en marcha la lista se relee sola; sin ninguno, no hay nada
     // que refrescar y el sondeo solo gastaría batería.
@@ -174,6 +174,8 @@ export default function OrdersScreen() {
   /** Sube en cada refresco: descarta la página que venía en camino desde antes. */
   const generationRef = useRef(0);
 
+  useEffect(() => { generationRef.current++; setExtraOrders([]); setNextPage(2); setMoreError(null); }, [filter]);
+
   const loadMore = useCallback(async () => {
     if (!authenticated || loadingMoreRef.current || !hasMore) return;
     const generation = generationRef.current;
@@ -181,7 +183,7 @@ export default function OrdersScreen() {
     setLoadingMore(true);
     setMoreError(null);
     try {
-      const page = await ordersApi.listPaged({ page: nextPage, pageSize: PAGE_SIZE });
+      const page = await ordersApi.listPaged({ page: nextPage, pageSize: PAGE_SIZE, filter });
       if (generation !== generationRef.current) return;
       setExtraOrders((current) => [...current, ...page.items]);
       setNextPage((value) => value + 1);
@@ -192,7 +194,7 @@ export default function OrdersScreen() {
       loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }, [authenticated, hasMore, nextPage]);
+  }, [authenticated, hasMore, nextPage, filter]);
 
   /** Tirar hacia abajo rehace el historial entero, no solo la primera página. */
   const refreshAll = useCallback(async () => {
@@ -245,7 +247,7 @@ export default function OrdersScreen() {
   );
 
   const counts = useMemo(
-    () => ({
+    () => meta?.counts ?? ({
       ALL: orders.length,
       ACTIVE: orders.filter(isActive).length,
       DELIVERED: orders.filter((order) => order.status === 'DELIVERED').length,
@@ -253,7 +255,7 @@ export default function OrdersScreen() {
         (order) => order.status === 'CANCELLED' || order.status === 'REFUNDED',
       ).length,
     }),
-    [orders],
+    [orders, meta],
   );
 
   /** Lo que el cliente vino a mirar va primero, aunque sea de ayer. */
@@ -296,7 +298,7 @@ export default function OrdersScreen() {
         <EmptyState
           icon="receipt-text-outline"
           title="Tus pedidos, en un solo lugar"
-          message="Inicia sesión para seguir la preparación en vivo, revisar entregas anteriores y repetir tu bowl favorito."
+          message="Inicia sesión para seguir la preparación, revisar entregas anteriores y repetir tu torta favorita."
           actionLabel="Iniciar sesión"
           onAction={() => router.push('/(auth)/login')}
           secondaryLabel="Crear cuenta"
@@ -624,7 +626,7 @@ function OrderCard({ order, onPress, onActions }: OrderCardProps) {
   const destination =
     order.deliveryType === 'DELIVERY'
       ? (extras.addressSnapshotJson?.districtName ?? 'Entrega a domicilio')
-      : (order.branch?.name ?? 'Recojo en tienda');
+      : (order.branch?.name ?? 'Recojo en taller');
 
   return (
     <Pressable
@@ -771,7 +773,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: radius.pill,
-    backgroundColor: colors.accent500,
+    backgroundColor: colors.accent600,
   },
   ribbonText: {
     ...type.label,

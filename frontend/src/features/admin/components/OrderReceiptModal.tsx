@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import QRCode from 'qrcode';
-import { Download, Info, Printer, ReceiptText } from 'lucide-react';
+import { Info, Printer, ReceiptText } from 'lucide-react';
 import toast from '@components/mui/MuiToast';
 import { Button } from '@components/ui/Button';
 import { Modal } from '@components/ui/Modal';
@@ -38,7 +38,7 @@ export const OrderReceiptModal = ({ order, isOpen, onClose, onPrinted }: OrderRe
   useEffect(() => {
     if (!trackingUrl) return;
     let active = true;
-    void QRCode.toDataURL(trackingUrl, { width: 180, margin: 1, color: { dark: '#4e1a4e', light: '#ffffff' } })
+    void QRCode.toDataURL(trackingUrl, { width: 180, margin: 1, color: { dark: '#0050a6', light: '#ffffff' } })
       .then((value) => { if (active) setQrDataUrl(value); })
       .catch(() => { if (active) setQrDataUrl(''); });
     return () => { active = false; };
@@ -70,18 +70,18 @@ export const OrderReceiptModal = ({ order, isOpen, onClose, onPrinted }: OrderRe
       isOpen={isOpen}
       onClose={onClose}
       title="Ticket interno del pedido"
-      description="Resumen para entregar o archivar. No reemplaza una boleta ni una factura."
+      description="Resumen operativo para identificar la entrega. Puedes imprimirlo o elegir «Guardar como PDF» en el diálogo del navegador."
       icon={ReceiptText}
       eyebrow="Documento operativo"
       maxWidth="md"
       actions={
         <>
           <Button variant="ghost" onClick={onClose}>Cerrar</Button>
-          <Button variant="outline" leftIcon={<Download className="size-4" />} isLoading={isPrinting} onClick={() => void print()}>Guardar como PDF</Button>
-          <Button leftIcon={<Printer className="size-4" />} isLoading={isPrinting} onClick={() => void print()}>{order.internalReceiptPrintCount > 0 ? 'Reimprimir ticket' : 'Imprimir ticket'}</Button>
+          <Button leftIcon={<Printer className="size-4" />} isLoading={isPrinting} onClick={() => void print()}>Imprimir o guardar PDF</Button>
         </>
       }
     >
+      <p className="mb-4 rounded-card border border-brand-200 bg-brand-50 p-3 text-xs leading-5 text-brand-900">El botón abrirá la impresión de tu navegador. Allí eliges impresora o PDF. El sistema registra la apertura de impresión, aunque cierres ese diálogo sin imprimir. Este ticket no es boleta ni factura.</p>
       <article data-admin-receipt data-paper-width={order.receiptSettings.paperWidth} className="mx-auto max-w-2xl bg-white text-ink">
         <header className="border-b-2 border-brand-700 pb-4 text-center">
           <p className="text-xl font-black text-brand-800">{business.commercialName}</p>
@@ -141,7 +141,7 @@ export const OrderReceiptModal = ({ order, isOpen, onClose, onPrinted }: OrderRe
           <div className="text-xs leading-relaxed text-ink-muted">
             <p className="font-bold text-ink">Gracias por tu pedido.</p>
             <p>{business.supportEmail} · {business.phone}</p>
-            {order.internalReceiptPrintCount > 0 && <p>Reimpresiones previas: {order.internalReceiptPrintCount}</p>}
+          {order.internalReceiptPrintCount > 0 && <p>Aperturas previas de impresión: {order.internalReceiptPrintCount}</p>}
           </div>
           {qrDataUrl && <img className="size-20" src={qrDataUrl} alt="QR para consultar el pedido" />}
         </footer>

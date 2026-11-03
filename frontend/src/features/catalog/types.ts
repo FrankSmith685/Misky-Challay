@@ -1,17 +1,11 @@
-export interface Nutrition {
-  calories: number;
-  protein: number;
-  carbs: number;
-  fat: number;
-  fiber?: number;
-  sodium?: number;
-}
+import type { PreparationMode, ProductFamily } from './pastry';
 
 export interface Category {
   id: number;
   name: string;
   slug: string;
   sortOrder: number;
+  imageUrl: string | null;
 }
 
 export interface DietaryTag {
@@ -35,6 +29,9 @@ export interface Product {
   slug: string;
   description: string | null;
   type: 'FIXED' | 'CUSTOMIZABLE';
+  family?: ProductFamily;
+  preparationMode?: PreparationMode;
+  minLeadHours?: number;
   categoryId: number;
   imageUrl: string | null;
   isFeatured: boolean;
@@ -43,10 +40,10 @@ export interface Product {
   defaultVariantId: number | null;
   defaultVariantName: string | null;
   defaultVariantPrice: number;
-  nutrition: Nutrition | null;
   dietaryTags: string[];
   allergens: string[];
   isAvailable: boolean;
+  cakeSaleMode: 'STANDARD' | 'SEMI_CUSTOM' | 'ADVANCED';
 }
 
 export interface ProductVariant {
@@ -54,8 +51,9 @@ export interface ProductVariant {
   name: string;
   sku: string;
   basePrice: number;
+  servingSize: number | null;
+  servingUnit: string | null;
   isDefault: boolean;
-  nutrition: Nutrition | null;
 }
 
 /** Ficha completa del producto. */
@@ -65,9 +63,13 @@ export interface ProductDetail {
   slug: string;
   description: string | null;
   type: 'FIXED' | 'CUSTOMIZABLE';
+  family?: ProductFamily;
+  preparationMode?: PreparationMode;
+  minLeadHours?: number;
   categoryId: number;
   imageUrl: string | null;
   isAvailable: boolean;
+  cakeSaleMode: 'STANDARD' | 'SEMI_CUSTOM' | 'ADVANCED';
   variants: ProductVariant[];
   dietaryTags: Array<{ code: string; name: string }>;
   allergens: Array<{ code: string; name: string; warning: string | null }>;

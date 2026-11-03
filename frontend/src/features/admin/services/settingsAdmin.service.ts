@@ -15,6 +15,7 @@ export interface CommunicationSettings {
   emailNotificationsEnabled: boolean;
   inAppNotificationsEnabled: boolean;
   orderUpdatesEnabled: boolean;
+  whatsappUpdatesEnabled: boolean;
   planUpdatesEnabled: boolean;
   staffAccessEnabled: boolean;
   availabilityAlertsEnabled: boolean;
@@ -62,7 +63,20 @@ export interface NotificationOverview {
   recent: NotificationHistoryItem[];
 }
 
+export interface IntegrationStatus {
+  checkedAt: string;
+  integrations: Array<{
+    key: string;
+    name: string;
+    provider: string;
+    status: 'READY' | 'ACTION_REQUIRED' | 'DEVELOPMENT';
+    detail: string;
+  }>;
+}
+
 export interface LocalPaymentSettings {
+  paymentWindowMinutes?: number;
+  reviewAlertMinutes?: number;
   yapeEnabled: boolean;
   yapePhone: string;
   yapeRecipient: string;
@@ -154,6 +168,11 @@ export const settingsAdminApi = {
 
   async getNotificationHistory(): Promise<NotificationOverview> {
     const { data } = await api.get<ApiSuccess<NotificationOverview>>(ENDPOINTS.settings.notificationHistory);
+    return data.data;
+  },
+
+  async getIntegrations(): Promise<IntegrationStatus> {
+    const { data } = await api.get<ApiSuccess<IntegrationStatus>>(ENDPOINTS.settings.integrations);
     return data.data;
   },
 };

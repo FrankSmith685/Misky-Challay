@@ -68,13 +68,12 @@ export interface FoodPreferences {
   allergens: string[];
   dietaryTags: string[];
   dislikedOptionIds: number[];
-  calorieTarget: number | null;
-  proteinTarget: number | null;
 }
 
 export interface AccountNotification {
   id: number;
   subject: string;
+  body?: string | null;
   template: string;
   status: 'SENT' | 'FAILED';
   sentAt: string | null;
@@ -138,8 +137,14 @@ export const accountApi = {
     return data.data;
   },
 
-  async markNotificationsRead(): Promise<void> {
-    await api.patch(ENDPOINTS.account.notificationsRead);
+  async notificationFeed(audience: 'CUSTOMER' | 'STAFF' | 'ALL' = 'CUSTOMER', page = 1): Promise<{ items: AccountNotification[]; unreadCount: number; newestId: number; totalPages: number }> {
+    const { data } = await api.get('/account/notifications/feed', { params: { audience, page, pageSize: 15 } });
+    if (!Array.isArray(data.data?.items) || !Number.isFinite(data.data?.unreadCount)) throw new Error('La respuesta de avisos no es válida. Vuelve a intentarlo.');
+    return data.data;
+  },
+
+  async markNotificationsRead(input: { ids?: number[]; all?: boolean; throughId?: number; audience?: 'CUSTOMER' | 'STAFF' | 'ALL' }): Promise<void> {
+    await api.patch(ENDPOINTS.account.notificationsRead, input);
   },
 
   async listAddresses(): Promise<Address[]> {

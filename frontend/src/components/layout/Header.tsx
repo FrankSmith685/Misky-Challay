@@ -26,12 +26,11 @@ import {
   LogIn,
   MapPin,
   Menu,
-  Salad,
+  CakeSlice,
   ShoppingBag,
   Store,
   User2,
   UserPlus,
-  Wallet,
   X,
 } from 'lucide-react';
 import { ROUTES } from '@constants/routes';
@@ -39,8 +38,6 @@ import { useAppSelector } from '@app/hooks';
 import { useAppState } from '@context/AppStateContext';
 import { usePermissions } from '@hooks/usePermissions';
 import { useBumpOnChange } from '@hooks/useBumpOnChange';
-import { useWalletBalance } from '@hooks/useWalletBalance';
-import { formatCurrency } from '@lib/format';
 import { UserMenu } from './UserMenu';
 import { AppLogo } from '@components/common/AppLogo';
 import { BUTTON_HEIGHT } from '@components/ui/Button';
@@ -49,11 +46,23 @@ import { AddressPill } from './AddressPill';
 import { resolveStaffAccess } from '@features/auth/staffAccess';
 
 const NAV_LINKS = [
-  { to: ROUTES.menu, label: 'Menú' },
-  { to: ROUTES.builder, label: 'Arma tu bowl' },
-  { to: ROUTES.plans, label: 'Planes' },
-  { to: ROUTES.coverage, label: 'Cobertura' },
+  { to: ROUTES.menu, label: 'Catálogo' },
+  { to: ROUTES.menuMode('CUSTOM'), label: 'Crea tu torta' },
+  { to: ROUTES.plans, label: 'Cajas mensuales' },
+  { to: ROUTES.coverage, label: 'Zonas de entrega' },
+  { to: ROUTES.business, label: 'Para empresas' },
 ];
+
+const isMainNavActive = (to: string, pathname: string, search: string, customCakeEntry = false) => {
+  if (pathname.startsWith('/tortas/') && (new URLSearchParams(search).has('diseno') || new URLSearchParams(search).get('canal') === 'empresas')) return to === ROUTES.business;
+  if (to === ROUTES.menu || to === ROUTES.customCake) {
+    if (pathname === ROUTES.menu) return to === ROUTES.menu;
+    if (pathname === ROUTES.customCake || (pathname.startsWith('/tortas/') && customCakeEntry)) return to === ROUTES.customCake;
+    return to === ROUTES.menu && (pathname.startsWith(`${ROUTES.menu}/`) || pathname.startsWith('/tortas/'));
+  }
+  if (to.includes('?')) return `${pathname}${search}` === to;
+  return pathname === to || pathname.startsWith(`${to}/`);
+};
 
 /* La cuenta tambien se alcanza desde el drawer: en movil el menu de usuario es un
  * avatar de 32px, y direcciones, favoritos y bowls guardados solo existian si ya
@@ -61,9 +70,8 @@ const NAV_LINKS = [
 const ACCOUNT_DRAWER_LINKS = [
   { to: ROUTES.account, label: 'Inicio de mi cuenta', icon: Home },
   { to: ROUTES.accountOrders, label: 'Mis pedidos', icon: ClipboardList },
-  { to: ROUTES.accountWallet, label: 'Mi saldo', icon: Wallet },
   { to: ROUTES.accountFavorites, label: 'Mis favoritos', icon: Heart },
-  { to: ROUTES.accountSavedBowls, label: 'Bowls guardados', icon: Salad },
+  { to: ROUTES.designRequests, label: 'Mis diseños', icon: CakeSlice },
   { to: ROUTES.accountProfile, label: 'Mi perfil', icon: User2 },
   { to: ROUTES.accountAddresses, label: 'Mis direcciones', icon: MapPin },
 ];
@@ -80,7 +88,6 @@ export const Header = () => {
   const { address, deliveryType, pickupBranch, openLocationModal } = useAppState();
   const { isStaff } = usePermissions();
   const staffAccess = resolveStaffAccess({ roles: user?.roles, permissions: user?.permissions, isSuperAdmin: user?.isSuperAdmin });
-  const { balance } = useWalletBalance();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const totalItems = items.reduce((total, item) => total + item.quantity, 0);
@@ -108,16 +115,16 @@ export const Header = () => {
         zIndex: (theme) => theme.zIndex.drawer + 1,
         borderBottom: '1px solid',
         borderColor: 'divider',
-        bgcolor: 'rgba(255,255,255,.92)',
+        bgcolor: 'rgba(255,255,255,.96)',
         color: 'text.primary',
         backdropFilter: 'blur(18px)',
-        boxShadow: 'var(--shadow-e3)',
+        boxShadow: '0 2px 12px rgba(23,50,77,.035)',
       }}
     >
       <Container maxWidth="xl">
         {/* El hueco entre bloques baja en movil: ahi conviven el contexto de entrega,
           * el carrito, la campana y la cuenta en 360px de ancho. */}
-        <Toolbar disableGutters sx={{ minHeight: { xs: 64, md: 72 }, gap: { xs: 1, md: 2 } }}>
+        <Toolbar disableGutters sx={{ minHeight: { xs: 64, md: 72 }, gap: { xs: 1, md: 2 }, flexWrap: { md: 'wrap', xl: 'nowrap' } }}>
           <IconButton
             onClick={() => setMobileOpen(true)}
             aria-label="Abrir navegación"
@@ -135,14 +142,14 @@ export const Header = () => {
             direction="row"
             spacing={.5}
             aria-label="Navegación principal"
-            sx={{ display: { xs: 'none', md: 'flex' }, ml: 'auto', mr: 'auto' }}
+            sx={{ display: { xs: 'none', md: 'flex' }, ml: 'auto', mr: 'auto', order: { md: 3, xl: 0 }, width: { md: '100%', xl: 'auto' }, justifyContent: 'center' }}
           >
             {NAV_LINKS.map((item) => {
-              const active = location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
+              const active = isMainNavActive(item.to, location.pathname, location.search, location.state?.customCakeEntry === true);
               return (
                 <Button
                   key={item.to}
-                  component={NavLink}
+                  component={Link}
                   to={item.to}
                   color="inherit"
                   variant="text"
@@ -161,7 +168,7 @@ export const Header = () => {
             })}
           </Stack>
 
-          <Stack direction="row" spacing={.5} sx={{ ml: { xs: 'auto', md: 0 }, alignItems: 'center' }}>
+          <Stack direction="row" spacing={.5} sx={{ ml: { xs: 'auto', xl: 0 }, alignItems: 'center' }}>
             {isStaff && (
               <Button
                 component={Link}
@@ -174,13 +181,13 @@ export const Header = () => {
               </Button>
             )}
 
-            {/* Ya no se oculta en xs: el destino refiltra el catalogo y decide el
-              * envio, asi que en movil se queda como icono (ver AddressPill). */}
-            <AddressPill
-              label={destinationLabel}
-              deliveryType={isPickup ? 'PICKUP' : 'DELIVERY'}
-              onClick={selectAddress}
-            />
+            {destinationLabel && (
+              <AddressPill
+                label={destinationLabel}
+                deliveryType={isPickup ? 'PICKUP' : 'DELIVERY'}
+                onClick={selectAddress}
+              />
+            )}
 
             <IconButton
               component={Link}
@@ -217,11 +224,11 @@ export const Header = () => {
         </Typography>
         <List sx={{ py: 1 }}>
           {NAV_LINKS.map((item) => {
-            const active = location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
+            const active = isMainNavActive(item.to, location.pathname, location.search, location.state?.customCakeEntry === true);
             return (
               <ListItemButton
                 key={item.to}
-                component={NavLink}
+                component={Link}
                 to={item.to}
                 selected={active}
                 onClick={() => setMobileOpen(false)}
@@ -233,8 +240,10 @@ export const Header = () => {
             );
           })}
         </List>
-        <Divider sx={{ my: 1.5 }} />
-        <ListItemButton onClick={selectAddress} sx={{ borderRadius: 'var(--radius-field)' }}>
+        {destinationLabel && (
+          <>
+            <Divider sx={{ my: 1.5 }} />
+            <ListItemButton onClick={selectAddress} sx={{ borderRadius: 'var(--radius-field)' }}>
           <ListItemIcon sx={{ minWidth: 36 }}>
             {isPickup ? <Store size={18} /> : <MapPin size={18} />}
           </ListItemIcon>
@@ -252,7 +261,9 @@ export const Header = () => {
               secondary: { sx: { fontSize: 12 } },
             }}
           />
-        </ListItemButton>
+            </ListItemButton>
+          </>
+        )}
 
         <Divider sx={{ my: 1.5 }} />
         <Typography variant="overline" color="text.secondary" sx={{ px: 2, fontWeight: 750 }}>
@@ -273,12 +284,6 @@ export const Header = () => {
               >
                 <ListItemIcon sx={{ minWidth: 36 }}><Icon size={18} /></ListItemIcon>
                 <ListItemText primary={label} slotProps={{ primary: { sx: { fontWeight: 600, fontSize: 14 } } }} />
-                {/* El saldo deja de aparecer por primera vez en el ultimo paso del checkout. */}
-                {to === ROUTES.accountWallet && balance !== null && (
-                  <Typography variant="caption" sx={{ fontWeight: 800, color: 'primary.dark' }}>
-                    {formatCurrency(balance)}
-                  </Typography>
-                )}
               </ListItemButton>
             ))}
           </List>

@@ -24,6 +24,8 @@ export class Branch extends Model<InferAttributes<Branch>, InferCreationAttribut
   declare prepMinutes: CreationOptional<number>;
   declare acceptsPickup: CreationOptional<boolean>;
   declare acceptsDelivery: CreationOptional<boolean>;
+  declare carDeliveryInstructions: CreationOptional<string>;
+  declare defaultCarCapacity: CreationOptional<number>;
   declare isActive: CreationOptional<boolean>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
@@ -47,6 +49,8 @@ Branch.init(
     prepMinutes: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 20 },
     acceptsPickup: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     acceptsDelivery: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    carDeliveryInstructions: { type: DataTypes.STRING(1000), allowNull: false, defaultValue: 'Transportar la torta en su caja, sobre una superficie nivelada y antideslizante. Mantenerla protegida del calor y evitar movimientos bruscos.' },
+    defaultCarCapacity: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 10 },
     isActive: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,

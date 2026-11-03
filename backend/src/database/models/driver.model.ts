@@ -15,6 +15,7 @@ export const DRIVER_STATUS = {
   OFFLINE: 'OFFLINE',
 } as const;
 export type DriverStatus = (typeof DRIVER_STATUS)[keyof typeof DRIVER_STATUS];
+export type VehicleType = 'CAR' | 'MOTORCYCLE' | 'OTHER' | 'UNSPECIFIED';
 
 /** Tabla `drivers`: repartidores de la flota propia (decision de Fase 0). */
 export class Driver extends Model<InferAttributes<Driver>, InferCreationAttributes<Driver>> {
@@ -33,6 +34,7 @@ export class Driver extends Model<InferAttributes<Driver>, InferCreationAttribut
   declare fullName: string;
   declare phone: CreationOptional<string | null>;
   declare vehicle: CreationOptional<string | null>;
+  declare vehicleType: CreationOptional<VehicleType>;
   declare status: CreationOptional<DriverStatus>;
   declare isActive: CreationOptional<boolean>;
   declare createdAt: CreationOptional<Date>;
@@ -49,6 +51,7 @@ Driver.init(
     fullName: { type: DataTypes.STRING(120), allowNull: false },
     phone: { type: DataTypes.STRING(30), allowNull: true },
     vehicle: { type: DataTypes.STRING(50), allowNull: true },
+    vehicleType: { type: DataTypes.STRING(16), allowNull: false, defaultValue: 'UNSPECIFIED' },
     status: {
       type: DataTypes.ENUM(...Object.values(DRIVER_STATUS)),
       allowNull: false,

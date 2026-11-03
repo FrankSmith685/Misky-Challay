@@ -11,8 +11,10 @@ import {
 } from '@database/models';
 import type { GeoPoint } from '@database/models/coverageZone.model';
 import { ApiError } from '@shared/errors/ApiError';
+import { carTransport } from '@modules/delivery/carTransport.service';
 import { addDaysToIsoDate, defaultTimeZone, zonedParts } from '@shared/utils/datetime';
 import { routingService } from './routing.service';
+import { coverageExtensionFor } from './coverageExtension';
 import {
   selectBestBranch,
   shortlistBranches,
@@ -49,6 +51,8 @@ export interface CoverageResult {
   demandLevel?: 'LOW' | 'MEDIUM' | 'HIGH';
   etaSource?: 'LIVE_ROUTE' | 'ESTIMATE';
   routeDistanceKm?: number;
+  extraDistanceKm?: number;
+  extraDeliveryFee?: number;
   nearestPickup?: {
     id: number;
     name: string;
@@ -189,18 +193,25 @@ export const geoService = {
    */
   async checkCoverage(query: CoverageQuery, when = new Date()): Promise<CoverageResult> {
     let zone: CoverageZone | null = null;
+    let extraDistanceKm = 0;
+    let extraDeliveryFee = 0;
+    let point: GeoPoint | null = null;
+    let coordinateZones: CoverageZone[] = [];
 
     if (query.latitude !== undefined && query.longitude !== undefined) {
       const zones = await CoverageZone.findAll({
-        where: { isActive: true, ...(query.cityId ? { cityId: query.cityId } : {}) },
+        // El pin puede estar fuera de la ciudad administrativa de la tienda.
+        // Se necesita comparar con todas las zonas para calcular el recargo.
+        where: { isActive: true },
         order: [['priority', 'ASC']],
       });
-
-      const point: GeoPoint = { lat: query.latitude, lng: query.longitude };
+      coordinateZones = zones;
+      const coordinatePoint: GeoPoint = { lat: query.latitude, lng: query.longitude };
+      point = coordinatePoint;
       zone =
         zones.find((candidate) => {
           const polygon = candidate.polygon;
-          return Array.isArray(polygon) && polygon.length >= 3 && isPointInPolygon(point, polygon);
+          return Array.isArray(polygon) && polygon.length >= 3 && isPointInPolygon(coordinatePoint, polygon);
         }) ?? null;
     }
 
@@ -216,6 +227,11 @@ export const geoService = {
           zone = districtZone;
         }
       }
+    }
+
+    if (!zone && point) {
+      const extended = coverageExtensionFor(point, coordinateZones);
+      if (extended) { zone = extended.zone; extraDistanceKm = extended.distanceKm; extraDeliveryFee = extended.fee; }
     }
 
     if (!zone) {
@@ -320,11 +336,13 @@ export const geoService = {
       demandLevel: selected.selection.activeOrders >= 8 ? 'HIGH' : selected.selection.activeOrders >= 4 ? 'MEDIUM' : 'LOW',
       etaSource: liveRoute ? 'LIVE_ROUTE' : 'ESTIMATE',
       routeDistanceKm: liveRoute?.distanceKm,
+      extraDistanceKm: extraDistanceKm || undefined,
+      extraDeliveryFee: extraDeliveryFee || undefined,
     };
   },
 
   /** Franjas con cupo disponible de una sucursal (RN-004). */
-  async listSlots(branchId: number, from = new Date(), days = 7) {
+  async listSlots(branchId: number, from = new Date(), days = 7, vehicleType?: 'CAR') {
     const until = new Date(from.getTime() + days * 24 * 60 * 60 * 1000);
 
     const slots = await DeliverySlot.findAll({
@@ -337,15 +355,23 @@ export const geoService = {
       order: [['startsAt', 'ASC']],
     });
 
-    return slots
-      .filter((slot) => slot.availableCount > 0)
-      .map((slot) => ({
-        id: slot.id,
-        startsAt: slot.startsAt,
-        endsAt: slot.endsAt,
-        available: slot.availableCount,
-        orderCutoffAt: slot.orderCutoffAt,
+    const branch = await geoService.getBranchOrFail(branchId);
+    if (vehicleType === 'CAR' && !await carTransport.hasFleet(branchId)) return [];
+    const availableSlots = await Promise.all(slots.filter((slot) => geoService.slotWithinSchedule(branch, slot)).map(async (slot) => ({ slot, available: vehicleType === 'CAR'
+      ? Math.min(slot.availableCount, Math.max(0, Number(slot.carCapacity) - await carTransport.booked(slot.id))) : slot.availableCount })));
+    return availableSlots
+      .filter((entry) => entry.available > 0)
+      .map(({ slot, available }) => ({
+        id: slot.id, startsAt: slot.startsAt, endsAt: slot.endsAt, available, orderCutoffAt: slot.orderCutoffAt,
       }));
+  },
+
+  slotWithinSchedule(branch: Branch, slot: Pick<DeliverySlot, 'startsAt' | 'endsAt'>) {
+    if (slot.endsAt <= slot.startsAt) return false;
+    for (let time = slot.startsAt.getTime(); time < slot.endsAt.getTime(); time += 60000) {
+      if (!geoService.isBranchOpenNow(branch, new Date(time))) return false;
+    }
+    return geoService.isBranchOpenNow(branch, new Date(slot.endsAt.getTime() - 1));
   },
 
   async getBranchOrFail(branchId: number) {

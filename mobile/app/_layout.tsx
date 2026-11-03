@@ -1,3 +1,4 @@
+import { MobileWorkspaceSync } from '../src/components/MobileWorkspaceSync';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -8,6 +9,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ErrorBoundary } from '../src/components/ErrorBoundary';
+import { BrandLogo } from '../src/components/BrandLogo';
 import { AppGateProvider } from '../src/providers/AppGateProvider';
 import { CartProvider, useCart } from '../src/providers/CartProvider';
 import { FavoritesProvider } from '../src/providers/FavoritesProvider';
@@ -28,7 +30,14 @@ void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 SplashScreen.setOptions({ duration: 320, fade: true });
 
 function RootNavigator() {
-  const { status } = useSession();
+  const { status, user } = useSession();
+  const previousOwner = useRef(user?.id);
+  const screenGeneration = useRef(0);
+  if (previousOwner.current !== user?.id) {
+    // Discard private screen drafts when leaving an account; preserve guest drafts on first login.
+    if (previousOwner.current !== undefined) screenGeneration.current++;
+    previousOwner.current = user?.id;
+  }
 
   /** `null` mientras se lee del almacén; luego sabemos si toca la bienvenida. */
   const [onboardingSeen, setOnboardingSeen] = useState<boolean | null>(null);
@@ -80,21 +89,13 @@ function RootNavigator() {
   }, [ready]);
 
   /*
-   * Puente verde entre el splash nativo y la primera pantalla. Casi nunca se ve
-   * —el splash sigue arriba hasta que `ready` es cierto—, pero si el sistema lo
-   * ocultó antes de tiempo, lo que aparece es este mismo verde y no un flash
-   * blanco.
+   * Puente con el mismo fondo del splash nativo mientras termina el arranque.
    */
   if (!ready) {
     return (
       <View style={styles.splash}>
-        <StatusBar style="light" />
-        <View style={styles.splashMark}>
-          <MaterialCommunityIcons name="leaf" color={colors.onDark} size={34} />
-        </View>
-        <Text style={styles.splashName}>
-          Verde<Text style={styles.accent}>Bowl</Text>
-        </Text>
+        <StatusBar style="dark" />
+        <BrandLogo />
       </View>
     );
   }
@@ -102,6 +103,7 @@ function RootNavigator() {
   return (
     <View style={styles.root}>
       <Stack
+        key={`session-${screenGeneration.current}`}
         screenOptions={{
           headerShown: false,
           animation: 'slide_from_right',
@@ -120,6 +122,8 @@ function RootNavigator() {
         />
         <Stack.Screen name="product/[slug]" />
         <Stack.Screen name="builder/[productId]" />
+        <Stack.Screen name="cakes/index" />
+        <Stack.Screen name="cakes/design" />
         <Stack.Screen name="addresses/index" />
         <Stack.Screen name="addresses/new" />
         <Stack.Screen name="addresses/[id]" />
@@ -262,7 +266,7 @@ export default function RootLayout() {
                 <PurchaseProvider>
                   <FavoritesProvider>
                     <CartProvider>
-                      <MobileNotificationsProvider>
+                      <MobileNotificationsProvider><MobileWorkspaceSync />
                         <RootNavigator />
                       </MobileNotificationsProvider>
                     </CartProvider>
@@ -285,23 +289,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surfaceDark,
-  },
-  splashMark: {
-    width: 72,
-    height: 72,
-    borderRadius: radius.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.brand600,
-  },
-  splashName: {
-    ...type.display,
-    color: colors.onDark,
-    marginTop: spacing.md,
-  },
-  accent: {
-    color: colors.accent500,
+    backgroundColor: '#FFFAF4',
   },
   offline: {
     position: 'absolute',

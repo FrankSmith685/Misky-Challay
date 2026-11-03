@@ -4,6 +4,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -44,6 +45,7 @@ export default function ProductDetailScreen() {
 
   const [variantId, setVariantId] = useState<number | null>(null);
   const [quantity, setQuantity] = useState(1);
+  const [cakeMessage, setCakeMessage] = useState('');
   const [adding, setAdding] = useState(false);
   const [alertOpen, setAlertOpen] = useState(false);
 
@@ -118,20 +120,22 @@ export default function ProductDetailScreen() {
         lineTotal: quote.lineTotal,
         description: quote.description || product.description || product.name,
         selections: [],
+        specialInstructions: cakeMessage.trim() ? `Mensaje en la torta: ${cakeMessage.trim()}` : undefined,
       });
 
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       void mobileAnalytics.track('CART_ADD', { productId: product.id, quantity }, branchId);
 
       toast.show({
-        message: quantity === 1 ? 'Producto agregado. Revisa tu pedido.' : `${quantity} productos agregados.`,
+        message: quantity === 1 ? 'Torta agregada. Revisa tu pedido.' : `${quantity} tortas agregadas.`,
         tone: 'success',
       });
       setQuantity(1);
+      setCakeMessage('');
       router.replace('/(tabs)/cart');
     } catch (caught) {
       toast.show({
-        message: caught instanceof Error ? caught.message : 'No pudimos agregar este plato.',
+        message: caught instanceof Error ? caught.message : 'No pudimos agregar esta torta.',
         tone: 'error',
       });
     } finally {
@@ -148,7 +152,7 @@ export default function ProductDetailScreen() {
 
     if (branchId === null) {
       toast.show({
-        message: 'Elige primero tu local o dirección para saber dónde debe volver el plato.',
+        message: 'Elige primero tu local o dirección para consultar esta torta.',
         tone: 'warning',
         action: { label: 'Elegir', onPress: () => router.push('/location') },
       });
@@ -222,7 +226,7 @@ export default function ProductDetailScreen() {
 
   return (
     <ScreenScaffold
-      title={isBuilder ? 'Arma tu bowl' : 'Ficha del plato'}
+      title={product.cakeSaleMode === 'ADVANCED' ? 'Diseño especial' : isBuilder ? 'Personaliza tu torta' : 'Torta clásica'}
       headerRight={heart}
       footer={
         <View style={styles.footer}>
@@ -244,9 +248,12 @@ export default function ProductDetailScreen() {
               label="Avísame cuando vuelva"
               onPress={requestAlert}
             />
+          ) : product.cakeSaleMode === 'ADVANCED' ? (
+            <PrimaryButton label="Solicitar diseño especial" onPress={() => router.push({ pathname: '/cakes/design', params: { productId: String(product.id), variantId: String(selected?.id ?? product.variants[0]?.id ?? '') } } as never)} />
           ) : isBuilder ? (
+            <View>
             <PrimaryButton
-              label="Personalizar mi bowl"
+              label="Personalizar mi torta"
               onPress={() =>
                 router.push({
                   pathname: '/builder/[productId]',
@@ -254,6 +261,13 @@ export default function ProductDetailScreen() {
                 })
               }
             />
+            {product.cakeSaleMode === 'SEMI_CUSTOM' && <PrimaryButton
+              label="Pedir otras porciones o un diseño libre"
+              variant="secondary"
+              onPress={() => router.push({ pathname: '/cakes/design', params: { productId: String(product.id), variantId: String(product.variants.at(-1)?.id ?? selected?.id ?? ''), kind: 'FREEFORM' } } as never)}
+              style={{ marginTop: spacing.sm }}
+            />}
+            </View>
           ) : (
             <View style={styles.footerActions}>
               <QuantityStepper
@@ -303,11 +317,11 @@ export default function ProductDetailScreen() {
 
         <View style={styles.body}>
           <Text style={styles.eyebrow}>
-            {isBuilder ? 'PERSONALIZABLE' : 'RECETA VERDE BOWL'}
+            {isBuilder ? 'PERSONALIZABLE' : 'TORTA CLÁSICA'}
           </Text>
           <Text style={styles.title}>{product.name}</Text>
           <Text style={styles.description}>
-            {product.description || 'Preparado fresco con ingredientes seleccionados.'}
+            {product.description || 'Preparada para tu ocasión con ingredientes seleccionados.'}
           </Text>
 
           {product.dietaryTags.length > 0 && (
@@ -371,26 +385,13 @@ export default function ProductDetailScreen() {
             })}
           </View>
 
-          {selected?.nutrition && (
-            <>
-              <Text style={styles.sectionTitle}>Información nutricional</Text>
-              <View style={styles.nutrition}>
-                {[
-                  { label: 'Calorías', value: selected.nutrition.calories, unit: 'kcal' },
-                  { label: 'Proteína', value: selected.nutrition.protein, unit: 'g' },
-                  { label: 'Carbos', value: selected.nutrition.carbs, unit: 'g' },
-                  { label: 'Grasas', value: selected.nutrition.fat, unit: 'g' },
-                ].map((item) => (
-                  <View key={item.label} style={styles.nutritionItem}>
-                    <Text style={styles.nutritionValue}>
-                      {Math.round(item.value)}
-                      <Text style={styles.nutritionUnit}> {item.unit}</Text>
-                    </Text>
-                    <Text style={styles.nutritionLabel}>{item.label}</Text>
-                  </View>
-                ))}
-              </View>
-            </>
+          {product.cakeSaleMode === 'STANDARD' && (
+            <View style={{ marginTop: spacing.lg }}>
+              <Text style={styles.sectionTitle}>Mensaje en la torta · opcional</Text>
+              <TextInput value={cakeMessage} onChangeText={setCakeMessage} maxLength={80}
+                placeholder="Ej. Feliz cumpleaños, Ana" placeholderTextColor={colors.inkMuted}
+                style={{ minHeight: 48, borderWidth: 1, borderColor: colors.brand100, borderRadius: radius.md, paddingHorizontal: spacing.md, color: colors.ink }} />
+            </View>
           )}
 
           {product.allergens.length > 0 && (
@@ -415,7 +416,7 @@ export default function ProductDetailScreen() {
                   ? `${summary.average.toFixed(1)} de 5 · ${summary.count} ${
                       summary.count === 1 ? 'reseña' : 'reseñas'
                     }`
-                  : 'Aún no hay reseñas de este plato'}
+                  : 'Aún no hay reseñas de esta torta'}
               </Text>
             </View>
             {summary.count > 0 && (
@@ -842,31 +843,6 @@ const styles = StyleSheet.create({
   variantPrice: {
     ...type.heading,
     color: colors.brand700,
-  },
-  nutrition: {
-    flexDirection: 'row',
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.line,
-    paddingVertical: spacing.md,
-  },
-  nutritionItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  nutritionValue: {
-    ...type.heading,
-    color: colors.ink,
-  },
-  nutritionUnit: {
-    ...type.caption,
-    color: colors.inkMuted,
-  },
-  nutritionLabel: {
-    ...type.bodySm,
-    color: colors.inkMuted,
-    marginTop: 4,
   },
   allergens: {
     flexDirection: 'row',

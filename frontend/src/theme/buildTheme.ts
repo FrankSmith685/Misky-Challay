@@ -1,5 +1,5 @@
 import { createTheme, type Theme } from '@mui/material/styles';
-import { readableText, shade, tint, type ColorRamp } from './colorUtils';
+import { rampFromHex, readableText, shade, tint, type ColorRamp } from './colorUtils';
 import { SURFACE, rampsFromTokens, type ThemeTokens } from './tokens';
 
 /**
@@ -7,12 +7,15 @@ import { SURFACE, rampsFromTokens, type ThemeTokens } from './tokens';
  *
  * Se llama cada vez que el usuario cambia un color/radio en el editor, de modo
  * que TODOS los componentes de MUI (botones, campos, tablas, dialogos...) se
- * actualizan en vivo. El look de marca (morado, Inter, radios) sale de aqui.
+ * actualizan en vivo. Comparte la identidad de pastelería con Tailwind.
  */
 export const buildTheme = (tokens: ThemeTokens): Theme => {
   const { primary, secondary, tertiary, radius } = tokens;
   const safeRadius = Math.min(5, Math.max(0, radius));
   const ramp = rampsFromTokens(tokens);
+  const successRamp = rampFromHex('#167653');
+  const infoRamp = rampFromHex('#376a91');
+  const warningRamp = rampFromHex('#b77712');
 
   /**
    * Publica la rampa completa junto al `main`. Sin las paradas numericas, rutas
@@ -40,11 +43,10 @@ export const buildTheme = (tokens: ThemeTokens): Theme => {
         dark: shade(tertiary, 0.2),
         contrastText: readableText(tertiary),
       },
-      // Los estados salen de la rampa, no de hex sueltos: si el negocio cambia
-      // el morado o el naranja, exito y aviso lo siguen.
-      success: withRamp(ramp.brand, ramp.brand[600]),
-      warning: withRamp(ramp.accent, ramp.accent[500]),
-      info: withRamp(ramp.brand, ramp.brand[600]),
+      // Status colors remain independent of the editable brand colors.
+      success: withRamp(successRamp, successRamp[600]),
+      warning: withRamp(warningRamp, '#b77712'),
+      info: withRamp(infoRamp, '#376a91'),
       error: withRamp(ramp.error, ramp.error[600]),
       text: { primary: SURFACE.ink, secondary: SURFACE.inkMuted },
       background: { default: SURFACE.muted, paper: SURFACE.base },
@@ -68,14 +70,32 @@ export const buildTheme = (tokens: ThemeTokens): Theme => {
         defaultProps: { disableElevation: true, disableRipple: false, size: 'medium' },
         styleOverrides: {
           root: {
-            minHeight: 40,
+            minHeight: 44,
             borderRadius: safeRadius,
             letterSpacing: 0,
             paddingInline: 20,
             transition: 'transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease',
           },
-          contained: { boxShadow: '0 4px 12px rgba(32,24,32,.10)', '&:hover': { boxShadow: '0 8px 20px rgba(96,32,96,.22)' } },
-          outlined: { borderColor: '#e4dce5', '&:hover': { borderColor: primary, backgroundColor: tint(primary, 0.94) } },
+          contained: {
+            boxShadow: '0 4px 12px rgba(23,50,77,.10)',
+            '&:hover': { boxShadow: 'var(--shadow-e3)' },
+            '&.MuiButton-containedPrimary': {
+              backgroundImage: 'none',
+              backgroundColor: primary,
+            },
+            '&.MuiButton-containedPrimary:hover': {
+              backgroundImage: 'none',
+              backgroundColor: ramp.brand[700],
+            },
+            '&.MuiButton-containedSecondary': {
+              color: readableText(secondary),
+              backgroundImage: `linear-gradient(135deg, ${secondary} 0%, ${ramp.accent[300]} 100%)`,
+            },
+            '&.MuiButton-containedSecondary:hover': {
+              backgroundImage: `linear-gradient(135deg, ${ramp.accent[600]} 0%, ${ramp.accent[400]} 100%)`,
+            },
+          },
+          outlined: { borderColor: SURFACE.line, '&:hover': { borderColor: primary, backgroundColor: tint(primary, 0.94) } },
           sizeLarge: { minHeight: 48, paddingInline: 28 },
         },
       },
@@ -106,8 +126,8 @@ export const buildTheme = (tokens: ThemeTokens): Theme => {
         styleOverrides: {
           root: {
             borderColor: SURFACE.line,
-            borderRadius: safeRadius,
-            boxShadow: '0 1px 2px rgba(32,24,32,.03)',
+            borderRadius: 'var(--radius-card)',
+            boxShadow: '0 1px 2px rgba(23,50,77,.03)',
             transition: 'border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease',
           },
         },
@@ -139,22 +159,22 @@ export const buildTheme = (tokens: ThemeTokens): Theme => {
             minHeight: 56,
             padding: '11px 16px',
             border: '1px solid',
-            borderColor: '#e8e1e8',
+            borderColor: SURFACE.line,
             borderRadius: safeRadius,
             fontWeight: 500,
             alignItems: 'flex-start',
-            boxShadow: '0 6px 18px rgba(32,24,32,.045)',
+            boxShadow: '0 6px 18px rgba(23,50,77,.045)',
             '&.MuiAlert-standardInfo': {
-              borderColor: ramp.brand[200],
-              backgroundColor: ramp.brand[50],
+              borderColor: infoRamp[200],
+              backgroundColor: infoRamp[50],
             },
             '&.MuiAlert-standardSuccess': {
-              borderColor: ramp.brand[200],
-              backgroundColor: ramp.brand[50],
+              borderColor: successRamp[200],
+              backgroundColor: successRamp[50],
             },
             '&.MuiAlert-standardWarning': {
-              borderColor: ramp.accent[200],
-              backgroundColor: ramp.accent[50],
+              borderColor: warningRamp[200],
+              backgroundColor: warningRamp[50],
             },
             '&.MuiAlert-standardError': {
               borderColor: ramp.error[200],
@@ -180,7 +200,7 @@ export const buildTheme = (tokens: ThemeTokens): Theme => {
           paper: {
             border: `1px solid ${SURFACE.line}`,
             borderRadius: safeRadius,
-            boxShadow: '0 24px 80px rgba(32,24,32,.22)',
+            boxShadow: '0 24px 80px rgba(23,50,77,.22)',
             backgroundImage: `linear-gradient(180deg, ${SURFACE.base} 0%, ${SURFACE.muted} 100%)`,
           },
         },
@@ -196,7 +216,7 @@ export const buildTheme = (tokens: ThemeTokens): Theme => {
       },
       MuiInputLabel: {
         styleOverrides: {
-          root: { fontWeight: 600, color: '#5b4f5e' },
+          root: { fontWeight: 600, color: SURFACE.inkMuted },
           shrink: { fontWeight: 650 },
         },
       },
@@ -215,15 +235,15 @@ export const buildTheme = (tokens: ThemeTokens): Theme => {
               alignItems: 'flex-start',
               padding: '15px 16px',
             },
-            '&.Mui-disabled': { backgroundColor: '#f5f1f5' },
+            '&.Mui-disabled': { backgroundColor: SURFACE.muted },
           },
-          notchedOutline: { borderColor: '#e8e1e8' },
+          notchedOutline: { borderColor: SURFACE.line },
           input: { padding: '14px 16px' },
         },
       },
       MuiFormLabel: {
         styleOverrides: {
-          root: { marginBottom: 8, color: '#5b4f5e', fontWeight: 700 },
+          root: { marginBottom: 8, color: SURFACE.inkMuted, fontWeight: 700 },
         },
       },
       MuiFormControlLabel: {
@@ -253,8 +273,8 @@ export const buildTheme = (tokens: ThemeTokens): Theme => {
               '& + .MuiSwitch-track': { opacity: 1 },
             },
           },
-          thumb: { width: 16, height: 16, boxShadow: '0 2px 5px rgba(32,24,32,.25)' },
-          track: { borderRadius: safeRadius, opacity: 1, backgroundColor: '#d2c8d4' },
+          thumb: { width: 16, height: 16, boxShadow: '0 2px 5px rgba(23,50,77,.25)' },
+          track: { borderRadius: safeRadius, opacity: 1, backgroundColor: '#b7c8d8' },
         },
       },
       MuiSelect: {
@@ -284,7 +304,7 @@ export const buildTheme = (tokens: ThemeTokens): Theme => {
             minHeight: 72,
             padding: '14px 28px 22px',
             gap: 10,
-            borderTop: '1px solid #e9e2ea',
+            borderTop: `1px solid ${SURFACE.line}`,
             '@media (max-width: 600px)': {
               padding: '14px 20px 20px',
               flexDirection: 'column-reverse',
@@ -293,7 +313,7 @@ export const buildTheme = (tokens: ThemeTokens): Theme => {
           },
         },
       },
-      MuiMenu: { styleOverrides: { paper: { marginTop: 8, border: `1px solid ${SURFACE.line}`, borderRadius: safeRadius, boxShadow: '0 16px 48px rgba(32,24,32,.16)' } } },
+      MuiMenu: { styleOverrides: { paper: { marginTop: 8, border: `1px solid ${SURFACE.line}`, borderRadius: safeRadius, boxShadow: '0 16px 48px rgba(23,50,77,.16)' } } },
       MuiMenuItem: { styleOverrides: { root: { minHeight: 42, marginInline: 6, borderRadius: safeRadius, fontSize: 14 } } },
       MuiTabs: { styleOverrides: { indicator: { height: 3, borderRadius: safeRadius } } },
       MuiTab: { styleOverrides: { root: { minHeight: 44, textTransform: 'none', fontWeight: 650 } } },
@@ -302,21 +322,21 @@ export const buildTheme = (tokens: ThemeTokens): Theme => {
           root: {
             border: `1px solid ${SURFACE.line}`,
             borderRadius: safeRadius,
-            boxShadow: '0 8px 28px rgba(32,24,32,.055)',
+            boxShadow: '0 8px 28px rgba(23,50,77,.055)',
           },
         },
       },
       MuiTableCell: {
         styleOverrides: {
           head: {
-            backgroundColor: '#f5f1f5',
-            color: '#5b4f5e',
+            backgroundColor: SURFACE.muted,
+            color: SURFACE.inkMuted,
             fontSize: 12,
             fontWeight: 750,
             letterSpacing: '.035em',
             textTransform: 'uppercase',
           },
-          root: { borderColor: '#e9e2ea', paddingBlock: 14 },
+          root: { borderColor: SURFACE.line, paddingBlock: 14 },
         },
       },
       MuiTableRow: {
@@ -338,11 +358,21 @@ export const buildTheme = (tokens: ThemeTokens): Theme => {
           paper: {
             backgroundImage: `linear-gradient(180deg, ${SURFACE.base} 0%, ${SURFACE.muted} 100%)`,
             borderColor: SURFACE.line,
-            boxShadow: '0 24px 80px rgba(32,24,32,.18)',
+            boxShadow: '0 24px 80px rgba(23,50,77,.18)',
           },
         },
       },
       MuiAppBar: { defaultProps: { elevation: 0 } },
+      MuiContainer: {
+        styleOverrides: {
+          root: {
+            '&.MuiContainer-maxWidthXl': {
+              maxWidth: 'var(--content-max-width)',
+              paddingInline: 'var(--content-gutter)',
+            },
+          },
+        },
+      },
     },
   });
 };

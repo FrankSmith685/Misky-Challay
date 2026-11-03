@@ -20,9 +20,6 @@ import {
   toggleOnlyFavorites,
 } from '../catalogSlice';
 
-const CALORIE_STEPS = [400, 500, 600];
-const PROTEIN_STEPS = [15, 25, 35];
-
 /** Buscador y filtros progresivos: lo frecuente siempre visible, lo específico bajo demanda. */
 export const CatalogFiltersBar = () => {
   const dispatch = useAppDispatch();
@@ -30,11 +27,7 @@ export const CatalogFiltersBar = () => {
   const favoritesCount = useAppSelector((state) => state.favorites.items.length);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  const activeAdvanced =
-    filters.dietaryTags.length +
-    filters.excludeAllergens.length +
-    (filters.maxCalories ? 1 : 0) +
-    (filters.minProtein ? 1 : 0);
+  const activeAdvanced = filters.dietaryTags.length + filters.excludeAllergens.length;
   const activeTotal =
     activeAdvanced +
     (filters.search.trim() ? 1 : 0) +
@@ -51,11 +44,11 @@ export const CatalogFiltersBar = () => {
         position: 'relative',
         overflow: 'hidden',
         borderRadius: 'var(--radius-card)',
-        borderColor: 'rgba(200,141,201,.65)',
+        borderColor: 'var(--color-line)',
         boxShadow: 'var(--shadow-e2)',
         '&::before': {
           content: '""', position: 'absolute', inset: '0 0 auto', height: 3,
-          background: 'linear-gradient(90deg, #602060 0 68%, #f5a524 68%)',
+          background: 'linear-gradient(90deg, var(--color-brand-600) 0 68%, var(--color-accent-400) 68%)',
         },
       }}
     >
@@ -69,7 +62,7 @@ export const CatalogFiltersBar = () => {
             type="search"
             value={filters.search}
             onChange={(event) => dispatch(setFilters({ search: event.target.value }))}
-            placeholder="Buscar bowls, proteínas o ingredientes"
+            placeholder="Buscar tortas o ingredientes"
             fullWidth
             slotProps={{
               htmlInput: { 'aria-label': 'Buscar platos o ingredientes' },
@@ -219,42 +212,6 @@ export const CatalogFiltersBar = () => {
                   color={active ? 'primary' : 'default'}
                   variant={active ? 'filled' : 'outlined'}
                   onClick={() => dispatch(toggleDietaryTag(tag.code))}
-                  sx={{ borderRadius: 'var(--radius-pill)' }}
-                />
-              );
-            })}
-          </FilterGroup>
-
-          <FilterGroup label="Calorías máximas">
-            {CALORIE_STEPS.map((value) => {
-              const active = filters.maxCalories === value;
-              return (
-                <Chip
-                  key={value}
-                  label={`Hasta ${value} kcal`}
-                  size="small"
-                  clickable
-                  color={active ? 'primary' : 'default'}
-                  variant={active ? 'filled' : 'outlined'}
-                  onClick={() => dispatch(setFilters({ maxCalories: active ? null : value }))}
-                  sx={{ borderRadius: 'var(--radius-pill)' }}
-                />
-              );
-            })}
-          </FilterGroup>
-
-          <FilterGroup label="Proteína mínima">
-            {PROTEIN_STEPS.map((value) => {
-              const active = filters.minProtein === value;
-              return (
-                <Chip
-                  key={value}
-                  label={`${value} g o más`}
-                  size="small"
-                  clickable
-                  color={active ? 'primary' : 'default'}
-                  variant={active ? 'filled' : 'outlined'}
-                  onClick={() => dispatch(setFilters({ minProtein: active ? null : value }))}
                   sx={{ borderRadius: 'var(--radius-pill)' }}
                 />
               );

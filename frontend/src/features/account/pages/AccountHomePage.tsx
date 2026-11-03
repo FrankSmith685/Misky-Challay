@@ -1,3 +1,4 @@
+import { useLiveRefresh } from '@services/realtime';
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -59,6 +60,7 @@ const AccountHomePage = () => {
   const favoriteCount = useAppSelector((state) => state.favorites.items.length);
 
   const [orders, setOrders] = useState<OrderDetail[]>([]);
+  const [ordersTotal, setOrdersTotal] = useState(0);
   const [ordersError, setOrdersError] = useState<string | null>(null);
   const [wallet, setWallet] = useState<WalletSummary | null>(null);
   const [walletError, setWalletError] = useState<string | null>(null);
@@ -66,17 +68,19 @@ const AccountHomePage = () => {
   const [addressesError, setAddressesError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [retryNonce, setRetryNonce] = useState(0);
+  useLiveRefresh(["orders","wallet","subscriptions","account"], () => setRetryNonce((value) => value + 1));
 
   useEffect(() => {
     let cancelled = false;
     setIsLoading(true);
 
     // allSettled y no all: que el saldo falle no puede borrar el pedido en curso.
-    void Promise.allSettled([ordersApi.list(), plansApi.wallet(), accountApi.listAddresses()]).then(
+    void Promise.allSettled([ordersApi.summary(), plansApi.wallet(), accountApi.listAddresses()]).then(
       ([ordersResult, walletResult, addressesResult]) => {
         if (cancelled) return;
 
-        setOrders(ordersResult.status === 'fulfilled' ? ordersResult.value : []);
+        setOrders(ordersResult.status === 'fulfilled' ? ordersResult.value.orders : []);
+        if (ordersResult.status === 'fulfilled') setOrdersTotal(ordersResult.value.total);
         setOrdersError(
           ordersResult.status === 'rejected' ? getApiErrorMessage(ordersResult.reason) : null,
         );
@@ -199,7 +203,7 @@ const AccountHomePage = () => {
                   {formatDate(activeOrder.placedAt)} · {formatCurrency(activeOrder.grandTotal)} ·{' '}
                   {activeOrder.deliveryType === 'DELIVERY'
                     ? activeOrder.addressSnapshotJson?.districtName ?? 'Entrega a domicilio'
-                    : activeOrder.branch?.name ?? 'Recojo en tienda'}
+                    : activeOrder.branch?.name ?? 'Recojo en taller'}
                 </p>
               </div>
               <Button
@@ -273,7 +277,7 @@ const AccountHomePage = () => {
         )}
         <StatCard
           label="Pedidos"
-          value={ordersError ? '—' : orders.length}
+          value={ordersError ? '—' : ordersTotal}
           icon={ClipboardList}
           hint={ordersError ? 'No pudimos consultarlos.' : 'Compras realizadas con tu cuenta.'}
         />
@@ -346,7 +350,7 @@ const AccountHomePage = () => {
               to={ROUTES.accountOrders}
               icon={ClipboardList}
               label="Mis pedidos"
-              detail={ordersError ? 'Consulta el historial' : `${orders.length} en tu historial`}
+              detail={ordersError ? 'Consulta el historial' : `${ordersTotal} en tu historial`}
             />
             <QuickLink
               to={ROUTES.accountFavorites}
@@ -355,10 +359,10 @@ const AccountHomePage = () => {
               detail={favoriteCount > 0 ? `${favoriteCount} guardados` : 'Marca los que más pides'}
             />
             <QuickLink
-              to={ROUTES.accountSavedBowls}
+              to={ROUTES.designRequests}
               icon={Salad}
-              label="Bowls guardados"
-              detail="Tus recetas listas para repetir"
+              label="Mis diseños"
+              detail="Cotizaciones especiales y versiones"
             />
             <QuickLink
               to={ROUTES.accountReviews}

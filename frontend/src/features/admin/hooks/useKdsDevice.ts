@@ -106,7 +106,7 @@ export const useKdsDevice = () => {
         payload: { ...input, requireInteraction: true, url: input.url ?? '/admin/cocina?kds=1' },
       });
     } else {
-      new Notification(input.title, { body: input.body, tag: input.tag, icon: '/favicon.svg' });
+      new Notification(input.title, { body: input.body, tag: input.tag, icon: '/brand/misky-app-icon.png' });
     }
     return true;
   }, []);

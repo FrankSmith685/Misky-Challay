@@ -59,7 +59,7 @@ export const VariantSelector = ({
             <span className="min-w-0 flex-1">
               <span className="block font-extrabold text-ink">{entry.name}</span>
               <span className="mt-1 block text-xs text-ink-muted">
-                Base de {Math.round(entry.nutrition.calories)} kcal
+                {entry.servingSize ? `${entry.servingSize} ${entry.servingUnit ?? 'unidades'} · ` : ''}Presentación disponible para personalizar
               </span>
             </span>
             <span className="shrink-0 text-lg font-black text-brand-700">

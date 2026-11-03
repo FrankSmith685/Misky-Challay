@@ -4,6 +4,8 @@ import { authenticate } from '@middlewares/auth.middleware';
 import { requirePermissions } from '@middlewares/rbac.middleware';
 import { validate } from '@middlewares/validate.middleware';
 import { PERMISSIONS } from '@config/constants';
+import { ApiError } from '@shared/errors/ApiError';
+import { asyncHandler } from '@shared/utils/asyncHandler';
 import { plansController } from './plans.controller';
 
 /**
@@ -32,7 +34,9 @@ router.post(
       }),
     }),
   ),
-  plansController.purchase,
+  asyncHandler(async () => {
+    throw ApiError.conflict('Las recargas anteriores ya no se venden. Elige una caja mensual en Suscripciones.');
+  }),
 );
 
 router.get('/wallet', authenticate, plansController.wallet);

@@ -93,13 +93,13 @@ const DrawPolygon = ({ points, selected, onChange, onSelect }: { points: Polygon
   const size = isCoarse ? 30 : 18;
   const vertexIcon = (isSelected: boolean) => divIcon({
     className: '',
-    html: `<span style="display:block;width:${size}px;height:${size}px;border-radius:50%;background:${isSelected ? '#b91c1c' : '#fff'};border:4px solid ${isSelected ? '#fff' : '#602060'};box-shadow:0 2px 8px #0004${isSelected ? ',0 0 0 3px #b91c1c' : ''}"></span>`,
+    html: `<span style="display:block;width:${size}px;height:${size}px;border-radius:50%;background:${isSelected ? '#b91c1c' : '#fff'};border:4px solid ${isSelected ? '#fff' : 'var(--color-brand-600)'};box-shadow:0 2px 8px #0004${isSelected ? ',0 0 0 3px #b91c1c' : ''}"></span>`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
   });
 
   return <>
-    {points.length > 0 && <Polygon positions={points.map((point) => [point.lat, point.lng])} pathOptions={{ color: '#602060', fillColor: '#aa62ad', fillOpacity: .2, weight: 3 }} />}
+    {points.length > 0 && <Polygon positions={points.map((point) => [point.lat, point.lng])} pathOptions={{ color: 'var(--color-brand-600)', fillColor: 'var(--color-brand-400)', fillOpacity: .2, weight: 3 }} />}
     {points.map((point, index) => (
       <Marker
         key={`${index}-${point.lat}-${point.lng}`}

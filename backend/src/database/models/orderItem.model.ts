@@ -8,6 +8,7 @@ import {
 } from 'sequelize';
 import { sequelize } from '../connection';
 import type { OrderItemCustomization } from './orderItemCustomization.model';
+import type { CakeThemeSnapshot } from './cakeTheme.model';
 
 export interface NutritionSnapshot {
   calories: number;
@@ -28,8 +29,12 @@ export class OrderItem extends Model<
 > {
   declare id: CreationOptional<number>;
   declare orderId: number;
+  declare itemKind: CreationOptional<'PRODUCT' | 'EXPERIENCE'>;
   declare productId: number | null;
   declare variantId: number | null;
+  declare designQuoteId: CreationOptional<number | null>;
+  declare requestedServings: CreationOptional<number | null>;
+  declare themeSnapshotJson: CreationOptional<CakeThemeSnapshot | null>;
 
   declare productNameSnapshot: string;
   declare variantNameSnapshot: CreationOptional<string | null>;
@@ -49,6 +54,12 @@ export class OrderItem extends Model<
 
   declare nutritionSnapshotJson: CreationOptional<NutritionSnapshot | null>;
   declare allergenSnapshotJson: CreationOptional<string[] | null>;
+  declare designDetailsJson: CreationOptional<{
+    inscription: string;
+    occasion: string;
+    finish: string;
+    originalInstructions?: string;
+  } | null>;
   declare specialInstructions: CreationOptional<string | null>;
 
   declare createdAt: CreationOptional<Date>;
@@ -61,8 +72,12 @@ OrderItem.init(
   {
     id: { type: DataTypes.BIGINT.UNSIGNED, autoIncrement: true, primaryKey: true },
     orderId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
+    itemKind: { type: DataTypes.STRING(16), allowNull: false, defaultValue: 'PRODUCT' },
     productId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
     variantId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
+    designQuoteId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
+    requestedServings: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true },
+    themeSnapshotJson: { type: DataTypes.JSON, allowNull: true },
 
     productNameSnapshot: { type: DataTypes.STRING(150), allowNull: false },
     variantNameSnapshot: { type: DataTypes.STRING(120), allowNull: true },
@@ -78,7 +93,8 @@ OrderItem.init(
 
     nutritionSnapshotJson: { type: DataTypes.JSON, allowNull: true },
     allergenSnapshotJson: { type: DataTypes.JSON, allowNull: true },
-    specialInstructions: { type: DataTypes.STRING(255), allowNull: true },
+    designDetailsJson: { type: DataTypes.JSON, allowNull: true },
+    specialInstructions: { type: DataTypes.TEXT, allowNull: true },
 
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,

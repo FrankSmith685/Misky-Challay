@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { tokenStorage } from '@services/api/client';
+import { openAuthenticatedStream } from '@services/realtime';
 
 export type KitchenRealtimeStatus = 'connecting' | 'connected' | 'reconnecting' | 'unsupported';
 
@@ -42,17 +42,7 @@ export const useKitchenRealtime = (
         controller = new AbortController();
         try {
           setStatus(retryMs === 1_000 ? 'connecting' : 'reconnecting');
-          const token = tokenStorage.getAccess();
-          const base = import.meta.env.VITE_API_URL || '/api/v1';
-          const response = await fetch(`${base}/operations/kitchen/stream?branchId=${branchId}`, {
-            headers: {
-              Accept: 'text/event-stream',
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
-            credentials: 'include',
-            cache: 'no-store',
-            signal: controller.signal,
-          });
+          const response = await openAuthenticatedStream(`/operations/kitchen/stream?branchId=${branchId}`, controller.signal);
           if (!response.ok || !response.body) throw new Error(`SSE ${response.status}`);
 
           setStatus('connected');

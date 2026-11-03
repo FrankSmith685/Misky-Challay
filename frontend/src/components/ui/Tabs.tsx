@@ -11,10 +11,11 @@ interface TabsProps {
   value: string;
   onChange: (value: string) => void;
   className?: string;
+  disabled?: boolean;
 }
 
 /** Pestanas tipo "pill" para alternar entre vistas dentro de una misma pantalla. */
-export const Tabs = ({ items, value, onChange, className }: TabsProps) => (
+export const Tabs = ({ items, value, onChange, className, disabled = false }: TabsProps) => (
   <MuiTabs
     value={value}
     onChange={(_, nextValue: string) => onChange(nextValue)}
@@ -23,6 +24,6 @@ export const Tabs = ({ items, value, onChange, className }: TabsProps) => (
     scrollButtons="auto"
     sx={{ minHeight: 44, borderRadius: 'var(--radius-field)', bgcolor: 'action.hover', p: .5, '& .MuiTab-root': { minHeight: 36, borderRadius: 'var(--radius-field)', px: 2 }, '& .Mui-selected': { bgcolor: 'background.paper', boxShadow: 'var(--shadow-e1)' }, '& .MuiTabs-indicator': { display: 'none' } }}
   >
-    {items.map((item) => <MuiTab key={item.value} value={item.value} label={item.label} />)}
+    {items.map((item) => <MuiTab key={item.value} value={item.value} label={item.label} disabled={disabled} />)}
   </MuiTabs>
 );

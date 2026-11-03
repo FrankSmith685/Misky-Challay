@@ -9,18 +9,15 @@ import {
   ListItemText,
   Menu,
   MenuItem,
-  Skeleton,
   Stack,
   Typography,
 } from '@mui/material';
-import { ClipboardList, Heart, Home, LayoutDashboard, LogOut, MapPin, Salad, User2, Wallet } from 'lucide-react';
+import { CakeSlice, ClipboardList, Heart, Home, LayoutDashboard, LogOut, MapPin, User2 } from 'lucide-react';
 import { ROUTES } from '@constants/routes';
 import { rolesLabel } from '@constants/roles';
 import { useAppSelector } from '@app/hooks';
 import { usePermissions } from '@hooks/usePermissions';
 import { useLogout } from '@hooks/useLogout';
-import { useWalletBalance } from '@hooks/useWalletBalance';
-import { formatCurrency } from '@lib/format';
 import { resolveStaffAccess } from '@features/auth/staffAccess';
 
 export const UserMenu = () => {
@@ -28,8 +25,6 @@ export const UserMenu = () => {
   const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated);
   const { isStaff } = usePermissions();
   const logout = useLogout();
-  // El saldo se pide una sola vez por sesion y lo comparten carrito y cabecera.
-  const { balance, isLoading: isBalanceLoading } = useWalletBalance();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
 
   if (!isAuthenticated || !user) {
@@ -64,22 +59,6 @@ export const UserMenu = () => {
       {options?.trailing}
     </MenuItem>
   );
-
-  /* El saldo deja de aparecer por primera vez en el ultimo paso del checkout: aqui
-   * ya se ve cuanto hay antes de empezar a comprar. Sin monedero (o si el API falla)
-   * no se inventa un "S/ 0.00": simplemente no se muestra importe. */
-  const walletAmount = isBalanceLoading
-    ? <Skeleton variant="text" width={52} sx={{ fontSize: 13 }} />
-    : balance === null
-      ? null
-      : (
-        <Typography
-          variant="caption"
-          sx={{ ml: 1, fontWeight: 800, whiteSpace: 'nowrap', color: balance > 0 ? 'primary.dark' : 'text.secondary' }}
-        >
-          {formatCurrency(balance)}
-        </Typography>
-      );
 
   return (
     <>
@@ -124,9 +103,8 @@ export const UserMenu = () => {
           * solo dentro de /cuenta. */}
         {item(ROUTES.account, 'Inicio de mi cuenta', Home)}
         {item(ROUTES.accountOrders, 'Mis pedidos', ClipboardList)}
-        {item(ROUTES.accountWallet, 'Mi saldo', Wallet, { trailing: walletAmount })}
         {item(ROUTES.accountFavorites, 'Mis favoritos', Heart)}
-        {item(ROUTES.accountSavedBowls, 'Bowls guardados', Salad)}
+        {item(ROUTES.designRequests, 'Mis diseños', CakeSlice)}
         <Divider sx={{ my: .75 }} />
         {item(ROUTES.accountProfile, 'Mi perfil', User2)}
         {item(ROUTES.accountAddresses, 'Mis direcciones', MapPin)}

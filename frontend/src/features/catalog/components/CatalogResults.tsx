@@ -10,7 +10,7 @@ import type { Allergen, Product } from '../types';
 import { ProductCard } from './ProductCard';
 import { ProductGridSkeleton } from './ProductCardSkeleton';
 
-type SortMode = 'recommended' | 'price' | 'protein' | 'calories';
+type SortMode = 'recommended' | 'price';
 
 interface CatalogResultsProps {
   products: Product[];
@@ -36,8 +36,6 @@ export const CatalogResults = ({
   const sortedProducts = useMemo(() => {
     const rows = [...products];
     if (sort === 'price') return rows.sort((a, b) => displayPrice(a) - displayPrice(b));
-    if (sort === 'protein') return rows.sort((a, b) => (b.nutrition?.protein ?? -1) - (a.nutrition?.protein ?? -1));
-    if (sort === 'calories') return rows.sort((a, b) => (a.nutrition?.calories ?? Number.MAX_SAFE_INTEGER) - (b.nutrition?.calories ?? Number.MAX_SAFE_INTEGER));
     return rows.sort((a, b) => {
       const builderFirst = Number(b.type === 'CUSTOMIZABLE') - Number(a.type === 'CUSTOMIZABLE');
       return builderFirst || Number(b.isFeatured) - Number(a.isFeatured);
@@ -94,8 +92,6 @@ export const CatalogResults = ({
           <Select label="Ordenar" size="small" value={sort} onChange={(event) => setSort(event.target.value as SortMode)} sx={{ minWidth: { xs: '100%', sm: 205 }, bgcolor: 'background.paper', '& .MuiOutlinedInput-root': { borderRadius: 'var(--radius-field)' } }}>
             <SelectOption value="recommended">Recomendados</SelectOption>
             <SelectOption value="price">Menor precio</SelectOption>
-            <SelectOption value="protein">Más proteína</SelectOption>
-            <SelectOption value="calories">Menos calorías</SelectOption>
           </Select>
         </div>
       </div>

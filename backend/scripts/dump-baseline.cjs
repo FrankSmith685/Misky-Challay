@@ -43,7 +43,7 @@ const main = () => {
     process.argv[2] ??
     path.resolve(__dirname, '..', 'src', 'database', 'migrations', '0001-baseline.sql');
 
-  const database = process.env.DB_NAME || 'verde_bowl_v3';
+  const database = process.env.DB_NAME || 'DulceFlow';
   const bin = findMysqldump();
 
   const args = [

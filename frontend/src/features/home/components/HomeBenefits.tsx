@@ -4,8 +4,8 @@ import { HOME_BENEFITS } from '../homeContent';
 
 /** Barra de valor inmediatamente después del hero. */
 export const HomeBenefits = () => (
-  <section className="relative z-10 border-y border-line bg-white" aria-label="Por qué elegir Verde Bowl">
-    <RevealGroup className="mx-auto grid max-w-7xl divide-y divide-line px-4 sm:px-6 md:grid-cols-3 md:divide-x md:divide-y-0 lg:px-8">
+  <section className="relative z-10 border-b border-line bg-white" aria-label="Por qué elegir Misky Challay">
+    <RevealGroup className="container-shell grid divide-y divide-line md:grid-cols-3 md:divide-x md:divide-y-0">
       {HOME_BENEFITS.map((benefit, index) => (
         <FeatureTile
           key={benefit.title}

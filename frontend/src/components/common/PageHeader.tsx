@@ -19,9 +19,10 @@ interface PageHeaderProps {
 export const PageHeader = ({ eyebrow, title, description, icon: Icon, action, crumbs, className }: PageHeaderProps) => (
   <Box
     component="header"
+    data-ui-page-header
     className={cn('mb-7', className)}
     sx={{
-      display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 2,
+      display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, flexWrap: 'wrap', gap: 2,
       alignItems: { sm: 'flex-end' }, justifyContent: 'space-between',
       pb: 2.5, borderBottom: 1, borderColor: 'divider',
     }}
@@ -39,7 +40,12 @@ export const PageHeader = ({ eyebrow, title, description, icon: Icon, action, cr
     </Box>
     {/* `spacing` explicito: con `useFlexGap` y sin el, el gap es 0 y las pantallas
         que pasan varios hijos sueltos (Inventario, Cobertura) montaban sus botones
-        pegados uno contra otro. `alignItems` los centra cuando la fila envuelve. */}
-    {action && <Stack direction="row" spacing={1.5} useFlexGap sx={{ alignItems: 'center', flexShrink: 0, flexWrap: 'wrap', '& > *': { flexShrink: 0 } }}>{action}</Stack>}
+        pegados uno contra otro. El ancho máximo también contiene las acciones
+        anidadas y sus selectores cuando pasan a otra fila en celular. */}
+    {action && <Stack direction="row" spacing={1.5} useFlexGap sx={{
+      alignItems: 'center', flexShrink: 1, flexWrap: 'wrap', minWidth: 0,
+      width: { xs: '100%', sm: 'auto' }, maxWidth: '100%',
+      '& > *': { minWidth: 0, maxWidth: '100%' },
+    }}>{action}</Stack>}
   </Box>
 );

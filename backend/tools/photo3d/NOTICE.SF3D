@@ -1,0 +1,22 @@
+This Stability AI Model is licensed under the Stability AI Community License,
+Copyright © Stability AI Ltd. All Rights Reserved.
+
+Powered by Stability AI
+
+Upstream: https://github.com/Stability-AI/stable-fast-3d
+Revision: ff21fc491b4dc5314bf6734c7c0dabd86b5f5bb2
+Model: https://huggingface.co/stabilityai/stable-fast-3d
+Model revision: f0c9a8ffd62cb1bbc8a7a53c9f87a0be1b6be778
+License: LICENSE.SF3D in this directory.
+
+Local integration changes:
+- SF3D neural geometry and material inference use the complete upstream checkpoint.
+- Encoders retain float32 weights and move between CPU and GPU per component.
+- Attention and density queries are chunked to reduce peak memory; the model
+  does not require unsupported BF16 operations on the NVIDIA Pascal GPU.
+- xatlas packs UVs; ModernGL rasterizes barycentric texture coordinates instead
+  of compiling the upstream CUDA texture baker and UV extension on Windows.
+- Image encoders initialize from configuration; their learned parameters are
+  streamed from the complete SF3D checkpoint with strict key/shape validation,
+  including aliases of shared parameters, without a duplicate state dictionary.
+- The HTTP job adapter stores GLBs privately and supplies progress and retry state.

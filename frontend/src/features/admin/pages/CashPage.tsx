@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Banknote, BarChart3, CheckCircle2, Clock3, CreditCard, ReceiptText, Smartphone, Store, TrendingDown, TrendingUp, XCircle } from 'lucide-react';
-import toast from '@components/mui/MuiToast';
-import { useConfirm } from '@components/ui/ConfirmDialog';
+import { Banknote, BarChart3, Clock3, CreditCard, ReceiptText, Smartphone, Store, TrendingDown, TrendingUp } from 'lucide-react';
+import { Link, Navigate } from 'react-router-dom';
+import { usePermissions } from '@/hooks/usePermissions';
+import { PERM } from '@constants/permissions';
+import { ROUTES } from '@constants/routes';
 import { PageHeader } from '@components/common/PageHeader';
 import { PageLoader } from '@components/common/PageLoader';
 import { LoadError } from '@components/common/LoadError';
@@ -10,10 +12,11 @@ import { Card } from '@components/ui/Card';
 import { Badge } from '@components/ui/Badge';
 import { formatCurrency } from '@lib/format';
 import { getApiErrorMessage } from '@services/api/client';
+import { useLocalPaymentSettings } from '@services/businessInfo';
 import { BranchSelector } from '../components/BranchSelector';
 import { useActiveBranch } from '../hooks/useActiveBranch';
 import { adminApi } from '../services/admin.service';
-import type { PendingMobilePayment, Reports } from '../types';
+import type { Reports } from '../types';
 
 type Period = 'TODAY' | '7D' | '30D';
 
@@ -46,13 +49,13 @@ const PAYMENT_LABEL: Record<string, string> = {
 };
 
 const CashPage = () => {
-  const confirm = useConfirm();
+  const { can } = usePermissions();
+  const canReadReports = can(PERM.REPORT_SALES_READ);
+  const localPayments = useLocalPaymentSettings();
   const { branchId, branches, setBranchId, isLoadingBranches, branchesError, reloadBranches } = useActiveBranch();
   const [period, setPeriod] = useState<Period>('TODAY');
   const [data, setData] = useState<Reports | null>(null);
   const [previous, setPrevious] = useState<Reports | null>(null);
-  const [mobilePayments, setMobilePayments] = useState<PendingMobilePayment[]>([]);
-  const [reviewingPaymentId, setReviewingPaymentId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -67,51 +70,26 @@ const CashPage = () => {
   }, [period]);
 
   useEffect(() => {
-    if (!branchId) return;
+    if (!branchId || !canReadReports) return;
     const controller = new AbortController();
     setLoading(true);
     setError(null);
     Promise.all([
       adminApi.reports(branchId, controller.signal, range.current),
       adminApi.reports(branchId, controller.signal, range.previous),
-      adminApi.pendingMobilePayments(branchId, controller.signal),
     ])
-      .then(([currentData, previousData, pendingMobile]) => {
+      .then(([currentData, previousData]) => {
         setData(currentData);
         setPrevious(previousData);
-        setMobilePayments(pendingMobile);
       })
       .catch((loadError) => {
         if (!controller.signal.aborted) setError(getApiErrorMessage(loadError));
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [branchId, range]);
+  }, [branchId, range, canReadReports]);
 
-  const reviewMobilePayment = async (row: PendingMobilePayment, decision: 'APPROVE' | 'REJECT') => {
-    const result = await confirm({
-      title: decision === 'APPROVE' ? `Aprobar ${row.provider.toUpperCase()}` : `Rechazar ${row.provider.toUpperCase()}`,
-      message: decision === 'APPROVE'
-        ? `Confirma que viste la operación ${row.operationCode} por ${formatCurrency(row.amount)} en la cuenta real. Al aprobar, el pedido ${row.order.orderNumber} entrará inmediatamente a cocina.`
-        : `El pedido ${row.order.orderNumber} se cancelará y se liberarán stock, cupo, cupón y saldo reservado.`,
-      confirmLabel: decision === 'APPROVE' ? 'Sí, movimiento encontrado' : 'Rechazar y liberar reservas',
-      tone: decision === 'REJECT' ? 'danger' : 'default',
-      reasonLabel: decision === 'REJECT' ? 'Motivo del rechazo' : undefined,
-      reasonRequired: decision === 'REJECT',
-    });
-    if (!result.confirmed) return;
-    setReviewingPaymentId(row.paymentId);
-    try {
-      await adminApi.reviewMobilePayment(row.paymentId, decision, result.reason || undefined);
-      setMobilePayments((current) => current.filter((payment) => payment.paymentId !== row.paymentId));
-      toast.success(decision === 'APPROVE' ? 'Pago validado: el pedido ya llegó a cocina' : 'Pago rechazado y reservas liberadas');
-    } catch (reviewError) {
-      toast.error(getApiErrorMessage(reviewError));
-    } finally {
-      setReviewingPaymentId(null);
-    }
-  };
-
+  if (!canReadReports) return <Navigate to={ROUTES.adminDirectPayments} replace />;
   if ((loading && !data) || isLoadingBranches) return <PageLoader />;
 
   const sales = data?.sales;
@@ -120,6 +98,7 @@ const CashPage = () => {
     ? Math.round(((sales?.revenue ?? 0) - previousSales.revenue) / previousSales.revenue * 100)
     : null;
   const payments = data?.paymentBreakdown ?? [];
+  const showManualPaymentReview = localPayments.yapeEnabled || localPayments.plinEnabled;
   const cashPending = payments.filter((item) => item.method.endsWith('_pending')).reduce((total, item) => total + item.amount, 0);
   const collected = payments
     .filter((item) => !item.method.endsWith('_pending'))
@@ -152,31 +131,10 @@ const CashPage = () => {
         <Card className="p-5"><div className="flex items-start justify-between"><div><p className="text-xs font-bold uppercase tracking-wide text-ink-muted">Venta registrada</p><p className="mt-2 text-3xl font-black text-ink">{formatCurrency(sales.revenue)}</p></div><span className="grid size-10 place-items-center rounded-card bg-brand-50 text-brand-700"><Banknote className="size-5" /></span></div>{salesChange !== null && <p className={`mt-3 flex items-center gap-1 text-xs font-bold ${salesChange >= 0 ? 'text-brand-700' : 'text-red-700'}`}>{salesChange >= 0 ? <TrendingUp className="size-4" /> : <TrendingDown className="size-4" />}{Math.abs(salesChange)}% frente al periodo anterior</p>}</Card>
         <Card className="p-5"><div className="flex items-start justify-between"><div><p className="text-xs font-bold uppercase tracking-wide text-ink-muted">Pedidos vendidos</p><p className="mt-2 text-3xl font-black text-ink">{sales.orders}</p><p className="mt-2 text-xs text-ink-muted">Ticket promedio {formatCurrency(sales.averageTicket)}</p></div><span className="grid size-10 place-items-center rounded-card bg-brand-50 text-brand-700"><ReceiptText className="size-5" /></span></div></Card>
         <Card className="p-5"><div className="flex items-start justify-between"><div><p className="text-xs font-bold uppercase tracking-wide text-ink-muted">Cobrado</p><p className="mt-2 text-3xl font-black text-brand-800">{formatCurrency(collected)}</p><p className="mt-2 text-xs text-ink-muted">Según pagos registrados</p></div><span className="grid size-10 place-items-center rounded-card bg-brand-50 text-brand-700"><CreditCard className="size-5" /></span></div></Card>
-        <Card className={`p-5 ${cashPending > 0 ? 'border-amber-200 bg-amber-50/60' : ''}`}><div className="flex items-start justify-between"><div><p className="text-xs font-bold uppercase tracking-wide text-ink-muted">Pendiente de conciliar</p><p className={`mt-2 text-3xl font-black ${cashPending > 0 ? 'text-amber-800' : 'text-ink'}`}>{formatCurrency(cashPending)}</p><p className="mt-2 text-xs text-ink-muted">Efectivo por cobrar o pago móvil por validar</p></div><span className="grid size-10 place-items-center rounded-card bg-white text-amber-700"><Clock3 className="size-5" /></span></div></Card>
+        <Card className={`p-5 ${cashPending > 0 ? 'border-amber-200 bg-amber-50/60' : ''}`}><div className="flex items-start justify-between"><div><p className="text-xs font-bold uppercase tracking-wide text-ink-muted">Pendiente de conciliar</p><p className={`mt-2 text-3xl font-black ${cashPending > 0 ? 'text-amber-800' : 'text-ink'}`}>{formatCurrency(cashPending)}</p><p className="mt-2 text-xs text-ink-muted">{showManualPaymentReview ? 'Efectivo por cobrar o pago manual por validar' : 'Efectivo por cobrar'}</p></div><span className="grid size-10 place-items-center rounded-card bg-white text-amber-700"><Clock3 className="size-5" /></span></div></Card>
       </div>
 
-      <Card className={`mt-5 overflow-hidden ${mobilePayments.length ? 'border-violet-200' : ''}`}>
-        <div className="flex flex-col gap-3 border-b border-line bg-gradient-to-r from-violet-50 to-white p-5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <span className="grid size-11 place-items-center rounded-card bg-violet-100 text-violet-700"><Smartphone className="size-5" /></span>
-            <div><h2 className="font-extrabold text-ink">Validaciones Yape y Plin</h2><p className="mt-0.5 text-xs text-ink-muted">Contrasta el código en el aplicativo real antes de enviar el pedido a cocina.</p></div>
-          </div>
-          <Badge variant={mobilePayments.length ? 'warning' : 'success'}>{mobilePayments.length ? `${mobilePayments.length} pendiente${mobilePayments.length === 1 ? '' : 's'}` : 'Todo conciliado'}</Badge>
-        </div>
-        {mobilePayments.length === 0 ? (
-          <div className="flex items-center gap-3 p-5 text-sm text-ink-muted"><CheckCircle2 className="size-5 text-brand-700" /> No hay pagos móviles esperando revisión.</div>
-        ) : (
-          <div className="divide-y divide-line">
-            {mobilePayments.map((row) => (
-              <article key={row.id} className="grid gap-4 p-5 lg:grid-cols-[1fr_.8fr_auto] lg:items-center">
-                <div><div className="flex items-center gap-2"><Badge variant="brand">{row.provider.toUpperCase()}</Badge><b className="text-lg tracking-wide text-ink">{row.operationCode}</b></div><p className="mt-2 text-sm font-bold text-ink">Pedido {row.order.orderNumber} · {row.order.contactName || 'Cliente'}</p><p className="mt-1 text-xs text-ink-muted">Declarado {new Date(row.submittedAt).toLocaleString('es-PE')} {row.payerPhone ? `· celular ${row.payerPhone}` : ''}</p></div>
-                <div className="rounded-card bg-surface-muted p-3"><p className="text-xs font-bold uppercase tracking-wide text-ink-muted">Importe exacto a encontrar</p><p className="mt-1 text-2xl font-black text-violet-800">{formatCurrency(row.amount)}</p></div>
-                <div className="flex gap-2 lg:justify-end"><Button size="sm" variant="outline" leftIcon={<XCircle className="size-4" />} disabled={reviewingPaymentId === row.paymentId} onClick={() => void reviewMobilePayment(row, 'REJECT')}>No aparece</Button><Button size="sm" leftIcon={<CheckCircle2 className="size-4" />} isLoading={reviewingPaymentId === row.paymentId} onClick={() => void reviewMobilePayment(row, 'APPROVE')}>Validar pago</Button></div>
-              </article>
-            ))}
-          </div>
-        )}
-      </Card>
+      {can(PERM.PAYMENT_VERIFY) && <Card className="mt-5 flex flex-wrap items-center justify-between gap-3 p-5"><div className="flex items-center gap-3"><Smartphone className="size-5 text-brand-700" /><div><h2 className="font-bold text-ink">Yape y Plin directos</h2><p className="mt-1 text-xs text-ink-muted">Revisa reportes, solicita correcciones y consulta el historial de cobros.</p></div></div><Button component={Link} to={ROUTES.adminDirectPayments} variant="outline">Revisar pagos</Button></Card>}
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]">
         <Card className="p-5 sm:p-6">

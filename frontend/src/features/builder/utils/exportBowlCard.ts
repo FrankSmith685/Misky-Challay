@@ -14,20 +14,20 @@ export const exportBowlCard = async (
   if (!context) throw new Error('Tu navegador no permite crear la imagen');
 
   const gradient = context.createLinearGradient(0, 0, 1080, 1080);
-  gradient.addColorStop(0, '#f8f1f8');
+  gradient.addColorStop(0, '#ebf3fb');
   gradient.addColorStop(1, '#fff6e5');
   context.fillStyle = gradient;
   context.fillRect(0, 0, 1080, 1080);
-  context.fillStyle = '#4e1a4e';
+  context.fillStyle = '#0057a6';
   context.font = '700 34px Arial';
-  context.fillText('VERDE BOWL', 70, 90);
+  context.fillText('MISKY CHALLAY', 70, 90);
   context.font = '900 68px Arial';
   context.fillText(name, 70, 175);
   context.fillStyle = '#ffffff';
   context.beginPath();
   context.arc(540, 540, 330, 0, Math.PI * 2);
   context.fill();
-  context.strokeStyle = '#ddbadf';
+  context.strokeStyle = '#b9e2ff';
   context.lineWidth = 28;
   context.stroke();
 
@@ -57,7 +57,7 @@ export const exportBowlCard = async (
     }),
   );
 
-  context.fillStyle = '#201820';
+  context.fillStyle = '#17324d';
   context.font = '700 30px Arial';
   context.fillText(
     options
@@ -68,17 +68,17 @@ export const exportBowlCard = async (
     70,
     950,
   );
-  context.fillStyle = '#4e1a4e';
+  context.fillStyle = '#0057a6';
   context.font = '900 42px Arial';
   context.fillText(formatCurrency(total), 70, 1010);
 
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
   if (!blob) throw new Error('No pudimos crear la imagen');
-  const file = new File([blob], 'mi-verde-bowl.png', { type: 'image/png' });
+  const file = new File([blob], 'mi-misky-challay.png', { type: 'image/png' });
 
   if (navigator.canShare?.({ files: [file] })) {
     await navigator.share({
-      title: 'Mi Verde Bowl',
+      title: 'Mi Misky Challay',
       text: 'Este es el bowl que armé',
       files: [file],
     });

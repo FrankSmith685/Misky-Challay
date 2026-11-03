@@ -33,6 +33,10 @@ export class InventoryMovement extends Model<
   declare quantity: number;
   declare onHandAfter: CreationOptional<number>;
   declare reservedAfter: CreationOptional<number>;
+  declare lotId: CreationOptional<number | null>;
+  declare purchaseOrderId: CreationOptional<number | null>;
+  declare unitCost: CreationOptional<number | null>;
+  declare totalCost: CreationOptional<number | null>;
   declare orderId: CreationOptional<number | null>;
   declare actorId: CreationOptional<number | null>;
   declare reason: CreationOptional<string | null>;
@@ -49,6 +53,10 @@ InventoryMovement.init(
     quantity: { type: DataTypes.DECIMAL(12, 2), allowNull: false },
     onHandAfter: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
     reservedAfter: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
+    lotId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
+    purchaseOrderId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
+    unitCost: { type: DataTypes.DECIMAL(12, 4), allowNull: true },
+    totalCost: { type: DataTypes.DECIMAL(12, 2), allowNull: true },
     orderId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
     actorId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
     reason: { type: DataTypes.STRING(255), allowNull: true },

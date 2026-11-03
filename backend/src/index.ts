@@ -4,6 +4,7 @@ import { logger } from '@config/logger';
 import { closeDatabase, initDatabase, type DatabaseStartupOptions } from '@database/bootstrap';
 import { getPaymentProvider } from '@integrations/payments';
 import { startJobs, stopJobs } from './jobs';
+import { installActivityHooks } from '@modules/notifications/activity.service';
 
 /* ==========================================================================
  * INTERRUPTORES DE BASE DE DATOS
@@ -11,13 +12,14 @@ import { startJobs, stopJobs } from './jobs';
  * Cambia estos valores (o las variables del archivo .env) para decidir que
  * hace el servidor con la base de datos cada vez que arranca.
  *
- *   autoCreate : crea la base `verde_bowl_v3` si todavia no existe.
+ *   autoCreate : crea la base `DulceFlow` si todavia no existe.
  *   sync       : true  -> crea/actualiza las tablas a partir de los modelos.
  *                false -> no toca las tablas (usar migraciones o BD ya lista).
  *   alter      : true  -> ajusta columnas nuevas SIN borrar los datos guardados.
  *   force      : true  -> BORRA todas las tablas y las vuelve a crear vacias.
  *                         (usalo solo cuando quieras empezar de cero)
  *   seed       : true  -> inserta los datos base (roles, permisos, admin).
+ *                Las opciones alimentarias básicas se aseguran siempre.
  * ========================================================================== */
 const DATABASE_STARTUP: DatabaseStartupOptions = {
   autoCreate: env.DB_AUTO_CREATE, // .env -> DB_AUTO_CREATE=true
@@ -29,11 +31,12 @@ const DATABASE_STARTUP: DatabaseStartupOptions = {
 
 const bootstrap = async (): Promise<void> => {
   try {
-    // Inicializa y anuncia Stripe/test/simulador al arrancar, no recién al primer pago.
+    // Inicializa y anuncia la pasarela o el simulador al arrancar.
     // Así una configuración antigua del .env se detecta antes de atender solicitudes.
     getPaymentProvider();
 
     await initDatabase(DATABASE_STARTUP);
+    installActivityHooks();
 
     const app = createApp();
     const server = app.listen(env.PORT, () => {

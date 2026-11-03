@@ -61,12 +61,12 @@ interface PurchaseContextValue {
 
 const PurchaseContext = createContext<PurchaseContextValue | null>(null);
 
-/** El backend acepta el distrito operativo o el par de coordenadas; al menos uno. */
+/** El delivery se cotiza desde el punto exacto para incluir recargos por distancia. */
 const coverageQuery = (
   address: Address,
 ): { districtId?: number; latitude?: number; longitude?: number } | null => {
   const hasPoint = address.latitude !== null && address.longitude !== null;
-  if (!hasPoint && address.districtId === null) return null;
+  if (!hasPoint) return null;
   return {
     districtId: address.districtId ?? undefined,
     latitude: address.latitude ?? undefined,

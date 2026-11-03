@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 720" role="img" aria-label="Torta personalizada">
+ <defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#E8F6FF"/><stop offset="1" stop-color="#D2EBFA"/></linearGradient><filter id="s"><feGaussianBlur stdDeviation="20"/></filter></defs>
+ <rect width="960" height="720" fill="url(#bg)"/><circle cx="170" cy="150" r="150" fill="#FFF9E8" opacity=".6"/><circle cx="820" cy="570" r="240" fill="#FFE6B5" opacity=".55"/><ellipse cx="480" cy="607" rx="300" ry="45" fill="#05284C" opacity=".2" filter="url(#s)"/><ellipse cx="480" cy="570" rx="335" ry="66" fill="#FFF9F2"/>
+ <path d="M254 340h452v188c0 66-452 66-452 0z" fill="#6CB9DF"/><ellipse cx="480" cy="341" rx="226" ry="47" fill="#C7EAF8"/><path d="M310 258h340v96c0 51-340 51-340 0z" fill="#9BD7EF"/><ellipse cx="480" cy="258" rx="170" ry="38" fill="#E8F8FF"/>
+ <path d="M309 324c18-14 31 13 48 0s30 13 46 0 29 13 45 0 29 13 45 0 30 13 46 0 30 13 46 0 31 13 65-2" fill="none" stroke="#FFF9F6" stroke-width="16" stroke-linecap="round"/><path d="M253 442c20-16 39 15 59 0s39 15 59 0 39 15 59 0 39 15 59 0 39 15 59 0 39 15 59 0 39 15 99-2" fill="none" stroke="#FFF4F3" stroke-width="15" stroke-linecap="round"/>
+ <path d="M422 197c20-25 43-10 58 6 15-16 38-31 58-6 33 43-58 91-58 91s-91-48-58-91z" fill="#E9940F"/><circle cx="480" cy="186" r="11" fill="#F7C977"/><text x="480" y="513" text-anchor="middle" fill="#073A6B" font-family="Georgia,serif" font-size="42" font-style="italic">Tu momento</text>
+</svg>

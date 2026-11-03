@@ -150,8 +150,6 @@ export default function MenuScreen() {
     const seeded: CatalogFilterState = {
       dietaryTags: prefs.dietaryTags,
       excludeAllergens: prefs.allergens,
-      maxCalories: prefs.calorieTarget,
-      minProtein: prefs.proteinTarget,
     };
     // Sin preferencias guardadas no hay nada que sembrar, y marcar la huella
     // evitaría que se sembrara al guardarlas más tarde.
@@ -176,8 +174,6 @@ export default function MenuScreen() {
     debouncedSearch || 'sin-texto',
     filters.dietaryTags.join('+') || '-',
     filters.excludeAllergens.join('+') || '-',
-    filters.maxCalories ?? '-',
-    filters.minProtein ?? '-',
   ].join(':');
 
   const menu = useResource<Product[]>({
@@ -189,8 +185,6 @@ export default function MenuScreen() {
         search: debouncedSearch || undefined,
         dietaryTags: filters.dietaryTags,
         excludeAllergens: filters.excludeAllergens,
-        maxCalories: filters.maxCalories ?? undefined,
-        minProtein: filters.minProtein ?? undefined,
       }),
   });
 
@@ -444,22 +438,6 @@ export default function MenuScreen() {
       });
     });
 
-    if (filters.maxCalories !== null) {
-      chips.push({
-        id: 'kcal',
-        label: `Hasta ${filters.maxCalories} kcal`,
-        remove: () => setFilters((current) => ({ ...current, maxCalories: null })),
-      });
-    }
-
-    if (filters.minProtein !== null) {
-      chips.push({
-        id: 'protein',
-        label: `${filters.minProtein} g de proteína`,
-        remove: () => setFilters((current) => ({ ...current, minProtein: null })),
-      });
-    }
-
     return chips;
   }, [allergenLabels, filters, preferencesApplied, tagLabels]);
 
@@ -503,13 +481,13 @@ export default function MenuScreen() {
       <View style={styles.bento}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Arma tu bowl"
+          accessibilityLabel="Personaliza tu torta"
           onPress={chooseBuilder}
           style={({ pressed }) => [styles.bentoBuilder, shadow.sm, pressed && styles.bentoPressed]}
         >
           <View style={styles.bentoCopy}>
-            <Text style={styles.bentoBuilderTitle}>Arma tu bowl</Text>
-            <Text style={styles.bentoBuilderText}>Elige tus bases, proteínas y más</Text>
+            <Text style={styles.bentoBuilderTitle}>Personaliza tu torta</Text>
+            <Text style={styles.bentoBuilderText}>Elige sabores, relleno y decoración</Text>
             <View style={styles.bentoArrowLight}>
               <MaterialCommunityIcons name="arrow-right" size={19} color={colors.brand900} />
             </View>
@@ -523,11 +501,11 @@ export default function MenuScreen() {
 
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Ver recetas listas"
+          accessibilityLabel="Ver tortas clásicas"
           onPress={chooseReady}
           style={({ pressed }) => [styles.bentoReady, pressed && styles.bentoPressed]}
         >
-          <Text style={styles.bentoReadyTitle}>Recetas listas</Text>
+          <Text style={styles.bentoReadyTitle}>Tortas clásicas</Text>
           <Text style={styles.bentoReadyText}>Favoritos de la casa</Text>
           <AppImage
             uri={readyProduct?.imageUrl}
@@ -854,7 +832,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: radius.pill,
-    backgroundColor: colors.accent500,
+    backgroundColor: colors.accent600,
     paddingHorizontal: 4,
   },
   cartBadgeText: {
@@ -911,7 +889,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
     paddingVertical: 1,
     borderRadius: radius.pill,
-    backgroundColor: colors.accent500,
+    backgroundColor: colors.accent600,
   },
   filterBadgeText: {
     ...type.caption,

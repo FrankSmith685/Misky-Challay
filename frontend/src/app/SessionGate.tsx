@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from './hooks';
 import { fetchCurrentUser, logout } from '@features/auth/authSlice';
@@ -22,9 +22,11 @@ export const SessionGate = ({ children }: { children: ReactNode }) => {
   const dispatch = useAppDispatch();
   const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated);
   const [ready, setReady] = useState(false);
+  const attempt = useRef(0);
 
   useEffect(() => {
-    const hasToken = Boolean(tokenStorage.getAccess() ?? tokenStorage.getRefresh());
+    const version = ++attempt.current;
+    const hasToken = Boolean(tokenStorage.getAccess() || tokenStorage.getRefresh());
 
     if (!hasToken) {
       // Estado persistido sin token real = inconsistente. Reconciliamos.
@@ -34,16 +36,48 @@ export const SessionGate = ({ children }: { children: ReactNode }) => {
     }
 
     // Hay token: preguntamos al backend quienes somos antes de pintar la app.
-    void dispatch(fetchCurrentUser()).finally(() => setReady(true));
+    void dispatch(fetchCurrentUser()).finally(() => {
+      if (attempt.current === version) setReady(true);
+    });
     // Solo debe correr una vez, al montar.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch]);
 
   // Cierre de sesion forzado desde el interceptor de axios (401 y el refresh fallo).
   useEffect(() => {
-    const onForcedLogout = () => dispatch(logout());
+    let storageTimer: number | undefined;
+    const onForcedLogout = () => {
+      attempt.current++;
+      dispatch(logout());
+      setReady(true);
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.storageArea !== localStorage
+        || (event.key !== null && !tokenStorage.isKey(event.key))) return;
+      tokenStorage.invalidateRequests();
+      attempt.current++;
+      window.clearTimeout(storageTimer);
+      if (!tokenStorage.getAccess() && !tokenStorage.getRefresh()) {
+        onForcedLogout();
+        return;
+      }
+      // Otra pestaña pudo cambiar de cliente. Se oculta la experiencia anterior
+      // hasta confirmar la identidad y el reducer descarta sus datos si cambió.
+      setReady(false);
+      storageTimer = window.setTimeout(() => {
+        const version = ++attempt.current;
+        void dispatch(fetchCurrentUser()).finally(() => {
+          if (attempt.current === version) setReady(true);
+        });
+      }, 0);
+    };
     window.addEventListener('auth:logout', onForcedLogout);
-    return () => window.removeEventListener('auth:logout', onForcedLogout);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.clearTimeout(storageTimer);
+      window.removeEventListener('auth:logout', onForcedLogout);
+      window.removeEventListener('storage', onStorage);
+    };
   }, [dispatch]);
 
   if (!ready) {

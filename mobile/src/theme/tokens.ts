@@ -1,24 +1,26 @@
 import type { TextStyle, ViewStyle } from 'react-native';
 
 export const colors = {
-  /** Verde bosque de marca. Los niveles nuevos permiten jerarquía sin usar negro puro. */
-  brand950: '#082b1e',
-  brand900: '#123d2b',
-  brand800: '#194e37',
-  brand700: '#1c6243',
-  brand600: '#237c52',
-  brand100: '#dcf2e4',
-  brand50: '#f0f9f4',
+  /** Azul del logotipo, de claro a oscuro para botones y superficies. */
+  brand950: '#031d38',
+  brand900: '#05284c',
+  brand800: '#073a6b',
+  brand700: '#094d8a',
+  brand600: '#0b5fa8',
+  brand100: '#deeffc',
+  brand50: '#f1f8ff',
+  /** Ámbar accesible para insignias y botones con texto blanco. */
+  accent600: '#a75c00',
   accent500: '#e8940f',
-  accent400: '#f4ad2f',
-  accent100: '#fff0cf',
-  accent50: '#fff8e9',
-  ink: '#14201a',
-  inkSoft: '#33443b',
-  inkMuted: '#5d6b64',
+  accent400: '#f5a524',
+  accent100: '#fdedcc',
+  accent50: '#fff8ea',
+  ink: '#15283d',
+  inkSoft: '#2b415a',
+  inkMuted: '#536578',
   surface: '#ffffff',
-  surfaceMuted: '#f6f8f7',
-  line: '#e3e8e5',
+  surfaceMuted: '#f7fbff',
+  line: '#dce6f0',
   success: '#15875b',
   warning: '#b16c00',
   danger: '#c43d3d',
@@ -35,19 +37,18 @@ export const colors = {
    */
   surfaceRaised: '#ffffff',
   /** Borde tenue para tarjetas elevadas: mas suave que `line` porque la sombra ya separa. */
-  lineSoft: '#eef2f0',
+  lineSoft: '#e8f1f9',
 
   /**
-   * Paleta de las pantallas de fondo oscuro (splash, cabeceras de marca, hojas
-   * de exito). Hasta ahora se pintaba `inkMuted` sobre `brand900`, que da 1.9:1
-   * de contraste: ilegible. `onDark` da 11.3:1 y `onDarkMuted` 7.7:1.
+   * Paleta de cabeceras y pantallas oscuras. Las tintas claras mantienen
+   * contraste suficiente sobre el azul profundo.
    */
-  surfaceDark: '#123d2b',
-  surfaceDarkRaised: '#1b4b35',
-  onDark: '#f2f8f4',
-  onDarkMuted: '#b9d4c5',
+  surfaceDark: '#05284c',
+  surfaceDarkRaised: '#073a6b',
+  onDark: '#f7fbff',
+  onDarkMuted: '#d7eaff',
   /** Velo de los modales y hojas inferiores. */
-  backdrop: 'rgba(11, 30, 22, 0.55)',
+  backdrop: 'rgba(5, 26, 50, 0.58)',
 } as const;
 
 export const spacing = {

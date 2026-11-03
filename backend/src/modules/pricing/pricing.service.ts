@@ -1,5 +1,9 @@
+import { experiencePricing, type ExperienceSelection } from '@modules/experiences/experience.pricing';
+import type { PackageSnapshot } from '@modules/experiences/experience.logic';
 import { Op } from 'sequelize';
-import { Coupon, CouponRedemption, CoverageZone } from '@database/models';
+import { Branch, CakeProductProfile, Coupon, CouponRedemption, CoverageZone, Product, ProductVariant } from '@database/models';
+import { carTransport } from '@modules/delivery/carTransport.service';
+import { PRODUCT_STATUS } from '@database/models/product.model';
 import { DISCOUNT_TYPE } from '@database/models/coupon.model';
 import { REDEMPTION_STATUS } from '@database/models/couponRedemption.model';
 import { CURRENCY, DELIVERY_TYPE, type DeliveryType } from '@config/constants';
@@ -14,19 +18,29 @@ import {
 import { plansService } from '@modules/plans/plans.service';
 import { walletService } from '@modules/plans/wallet.service';
 import { BENEFIT_TYPE } from '@database/models/planBenefit.model';
+import { cakeDesignService } from '@modules/cakes/cakeDesign.service';
 
 export interface QuoteItemInput {
+  themeId?: number;
+  themeVersion?: number;
   productId: number;
   variantId: number;
+  requestedServings?: number;
   quantity: number;
   selections?: Array<{ optionId: number; quantity: number }>;
+  designDetails?: { inscription: string; occasion: string; finish: string };
   specialInstructions?: string;
+  referenceDataUrl?: string;
+  aiProposalDataUrl?: string;
+  designQuoteId?: number;
 }
 
 export interface OrderQuoteInput {
+  experience?: ExperienceSelection;
   items: QuoteItemInput[];
   branchId: number;
   coverageZoneId?: number | null;
+  extraDeliveryFee?: number;
   deliveryType: DeliveryType;
   couponCode?: string | null;
   userId?: number | null;
@@ -44,6 +58,10 @@ export interface AppliedDiscount {
 }
 
 export interface OrderQuote {
+  deliveryVehicleType?: 'CAR' | null;
+  deliveryHandlingInstructions?: string | null;
+  experience?: PackageSnapshot | null;
+  productSubtotal?: number;
   items: QuoteResult[];
   subtotal: number;
   deliveryFee: number;
@@ -139,22 +157,59 @@ export const pricingService = {
     // 1) Recotizar cada linea (valida limites, incompatibilidades y disponibilidad)
     const items: QuoteResult[] = [];
     for (const item of input.items) {
-      items.push(
-        await customizationService.quote({
+      if (item.designQuoteId && item.themeId) throw ApiError.unprocessable('Una cotización aprobada ya incluye su diseño');
+      if (item.designQuoteId && item.requestedServings != null) throw ApiError.unprocessable('La cotizacion de diseno ya fija las porciones');
+      const cakeProfile = await CakeProductProfile.findByPk(item.productId);
+      if (!cakeProfile?.isActive) throw ApiError.unprocessable('Este producto ya no está disponible en Misky Challay');
+      if (item.designQuoteId) {
+        const { quote, request } = await cakeDesignService.purchasableQuote(item.designQuoteId, {
+          userId: input.userId, branchId: input.branchId, productId: item.productId,
+          variantId: item.variantId, quantity: item.quantity, selections: item.selections ?? [],
+        });
+        if (request.requestKind === 'FREEFORM') {
+          const [product, variant] = await Promise.all([Product.findByPk(item.productId), ProductVariant.findByPk(item.variantId)]);
+          if (!product || product.status !== PRODUCT_STATUS.ACTIVE || !variant?.isActive || variant.productId !== product.id) throw ApiError.unprocessable('La torta a medida ya no esta disponible');
+          const servings = request.briefJson.servings;
+          const price = Number(quote.price);
+          items.push({ productId: item.productId, variantId: item.variantId, variantName: `A medida · ${servings} porciones`, quantity: 1,
+            theme: request.themeSnapshotJson,
+            basePrice: price, extrasTotal: 0, unitPrice: price, lineTotal: price, selections: [],
+            description: `Torta a medida · ${servings} porciones · Cotización v${quote.version}\n${quote.terms}` });
+          continue;
+        }
+      }
+      const calculated = await customizationService.quote({
           productId: item.productId,
           variantId: item.variantId,
+          requestedServings: item.requestedServings,
+          themeId: item.themeId,
+          themeVersion: item.themeVersion,
           quantity: item.quantity,
           branchId: input.branchId,
           selections: item.selections ?? [],
-        }),
-      );
+        });
+      if (item.designQuoteId) {
+        const { quote } = await cakeDesignService.purchasableQuote(item.designQuoteId, {
+          userId: input.userId, branchId: input.branchId, productId: item.productId,
+          variantId: item.variantId, quantity: item.quantity, selections: item.selections ?? [],
+        });
+        const price = Number(quote.price);
+        items.push({ ...calculated, basePrice: price, extrasTotal: 0, unitPrice: price, lineTotal: price,
+          description: `${calculated.description} · Diseño aprobado, cotización v${quote.version}\n${quote.terms}`,
+          selections: calculated.selections.map((entry) => ({ ...entry, priceDelta: 0, lineExtra: 0, chargedQuantity: 0 })),
+        });
+      } else items.push(calculated);
     }
 
-    const subtotal = round2(items.reduce((total, line) => total + line.lineTotal, 0));
+    const productSubtotal = round2(items.reduce((total, line) => total + line.lineTotal, 0));
 
-    // 2) Delivery y pedido minimo segun la zona (RN-001)
+    // 2) Delivery según ubicación. El mínimo es opcional (0 = desactivado)
+    // y solo se aplica a productos en delivery; el recojo siempre queda sin mínimo.
     let deliveryFee = 0;
     let minimumOrder = 0;
+    const deliveryVehicleType = await carTransport.requiresCar(input.items.map((item) => item.productId), input.deliveryType) ? 'CAR' as const : null;
+    const deliveryHandlingInstructions = deliveryVehicleType
+      ? (await Branch.findByPk(input.branchId))?.carDeliveryInstructions ?? null : null;
 
     if (input.deliveryType === DELIVERY_TYPE.DELIVERY) {
       if (!input.coverageZoneId) {
@@ -165,7 +220,7 @@ export const pricingService = {
       });
       if (!zone) throw ApiError.unprocessable('La zona de entrega ya no esta activa');
 
-      deliveryFee = Number(zone.deliveryFee);
+      deliveryFee = round2(Number(zone.deliveryFee) + Math.max(0, input.extraDeliveryFee ?? 0));
       minimumOrder = Number(zone.minimumOrder);
     }
 
@@ -189,11 +244,11 @@ export const pricingService = {
         }
 
         if (benefit.type === BENEFIT_TYPE.DISCOUNT_PERCENT && benefit.value > 0) {
-          let amount = (subtotal * benefit.value) / 100;
+          let amount = (productSubtotal * benefit.value) / 100;
           if (benefit.maxAmountPerOrder !== null) {
             amount = Math.min(amount, benefit.maxAmountPerOrder);
           }
-          amount = round2(Math.min(amount, subtotal));
+          amount = round2(Math.min(amount, productSubtotal));
 
           if (amount > 0) {
             discountTotal += amount;
@@ -217,11 +272,11 @@ export const pricingService = {
     if (selectedCouponCode) {
       const { coupon, amount, freeDelivery } = await resolveCoupon(
         selectedCouponCode,
-        subtotal,
+        productSubtotal,
         input.userId,
       );
 
-      const applied = freeDelivery ? deliveryFee : Math.min(amount, subtotal - discountTotal);
+      const applied = freeDelivery ? deliveryFee : Math.min(amount, productSubtotal - discountTotal);
       if (freeDelivery) deliveryFee = 0;
       else discountTotal += applied;
 
@@ -234,6 +289,8 @@ export const pricingService = {
       });
     }
 
+    const experience = await experiencePricing.quote(input.experience);
+    const subtotal = round2(productSubtotal + (experience?.price ?? 0));
     const payable = round2(Math.max(0, subtotal + deliveryFee - discountTotal));
 
     // 5) Saldo del plan (RN-013). Pago mixto: si el saldo no alcanza, se usa todo
@@ -251,8 +308,12 @@ export const pricingService = {
 
     return {
       items,
+      productSubtotal,
       subtotal,
+      experience,
       deliveryFee: round2(deliveryFee),
+      deliveryVehicleType,
+      deliveryHandlingInstructions,
       discountTotal: round2(discountTotal),
       walletAmount,
       walletBalance: round2(walletBalance),
@@ -263,7 +324,7 @@ export const pricingService = {
       currency: CURRENCY,
       discounts,
       minimumOrder,
-      meetsMinimum: subtotal >= minimumOrder,
+      meetsMinimum: productSubtotal >= minimumOrder,
     };
   },
 };

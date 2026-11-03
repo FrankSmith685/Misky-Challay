@@ -4,6 +4,7 @@ import { ENDPOINTS } from './endpoints';
 
 /** Sobre de paginacion del backend (shared/http/ApiResponse.ts). */
 export interface PaginationMeta {
+  counts?: Record<string, number>;
   page: number;
   pageSize: number;
   total: number;
@@ -194,8 +195,10 @@ export async function apiCall<T>(
   path: string,
   options: ApiRequestOptions = {},
 ): Promise<ApiSuccess<T>> {
+  const generation = sessionGeneration;
   const session = options.auth ? await secureSession.read() : null;
   let response = await perform(path, options, session?.accessToken);
+  if (options.auth && generation !== sessionGeneration) throw new ApiRequestError('La sesión cambió.', undefined, 'SESSION_CHANGED');
 
   if (response.status === 401 && options.auth && session?.refreshToken) {
     refreshing = refreshing ?? refreshTokens();
@@ -210,7 +213,9 @@ export async function apiCall<T>(
     if (renewed) response = await perform(path, options, renewed.accessToken);
   }
 
-  return parseResponse<T>(response);
+  const result = await parseResponse<T>(response);
+  if (options.auth && generation !== sessionGeneration) throw new ApiRequestError('La sesión cambió.', undefined, 'SESSION_CHANGED');
+  return result;
 }
 
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {

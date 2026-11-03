@@ -10,6 +10,7 @@ import { env, isDevelopment } from '@config/env';
 import { apiLimiter } from '@middlewares/rateLimit.middleware';
 import { errorHandler, notFoundHandler } from '@middlewares/error.middleware';
 import apiRoutes from './routes';
+import { storefrontSeoRouter } from '@modules/settings/storefront.seo';
 
 export const createApp = (): Application => {
   const app = express();
@@ -31,6 +32,7 @@ export const createApp = (): Application => {
 
   // El webhook de pagos necesita el body crudo para validar la firma (RN-015).
   app.use(`${env.API_PREFIX}/payments/webhooks`, express.raw({ type: '*/*' }));
+  app.use(`${env.API_PREFIX}/communications/webhook`, express.raw({ type: 'application/json', limit: '2mb' }));
   // Las imagenes del panel llegan ya recortadas y optimizadas en WebP desde el navegador.
   app.use(express.json({ limit: '8mb' }));
   app.use(express.urlencoded({ extended: true }));
@@ -75,10 +77,12 @@ export const createApp = (): Application => {
     return apiLimiter(req, res, next);
   }, apiRoutes);
 
+  app.use(storefrontSeoRouter);
+
   app.get('/', (_req, res) => {
     res.json({
       success: true,
-      message: 'Verde Bowl API',
+      message: 'Misky Challay API',
       docs: `${env.API_PREFIX}/health`,
     });
   });

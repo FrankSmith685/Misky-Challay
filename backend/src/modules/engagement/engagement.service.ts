@@ -1,3 +1,5 @@
+import { CustomerWorkspace } from '@database/models/customerJourney.model';
+import { sequelize } from '@database/connection';
 import { Op } from 'sequelize';
 import {
   NewsletterSubscription,
@@ -40,13 +42,23 @@ export const engagementService = {
   async addFavorite(userId: number, productId: number) {
     const product = await Product.findOne({ where: { id: productId, status: PRODUCT_STATUS.ACTIVE } });
     if (!product) throw ApiError.notFound('El producto no existe o ya no está publicado');
-    const [favorite, created] = await ProductFavorite.findOrCreate({ where: { userId, productId }, defaults: { userId, productId } });
-    return { productId: favorite.productId, created };
+    return sequelize.transaction(async transaction => {
+      await User.findByPk(userId,{transaction,lock:transaction.LOCK.UPDATE});
+      const [favorite,created] = await ProductFavorite.findOrCreate({where:{userId,productId},defaults:{userId,productId},transaction});
+      const workspace = await CustomerWorkspace.findByPk(userId,{transaction,lock:transaction.LOCK.UPDATE});
+      if (created && workspace) await workspace.update({revision:workspace.revision+1},{transaction});
+      return {productId:favorite.productId,created};
+    });
   },
 
   async removeFavorite(userId: number, productId: number) {
-    const removed = await ProductFavorite.destroy({ where: { userId, productId } });
-    return { productId, removed: removed > 0 };
+    return sequelize.transaction(async transaction => {
+      await User.findByPk(userId,{transaction,lock:transaction.LOCK.UPDATE});
+      const workspace = await CustomerWorkspace.findByPk(userId,{transaction,lock:transaction.LOCK.UPDATE});
+      const removed = await ProductFavorite.destroy({where:{userId,productId},transaction});
+      if (removed && workspace) await workspace.update({revision:workspace.revision+1},{transaction});
+      return {productId,removed:removed>0};
+    });
   },
 
   async listProductReviews(productId: number, page: number, pageSize: number) {
@@ -59,10 +71,10 @@ export const engagementService = {
     const allRatings = await ProductReview.findAll({ where, attributes: ['rating'] });
     const average = allRatings.length ? allRatings.reduce((sum, row) => sum + row.rating, 0) / allRatings.length : 0;
     const users = await User.findAll({ where: { id: { [Op.in]: [...new Set(rows.map((row) => row.userId))] } }, attributes: ['id', 'firstName'] });
-    const names = new Map(users.map((user) => [user.id, user.firstName || 'Cliente Verde Bowl']));
+    const names = new Map(users.map((user) => [user.id, user.firstName || 'Cliente Misky Challay']));
     return {
       summary: { average: Number(average.toFixed(1)), count: allRatings.length },
-      reviews: rows.map((review) => ({ id: review.id, rating: review.rating, comment: review.comment, verifiedPurchase: review.verifiedPurchase, authorName: names.get(review.userId) ?? 'Cliente Verde Bowl', createdAt: review.createdAt })),
+      reviews: rows.map((review) => ({ id: review.id, rating: review.rating, comment: review.comment, verifiedPurchase: review.verifiedPurchase, authorName: names.get(review.userId) ?? 'Cliente Misky Challay', createdAt: review.createdAt })),
       meta: buildMeta(pagination, count),
     };
   },
@@ -121,7 +133,7 @@ export const engagementService = {
 
   async recommendations(userId: number | null, branchId: number | undefined, limit: number) {
     const preferences = userId ? await UserPreference.findOne({ where: { userId } }) : null;
-    const products = await catalogService.listProducts({ branchId, excludeAllergens: preferences?.allergens ?? [] });
+    const products = await catalogService.listProducts({ branchId, audience: 'RETAIL', excludeAllergens: preferences?.allergens ?? [] });
     const available = products.filter((product) => product.isAvailable);
     const favorites = userId ? await ProductFavorite.findAll({ where: { userId }, attributes: ['productId'] }) : [];
     const favoriteIds = new Set(favorites.map((favorite) => favorite.productId));
@@ -133,7 +145,7 @@ export const engagementService = {
     return available.map((product) => {
       const favorite = favoriteIds.has(product.id); const repeats = ordered.get(product.id) ?? 0; const preferenceMatches = product.dietaryTags.filter((tag) => preferredTags.has(tag)).length;
       const score = (favorite ? 80 : 0) + repeats * 22 + preferenceMatches * 10 + (product.isFeatured ? 8 : 0);
-      const reason = favorite ? 'Uno de tus favoritos' : repeats ? 'Ya lo disfrutaste antes' : preferenceMatches ? 'Va con tus preferencias' : 'Recomendado por Verde Bowl';
+      const reason = favorite ? 'Uno de tus favoritos' : repeats ? 'Ya lo disfrutaste antes' : preferenceMatches ? 'Va con tus preferencias' : 'Recomendado por Misky Challay';
       return { product, reason, score };
     }).sort((a, b) => b.score - a.score || a.product.name.localeCompare(b.product.name)).slice(0, limit).map(({ product, reason }) => ({ product, reason }));
   },

@@ -104,7 +104,7 @@ const DeleteAccountPage = () => {
           variant="outlined"
           sx={{ p: { xs: 3, md: 5 }, textAlign: 'center', borderRadius: 'var(--radius-card)' }}
         >
-          <CheckCircle2 size={44} color="#602060" />
+          <CheckCircle2 size={44} className="text-brand-600" />
           <Typography variant="h5" sx={{ mt: 2, fontWeight: 800 }}>
             Tu cuenta fue eliminada
           </Typography>
@@ -139,7 +139,7 @@ const DeleteAccountPage = () => {
   return (
     <Container maxWidth="md" sx={{ py: { xs: 5, md: 8 } }}>
       <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', mb: 1 }}>
-        <Trash2 size={26} color="#602060" />
+        <Trash2 size={26} className="text-brand-600" />
         <Typography variant="h4" sx={{ fontWeight: 800 }}>
           Eliminar mi cuenta
         </Typography>
@@ -175,7 +175,7 @@ const DeleteAccountPage = () => {
             {KEPT_ITEMS.map((item) => (
               <ListItem key={item} disableGutters sx={{ alignItems: 'flex-start' }}>
                 <ListItemIcon sx={{ minWidth: 32, mt: 0.5 }}>
-                  <FileText size={16} color="#602060" />
+                  <FileText size={16} className="text-brand-600" />
                 </ListItemIcon>
                 <ListItemText slotProps={{ primary: { color: 'text.secondary' } }} primary={item} />
               </ListItem>
@@ -197,6 +197,7 @@ const DeleteAccountPage = () => {
         La baja es inmediata e irreversible. Se cierran todas tus sesiones, dejas de recibir avisos
         de pedidos y <strong>pierdes el saldo de tu billetera y los beneficios de tu plan</strong>.
         Si te queda saldo, usalo antes de continuar.
+        Cancela tus suscripciones y programa las cajas ya pagadas antes de cerrar la cuenta.
       </Alert>
 
       {isAuthenticated ? (

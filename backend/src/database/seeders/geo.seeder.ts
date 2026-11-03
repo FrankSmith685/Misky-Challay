@@ -76,6 +76,7 @@ const DISTRICTS: Array<{ ubigeoCode: string; name: string; slug: string; covered
 /** Franjas para pedidos programados: 2 por dia durante los proximos 7 dias. */
 const seedSlots = async (branchId: number, zoneId: number): Promise<void> => {
   const now = new Date();
+  const branch = await Branch.findByPk(branchId);
 
   for (let day = 1; day <= 7; day += 1) {
     for (const [startHour, endHour] of [
@@ -100,6 +101,7 @@ const seedSlots = async (branchId: number, zoneId: number): Promise<void> => {
           endsAt,
           orderCutoffAt,
           capacity: 20,
+          carCapacity: Math.min(20, branch?.defaultCarCapacity ?? 0),
           reservedCount: 0,
           confirmedCount: 0,
           isActive: true,
@@ -160,7 +162,9 @@ export const seedGeography = async (): Promise<void> => {
       name: 'Lima Centro-Sur',
       polygon: ZONE_POLYGON,
       deliveryFee: 6.9,
-      minimumOrder: 25,
+      extraCoverageKm: 0,
+      extraFeePerKm: 1.5,
+      minimumOrder: 0,
       estimatedMinutes: 35,
       priority: 1,
       isActive: true,
@@ -181,13 +185,17 @@ export const seedGeography = async (): Promise<void> => {
   });
 
   // 4) Sucursal (unica cocina del lanzamiento)
+  const legacyBranch = await Branch.findOne({ where: { slug: 'verde-bowl-miraflores' } });
+  if (legacyBranch && legacyBranch.name === 'Verde Bowl Miraflores') {
+    await legacyBranch.update({ name: 'Misky Challay Miraflores', slug: 'dulceflow-miraflores' });
+  }
   const [branch] = await Branch.findOrCreate({
-    where: { slug: 'verde-bowl-miraflores' },
+    where: { slug: 'dulceflow-miraflores' },
     defaults: {
       cityId: lima.id,
       districtId: miraflores?.id ?? null,
-      name: 'Verde Bowl Miraflores',
-      slug: 'verde-bowl-miraflores',
+      name: 'Misky Challay Miraflores',
+      slug: 'dulceflow-miraflores',
       addressLine: 'Av. Jose Larco 345, Miraflores',
       latitude: -12.1219,
       longitude: -77.0297,

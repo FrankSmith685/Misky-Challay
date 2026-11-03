@@ -59,7 +59,7 @@ export default function ResetPasswordScreen() {
       title={complete ? 'Contraseña actualizada' : 'Crea una contraseña nueva'}
       description={
         complete
-          ? 'Ya puedes volver a iniciar sesión en Verde Bowl.'
+          ? 'Ya puedes volver a iniciar sesión en Misky Challay.'
           : 'El cambio se aplicará tanto en la app como en la web porque ambas usan la misma cuenta.'
       }
     >

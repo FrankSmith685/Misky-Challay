@@ -10,6 +10,8 @@
   "scripts": {
     "dev": "concurrently -k -n BACKEND,FRONTEND -c green.bold,cyan.bold \"npm:dev:backend\" \"npm:dev:frontend:when-ready\"",
     "dev:backend": "npm run dev --workspace backend",
+    "dev:3d": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-photo3d-local.ps1",
+    "dev:local3d": "concurrently -k -n MOTOR3D,WEB \"npm:dev:3d\" \"npm:dev\"",
     "dev:frontend": "npm run dev --workspace frontend",
     "dev:frontend:when-ready": "node scripts/wait-for-backend.mjs && npm run dev:frontend",
     "dev:mobile": "npm run start --prefix mobile",
@@ -21,6 +23,7 @@
     "test:e2e:ui": "playwright test --ui",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,css,md}\"",
     "db:seed": "npm run db:seed --workspace backend",
+    "check:admin-nav": "node scripts/check-admin-nav.mjs",
     "clean": "rimraf backend/dist frontend/dist node_modules/.cache"
   },
   "devDependencies": {

@@ -23,6 +23,7 @@ import type { TokenPayload } from '@shared/utils/jwt';
 const PROTECTED_ROLES: string[] = [ROLES.CUSTOMER, ROLES.ADMIN];
 const BRANCH_SCOPED_ROLES: string[] = [
   ROLES.KITCHEN,
+  ROLES.PURCHASING,
   ROLES.DISPATCHER,
   ROLES.DRIVER,
   ROLES.BRANCH_ADMIN,

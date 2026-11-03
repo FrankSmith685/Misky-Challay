@@ -193,12 +193,15 @@ export default function BuilderScreen() {
   const isEditing = editingSource !== null;
 
   const [variantId, setVariantId] = useState<number | null>(null);
+  const [customSelected, setCustomSelected] = useState(Boolean(editingSource?.requestedServings));
+  const [customServings, setCustomServings] = useState(editingSource?.requestedServings ? String(editingSource.requestedServings) : '');
   const [selections, setSelections] = useState<SelectionMap>({});
   /** Lo que ya se puede cotizar: el estado en vivo, pero calmado 260 ms. */
   const [settled, setSettled] = useState<Settled>({ variantId: null, map: {} });
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
   const [recipeName, setRecipeName] = useState('');
+  const [cakeMessage, setCakeMessage] = useState(editingSource?.specialInstructions?.replace(/^Mensaje en la torta: /, '') ?? '');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
 
@@ -279,6 +282,16 @@ export default function BuilderScreen() {
   );
 
   const data = config.data;
+  const visibleGroups = useMemo(() => (data?.groups ?? []).filter((group) => group.variantId === null || group.variantId === variantId), [data, variantId]);
+
+  useEffect(() => {
+    if (!data || variantId === null) return;
+    const valid = new Set(visibleGroups.flatMap((group) => group.options.map((option) => option.id)));
+    setSelections((current) => {
+      const next = Object.fromEntries(Object.entries(current).filter(([id]) => valid.has(Number(id))));
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [data, variantId, visibleGroups]);
 
   /* ------------------- arranque y recetas entrantes ------------------ */
 
@@ -363,31 +376,35 @@ export default function BuilderScreen() {
 
   const quoteRequest = useMemo<CustomizationInput | null>(() => {
     if (!data || settled.variantId === null) return null;
-    if (pendingSteps(data.groups, settled.map).length > 0) return null;
+    if (pendingSteps(data.groups.filter((group) => group.variantId === null || group.variantId === settled.variantId), settled.map).length > 0) return null;
+    const servings = Number(customServings);
+    const rule = data.customServings;
+    if (customSelected && (!rule?.enabled || settled.variantId !== rule.baseVariantId || !Number.isSafeInteger(servings) || servings < rule.minServings || servings > rule.maxServings)) return null;
     return {
       productId: data.product.id,
       variantId: settled.variantId,
+      ...(customSelected ? { requestedServings: servings } : {}),
       quantity: 1,
       branchId,
       selections: settledList,
     };
-  }, [branchId, data, settled.map, settled.variantId, settledList]);
+  }, [branchId, customSelected, customServings, data, settled.map, settled.variantId, settledList]);
 
   const quote = useResource<CustomizationQuote>({
     key: quoteRequest
-      ? `customizations:quote:${quoteRequest.productId}:${quoteRequest.variantId}:${branchId ?? 'sin-local'}:${JSON.stringify(settledList)}`
+      ? `customizations:quote:${quoteRequest.productId}:${quoteRequest.variantId}:${quoteRequest.requestedServings ?? 'fixed'}:${branchId ?? 'sin-local'}:${JSON.stringify(settledList)}`
       : null,
-    // RN-007: el precio y la nutrición válidos son SIEMPRE los del backend.
+    // RN-007: el precio válido es SIEMPRE el del backend.
     // Es una lectura por POST: ni se reintenta a ciegas ni se repite al enfocar.
     method: 'POST',
     refetchOnFocus: false,
     fetcher: () =>
       quoteRequest
         ? customizationApi.quote(quoteRequest)
-        : Promise.reject(new Error('Completa los pasos obligatorios de tu bowl.')),
+        : Promise.reject(new Error('Completa los pasos obligatorios de tu torta.')),
   });
 
-  const quoted = quote.data;
+  const quoted = quoteRequest && quote.data?.variantId === quoteRequest.variantId && (quote.data?.requestedServings ?? undefined) === quoteRequest.requestedServings ? quote.data : null;
   const quoteError = quote.error;
 
   useEffect(() => {
@@ -395,7 +412,7 @@ export default function BuilderScreen() {
     const key = `${quoted.variantId}:${JSON.stringify(quoted.selections.map((line) => line.optionId))}`;
     if (completedKeyRef.current === key) return;
     completedKeyRef.current = key;
-    track('COMPLETE', { metadata: { unitPrice: quoted.unitPrice, calorias: Math.round(quoted.nutrition.calories) } });
+    track('COMPLETE', { metadata: { unitPrice: quoted.unitPrice } });
   }, [quoted, track]);
 
   useEffect(() => {
@@ -520,6 +537,7 @@ export default function BuilderScreen() {
 
   const chooseVariant = useCallback((id: number) => {
     void Haptics.selectionAsync();
+    setCustomSelected(false);
     setVariantId(id);
   }, []);
 
@@ -534,12 +552,14 @@ export default function BuilderScreen() {
       productId: data.product.id,
       variantId: quoted.variantId,
       productName: data.product.name,
-      variantName: variant?.name ?? quoted.variantName ?? 'Bowl',
+      variantName: quoted.variantName ?? variant?.name ?? 'Torta',
+      ...(quoted.requestedServings ? { requestedServings: quoted.requestedServings } : {}),
       imageUrl: data.product.imageUrl,
       quantity: 1,
       unitPrice: quoted.unitPrice,
       lineTotal: quoted.lineTotal,
       description: quoted.description,
+      specialInstructions: cakeMessage.trim() ? `Mensaje en la torta: ${cakeMessage.trim()}` : undefined,
       selections: quoted.selections.map((line) => ({
         optionId: line.optionId,
         quantity: line.quantity,
@@ -558,14 +578,14 @@ export default function BuilderScreen() {
     // cliente necesita revisar cantidades y continuar, no quedarse en una receta
     // que ya terminó. Tanto al crear como al editar se vuelve al carrito.
     if (isEditing) {
-      toast.show({ tone: 'success', message: 'Actualizamos tu bowl en el carrito.' });
+      toast.show({ tone: 'success', message: 'Actualizamos tu torta en el carrito.' });
       router.replace('/(tabs)/cart' as Href);
       return;
     }
 
-    toast.show({ tone: 'success', message: 'Tu bowl está listo para revisar.' });
+    toast.show({ tone: 'success', message: 'Tu torta está lista para revisar.' });
     router.replace('/(tabs)/cart' as Href);
-  }, [addItem, data, isEditing, quoted, toast, track]);
+  }, [addItem, cakeMessage, data, isEditing, quoted, toast, track]);
 
   const openSave = useCallback(() => {
     if (!authenticated) {
@@ -619,7 +639,7 @@ export default function BuilderScreen() {
         toast.show({
           tone: 'success',
           message: mode === 'update' ? 'Actualizamos tu receta.' : 'Guardamos tu receta.',
-          action: { label: 'Ver mis bowls', onPress: () => router.push('/saved-bowls' as Href) },
+          action: { label: 'Ver mis recetas', onPress: () => router.push('/saved-bowls' as Href) },
         });
       } catch (caught) {
         setSaveError(caught instanceof Error ? caught.message : 'No pudimos guardar la receta.');
@@ -634,7 +654,7 @@ export default function BuilderScreen() {
 
   const rows = useMemo<BuilderRow[]>(() => {
     if (!data) return [];
-    return data.groups.flatMap((group, index) => [
+    return visibleGroups.flatMap((group, index) => [
       { kind: 'group' as const, key: `g-${group.id}`, group, step: index + 1 },
       ...group.options.map((option) => ({
         kind: 'option' as const,
@@ -643,13 +663,13 @@ export default function BuilderScreen() {
         option,
       })),
     ]);
-  }, [data]);
+  }, [data, visibleGroups]);
 
-  const missing = useMemo(() => (data ? pendingSteps(data.groups, selections) : []), [data, selections]);
+  const missing = useMemo(() => (data ? pendingSteps(visibleGroups, selections) : []), [data, selections, visibleGroups]);
 
   const completedGroups = useMemo(
-    () => (data?.groups ?? []).filter((group) => unitsInGroup(group, selections) >= group.minSelection).length,
-    [data, selections],
+    () => visibleGroups.filter((group) => unitsInGroup(group, selections) >= group.minSelection).length,
+    [visibleGroups, selections],
   );
 
   /** Alérgenos presentes en lo que el cliente lleva elegido ahora mismo. */
@@ -661,7 +681,7 @@ export default function BuilderScreen() {
 
   if (config.loading) {
     return (
-      <ScreenScaffold title="Arma tu bowl" padded>
+      <ScreenScaffold title="Personaliza tu torta" padded>
         <View style={styles.skeleton}>
           <Skeleton height={150} rounded="lg" />
           <Skeleton height={22} width="55%" style={styles.skeletonGap} />
@@ -673,7 +693,7 @@ export default function BuilderScreen() {
 
   if (!data) {
     return (
-      <ScreenScaffold title="Arma tu bowl" padded>
+      <ScreenScaffold title="Personaliza tu torta" padded>
         <EmptyState
           icon="cloud-alert-outline"
           title="No pudimos abrir el constructor"
@@ -687,7 +707,7 @@ export default function BuilderScreen() {
     );
   }
 
-  const totalSteps = data.groups.length;
+  const totalSteps = visibleGroups.length;
   const ready = missing.length === 0;
   // Entre el último toque y la respuesta del servidor hay un hueco (el respiro
   // de 260 ms más la petición): durante ese rato el precio se está calculando,
@@ -712,10 +732,10 @@ export default function BuilderScreen() {
           accessibilityLabel={data.product.name}
         />
         <View style={styles.heroCopy}>
-          <Text style={styles.heroEyebrow}>CONSTRUCTOR VERDE BOWL</Text>
+          <Text style={styles.heroEyebrow}>PERSONALIZA TU TORTA</Text>
           <Text style={styles.heroTitle}>{data.product.name}</Text>
           <Text style={styles.heroText}>
-            Elige paso a paso. El precio y la nutrición los calcula nuestra cocina, no la app.
+            Elige porciones y sabores paso a paso. El precio final lo calcula nuestra cocina.
           </Text>
         </View>
       </View>
@@ -737,7 +757,7 @@ export default function BuilderScreen() {
       <Text style={styles.step}>TAMAÑO</Text>
       <View style={styles.variants}>
         {data.variants.map((variant) => {
-          const active = variant.id === variantId;
+          const active = !customSelected && variant.id === variantId;
           return (
             <Pressable
               key={variant.id}
@@ -755,13 +775,22 @@ export default function BuilderScreen() {
               <Text style={[styles.variantPrice, active && styles.onBrandMuted]}>
                 {money(variant.basePrice)}
               </Text>
-              <Text style={[styles.variantMacro, active && styles.onBrandMuted]}>
-                {Math.round(variant.nutrition.calories)} kcal base
-              </Text>
+              <Text style={[styles.variantMacro, active && styles.onBrandMuted]}>Porciones para compartir</Text>
             </Pressable>
           );
         })}
       </View>
+
+      {data.customServings && <View style={styles.macroCard}>
+        <Text style={styles.macroLabel}>PERSONALIZADO · MÁS PORCIONES</Text>
+        <Text style={styles.errorText}>Elige una cantidad libre y conserva las opciones de esta torta.</Text>
+        {data.customServings.enabled ? <>
+          <Pressable onPress={() => { setCustomSelected(true); setVariantId(data.customServings!.baseVariantId); if (!customServings) setCustomServings(String(data.customServings!.minServings)); }} style={[styles.variant, customSelected && styles.variantActive]}><Text style={styles.variantName}>Elegir personalizado</Text></Pressable>
+          <TextInput keyboardType="number-pad" value={customServings} onChangeText={(value) => { setCustomServings(value); setCustomSelected(true); setVariantId(data.customServings!.baseVariantId); }} placeholder={`${data.customServings.minServings} a ${data.customServings.maxServings} porciones`} placeholderTextColor={colors.inkMuted} style={styles.field} />
+          {customSelected && (!quoteRequest || !quoted) && <Text style={styles.errorText}>El precio automático funciona entre {data.customServings.minServings} y {data.customServings.maxServings} porciones.</Text>}
+        </> : <Text style={styles.errorText}>Estas porciones se cotizan con el equipo.</Text>}
+        {(!data.customServings.enabled || (customSelected && Number(customServings) > data.customServings.maxServings)) && <PrimaryButton label="Solicitar cotización a medida" onPress={() => router.push({ pathname: '/cakes/design', params: { productId: String(data.product.id), variantId: String(data.customServings?.baseVariantId ?? data.variants.at(-1)?.id ?? ''), kind: 'FREEFORM' } } as never)} />}
+      </View>}
 
       {data.presets.length > 0 && (
         <View>
@@ -820,21 +849,15 @@ export default function BuilderScreen() {
         </View>
       ) : null}
 
-      {quoted && (
-        <View style={styles.macroCard}>
-          <Text style={styles.macroLabel}>NUTRICIÓN DE TU BOWL</Text>
-          <View style={styles.macroRow}>
-            <Macro value={`${Math.round(quoted.nutrition.calories)}`} unit="kcal" />
-            <Macro value={`${Math.round(quoted.nutrition.protein)} g`} unit="proteína" />
-            <Macro value={`${Math.round(quoted.nutrition.carbs)} g`} unit="carbos" />
-            <Macro value={`${Math.round(quoted.nutrition.fat)} g`} unit="grasas" />
-          </View>
-        </View>
-      )}
+      <View style={styles.macroCard}>
+        <Text style={styles.macroLabel}>MENSAJE EN LA TORTA · OPCIONAL</Text>
+        <TextInput value={cakeMessage} onChangeText={setCakeMessage} maxLength={80}
+          placeholder="Ej. Feliz cumpleaños, Ana" placeholderTextColor={colors.inkMuted} style={styles.field} />
+      </View>
 
       {bowlAllergens.length > 0 && (
         <View style={styles.allergenCard}>
-          <Text style={styles.allergenTitle}>Tu bowl contiene</Text>
+          <Text style={styles.allergenTitle}>Tu torta contiene</Text>
           <View style={styles.allergenChips}>
             {bowlAllergens.map((code) => (
               <Chip
@@ -870,11 +893,11 @@ export default function BuilderScreen() {
   return (
     <ScreenScaffold
       title={data.product.name}
-      subtitle="Arma tu bowl paso a paso"
+      subtitle="Personaliza tu torta paso a paso"
       headerRight={
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Mis bowls guardados"
+          accessibilityLabel="Mis recetas guardadas"
           hitSlop={layout.iconHitSlop}
           onPress={() => router.push('/saved-bowls' as Href)}
           style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}
@@ -928,6 +951,7 @@ export default function BuilderScreen() {
             <OptionRow
               group={item.group}
               option={item.option}
+              priceMultiplier={customSelected && data.customServings?.enabled && item.option.cakeScaleWithServings && data.variants.find((row) => row.id === data.customServings?.baseVariantId)?.servingSize ? Number(customServings) / Number(data.variants.find((row) => row.id === data.customServings?.baseVariantId)?.servingSize) : 1}
               quantity={quantity}
               groupRemaining={item.group.maxSelection - used}
               blocker={blocker}
@@ -945,7 +969,7 @@ export default function BuilderScreen() {
       <BottomSheet
         visible={summaryOpen}
         onClose={() => setSummaryOpen(false)}
-        title="Así queda tu bowl"
+        title="Así queda tu torta"
         subtitle={quoted?.description}
         footer={
           quoted ? (
@@ -1009,12 +1033,7 @@ export default function BuilderScreen() {
                 <Text style={styles.sheetGrandLabel}>Total</Text>
                 <Text style={styles.sheetGrandValue}>{money(quoted.lineTotal)}</Text>
               </View>
-              <Text style={styles.sheetMacros}>
-                {Math.round(quoted.nutrition.calories)} kcal ·{' '}
-                {Math.round(quoted.nutrition.protein)} g proteína ·{' '}
-                {Math.round(quoted.nutrition.carbs)} g carbos · {Math.round(quoted.nutrition.fat)} g
-                grasas
-              </Text>
+              {cakeMessage.trim() ? <Text style={styles.sheetMacros}>Mensaje: {cakeMessage.trim()}</Text> : null}
             </View>
 
           </View>
@@ -1025,7 +1044,7 @@ export default function BuilderScreen() {
         visible={saveOpen}
         onClose={() => !saving && setSaveOpen(false)}
         title="Guardar esta receta"
-        subtitle="La encontrarás en Mi cuenta › Bowls guardados, lista para repetir."
+        subtitle="La encontrarás en Mi cuenta › Recetas guardadas, lista para repetir."
         footer={
           <View style={styles.saveFooter}>
             {savedBowlId !== null ? (
@@ -1054,7 +1073,7 @@ export default function BuilderScreen() {
             }}
             maxLength={80}
             autoFocus
-            placeholder="Mi bowl de los lunes"
+            placeholder="Mi torta de cumpleaños"
             placeholderTextColor={colors.inkMuted}
             returnKeyType="done"
             style={styles.field}
@@ -1122,6 +1141,7 @@ function GroupHeader({ group, step, units }: { group: BuilderGroup; step: number
 interface OptionRowProps {
   group: BuilderGroup;
   option: BuilderOption;
+  priceMultiplier: number;
   quantity: number;
   /** Unidades que todavía caben en el paso. */
   groupRemaining: number;
@@ -1138,6 +1158,7 @@ interface OptionRowProps {
 function OptionRow({
   group,
   option,
+  priceMultiplier,
   quantity,
   groupRemaining,
   blocker,
@@ -1165,8 +1186,8 @@ function OptionRow({
   const priceText =
     option.priceDelta > 0
       ? option.chargeAlways
-        ? `Suplemento + ${money(option.priceDelta)}`
-        : `+ ${money(option.priceDelta)} al pasarte de lo incluido`
+        ? `Suplemento + ${money(option.priceDelta * priceMultiplier)}`
+        : `+ ${money(option.priceDelta * priceMultiplier)} al pasarte de lo incluido`
       : 'Sin costo extra';
 
   const blocked = soldOut || (blocker !== null && !selected) || (full && !single);

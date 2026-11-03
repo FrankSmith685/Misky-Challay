@@ -14,7 +14,7 @@ export type BadgeVariant =
 
 const VARIANTS: Record<BadgeVariant, string> = {
   brand: 'bg-brand-50 text-brand-700',
-  // 700 y no 500: el 500 (#e8940f) da 2,42:1 sobre blanco, la mitad del minimo
+  // 700 y no 500: el 500 (#ff8a0b) da 2,42:1 sobre blanco, la mitad del minimo
   // AA para 12px. El 700 sube a 6,58:1 sin salirse de la rampa de acento.
   accent: 'bg-accent-400/15 text-accent-700',
   neutral: 'bg-surface-muted text-ink-muted',

@@ -73,7 +73,7 @@ export const BuilderProgress = ({
       style={{ top: `var(${HEADER_VAR}, 64px)` }}
       className="sticky z-20 border-b border-line bg-white/95 shadow-e3 backdrop-blur"
     >
-      <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-8xl px-4 py-3 sm:px-6 lg:px-8">
         <div className="flex items-center gap-4">
           <div className="min-w-0 flex-1">
             <div className="mb-2 flex items-center justify-between gap-4 text-xs">

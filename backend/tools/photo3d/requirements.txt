@@ -1,0 +1,15 @@
+# PyTorch CUDA se instala por separado desde el índice oficial cu118.
+numpy==1.26.4
+Pillow>=11.0,<13
+omegaconf==2.3.0
+einops==0.7.0
+transformers==4.40.2
+huggingface-hub>=0.25,<1
+trimesh>=4.4,<5
+rembg==2.0.60
+onnxruntime>=1.20,<1.24
+scikit-image>=0.24,<0.26
+scipy>=1.13,<1.15
+imageio>=2.35,<3
+xatlas==0.0.11
+moderngl==5.12.0

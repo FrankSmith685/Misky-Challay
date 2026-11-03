@@ -1,0 +1,27 @@
+.subscription-plans-hero {
+  background: var(--color-brand-50);
+}
+
+.subscription-plan-card {
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--color-ink) 4%, transparent);
+  transition: box-shadow 200ms ease, border-color 200ms ease;
+}
+
+.subscription-plan-card--featured {
+  background-image: radial-gradient(ellipse at 100% 0%, color-mix(in srgb, var(--color-brand-600) 42%, transparent), transparent 55%);
+  box-shadow: 0 14px 36px color-mix(in srgb, var(--color-brand-900) 16%, transparent);
+}
+
+.subscription-plan-card > h3 { text-wrap: balance; }
+
+.subscription-plan-card[data-selected='true'] {
+  outline: 2px solid var(--color-accent-500);
+  outline-offset: 4px;
+}
+
+@media (hover: hover) {
+  .subscription-plan-card:hover { box-shadow: 0 14px 36px color-mix(in srgb, var(--color-ink) 9%, transparent); }
+}
+
+.subscription-plan-card summary::-webkit-details-marker,
+section[aria-labelledby='box-questions-title'] summary::-webkit-details-marker { display: none; }

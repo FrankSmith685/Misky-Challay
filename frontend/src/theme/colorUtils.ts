@@ -95,9 +95,15 @@ const luminance = (hex: string): number => {
   return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
 };
 
-/** Devuelve el color de texto legible (tinta oscura o blanco) sobre un fondo. */
-export const readableText = (hex: string, dark = '#201820', light = '#ffffff'): string =>
-  luminance(hex) > 0.42 ? dark : light;
+/** Elige la tinta con mayor contraste real: el dorado necesita texto oscuro. */
+export const readableText = (hex: string, dark = '#352721', light = '#ffffff'): string => {
+  const background = luminance(hex);
+  const darkLuminance = luminance(dark);
+  const lightLuminance = luminance(light);
+  const darkContrast = (Math.max(background, darkLuminance) + 0.05) / (Math.min(background, darkLuminance) + 0.05);
+  const lightContrast = (Math.max(background, lightLuminance) + 0.05) / (Math.min(background, lightLuminance) + 0.05);
+  return darkContrast >= lightContrast ? dark : light;
+};
 
 /** Valida si una cadena es un hex de 3 o 6 digitos con '#'. */
 export const isHex = (value: string): boolean => /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value.trim());

@@ -2,8 +2,13 @@ import { api } from '@services/api/client';
 import { ENDPOINTS } from '@services/api/endpoints';
 import type { ApiSuccess } from '@/types/api';
 import type { CheckoutInput, OrderQuote, OrderWithPayment, PlacedOrder } from '../types';
+import { announceOrderChanged } from '@features/orders/orderChanged';
 
 export const checkoutApi = {
+  async availability(input: CheckoutInput): Promise<{ branchId: number; slots: import('@features/geo/types').DeliverySlot[]; reasons: Array<{ code: string; message: string }> }> {
+    const { data } = await api.post('/checkout/availability', { ...input, serviceMode: 'ASAP', deliverySlotId: undefined, couponCode: undefined, useWallet: false });
+    return data.data;
+  },
   /** RN-007: el total que se muestra siempre viene del backend. */
   async quote(input: CheckoutInput): Promise<OrderQuote> {
     const { data } = await api.post<ApiSuccess<OrderQuote>>(ENDPOINTS.checkout.quote, input);
@@ -20,12 +25,29 @@ export const checkoutApi = {
       ...input,
       idempotencyKey,
     });
+    announceOrderChanged();
     return data.data;
   },
 
   async getOrder(orderNumber: string): Promise<OrderWithPayment> {
     const { data } = await api.get<ApiSuccess<OrderWithPayment>>(
       ENDPOINTS.orders.detail(orderNumber),
+    );
+    announceOrderChanged(data.data.order);
+    return data.data;
+  },
+
+  async reconcileOrder(orderNumber: string): Promise<OrderWithPayment> {
+    const { data } = await api.post<ApiSuccess<OrderWithPayment>>(
+      `/orders/${encodeURIComponent(orderNumber)}/payment/reconcile`,
+    );
+    announceOrderChanged(data.data.order);
+    return data.data;
+  },
+
+  async retryPayment(orderNumber: string): Promise<{ checkoutUrl: string | null }> {
+    const { data } = await api.post<ApiSuccess<{ checkoutUrl: string | null }>>(
+      `/orders/${encodeURIComponent(orderNumber)}/payment/retry`, { client: 'WEB' },
     );
     return data.data;
   },
@@ -37,6 +59,7 @@ export const checkoutApi = {
    */
   async cancelOrder(orderNumber: string, reason: string): Promise<void> {
     await api.post(ENDPOINTS.orders.cancel(orderNumber), { reason });
+    announceOrderChanged();
   },
 
   /** Solo desarrollo: la pagina del simulador "paga" o "rechaza". */

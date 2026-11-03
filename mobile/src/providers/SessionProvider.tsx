@@ -169,8 +169,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const signIn = useCallback(async (email: string, password: string) => {
     setIsBusy(true);
     try {
+      invalidateSession();
+      invalidateResource();
       const result = await authApi.login(email.trim().toLowerCase(), password);
       await secureSession.write(result);
+      invalidateSession();
+      invalidateResource();
       setExpiredAt(null);
       setUser(result.user);
       setStatus('authenticated');
@@ -182,8 +186,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const signUp = useCallback(async (input: RegisterInput) => {
     setIsBusy(true);
     try {
+      invalidateSession();
+      invalidateResource();
       const result = await authApi.register({ ...input, email: input.email.trim().toLowerCase() });
       await secureSession.write(result);
+      invalidateSession();
+      invalidateResource();
       setExpiredAt(null);
       setUser(result.user);
       setStatus('authenticated');

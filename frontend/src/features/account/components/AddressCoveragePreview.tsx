@@ -42,7 +42,7 @@ export const AddressCoveragePreview = ({
             </span>
             <div>
               <p className="text-[11px] font-extrabold uppercase tracking-[.12em] text-brand-700">
-                Cobertura confirmada
+                Entrega disponible
               </p>
               <h3 className="mt-0.5 text-base font-black text-ink">
                 Te atenderá {delivery.branch.name}
@@ -54,10 +54,10 @@ export const AddressCoveragePreview = ({
             </div>
           </div>
           <dl className="mt-4 grid grid-cols-3 gap-2">
-            <CoverageMetric label="Tarifa" value={formatCurrency(delivery.zone.deliveryFee)} />
+            <CoverageMetric label="Tarifa" value={formatCurrency(delivery.zone.deliveryFee + (result.extraDeliveryFee ?? 0))} />
             <CoverageMetric
               label="Pedido mínimo"
-              value={formatCurrency(delivery.zone.minimumOrder)}
+              value={delivery.zone.minimumOrder > 0 ? formatCurrency(delivery.zone.minimumOrder) : 'Sin mínimo'}
             />
             <CoverageMetric
               label="Tiempo estimado"

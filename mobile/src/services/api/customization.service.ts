@@ -4,6 +4,7 @@ import { ENDPOINTS } from './endpoints';
 
 export interface CustomizationInput {
   productId: number; variantId: number; quantity: number; branchId?: number | null;
+  requestedServings?: number;
   selections: Array<{ optionId: number; quantity: number }>;
 }
 

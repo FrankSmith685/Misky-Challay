@@ -31,8 +31,6 @@ export const catalogApi = {
         search: query.search,
         dietaryTags: csv(query.dietaryTags),
         excludeAllergens: csv(query.excludeAllergens),
-        maxCalories: query.maxCalories,
-        minProtein: query.minProtein,
         // El backend espera 'true' literal; `false` no filtra nada, así que se omite.
         featured: query.featured || undefined,
       },

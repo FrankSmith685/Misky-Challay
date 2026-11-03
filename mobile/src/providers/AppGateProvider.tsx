@@ -219,7 +219,7 @@ export function AppGateProvider({ children }: { children: ReactNode }) {
       <GateScreen
         icon="cellphone-arrow-down"
         title="Toca actualizar"
-        copy={`Esta versión de Verde Bowl ya no puede tomar pedidos. Actualiza a la ${mobile?.minSupportedVersion ?? ''} o superior y sigues justo donde lo dejaste.`}
+        copy={`Esta versión de Misky Challay ya no puede tomar pedidos. Actualiza a la ${mobile?.minSupportedVersion ?? ''} o superior y sigues justo donde lo dejaste.`}
         actionLabel="Actualizar ahora"
         onAction={openUpdate}
         secondaryLabel="Ya actualicé"

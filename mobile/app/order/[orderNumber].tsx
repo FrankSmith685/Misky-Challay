@@ -1,3 +1,5 @@
+import { OrderDirectPayment } from '../../src/components/OrderDirectPayment';
+import { OrderCustomerExtras } from '../../src/components/OrderCustomerExtras';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -73,7 +75,7 @@ const STATUS: Record<OrderStatus, StatusView> = {
   PENDING_PAYMENT: {
     label: 'Pago pendiente',
     icon: 'credit-card-clock-outline',
-    color: colors.accent500,
+    color: colors.accent600,
     copy: 'Tu pedido está reservado. Cocina lo recibe apenas se confirme el pago.',
   },
   CONFIRMED: {
@@ -85,7 +87,7 @@ const STATUS: Record<OrderStatus, StatusView> = {
   PREPARING: {
     label: 'En preparación',
     icon: 'chef-hat',
-    color: colors.accent500,
+    color: colors.accent600,
     copy: 'La cocina está preparando tus productos.',
   },
   READY: {
@@ -110,7 +112,7 @@ const STATUS: Record<OrderStatus, StatusView> = {
     label: 'Cancelado',
     icon: 'close-circle-outline',
     color: colors.danger,
-    copy: 'Este pedido se canceló. Si ya habías pagado, la devolución va a tu medio de pago.',
+    copy: 'Este pedido se canceló. Si ya habías pagado, consulta el estado de la devolución en el detalle o con el equipo.',
   },
   REFUNDED: {
     label: 'Reembolsado',
@@ -155,6 +157,8 @@ export default function OrderDetailScreen() {
   const toast = useToast();
   const { reorder, reorderingNumber } = useReorder();
   const [cancelling, setCancelling] = useState(false);
+  const [payingBalance, setPayingBalance] = useState(false);
+  const [stoppingWhatsapp, setStoppingWhatsapp] = useState(false);
 
   const [terminal, setTerminal] = useState(false);
   const resource = useResource<OrderWithPayment>({
@@ -209,7 +213,7 @@ export default function OrderDetailScreen() {
     if (!order) return;
     Alert.alert(
       'Cancelar este pedido',
-      'Solo se puede cancelar antes de que la cocina empiece. Si hubo cobro, la devolución seguirá tu medio de pago.',
+      'Solo se puede cancelar antes de que la cocina empiece. Si hubo cobro, la devolución puede requerir coordinación con el negocio.',
       [
         { text: 'Conservar pedido', style: 'cancel' },
         {
@@ -219,9 +223,9 @@ export default function OrderDetailScreen() {
             void (async () => {
               setCancelling(true);
               try {
-                await ordersApi.cancel(order.orderNumber, 'Cancelado desde la aplicación móvil');
+                const cancelled = await ordersApi.cancel(order.orderNumber, 'Cancelado desde la aplicación móvil');
                 void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-                toast.show({ tone: 'success', message: 'Cancelamos tu pedido.' });
+                toast.show({ tone: 'success', message: cancelled.refundPending ? 'Pedido cancelado. La devolución requiere coordinación con el negocio.' : cancelled.refunded ? 'Pedido cancelado. La devolución online fue procesada.' : 'Cancelamos tu pedido.' });
                 skipAnnounce.current = true;
                 // El historial y este detalle dejan de valer en el mismo instante.
                 invalidateResource('orders:', { prefix: true });
@@ -242,6 +246,20 @@ export default function OrderDetailScreen() {
     );
   }, [order, resource, toast]);
 
+  const payBalance = useCallback(async () => {
+    if (!order) return;
+    setPayingBalance(true);
+    try {
+      const result = await ordersApi.payBalance(order.orderNumber);
+      const url = openableUrl(result.checkoutUrl);
+      if (url) await Linking.openURL(url);
+    } catch (caught) {
+      toast.show({ tone: 'error', message: caught instanceof Error ? caught.message : 'No pudimos abrir el pago del saldo.' });
+    } finally {
+      setPayingBalance(false);
+    }
+  }, [order, toast]);
+
   const contactSupport = useCallback(async () => {
     const digits = (order?.branch?.phone ?? '').replace(/\D/g, '');
     if (!digits) {
@@ -249,7 +267,7 @@ export default function OrderDetailScreen() {
       return;
     }
     const text = encodeURIComponent(
-      `Hola Verde Bowl, necesito ayuda con el pedido ${orderNumber}.`,
+      `Hola Misky Challay, necesito ayuda con el pedido ${orderNumber}.`,
     );
     const url = `https://wa.me/${digits}?text=${text}`;
     const supported = await Linking.canOpenURL(url).catch(() => false);
@@ -365,6 +383,8 @@ export default function OrderDetailScreen() {
             </View>
           ) : null}
 
+          <OrderDirectPayment payment={payment?.directPayment} onChanged={() => void resource.refetch()} />
+          {resource.data && <OrderCustomerExtras data={resource.data} onChanged={() => void resource.refetch()} />}
           {tracking ? (
             stale ? (
               <View style={styles.staleRow}>
@@ -554,10 +574,10 @@ export default function OrderDetailScreen() {
             <View style={styles.noticeInfo}>
               <MaterialCommunityIcons name="cellphone-check" size={24} color="#6941a5" />
               <View style={styles.noticeCopy}>
-                <Text style={[styles.noticeTitle, styles.noticeTitlePurple]}>
+                <Text style={[styles.noticeTitle, styles.noticeTitleBrand]}>
                   Validando {payment.provider.toUpperCase()}
                 </Text>
-                <Text style={[styles.noticeText, styles.noticeTextPurple]}>
+                <Text style={[styles.noticeText, styles.noticeTextBrand]}>
                   Operación {payment.mobileClaim?.operationCode ?? payment.providerReference ?? '—'}.
                   Caja debe encontrar el movimiento en la cuenta real antes de mandarlo a cocina.
                 </Text>
@@ -661,7 +681,7 @@ export default function OrderDetailScreen() {
               <View style={styles.placeCopy}>
                 <Text style={styles.placeTitle}>
                   {isPickup
-                    ? (order.branch?.name ?? 'Verde Bowl')
+                    ? (order.branch?.name ?? 'Misky Challay')
                     : (order.addressSnapshotJson?.line1 ?? 'Dirección de entrega')}
                 </Text>
                 <Text style={styles.placeText}>
@@ -745,6 +765,15 @@ export default function OrderDetailScreen() {
             style={styles.action}
           />
 
+          {order.paymentPlan === 'DEPOSIT_BALANCE' && !order.balancePaidAt && order.depositPaidAt && !TERMINAL_STATUSES.includes(order.status) ? (
+            <PrimaryButton
+              label={`Pagar saldo · ${money(order.balanceAmount ?? 0)}`}
+              loading={payingBalance}
+              onPress={() => void payBalance()}
+              style={styles.action}
+            />
+          ) : null}
+
           {order.status === 'DELIVERED' ? (
             <PrimaryButton
               label="Calificar lo que pediste"
@@ -754,7 +783,7 @@ export default function OrderDetailScreen() {
             />
           ) : null}
 
-          {CANCELLABLE_STATUSES.includes(order.status) ? (
+          {(resource.data?.customerSummary?.cancellation.allowed ?? CANCELLABLE_STATUSES.includes(order.status)) ? (
             <PrimaryButton
               label="Cancelar pedido"
               variant="secondary"
@@ -770,6 +799,22 @@ export default function OrderDetailScreen() {
             onPress={() => void contactSupport()}
             style={styles.actionTight}
           />
+          {order.whatsappOptInAt ? (
+            <PrimaryButton
+              label="Dejar de recibir avisos por WhatsApp"
+              variant="ghost"
+              loading={stoppingWhatsapp}
+              onPress={() => {
+                setStoppingWhatsapp(true);
+                void ordersApi.stopWhatsapp(order.orderNumber)
+                  .then(() => resource.refresh())
+                  .then(() => toast.show({ tone: 'success', message: 'Avisos de este pedido desactivados.' }))
+                  .catch((error) => toast.show({ tone: 'error', message: error instanceof Error ? error.message : 'No pudimos desactivar los avisos.' }))
+                  .finally(() => setStoppingWhatsapp(false));
+              }}
+              style={styles.actionTight}
+            />
+          ) : null}
         </View>
       </ScrollView>
     </ScreenScaffold>
@@ -852,7 +897,7 @@ const styles = StyleSheet.create({
     width: 9,
     height: 9,
     borderRadius: radius.pill,
-    backgroundColor: colors.accent500,
+    backgroundColor: colors.accent600,
   },
   liveText: {
     ...type.caption,
@@ -1110,9 +1155,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#6b4700',
   },
-  noticeTitlePurple: {
-    color: '#4c2c76',
-  },
   noticeTitleDanger: {
     color: '#8f2b2b',
   },
@@ -1125,9 +1167,6 @@ const styles = StyleSheet.create({
     ...type.caption,
     color: '#7b5c1d',
     lineHeight: 18,
-  },
-  noticeTextPurple: {
-    color: '#61457f',
   },
   noticeTextDanger: {
     color: '#9c4646',

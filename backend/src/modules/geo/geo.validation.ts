@@ -49,7 +49,8 @@ export const coverageSchema = z.object({
 export const slotsSchema = z.object({
   query: z.object({
     branchId: z.coerce.number().int().positive(),
-    days: z.coerce.number().int().min(1).max(30).optional(),
+    vehicleType: z.literal('CAR').optional(),
+    days: z.coerce.number().int().min(1).max(60).optional(),
   }),
 });
 

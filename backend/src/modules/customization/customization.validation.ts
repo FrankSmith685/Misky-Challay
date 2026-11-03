@@ -18,6 +18,9 @@ export const quoteSchema = z.object({
   body: z.object({
     productId: z.coerce.number().int().positive(),
     variantId: z.coerce.number().int().positive(),
+    requestedServings: z.coerce.number().int().min(1).max(500).optional(),
+    themeId: z.coerce.number().int().positive().optional(),
+    themeVersion: z.coerce.number().int().positive().optional(),
     quantity: z.coerce.number().int().min(1).max(20).default(1),
     branchId: z.coerce
       .number()

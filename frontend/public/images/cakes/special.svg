@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 720" role="img" aria-label="Torta de diseño especial">
+ <defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#EAF6FF"/><stop offset="1" stop-color="#FDEED4"/></linearGradient><filter id="s"><feGaussianBlur stdDeviation="20"/></filter></defs>
+ <rect width="960" height="720" fill="url(#bg)"/><path d="M0 0h960v720H0z" fill="none" stroke="#FFF8EF" stroke-width="28" opacity=".35"/><ellipse cx="480" cy="622" rx="298" ry="39" fill="#05284C" opacity=".22" filter="url(#s)"/><ellipse cx="480" cy="585" rx="320" ry="61" fill="#FFF8F0"/>
+ <path d="M264 424h432v133c0 62-432 62-432 0z" fill="#F3E2D3"/><ellipse cx="480" cy="423" rx="216" ry="42" fill="#FFF9EF"/><path d="M323 303h314v129c0 51-314 51-314 0z" fill="#FFF0E0"/><ellipse cx="480" cy="303" rx="157" ry="34" fill="#FFF9F0"/><path d="M373 220h214v87c0 39-214 39-214 0z" fill="#F7E6D8"/><ellipse cx="480" cy="221" rx="107" ry="27" fill="#FFFBF5"/>
+ <path d="M371 271c46-10 69 17 109 1 42-16 67 11 108-1M321 388c56-16 95 21 159 0 65-21 103 16 159 0M263 515c75-19 135 20 217 0 81-20 136 19 217 0" fill="none" stroke="#4EA9DD" stroke-width="12" stroke-linecap="round"/>
+ <path d="M480 119c-32 37-58 55-74 102M480 119c35 40 55 62 74 102" fill="none" stroke="#64806A" stroke-width="7" stroke-linecap="round"/><path d="M480 119c-20-25-54-18-51 8 3 21 51 31 51 31s48-10 51-31c3-26-31-33-51-8z" fill="#E9940F"/><circle cx="408" cy="208" r="14" fill="#F5A524"/><circle cx="554" cy="208" r="14" fill="#F5A524"/>
+ <text x="480" y="568" text-anchor="middle" fill="#073A6B" font-family="Georgia,serif" font-size="38" font-style="italic">Hecho para celebrar</text>
+</svg>

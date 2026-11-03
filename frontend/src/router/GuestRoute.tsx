@@ -22,9 +22,10 @@ export const GuestRoute = ({ children }: { children: ReactNode }) => {
   const location = useLocation();
   const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated);
   const user = useAppSelector((state) => state.auth.user);
+  const hasCartItems = useAppSelector((state) => state.cart.items.length > 0);
   const { isStaff } = usePermissions();
 
   if (!isAuthenticated) return <>{children}</>;
 
-  return <Navigate to={resolveAfterAuthPath(readReturnTo(location), isStaff, resolveStaffAccess({ roles: user?.roles, permissions: user?.permissions, isSuperAdmin: user?.isSuperAdmin }).to)} replace />;
+  return <Navigate to={resolveAfterAuthPath(readReturnTo(location), isStaff, resolveStaffAccess({ roles: user?.roles, permissions: user?.permissions, isSuperAdmin: user?.isSuperAdmin }).to, hasCartItems)} replace />;
 };

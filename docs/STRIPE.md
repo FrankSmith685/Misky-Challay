@@ -1,105 +1,50 @@
-# Stripe en Verde Bowl
+# Pagos de tortas en DulceFlow
 
-La aplicación usa **Stripe Checkout alojado**. React solicita al backend una sesión
-de pago y redirige al cliente a Stripe. Por eso:
+## Situación para una empresa registrada solo en Perú
 
-- la clave secreta vive únicamente en `backend/.env`;
-- no se necesita una clave publicable en `frontend/.env`;
-- el saldo de un plan se acredita únicamente después de validar el webhook;
-- dejar las variables vacías activa el simulador local en desarrollo.
+Stripe Payments no admite actualmente abrir una cuenta de cobros para una empresa establecida solo en Perú. Cobrar en soles (PEN) con una cuenta de un país admitido es una cuestión distinta: no habilita el alta de una empresa peruana. No configures un país o datos empresariales que no correspondan a la entidad real. Consulta la [lista oficial de países](https://stripe.com/global) antes de iniciar el alta.
 
-## 1. Pruebas con Stripe
+Para operar desde Perú se integra Mercado Pago Checkout Pro. Consulta [la guía de configuración](MERCADOPAGO.md). Mientras faltan sus credenciales, `STRIPE_SECRET_KEY` y `STRIPE_WEBHOOK_SECRET` deben quedar vacías en `backend/.env`; en desarrollo se usa el simulador local, que no cobra dinero real. El simulador no está permitido en producción.
 
-1. Crea o entra a una cuenta de Stripe y trabaja en un sandbox/modo de prueba.
-2. En Developers → API keys, copia la clave secreta que comienza con `sk_test_`.
-3. Instala Stripe CLI, ejecuta `stripe login` y luego:
+## Cómo funciona la integración existente
 
-   ```bash
-   stripe listen \
-     --events checkout.session.completed,checkout.session.async_payment_failed,checkout.session.expired \
-     --forward-to localhost:4000/api/v1/payments/webhooks/stripe
+- El backend crea una sesión de Stripe Checkout al confirmar cada pedido online. Envía el importe calculado por el servidor con `price_data` y `product_data`; no hay que crear una ficha de producto por cada torta en el panel de Stripe.
+- Una torta de catálogo se cobra completa. Una torta de diseño especial aprobada genera un cobro del 50 % como anticipo y otro del 50 % como saldo antes de la entrega. Cada cobro tiene su propia sesión y referencia.
+- El cliente vuelve a la aplicación, pero solo el webhook firmado confirma el pago y sus efectos en pedido y producción.
+- La comisión de DulceFlow del 15 % se registra en el módulo de liquidaciones de tortas. Esta integración no hace una transferencia automática del 15 %: el dinero entra íntegramente en la cuenta receptora de la pasarela y la comisión se liquida por separado.
+
+## Pruebas con Stripe si existe una cuenta elegible
+
+1. En el panel de Stripe obtén una clave secreta de prueba `sk_test_...`.
+2. Instala Stripe CLI e inicia sesión con `stripe login`.
+3. Ejecuta este comando y mantenlo abierto mientras pruebas:
+
+   ```powershell
+   stripe listen --events checkout.session.completed,checkout.session.async_payment_succeeded,checkout.session.async_payment_failed,checkout.session.expired --forward-to localhost:4000/api/v1/payments/webhooks/stripe
    ```
 
-4. Copia el `whsec_...` que imprime la CLI y configura:
+4. Copia el secreto `whsec_...` que imprime la CLI a `backend/.env`:
 
    ```env
-   # backend/.env
    NODE_ENV=development
    FRONTEND_URL=http://localhost:5173
    STRIPE_SECRET_KEY=sk_test_REEMPLAZA_CON_TU_CLAVE
    STRIPE_WEBHOOK_SECRET=whsec_REEMPLAZA_CON_EL_SECRETO_DE_LA_CLI
    ```
 
-5. Reinicia el backend después de guardar `.env`. `stripe login` y
-   `stripe listen` no recargan las variables de Node. Al iniciar debe aparecer:
+5. Reinicia el backend. Debe mostrar `Pagos: Stripe (test)` al arrancar.
+6. Prueba un pedido de torta de catálogo. Comprueba que el webhook confirme el pedido una sola vez. Después prueba una torta de diseño aprobada: paga el anticipo y, desde el detalle del pedido, paga el saldo; verifica que existan dos pagos independientes.
 
-   ```text
-   Pagos: Stripe (test)
-   ```
+El secreto de Stripe CLI, el de un endpoint de prueba y el de un endpoint de producción son distintos. La clave secreta solo debe estar en el backend o en el gestor de secretos del hosting. Stripe Checkout alojado no necesita una clave publicable en el frontend.
 
-6. Inicia sesión, abre `/planes`, elige un plan y completa el Checkout de prueba.
+## Producción con una entidad admitida por Stripe
 
-> Ejecutar solamente `stripe listen` no reenvía los eventos al backend. El
-> listener debe mantenerse abierto con `--forward-to` durante toda la prueba.
-
-Tarjetas interactivas útiles:
-
-| Escenario | Número | Otros datos |
-| --- | --- | --- |
-| Pago aprobado | `4242 4242 4242 4242` | fecha futura, CVC cualquiera |
-| Requiere 3DS | `4000 0025 0000 3155` | fecha futura, CVC cualquiera |
-| Fondos insuficientes | `4000 0000 0000 9995` | fecha futura, CVC cualquiera |
-
-Nunca pruebes con tarjetas reales ni con claves `sk_live_`.
-
-## 2. Producción
-
-Stripe Payments solo puede activarse para una empresa establecida en un país
-admitido. La empresa debe proporcionar los datos legales y bancarios que Stripe
-solicite. No se debe seleccionar un país falso para abrir la cuenta.
-
-En Stripe Workbench/Webhooks crea un endpoint público:
+Configura un endpoint HTTPS público en Stripe Workbench/Webhooks:
 
 ```text
 https://api.tudominio.com/api/v1/payments/webhooks/stripe
 ```
 
-Suscribe estos eventos:
+Suscribe `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed` y `checkout.session.expired`. Guarda su secreto `whsec_...` y una clave `sk_live_...` en el entorno del backend. No reutilices el secreto de la CLI. El backend exige esas credenciales reales al arrancar con `NODE_ENV=production`.
 
-```text
-checkout.session.completed
-checkout.session.async_payment_failed
-checkout.session.expired
-```
-
-Configura los secretos en el gestor de variables del hosting, nunca en Git:
-
-```env
-NODE_ENV=production
-FRONTEND_URL=https://tudominio.com
-CORS_ORIGIN=https://tudominio.com
-STRIPE_SECRET_KEY=sk_live_REEMPLAZA_CON_TU_CLAVE
-STRIPE_WEBHOOK_SECRET=whsec_REEMPLAZA_CON_EL_SECRETO_DEL_ENDPOINT_LIVE
-```
-
-El secreto `whsec_...` de Stripe CLI, el de un endpoint de prueba y el de un
-endpoint live son diferentes y no se deben intercambiar.
-
-## 3. Verificación
-
-Después de pagar un plan:
-
-1. Stripe envía `checkout.session.completed`.
-2. El backend verifica `Stripe-Signature`.
-3. `paymentsService` deduplica el evento.
-4. El plan pasa de `PENDING_PAYMENT` a `ACTIVE`.
-5. La billetera recibe el saldo una sola vez.
-6. `/cuenta/saldo` reintenta la consulta brevemente mientras llega el webhook.
-
-Si el Checkout cobra pero el saldo no aparece, revisa primero la terminal de
-`stripe listen`, los eventos del Dashboard y que el `whsec_...` corresponda
-exactamente al endpoint activo.
-
-Si la aplicación abre `/checkout/simulador`, vuelve a `/planes`, reinicia el
-backend y comprueba que el arranque muestre `Pagos: Stripe (test)`. El proveedor
-se selecciona al arrancar y no cambia en caliente cuando se edita `.env`.
+Para Perú usa la integración de Mercado Pago documentada en [MERCADOPAGO.md](MERCADOPAGO.md). El contrato compartido de proveedores está en `backend/src/integrations/payments/payment.provider.ts`.

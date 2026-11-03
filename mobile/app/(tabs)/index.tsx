@@ -121,7 +121,7 @@ const summarizeOrder = (order: OrderSummary): string => {
 };
 
 const toRecommendations = (products: Product[]): Recommendation[] =>
-  products.slice(0, 6).map((product) => ({ product, reason: 'Recomendado por Verde Bowl' }));
+  products.slice(0, 6).map((product) => ({ product, reason: 'Recomendado por Misky Challay' }));
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
@@ -170,6 +170,8 @@ export default function HomeScreen() {
     cacheMs: 15_000,
   });
 
+  const activeOrders = useResource<OrderSummary[]>({ key: authenticated ? 'orders:active' : null, fetcher: () => ordersApi.active(), cacheMs: 15000, pollIntervalMs: 20000 });
+
   const wallet = useResource<WalletSummary>({
     key: authenticated ? 'plans:wallet' : null,
     fetcher: () => plansApi.wallet(),
@@ -189,8 +191,8 @@ export default function HomeScreen() {
   );
 
   const activeOrder = useMemo(
-    () => sortedOrders.find((order) => ACTIVE_STATUSES.includes(order.status)) ?? null,
-    [sortedOrders],
+    () => (activeOrders.data ?? sortedOrders).find((order) => ACTIVE_STATUSES.includes(order.status)) ?? null,
+    [sortedOrders, activeOrders.data],
   );
 
   /*
@@ -227,7 +229,9 @@ export default function HomeScreen() {
   // gesto de tirar para refrescar no se reconstruye en cada render.
   const refreshSettings = settings.refresh;
   const refreshRecommendations = recommendations.refresh;
-  const refreshOrders = orders.refresh;
+  const refreshRecentOrders = orders.refresh;
+  const refreshActiveOrders = activeOrders.refresh;
+  const refreshOrders = useCallback(async () => { await Promise.all([refreshRecentOrders(), refreshActiveOrders()]); }, [refreshRecentOrders, refreshActiveOrders]);
   const refreshWallet = wallet.refresh;
   const refreshNotifications = notifications.refresh;
 
@@ -353,47 +357,47 @@ export default function HomeScreen() {
                 {firstName ? `Hola, ${firstName}` : 'Hola de nuevo'}
               </Text>
               <Text style={styles.heroCopy}>
-                Repite tu último bowl o arma uno nuevo. Tus preferencias y alérgenos ya están
-                aplicados al menú.
+                Repite tu última torta o diseña una nueva. Tus preferencias ya están
+                listas para tu próximo pedido.
               </Text>
             </>
           ) : (
             <>
-              <Text style={styles.kicker}>COMIDA REAL · DECISIONES CLARAS</Text>
-              <Text style={styles.heroTitle}>Tu bowl favorito, a tu manera.</Text>
+              <Text style={styles.kicker}>TORTAS PARA CADA CELEBRACIÓN</Text>
+              <Text style={styles.heroTitle}>Tu torta, a tu manera.</Text>
               <Text style={styles.heroCopy}>
-                Elige cómo quieres disfrutarlo y revisa ingredientes, nutrición y disponibilidad
-                antes de pedir.
+                Elige porciones, bizcocho, relleno y decoración. Revisa el precio y la fecha
+                disponible antes de pedir.
               </Text>
             </>
           )}
 
           <Reveal delay={80} style={styles.heroVisual}>
             <AppImage
-              uri="/images/builder/bowl-signature.jpg"
+              uri="/images/cakes/custom.png"
               style={styles.heroVisualImage}
               contentFit="cover"
             />
             <View style={styles.heroVisualShade} />
             <View style={styles.heroVisualCopy}>
               <View style={styles.heroVisualPill}>
-                <MaterialCommunityIcons name="leaf" size={15} color={colors.brand800} />
-                <Text style={styles.heroVisualPillText}>Ingredientes visibles</Text>
+                <MaterialCommunityIcons name="cake-variant" size={15} color={colors.brand800} />
+                <Text style={styles.heroVisualPillText}>Hecha para ti</Text>
               </View>
-              <Text style={styles.heroVisualTitle}>Tu bowl, tus decisiones.</Text>
-              <Text style={styles.heroVisualText}>Precio y nutrición se actualizan mientras eliges.</Text>
+              <Text style={styles.heroVisualTitle}>Cada detalle cuenta.</Text>
+              <Text style={styles.heroVisualText}>Diseña tu torta para la fecha que necesitas.</Text>
             </View>
             <View style={styles.heroFloatingStat}>
-              <MaterialCommunityIcons name="fire" size={16} color={colors.accent500} />
-              <Text style={styles.heroFloatingStatText}>Macros al instante</Text>
+              <MaterialCommunityIcons name="calendar-check" size={16} color={colors.accent500} />
+              <Text style={styles.heroFloatingStatText}>Reserva tu fecha</Text>
             </View>
           </Reveal>
 
           <LocationBar inverse />
 
           <PrimaryButton
-            label="Ver menú y crear mi bowl"
-            icon="food-apple-outline"
+            label="Ver tortas y personalizar"
+            icon="cake-variant"
             trailingIcon="arrow-right"
             onPress={() => router.push('/(tabs)/menu')}
             style={styles.heroButton}
@@ -411,25 +415,6 @@ export default function HomeScreen() {
             onReorder={(orderNumber) => void reorder(orderNumber)}
           />
         )}
-
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Ver los planes Verde Bowl"
-          onPress={() => router.push('/plans' as Href)}
-          style={({ pressed }) => [styles.planBanner, shadow.sm, pressed && styles.pressed]}
-        >
-          <View style={styles.planIcon}>
-            <MaterialCommunityIcons name="wallet-giftcard" size={26} color={colors.surface} />
-          </View>
-
-          <View style={styles.planCopy}>
-            <Text style={styles.planEyebrow}>PLANES VERDE BOWL</Text>
-            <Text style={styles.planTitle}>Recibe más de lo que recargas</Text>
-            <Text style={styles.planText}>Saldo, bonos y beneficios sin cargos automáticos.</Text>
-          </View>
-
-          <MaterialCommunityIcons name="chevron-right" size={24} color={colors.brand700} />
-        </Pressable>
 
         <View style={styles.sectionHeader}>
           <SectionHeader
@@ -525,7 +510,7 @@ export default function HomeScreen() {
             <Text style={styles.businessTitle}>Compra con información clara</Text>
             <Text style={styles.businessText}>
               Precios con IGV incluido · atención de{' '}
-              {settings.data?.business.commercialName ?? 'Verde Bowl'}
+              {settings.data?.business.commercialName ?? 'Misky Challay'}
             </Text>
           </View>
         </View>
@@ -576,13 +561,6 @@ function ReturningBlock({
     <View style={styles.returning}>
       {(balance > 0 || favoriteCount > 0) && (
         <View style={styles.shortcuts}>
-          {balance > 0 && (
-            <Shortcut
-              icon="wallet-outline"
-              label={`Saldo ${money(balance)}`}
-              onPress={() => router.push('/wallet' as Href)}
-            />
-          )}
           {favoriteCount > 0 && (
             <Shortcut
               icon="heart-outline"
@@ -794,7 +772,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.accent500,
+    backgroundColor: colors.accent600,
   },
   headerBadgeText: {
     ...type.caption,
@@ -914,8 +892,8 @@ const styles = StyleSheet.create({
   },
   heroButton: {
     marginTop: spacing.sm + spacing.xs,
-    backgroundColor: colors.accent500,
-    borderColor: colors.accent500,
+    backgroundColor: colors.accent600,
+    borderColor: colors.accent600,
     minHeight: 60,
   },
   returning: {

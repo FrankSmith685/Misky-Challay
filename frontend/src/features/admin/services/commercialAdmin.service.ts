@@ -78,6 +78,8 @@ export interface AdminZone {
   cityId: number;
   name: string;
   deliveryFee: number;
+  extraCoverageKm: number;
+  extraFeePerKm: number;
   minimumOrder: number;
   estimatedMinutes: number;
   priority: number;
@@ -115,10 +117,7 @@ export interface BuilderOption {
   spiceLevel: number;
   priceDelta: number;
   chargeAlways: boolean;
-  calories: number;
-  protein: number;
-  carbs: number;
-  fat: number;
+  cakeScaleWithServings: boolean;
   maxPerItem: number;
   status: 'ACTIVE' | 'OUT_OF_STOCK' | 'INACTIVE';
   inventoryItemId: number | null;
@@ -136,6 +135,7 @@ export interface BuilderOption {
 
 export interface BuilderGroup {
   id: number;
+  variantId: number | null;
   code: string;
   name: string;
   description: string | null;
@@ -148,7 +148,9 @@ export interface BuilderGroup {
 }
 
 export interface BuilderConfig {
+  customServings?: { enabled: boolean; baseVariantId: number | null; minServings: number; maxServings: number; pricePerExtraServing: number } | null;
   product: { id: number; name: string; type: string };
+  variants: Array<{ id: number; name: string; servingSize: number | null; servingUnit: string | null; isDefault: boolean; isActive: boolean }>;
   groups: BuilderGroup[];
   inventoryItems: Array<{ id: number; name: string; unit: string }>;
   branches: Array<{ id: number; name: string }>;
@@ -326,7 +328,9 @@ export const commercialApi = {
     cityId: number;
     name: string;
     deliveryFee: number;
-    minimumOrder: number;
+    extraCoverageKm: number;
+    extraFeePerKm: number;
+    minimumOrder?: number;
     estimatedMinutes: number;
     priority: number;
     polygon?: Array<{ lat: number; lng: number }>;
@@ -357,6 +361,8 @@ export const commercialApi = {
     zoneId: number,
     input: {
       deliveryFee?: number;
+      extraCoverageKm?: number;
+      extraFeePerKm?: number;
       minimumOrder?: number;
       estimatedMinutes?: number;
       isActive?: boolean;
@@ -422,6 +428,7 @@ export const commercialApi = {
     input: {
       code: string;
       name: string;
+      variantId?: number | null;
       description?: string | null;
       imageUrl?: string | null;
       selectionType: 'SINGLE' | 'MULTIPLE';
@@ -430,8 +437,9 @@ export const commercialApi = {
       freeQuantity: number;
       sortOrder: number;
     },
-  ): Promise<void> {
-    await api.post(`${BASE}/builder/${productId}/groups`, input);
+  ): Promise<{ id: number }> {
+    const { data } = await api.post<ApiSuccess<{ id: number }>>(`${BASE}/builder/${productId}/groups`, input);
+    return data.data;
   },
 
   async createOption(
@@ -448,10 +456,7 @@ export const commercialApi = {
       sortOrder?: number;
       priceDelta: number;
       chargeAlways: boolean;
-      calories: number;
-      protein: number;
-      carbs: number;
-      fat: number;
+      cakeScaleWithServings?: boolean;
       maxPerItem: number;
       inventoryItemId?: number | null;
       consumptionQuantity?: number;
@@ -474,10 +479,7 @@ export const commercialApi = {
       sortOrder?: number;
       priceDelta?: number;
       chargeAlways?: boolean;
-      calories?: number;
-      protein?: number;
-      carbs?: number;
-      fat?: number;
+      cakeScaleWithServings?: boolean;
       maxPerItem?: number;
       status?: 'ACTIVE' | 'OUT_OF_STOCK' | 'INACTIVE';
       inventoryItemId?: number | null;

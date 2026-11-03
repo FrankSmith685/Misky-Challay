@@ -1,0 +1,68 @@
+{
+  "hero": {
+    "eyebrow": "Pastelería Misky Challay",
+    "title": "Tortas personalizadas para tus celebraciones",
+    "description": "Elige una receta o crea tu combinación de tamaño, bizcocho y relleno. Revisa el precio y programa tu entrega o recojo antes de pagar.",
+    "primaryLabel": "Personalizar mi torta",
+    "secondaryLabel": "Ver catálogo",
+    "imageUrl": "/images/cakes/custom.png",
+    "imageAlt": "Torta personalizada de Misky Challay"
+  },
+  "sections": [
+    { "id": "abc", "enabled": true, "title": "Tu pedido, en tres pasos", "description": "Si es tu primera visita, empieza aquí. Tú eliges la combinación; la web te acompaña hasta el seguimiento." },
+    { "id": "walkthrough", "enabled": true, "title": "Así puedes crear tu torta", "description": "Conoce las opciones que encontrarás en el personalizador. Puedes revisar tu combinación antes de agregarla al carrito." },
+    { "id": "choices", "enabled": true, "title": "Encuentra por dónde empezar", "description": "Una receta de la casa, una combinación propia o un pedido para tu empresa." },
+    { "id": "featured", "enabled": true, "title": "Descubre los favoritos de la casa", "description": "Explora las recetas publicadas y elige la presentación que mejor acompañe tu celebración." },
+    { "id": "extras", "enabled": true, "title": "Más formas de compartir", "description": "Descubre otros detalles para acompañar tus celebraciones." },
+    { "id": "faq", "enabled": true, "title": "Antes de hacer tu pedido", "description": "Resolvemos las dudas más frecuentes sobre personalización, pagos y entregas." },
+    { "id": "contact", "enabled": true, "title": "¿Necesitas ayuda para elegir?", "description": "Consulta la guía completa o escríbenos para orientar tu pedido." }
+  ],
+  "abc": [
+    { "title": "Elige cómo empezar", "description": "Encuentra una receta en el catálogo o entra a Crea tu torta para armar tu propia combinación." },
+    { "title": "Hazla a tu gusto", "description": "Elige tamaño, bizcocho, relleno y adicionales. El precio se actualiza con tus selecciones." },
+    { "title": "Confirma y sigue tu pedido", "description": "Ingresa a tu cuenta, elige entrega o recojo y una fecha disponible. Completa el pago y sigue el pedido en Mis pedidos." }
+  ],
+  "walkthrough": [
+    { "title": "Tamaño y porciones", "description": "Empieza por la presentación y la cantidad de personas con quienes vas a compartir.", "imageUrl": "/images/guides/tamano.png", "imageAlt": "Selector de tamaño y porciones en el personalizador de tortas" },
+    { "title": "Bizcocho y relleno", "description": "Combina tus sabores. Cada opción indica si está incluida o tiene un recargo.", "imageUrl": "/images/guides/sabores.png", "imageAlt": "Opciones de bizcocho y relleno en Crea tu torta" },
+    { "title": "Dale tu toque personal", "description": "Añade complementos e indicaciones para la preparación. Los adicionales son opcionales.", "imageUrl": "/images/guides/adicionales.png", "imageAlt": "Selección de complementos opcionales para una torta" },
+    { "title": "Revisa tu combinación", "description": "Comprueba tus selecciones y el precio antes de agregar al carrito. La entrega se calcula en el checkout.", "imageUrl": "/images/guides/resumen.png", "imageAlt": "Resumen de las selecciones y el precio de una torta personalizada" }
+  ],
+  "choices": [
+    { "title": "Quiero una receta de la casa", "description": "Explora tortas y postres, sus presentaciones y precios.", "label": "Explorar el catálogo" },
+    { "title": "Quiero combinar mis sabores", "description": "Crea tu torta paso a paso y revisa cómo cambia su precio.", "label": "Crear mi combinación" },
+    { "title": "Busco un pedido para mi empresa", "description": "Descubre los diseños y opciones para celebraciones de empresa.", "label": "Ver para empresas" }
+  ],
+  "extras": [
+    { "title": "Cajas mensuales", "description": "Conoce los planes, sus productos y las condiciones de cada mensualidad.", "label": "Descubrir las cajas" },
+    { "title": "Una experiencia con QR", "description": "Conoce el servicio de videos y experiencias digitales para acompañar una celebración.", "label": "Conocer las experiencias" }
+  ],
+  "faqs": [
+    { "id": "anticipacion", "question": "¿Con cuánto tiempo debo pedir?", "answer": "Depende del producto y de la capacidad disponible. Revisa la anticipación indicada en su ficha y elige una fecha y franja disponibles en el checkout. La web confirma esas opciones antes de pagar." },
+    { "id": "tamano", "question": "¿Cómo elijo el tamaño de mi torta?", "answer": "Cada presentación indica sus porciones orientativas. Elige la que se ajuste a tus invitados y revisa las cantidades en el resumen antes de continuar." },
+    { "id": "adicionales", "question": "¿Las opciones y adicionales cambian el precio?", "answer": "Las opciones indican si están incluidas o tienen recargo. El resumen actualiza el precio de tu combinación; el costo de delivery y los descuentos se confirman en el checkout." },
+    { "id": "recojo", "question": "¿Puedo recoger mi pedido en el taller?", "answer": "Sí. Selecciona Recojo en taller y una sede disponible en el checkout. Revisa su dirección y elige una fecha y un horario disponibles antes de confirmar." },
+    { "id": "pago", "question": "¿Cómo funciona el pago con Yape o Plin?", "answer": "Si el método está habilitado, verás el titular, el número y las instrucciones del taller. Realiza una sola transferencia por el importe indicado y reporta el código de operación desde tu pedido. El taller debe verificar el pago antes de confirmarlo. Subir una constancia no confirma el pago automáticamente." },
+    { "id": "seguimiento", "question": "¿Dónde veo el estado de mi pedido?", "answer": "Ingresa a tu cuenta y abre Mis pedidos para consultar el pago y la preparación. Los avisos por correo dependen del canal habilitado; los de WhatsApp requieren tu autorización y que el taller tenga el servicio conectado." }
+  ],
+  "guide": {
+    "title": "Cómo hacer tu pedido en Misky Challay",
+    "description": "Del primer sabor al seguimiento de tu entrega: conoce cada paso antes de comprar.",
+    "videoUrl": "",
+    "steps": [
+      { "title": "Explora o personaliza", "description": "Abre el catálogo para elegir una receta o entra a Crea tu torta para armar tu combinación. Para celebraciones de empresa, consulta Para empresas.", "action": "catalog", "label": "Ver el catálogo" },
+      { "title": "Elige tamaño y sabores", "description": "Revisa las porciones, el bizcocho y el relleno. Las opciones con recargo lo indican y se suman al precio de tu combinación. Los complementos son opcionales.", "action": "custom", "label": "Abrir el personalizador" },
+      { "title": "Revisa y agrega al carrito", "description": "Comprueba cantidades, selecciones e indicaciones de preparación. Puedes ajustar tu carrito antes de continuar. Aún no se realiza ningún cobro.", "action": "cart", "label": "Revisar mi carrito" },
+      { "title": "Ingresa y programa la entrega", "description": "Inicia sesión o crea tu cuenta. Elige delivery o recojo, confirma tu dirección o sede y selecciona un horario disponible. Revisa el costo de envío y el total antes de confirmar.", "action": "coverage", "label": "Consultar zonas de entrega" },
+      { "title": "Completa y reporta el pago", "description": "Elige uno de los medios habilitados. Mercado Pago procesa el pago en su pasarela. Para Yape o Plin directos, comprueba el titular y número, transfiere una sola vez el importe indicado y reporta la operación en tu pedido. El taller verificará el ingreso; no vuelvas a transferir si ya pagaste.", "action": "orders", "label": "Abrir Mis pedidos" },
+      { "title": "Sigue tu pedido", "description": "En Mis pedidos verás el estado del pago y la preparación. Puedes consultar al taller desde el pedido. Si un pago no se completó, revisa su estado antes de reintentarlo. Los avisos de WhatsApp necesitan tu autorización y la conexión activa del taller.", "action": "orders", "label": "Consultar mis pedidos" }
+    ]
+  },
+  "seo": {
+    "homeTitle": "Tortas personalizadas y postres | Misky Challay",
+    "homeDescription": "Crea tu torta con el tamaño, bizcocho y relleno que prefieras. Consulta precios, programa delivery o recojo y sigue tu pedido en Misky Challay.",
+    "guideTitle": "Cómo pedir y personalizar tu torta | Misky Challay",
+    "guideDescription": "Aprende a elegir tu torta, personalizar sabores, programar la entrega y completar el pago. Guía paso a paso para comprar en Misky Challay.",
+    "socialImageUrl": "/images/cakes/custom.png"
+  }
+}

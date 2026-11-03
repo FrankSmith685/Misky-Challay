@@ -1,3 +1,4 @@
+import { CustomerWorkspace, CustomerMedia } from '@database/models/customerJourney.model';
 import {
   Address,
   Branch,
@@ -11,6 +12,8 @@ import {
   ProductFavorite,
   ProductVariant,
   SavedBowl,
+  Subscription,
+  SubscriptionCycle,
   User,
   UserPreference,
   UserPurchaseContext,
@@ -117,16 +120,11 @@ export interface DeleteAccountResult {
 export const accountService = {
   async getFoodPreferences(userId: number) {
     const row = await UserPreference.findOne({ where: { userId } });
-    return (
-      row ?? {
-        userId,
-        allergens: [],
-        dietaryTags: [],
-        dislikedOptionIds: [],
-        calorieTarget: null,
-        proteinTarget: null,
-      }
-    );
+    return {
+      allergens: row?.allergens ?? [],
+      dietaryTags: row?.dietaryTags ?? [],
+      dislikedOptionIds: row?.dislikedOptionIds ?? [],
+    };
   },
 
   async updateFoodPreferences(userId: number, input: UpdateFoodPreferencesInput) {
@@ -138,9 +136,11 @@ export const accountService = {
       allergens: [...new Set(input.allergens)],
       dietaryTags: [...new Set(input.dietaryTags)],
       dislikedOptionIds: [...new Set(input.dislikedOptionIds)],
-      calorieTarget: input.calorieTarget ?? null,
-      proteinTarget: input.proteinTarget ?? null,
-    });
+    }).then((updated) => ({
+      allergens: updated.allergens,
+      dietaryTags: updated.dietaryTags,
+      dislikedOptionIds: updated.dislikedOptionIds,
+    }));
   },
 
   async getProfile(userId: number) {
@@ -283,6 +283,14 @@ export const accountService = {
       );
     }
 
+    const recurring = await Subscription.count({ where: { userId, status: { [Op.in]: ['PENDING', 'ACTIVE', 'PAST_DUE'] } } });
+    if (recurring > 0) throw ApiError.conflict('Cancela tus suscripciones mensuales antes de eliminar la cuenta para detener los próximos cobros.');
+    const unusedBoxes = await SubscriptionCycle.count({
+      where: { orderId: null, expiresAt: { [Op.gt]: new Date() } },
+      include: [{ model: Subscription, as: 'subscription', where: { userId } }],
+    });
+    if (unusedBoxes > 0) throw ApiError.conflict('Tienes cajas mensuales pagadas sin programar. Úsalas o contacta a soporte antes de eliminar la cuenta.');
+
     const previousEmail = user.email;
     const previousAvatarUrl = user.avatarUrl;
     const wallet = await Wallet.findOne({ where: { userId } });
@@ -294,6 +302,8 @@ export const accountService = {
       // Preferencias y contexto de compra: se van enteros, no hay nada que conservar.
       await UserPreference.destroy({ where: { userId }, transaction });
       await UserPurchaseContext.destroy({ where: { userId }, transaction });
+      await CustomerWorkspace.destroy({where:{userId},transaction});
+      await CustomerMedia.destroy({where:{userId},transaction});
 
       const savedBowls = await SavedBowl.destroy({ where: { userId }, force: true, transaction });
       const favorites = await ProductFavorite.destroy({ where: { userId }, transaction });

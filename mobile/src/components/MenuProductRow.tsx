@@ -102,11 +102,6 @@ function MenuProductRowView({
               Contiene {warnings.map((code) => allergenLabels?.[code] ?? humanize(code)).join(', ')}
             </Text>
           </View>
-        ) : product.nutrition ? (
-          <Text numberOfLines={1} style={styles.nutrition}>
-            {Math.round(product.nutrition.calories)} kcal · {Math.round(product.nutrition.protein)}{' '}
-            g proteína
-          </Text>
         ) : null}
 
         <Text style={styles.price}>
@@ -203,7 +198,7 @@ const styles = StyleSheet.create({
     left: spacing.xs,
     top: spacing.xs,
     borderRadius: radius.sm,
-    backgroundColor: colors.accent500,
+    backgroundColor: colors.accent600,
     paddingHorizontal: 7,
     paddingVertical: 3,
   },
@@ -245,11 +240,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   description: {
-    ...type.caption,
-    color: colors.inkMuted,
-    marginTop: 4,
-  },
-  nutrition: {
     ...type.caption,
     color: colors.inkMuted,
     marginTop: 4,

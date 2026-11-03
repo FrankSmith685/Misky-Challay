@@ -3,15 +3,26 @@ import type { ApiErrorBody, ApiSuccess } from '@/types/api';
 
 const TOKEN_KEY = 'verde-bowl:accessToken';
 const REFRESH_KEY = 'verde-bowl:refreshToken';
+let sessionRevision = 0;
+let refreshing: Promise<string | null> | null = null;
+const writeTokens = (accessToken: string, refreshToken: string) => {
+  localStorage.setItem(TOKEN_KEY, accessToken);
+  localStorage.setItem(REFRESH_KEY, refreshToken);
+};
 
 export const tokenStorage = {
+  isKey: (key: string) => key === TOKEN_KEY || key === REFRESH_KEY,
+  invalidateRequests: () => { sessionRevision++; refreshing = null; },
   getAccess: () => localStorage.getItem(TOKEN_KEY),
   getRefresh: () => localStorage.getItem(REFRESH_KEY),
   set: (accessToken: string, refreshToken: string) => {
-    localStorage.setItem(TOKEN_KEY, accessToken);
-    localStorage.setItem(REFRESH_KEY, refreshToken);
+    sessionRevision++;
+    refreshing = null;
+    writeTokens(accessToken, refreshToken);
   },
   clear: () => {
+    sessionRevision++;
+    refreshing = null;
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(REFRESH_KEY);
   },
@@ -25,28 +36,35 @@ export const api: AxiosInstance = axios.create({
 });
 
 // Request: adjunta el access token
+type SessionRequest = InternalAxiosRequestConfig & { _retried?: boolean; _sessionRevision?: number };
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+  const request = config as SessionRequest;
+  if (request._sessionRevision !== undefined && request._sessionRevision !== sessionRevision) {
+    return Promise.reject(new AxiosError('La sesión cambió.', 'ERR_CANCELED', config));
+  }
+  request._sessionRevision = sessionRevision;
   const token = tokenStorage.getAccess();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
 // Response: refresca el token una vez ante un 401 y reintenta la peticion original
-let refreshing: Promise<string | null> | null = null;
-
 const refreshAccessToken = async (): Promise<string | null> => {
   const refreshToken = tokenStorage.getRefresh();
   if (!refreshToken) return null;
+  const revision = sessionRevision;
 
   try {
     const { data } = await axios.post<ApiSuccess<{ accessToken: string; refreshToken: string }>>(
       `${import.meta.env.VITE_API_URL || '/api/v1'}/auth/refresh`,
       { refreshToken },
     );
-    tokenStorage.set(data.data.accessToken, data.data.refreshToken);
+    // Un refresh en vuelo no puede restaurar los tokens después de salir ni
+    // reemplazar las credenciales de quien acaba de ingresar en otra cuenta.
+    if (revision !== sessionRevision) return null;
+    writeTokens(data.data.accessToken, data.data.refreshToken);
     return data.data.accessToken;
   } catch {
-    tokenStorage.clear();
     return null;
   }
 };
@@ -54,13 +72,23 @@ const refreshAccessToken = async (): Promise<string | null> => {
 api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError<ApiErrorBody>) => {
-    const original = error.config as InternalAxiosRequestConfig & { _retried?: boolean };
+    const original = error.config as SessionRequest | undefined;
+    const authEntry = /\/auth\/(?:login|register|logout|refresh|forgot-password|reset-password)(?:\?|$)/.test(original?.url ?? '');
 
-    if (error.response?.status === 401 && original && !original._retried) {
+    if (error.response?.status === 401 && original && !authEntry) {
+      if (original._sessionRevision !== sessionRevision
+        || (!tokenStorage.getAccess() && !tokenStorage.getRefresh())) return Promise.reject(error);
+      if (original._retried) {
+        tokenStorage.clear();
+        window.dispatchEvent(new Event('auth:logout'));
+        return Promise.reject(error);
+      }
       original._retried = true;
-      refreshing = refreshing ?? refreshAccessToken();
-      const newToken = await refreshing;
-      refreshing = null;
+      const revision = sessionRevision;
+      const pending = refreshing ??= refreshAccessToken();
+      const newToken = await pending;
+      if (refreshing === pending) refreshing = null;
+      if (revision !== sessionRevision) return Promise.reject(error);
 
       if (newToken) {
         original.headers.Authorization = `Bearer ${newToken}`;
@@ -115,6 +143,7 @@ export const getApiErrorMessage = (error: unknown): string => {
     }
     return body?.message ?? 'No se pudo conectar con el servidor';
   }
+  if (error instanceof Error) return error.message;
   return 'Ocurrió un error inesperado';
 };
 

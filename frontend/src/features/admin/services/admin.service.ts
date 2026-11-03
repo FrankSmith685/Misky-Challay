@@ -12,9 +12,12 @@ import type {
   DiningOffering,
   DiningPaymentMethod,
   DiningReceipt,
+  PosProduct,
+  PosSaleResult,
   Reports,
   PendingMobilePayment,
   StockRow,
+  StockMovementRow,
   AuditLogRow,
   TicketStatus,
 } from '../types';
@@ -50,6 +53,9 @@ export interface AuditLogFilters {
 
 /** Todas estas llamadas exigen permisos: el backend las valida (seccion 7.1). */
 export const adminApi = {
+  async recordCustomerContact(orderNumber: string, input: { channel: 'WHATSAPP' | 'EMAIL' | 'PHONE' | 'IN_PERSON'; note: string }) {
+    await api.post(`/admin/orders/${encodeURIComponent(orderNumber)}/customer-contact`, input);
+  },
   async pendingMobilePayments(branchId: number, signal?: AbortSignal): Promise<PendingMobilePayment[]> {
     const { data } = await api.get<ApiSuccess<PendingMobilePayment[]>>('/payments/mobile/pending', {
       params: { branchId }, signal,
@@ -123,11 +129,38 @@ export const adminApi = {
     return data.data;
   },
 
+  async posCatalog(branchId: number, signal?: AbortSignal): Promise<PosProduct[]> {
+    const { data } = await api.get<ApiSuccess<PosProduct[]>>('/operations/pos/catalog', {
+      params: { branchId },
+      signal,
+    });
+    return data.data;
+  },
+
+  async createPosSale(input: {
+    branchId: number;
+    items: Array<{
+      productId: number;
+      variantId: number;
+      quantity: number;
+      specialInstructions?: string;
+      selections?: Array<{ optionId: number; quantity: number }>;
+    }>;
+    paymentMethod: DiningPaymentMethod;
+    customerName?: string;
+    notes?: string;
+    idempotencyKey?: string;
+  }): Promise<PosSaleResult> {
+    const { data } = await api.post<ApiSuccess<PosSaleResult>>('/operations/pos/sales', input);
+    return data.data;
+  },
+
   async createDiningTable(input: { branchId: number; code: string; area: string; capacity: number }): Promise<void> {
     await api.post('/operations/dining/tables', input);
   },
 
   async openDiningCommand(input: {
+    idempotencyKey?: string;
     branchId: number;
     tableId: number;
     guestName?: string;
@@ -138,8 +171,8 @@ export const adminApi = {
     return data.data;
   },
 
-  async addDiningCommandItems(orderNumber: string, branchId: number, items: Array<{ productId: number; variantId: number; offeringId?: number; quantity: number }>): Promise<void> {
-    await api.post(`/operations/dining/commands/${orderNumber}/items`, { branchId, items });
+  async addDiningCommandItems(orderNumber: string, branchId: number, items: Array<{ productId: number; variantId: number; offeringId?: number; quantity: number }>, idempotencyKey?: string): Promise<void> {
+    await api.post(`/operations/dining/commands/${orderNumber}/items`, { branchId, items, idempotencyKey });
   },
 
   async closeDiningCommand(orderNumber: string, input: {
@@ -185,16 +218,42 @@ export const adminApi = {
     return data.data;
   },
 
+  async stockMovements(branchId: number, inventoryItemId?: number): Promise<StockMovementRow[]> {
+    const { data } = await api.get<ApiSuccess<StockMovementRow[]>>('/operations/inventory/movements', {
+      params: { branchId, inventoryItemId, limit: 50 },
+    });
+    return data.data;
+  },
+
+  async updateInventoryItem(input: { branchId: number; inventoryItemId: number; name: string; itemType?: 'INGREDIENT' | 'FINISHED_PRODUCT'; unit: string; unitCost: number; minLevel: number; imageUrl: string | null; allergens: string[] | null }): Promise<void> {
+    await api.patch(`/operations/inventory/items/${input.inventoryItemId}`, input);
+  },
+
+  async archiveInventoryItem(branchId: number, inventoryItemId: number): Promise<void> {
+    await api.delete(`/operations/inventory/items/${inventoryItemId}`, { params: { branchId } });
+  },
+
+  async deleteArchivedInventoryItem(branchId: number, inventoryItemId: number): Promise<void> {
+    await api.delete(`/operations/inventory/items/${inventoryItemId}/permanent`, { params: { branchId } });
+  },
+
+  async restoreInventoryItem(branchId: number, inventoryItemId: number): Promise<void> {
+    await api.post(`/operations/inventory/items/${inventoryItemId}/restore`, { branchId });
+  },
+
   async createInventoryItem(input: {
     branchId: number;
-    code: string;
+    itemType?: 'INGREDIENT' | 'FINISHED_PRODUCT';
     name: string;
     unit: string;
+    imageUrl: string | null;
+    allergens: string[] | null;
     unitCost: number;
     minLevel: number;
     initialStock: number;
-  }): Promise<void> {
-    await api.post('/operations/inventory/items', input);
+  }): Promise<{ id: number; code: string }> {
+    const { data } = await api.post<ApiSuccess<{ id: number; code: string }>>('/operations/inventory/items', input);
+    return data.data;
   },
 
   async adjustStock(input: {
@@ -202,6 +261,8 @@ export const adminApi = {
     inventoryItemId: number;
     type: 'PURCHASE' | 'WASTE' | 'ADJUSTMENT';
     quantity: number;
+    expectedOnHand?: number;
+    expectedReserved?: number;
     reason: string;
   }): Promise<void> {
     await api.post('/operations/inventory/adjust', input);
@@ -308,9 +369,9 @@ export const adminApi = {
     orderNumber: string,
     status: string,
     comment?: string,
-  ): Promise<{ orderNumber: string; status: string; refunded: boolean; message: string }> {
+  ): Promise<{ orderNumber: string; status: string; refunded: boolean; refundPending: boolean; message: string }> {
     const { data } = await api.post<
-      ApiSuccess<{ orderNumber: string; status: string; refunded: boolean }>
+      ApiSuccess<{ orderNumber: string; status: string; refunded: boolean; refundPending: boolean }>
     >(`/admin/orders/${orderNumber}/status`, { status, comment });
     return { ...data.data, message: data.message };
   },
@@ -331,6 +392,10 @@ export const adminApi = {
     return data.data;
   },
 
+  async captureCash(paymentId: number, reference: string): Promise<void> {
+    await api.post(`/payments/${paymentId}/cash/capture`, { reference });
+  },
+
   async reports(
     branchId?: number,
     signal?: AbortSignal,
@@ -341,5 +406,16 @@ export const adminApi = {
       signal,
     });
     return data.data;
+  },
+
+  async exportReports(
+    branchId?: number,
+    range?: { from?: string; to?: string },
+  ): Promise<Blob> {
+    const response = await api.get('/admin/reports/export', {
+      params: { ...(branchId ? { branchId } : {}), ...range },
+      responseType: 'blob',
+    });
+    return response.data as Blob;
   },
 };

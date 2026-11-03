@@ -38,7 +38,7 @@ export function AppImage({
   contentFit = 'cover',
   transitionMs = 220,
   accessibilityLabel,
-  fallbackIcon = 'bowl-mix-outline',
+  fallbackIcon = 'cake-variant-outline',
   fallbackIconSize = 34,
   priority = 'normal',
 }: AppImageProps) {
@@ -66,7 +66,7 @@ export function AppImage({
         />
       ) : (
         <View style={styles.fallback}>
-          <MaterialCommunityIcons name={fallbackIcon} size={fallbackIconSize} color="#79b697" />
+          <MaterialCommunityIcons name={fallbackIcon} size={fallbackIconSize} color="#8ac7ea" />
         </View>
       )}
     </View>

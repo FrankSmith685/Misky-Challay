@@ -1,8 +1,9 @@
-import { Edit3, Flame, Sparkles, Trash2 } from 'lucide-react';
+import { Edit3, Sparkles, Trash2 } from 'lucide-react';
 import { ProductMedia } from '@components/ui/ProductMedia';
 import { QuantityStepper } from '@components/ui/QuantityStepper';
 import { formatCurrency } from '@lib/format';
 import type { CartItem } from '@/types/domain';
+import { describeCakeVisualDesign } from '@features/cakes/utils/cakeVisualDesign';
 
 interface CartItemCardProps {
   item: CartItem;
@@ -17,7 +18,7 @@ export const CartItemCard = ({ item, onQuantityChange, onRemove, onEdit }: CartI
   const unitTotal = item.unitPrice + item.extrasTotal;
   const visibleSelections = item.selections.slice(0, 4);
   const hiddenSelections = Math.max(0, item.selections.length - visibleSelections.length);
-  const canEdit = onEdit != null && item.selections.length > 0;
+  const canEdit = onEdit != null && item.selections.length > 0 && !item.designQuoteId;
 
   return (
     <article className="overflow-hidden rounded-card border border-line bg-white shadow-e2 transition hover:border-brand-200">
@@ -55,15 +56,18 @@ export const CartItemCard = ({ item, onQuantityChange, onRemove, onEdit }: CartI
             </div>
           )}
 
+          {item.approvedDesignSummary && <details className="mt-3 rounded-xl border border-brand-100 bg-brand-50/50 p-3 text-xs leading-5 text-ink-muted"><summary className="cursor-pointer font-semibold text-brand-800">Ver diseño aprobado</summary><p className="mt-2 whitespace-pre-wrap break-words">{item.approvedDesignSummary}</p></details>}
+
+          {(item.specialInstructions || item.referenceDataUrl || item.cakeAiProposal || item.archivedAiProposalDataUrl || item.cakeVisualDesign) && <div className="mt-3 rounded-xl border border-line bg-white p-3 text-xs leading-5 text-ink-muted">
+            {item.cakeVisualDesign && <p>{describeCakeVisualDesign(item.cakeVisualDesign, Boolean(item.referenceDataUrl))}</p>}
+            {item.specialInstructions && <p className="whitespace-pre-wrap break-words"><span className="font-semibold text-ink">Detalles:</span> {item.specialInstructions.replace(/^(Descripción del diseño|Indicaciones): /, '')}</p>}
+            {item.referenceDataUrl && <div className="mt-2 flex items-center gap-2"><img src={item.referenceDataUrl} alt="Referencia adjunta a la torta" className="size-12 rounded-lg border border-line object-cover" /><span>Imagen de referencia adjunta</span></div>}
+            {(item.cakeAiProposal || item.archivedAiProposalDataUrl) && <div className="mt-2 flex items-center gap-2"><img src={item.cakeAiProposal?.dataUrl ?? item.archivedAiProposalDataUrl} alt="Propuesta con IA adjunta a la torta" className="size-12 rounded-lg border border-line object-cover" /><span>Propuesta con IA adjunta para cocina</span></div>}
+          </div>}
+
           <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-muted">
             <span>{formatCurrency(unitTotal)} por unidad</span>
             {item.extrasTotal > 0 && <span>Incluye {formatCurrency(item.extrasTotal)} en extras</span>}
-            {item.nutrition && (
-              <span className="inline-flex items-center gap-1">
-                <Flame className="size-3 text-accent-500" />
-                {Math.round(item.nutrition.calories)} kcal · {Math.round(item.nutrition.protein)} g prot.
-              </span>
-            )}
           </div>
         </div>
 
@@ -74,12 +78,12 @@ export const CartItemCard = ({ item, onQuantityChange, onRemove, onEdit }: CartI
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-surface-muted/35 px-3 py-2.5 sm:gap-3 sm:px-5 sm:py-3">
-        <QuantityStepper
+        {item.designQuoteId ? <span className="text-sm font-semibold text-ink-muted">1 unidad · diseño aprobado</span> : <QuantityStepper
           value={item.quantity}
           size="touch"
           onChange={onQuantityChange}
           ariaLabel={item.name}
-        />
+        />}
         <div className="flex items-center gap-1">
           {/* Cambiar un ingrediente obligaba a borrar el bowl y rehacerlo entero. */}
           {canEdit && (

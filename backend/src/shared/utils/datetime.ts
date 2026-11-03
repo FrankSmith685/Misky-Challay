@@ -1,5 +1,9 @@
 import { env } from '@config/env';
 
+/** Para replacements de SQL crudo: Sequelize no aplica ahí la zona UTC de los modelos. */
+export const sqlUtcDatetime = (date: Date): string =>
+  date.toISOString().slice(0, 23).replace('T', ' ');
+
 /**
  * FECHAS CON ZONA HORARIA EXPLICITA
  * ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@ import { ApiError } from '@shared/errors/ApiError';
 import type { PermissionCode, RoleCode } from '@config/constants';
 import { PERMISSION_CATALOG, USER_STATUS } from '@config/constants';
 import { User } from '@database/models';
+import { env } from '@config/env';
 
 /**
  * AUTORIZACION (seccion 7.1)
@@ -151,4 +152,19 @@ export const requireSuperAdmin = async (
   } catch (error) {
     next(error);
   }
+};
+
+/** La identidad propietaria no se delega con roles ni con la marca de superadmin. */
+export const isPlatformOwner = async (userId: number): Promise<boolean> => {
+  const user = await User.findByPk(userId, { attributes: ['id', 'email', 'isSuperAdmin', 'status'] });
+  return Boolean(user?.isSuperAdmin && user.status === USER_STATUS.ACTIVE
+    && user.email?.toLowerCase() === env.ADMIN_EMAIL.toLowerCase());
+};
+
+export const requirePlatformOwner = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
+  if (!req.user) return next(ApiError.unauthorized());
+  try {
+    if (!await isPlatformOwner(req.user.sub)) return next(ApiError.forbidden('Esta liquidación corresponde a la cuenta propietaria de Misky Challay'));
+    next();
+  } catch (error) { next(error); }
 };

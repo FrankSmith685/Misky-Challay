@@ -28,5 +28,6 @@ router.post(
   checkoutController.quote,
 );
 router.post('/place', couponLimiter, authenticate, validate(placeSchema), checkoutController.place);
+router.post('/availability', quoteLimiter, optionalAuth, validate(quoteSchema), checkoutController.availability);
 
 export default router;

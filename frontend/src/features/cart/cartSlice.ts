@@ -41,6 +41,8 @@ const cartSlice = createSlice({
   name: 'cart',
   initialState,
   reducers: {
+    refreshItemPrice: (state, action: PayloadAction<{ id: string; unitPrice: number; extrasTotal: number; lineTotal: number }>) => { const item = state.items.find((entry) => entry.id === action.payload.id); if (item) { Object.assign(item, action.payload); recalculate(state); } },
+    replaceCartItems: (state, action: PayloadAction<CartItem[]>) => { state.items = action.payload; state.editingItemId = null; recalculate(state); },
     addItem: (state, action: PayloadAction<CartItem>) => {
       const incoming = action.payload;
       const editedIndex = state.editingItemId
@@ -115,10 +117,17 @@ const cartSlice = createSlice({
       recalculate(state);
     },
     clearCart: () => initialState,
+    consumePurchasedItems: (state, action: PayloadAction<CartItem[]>) => {
+      state.items = state.items.filter((item) => !action.payload.some((bought) => bought.id === item.id && JSON.stringify(bought) === JSON.stringify(item)));
+      if (!state.items.length) return initialState;
+      recalculate(state);
+    },
   },
 });
 
 export const {
+  refreshItemPrice,
+  replaceCartItems,
   addItem,
   updateItemQuantity,
   removeItem,
@@ -129,6 +138,7 @@ export const {
   removeCoupon,
   setQuote,
   clearCart,
+  consumePurchasedItems,
 } = cartSlice.actions;
 
 export default cartSlice.reducer;

@@ -21,7 +21,7 @@ interface ErrorBoundaryState {
  * Última red bajo el árbol de la app.
  *
  * Hasta ahora cualquier excepción durante el render cerraba la aplicación de
- * golpe: el cliente veía desaparecer Verde Bowl sin una palabra y sin saber que
+ * golpe: el cliente veía desaparecer Misky Challay sin una palabra y sin saber que
  * su carrito seguía ahí. Con esto la caída se convierte en una pantalla que
  * explica lo ocurrido y ofrece dos salidas reales — volver a montar el árbol o
  * reiniciar el paquete entero.
@@ -70,10 +70,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.icon}>
-            <MaterialCommunityIcons name="bowl-mix-outline" size={40} color={colors.onDark} />
+            <MaterialCommunityIcons name="cake-variant-outline" size={40} color={colors.onDark} />
           </View>
 
-          <Text style={styles.title}>Se nos cayó el bowl</Text>
+          <Text style={styles.title}>Algo salió mal</Text>
 
           <Text style={styles.copy}>
             Algo falló dentro de la app. No perdiste nada: tu carrito y tus pedidos siguen
@@ -156,8 +156,8 @@ const styles = StyleSheet.create({
   action: {
     alignSelf: 'stretch',
     marginTop: spacing.xl,
-    backgroundColor: colors.accent500,
-    borderColor: colors.accent500,
+    backgroundColor: colors.accent600,
+    borderColor: colors.accent600,
   },
   secondary: {
     minHeight: layout.minTouch,

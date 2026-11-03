@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+﻿import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { BottomSheet } from './BottomSheet';
@@ -8,56 +8,29 @@ import { Skeleton } from './Skeleton';
 import { colors, radius, spacing, type } from '../theme/tokens';
 import type { Allergen, DietaryTag, FoodPreferences } from '../types/domain';
 
-/**
- * Filtros dietéticos del menú, los mismos que acepta GET /catalog/products
- * (dietaryTags, excludeAllergens, maxCalories y minProtein). En la web viven en
- * una barra desplegable; en el móvil no cabe: van en una hoja inferior que se
- * arrastra, se edita en borrador y solo se aplica al confirmar, para no lanzar
- * una petición por cada toque.
- */
+/** Filtros de preferencias y alérgenos del menú. */
 export interface CatalogFilterState {
-  /** Códigos de etiqueta dietética: el plato debe tenerlas TODAS. */
   dietaryTags: string[];
-  /** Códigos de alérgeno: el plato no debe tener NINGUNO. */
   excludeAllergens: string[];
-  maxCalories: number | null;
-  minProtein: number | null;
 }
 
 export const EMPTY_CATALOG_FILTERS: CatalogFilterState = {
   dietaryTags: [],
   excludeAllergens: [],
-  maxCalories: null,
-  minProtein: null,
 };
 
-/** Cuántos filtros dietéticos hay puestos: alimenta el contador del botón «Filtros». */
 export function countCatalogFilters(state: CatalogFilterState): number {
-  return (
-    state.dietaryTags.length +
-    state.excludeAllergens.length +
-    (state.maxCalories === null ? 0 : 1) +
-    (state.minProtein === null ? 0 : 1)
-  );
+  return state.dietaryTags.length + state.excludeAllergens.length;
 }
-
-/** Los mismos escalones que ofrece la web, para que un cliente vea lo mismo en ambos sitios. */
-const CALORIE_STEPS = [400, 500, 600] as const;
-const PROTEIN_STEPS = [15, 25, 35] as const;
 
 export interface CatalogFiltersProps {
   visible: boolean;
   onClose: () => void;
-  /** Filtros aplicados ahora mismo. La hoja parte de aquí cada vez que se abre. */
   value: CatalogFilterState;
   onApply: (next: CatalogFilterState) => void;
   dietaryTags: DietaryTag[];
   allergens: Allergen[];
   loading?: boolean;
-  /**
-   * Perfil alimentario del cliente (GET /account/food-preferences). Si lo tiene
-   * guardado, puede volcarlo en los filtros de un toque en vez de repetirlo aquí.
-   */
   preferences?: FoodPreferences | null;
 }
 
@@ -77,7 +50,7 @@ export function CatalogFilters({
   const [draft, setDraft] = useState<CatalogFilterState>(value);
 
   // El borrador se sincroniza al abrir: si el cliente cierra sin aplicar, lo que
-  // tocó se descarta y la próxima vez vuelve a ver lo que de verdad está puesto.
+  // tocÃ³ se descarta y la prÃ³xima vez vuelve a ver lo que de verdad estÃ¡ puesto.
   useEffect(() => {
     if (visible) setDraft(value);
   }, [value, visible]);
@@ -87,18 +60,13 @@ export function CatalogFilters({
   const hasProfile =
     preferences !== null &&
     preferences !== undefined &&
-    (preferences.dietaryTags.length > 0 ||
-      preferences.allergens.length > 0 ||
-      preferences.calorieTarget !== null ||
-      preferences.proteinTarget !== null);
+    (preferences.dietaryTags.length > 0 || preferences.allergens.length > 0);
 
   const applyProfile = useCallback(() => {
     if (!preferences) return;
     setDraft({
       dietaryTags: [...preferences.dietaryTags],
       excludeAllergens: [...preferences.allergens],
-      maxCalories: preferences.calorieTarget,
-      minProtein: preferences.proteinTarget,
     });
   }, [preferences]);
 
@@ -111,7 +79,7 @@ export function CatalogFilters({
     <BottomSheet
       visible={visible}
       onClose={onClose}
-      title="Filtrar menú"
+      title="Filtrar menÃº"
       subtitle="Cruzamos tus preferencias con la carta de la cocina seleccionada."
       maxHeightRatio={0.92}
       footer={
@@ -153,7 +121,7 @@ export function CatalogFilters({
             <FilterGroup
               label="Preferencias"
               hint="El plato debe cumplirlas todas."
-              empty={dietaryTags.length === 0 ? 'La cocina aún no publica etiquetas.' : undefined}
+              empty={dietaryTags.length === 0 ? 'La cocina aÃºn no publica etiquetas.' : undefined}
             >
               {dietaryTags.map((tag) => (
                 <Chip
@@ -171,44 +139,10 @@ export function CatalogFilters({
               ))}
             </FilterGroup>
 
-            <FilterGroup label="Calorías máximas">
-              {CALORIE_STEPS.map((step) => (
-                <Chip
-                  key={step}
-                  size="sm"
-                  label={`Hasta ${step} kcal`}
-                  selected={draft.maxCalories === step}
-                  onPress={() =>
-                    setDraft((current) => ({
-                      ...current,
-                      maxCalories: current.maxCalories === step ? null : step,
-                    }))
-                  }
-                />
-              ))}
-            </FilterGroup>
-
-            <FilterGroup label="Proteína mínima">
-              {PROTEIN_STEPS.map((step) => (
-                <Chip
-                  key={step}
-                  size="sm"
-                  label={`${step} g o más`}
-                  selected={draft.minProtein === step}
-                  onPress={() =>
-                    setDraft((current) => ({
-                      ...current,
-                      minProtein: current.minProtein === step ? null : step,
-                    }))
-                  }
-                />
-              ))}
-            </FilterGroup>
-
             <FilterGroup
-              label="Excluir alérgenos"
+              label="Excluir alÃ©rgenos"
               hint="Ocultamos los platos que lo declaran."
-              empty={allergens.length === 0 ? 'No hay alérgenos declarados.' : undefined}
+              empty={allergens.length === 0 ? 'No hay alÃ©rgenos declarados.' : undefined}
             >
               {allergens.map((allergen) => (
                 <Chip
@@ -235,8 +169,8 @@ export function CatalogFilters({
                 color={colors.warning}
               />
               <Text style={styles.noticeText}>
-                Preparamos todo en una misma cocina, así que no podemos descartar trazas. Si tu
-                alergia es severa, avísanos en las notas del pedido.
+                Preparamos todo en una misma cocina, asÃ­ que no podemos descartar trazas. Si tu
+                alergia es severa, avÃ­sanos en las notas del pedido.
               </Text>
             </View>
           </>
@@ -255,7 +189,7 @@ function FilterGroup({
 }: {
   label: string;
   hint?: string;
-  /** Texto a mostrar cuando el backend no devolvió opciones para este grupo. */
+  /** Filtros de preferencias y alérgenos del menú. */
   empty?: string;
   children: ReactNode;
 }) {
@@ -330,3 +264,4 @@ const styles = StyleSheet.create({
     flex: 2,
   },
 });
+

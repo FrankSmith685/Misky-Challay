@@ -1,0 +1,23 @@
+Tencent Hunyuan 3D 2.0 is licensed under the Tencent Hunyuan 3D 2.0 Community License Agreement, Copyright © 2025 Tencent. All Rights Reserved. The trademark rights of “Tencent” are retained by Tencent.
+
+Powered by Tencent Hunyuan.
+Upstream code: https://github.com/Tencent-Hunyuan/Hunyuan3D-2
+Code revision: f8db63096c8282cb27354314d896feba5ba6ff8a
+Weights: https://huggingface.co/tencent/Hunyuan3D-2mini
+Weight revision: f90a0f7df7d5e6f71109cf333f6a95a0ae3194a6
+Variant: hunyuan3d-dit-v2-mini-turbo/model.fp16.safetensors
+Full community license and acceptable use policy: LICENSE.Hunyuan
+
+Integration changes (2026-10-28): the local adapter uses strict streamed weight
+loading, inference-only VAE components, component CPU/GPU offload, bounded
+attention queries and CPU marching cubes. It simplifies the inferred geometry
+and projects the supplied photograph onto the visible front; hidden surfaces
+use estimated coating colors. The optional Hunyuan Paint model is not included.
+Upstream source files and weights are not modified by this adapter.
+
+This is an independent integration for the Misky Challay project. Tencent is
+not affiliated with, associated with, sponsoring, or endorsing this service.
+Before providing this service to third parties, its operator must disclose
+their actual full legal name and entity, provide the license and applicable
+use restrictions, and comply with its territory and commercial conditions.
+The project's local evaluation does not identify or invent a legal operator.

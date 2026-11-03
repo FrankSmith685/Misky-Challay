@@ -204,7 +204,7 @@ export const GroupStep = ({
                         height={208}
                         className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                         style={{ objectPosition: option.imagePosition || `${15 + ((optionIndex * 23) % 70)}% 50%` }}
-                      /> : <span className="grid h-full min-h-[104px] place-items-center bg-[linear-gradient(145deg,#f8f1f8,#fff8ec)] text-brand-500" title="Imagen pendiente"><ImageOff className="size-5" /></span>}
+                      /> : <span className="grid h-full min-h-[104px] place-items-center bg-[linear-gradient(145deg,#eff8ff,#fff8ec)] text-brand-500" title="Imagen pendiente"><ImageOff className="size-5" /></span>}
                   </div>
                 )}
 
@@ -247,7 +247,7 @@ export const GroupStep = ({
 
                   <div className="flex items-end justify-between gap-2 text-[11px]">
                     <span className="text-ink-muted">
-                      {Math.round(option.nutrition.calories)} kcal · {Math.round(option.nutrition.protein)} g prot.
+                      {option.chargeAlways ? 'Suplemento' : 'Incluido según el paso'}
                     </span>
                     <span className="font-bold">
                       {!option.isAvailable ? (

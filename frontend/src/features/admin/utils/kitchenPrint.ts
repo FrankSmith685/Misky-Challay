@@ -55,7 +55,7 @@ export const printKitchenTicket = (ticket: KitchenTicket): void => {
     <header><h1>${escapeHtml(ticket.order.orderNumber)}</h1><p class="destination">${escapeHtml(destinationOf(ticket))}</p><div class="meta"><span>${escapeHtml(ticket.order.contactName || 'Cliente')}</span><span>${new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}</span></div></header>
     ${itemRows}
     ${ticket.order.notes ? `<section><strong>NOTA GENERAL</strong><p>${escapeHtml(ticket.order.notes)}</p></section>` : ''}
-    <footer>Ticket #${ticket.id} · Verde Bowl</footer>
+    <footer>Ticket #${ticket.id} · Misky Challay</footer>
   </body></html>`);
   document_.close();
 

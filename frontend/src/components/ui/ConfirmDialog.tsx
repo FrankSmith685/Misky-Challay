@@ -21,8 +21,12 @@ export interface ConfirmOptions {
   tone?: 'danger' | 'default';
   /** Etiqueta del campo de motivo. Su sola presencia muestra el campo. */
   reasonLabel?: string;
+  /** Ayuda contextual bajo el motivo; por defecto solo afirma que se registra. */
+  reasonHint?: string;
   /** Sin motivo escrito no se habilita el CTA (cancelar pedido, cancelar ticket). */
   reasonRequired?: boolean;
+  reasonMinLength?: number;
+  reasonMaxLength?: number;
   /** Texto que hay que teclear literalmente para habilitar el CTA (ej. el email al conceder superadmin). */
   requireTypedText?: string;
 }
@@ -90,13 +94,15 @@ export const ConfirmDialogProvider = ({ children }: { children: ReactNode }) => 
 
   const isDanger = request?.tone === 'danger';
   const showReason = Boolean(request?.reasonLabel) || Boolean(request?.reasonRequired);
-  const reasonMissing = Boolean(request?.reasonRequired) && reason.trim().length === 0;
+  const reasonLength = reason.trim().length;
+  const reasonTooShort = reasonLength < (request?.reasonMinLength ?? (request?.reasonRequired ? 1 : 0));
+  const reasonTooLong = request?.reasonMaxLength !== undefined && reasonLength > request.reasonMaxLength;
   // Comparacion laxa: lo que se teclea suele ser un email, y exigir mayusculas
   // exactas seria una trampa sin ninguna ganancia de seguridad.
   const typedMatches =
     !request?.requireTypedText
     || typed.trim().toLowerCase() === request.requireTypedText.trim().toLowerCase();
-  const canConfirm = !reasonMissing && typedMatches;
+  const canConfirm = !reasonTooShort && !reasonTooLong && typedMatches;
 
   return (
     <ConfirmContext.Provider value={confirm}>
@@ -134,11 +140,13 @@ export const ConfirmDialogProvider = ({ children }: { children: ReactNode }) => 
             <Textarea
               autoFocus
               rows={3}
+              maxLength={request?.reasonMaxLength}
               label={request?.reasonLabel ?? 'Motivo'}
+              error={reasonLength > 0 && reasonTooShort ? `Escribe al menos ${request?.reasonMinLength ?? 1} caracteres.` : reasonTooLong ? `Usa hasta ${request?.reasonMaxLength} caracteres.` : undefined}
               hint={
-                request?.reasonRequired
-                  ? 'Obligatorio. Queda registrado y se le comunica al cliente.'
-                  : 'Opcional. Queda registrado junto a la acción.'
+                request?.reasonHint ?? (request?.reasonRequired
+                  ? 'Obligatorio. Queda registrado junto a esta acción.'
+                  : 'Opcional. Queda registrado junto a esta acción.')
               }
               value={reason}
               onChange={(event) => setReason(event.target.value)}

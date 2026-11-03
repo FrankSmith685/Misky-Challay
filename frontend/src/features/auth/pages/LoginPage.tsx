@@ -7,7 +7,7 @@ import IconButton from '@mui/material/IconButton';
 import { ArrowRight, Eye, EyeOff, LockKeyhole, Mail, Route } from 'lucide-react';
 import toast from '@components/mui/MuiToast';
 import { Alert, Button, Input } from '@components/ui';
-import { useAppDispatch, useAppSelector } from '@app/hooks';
+import { useAppDispatch, useAppSelector, useAppStore } from '@app/hooks';
 import { ROUTES } from '@constants/routes';
 import { login } from '../authSlice';
 import { readReturnTo, resolveAfterAuthPath } from '../authRedirect';
@@ -29,6 +29,7 @@ type LoginForm = z.infer<typeof loginSchema>;
 /** Acceso único para clientes y equipo, con retorno al flujo que lo solicitó. */
 const LoginPage = () => {
   const dispatch = useAppDispatch();
+  const store = useAppStore();
   const navigate = useNavigate();
   const location = useLocation();
   const status = useAppSelector((state) => state.auth.status);
@@ -57,7 +58,7 @@ const LoginPage = () => {
 
       const user = result.payload.user;
       const isStaff = user.isSuperAdmin || user.permissions.length > 0;
-      navigate(resolveAfterAuthPath(from, isStaff, resolveStaffAccess(user).to), { replace: true });
+      navigate(resolveAfterAuthPath(from, isStaff, resolveStaffAccess(user).to, store.getState().cart.items.length > 0), { replace: true });
       return;
     }
 
@@ -148,7 +149,7 @@ const LoginPage = () => {
       </form>
 
       <AuthFormFooter
-        prompt="¿Primera vez en Verde Bowl?"
+        prompt="¿Primera vez en Misky Challay?"
         linkLabel="Crea tu cuenta gratis"
         to={ROUTES.register}
         from={from}

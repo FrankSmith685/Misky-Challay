@@ -2,6 +2,7 @@ import {
   Allergen,
   BranchOptionAvailability,
   Branch,
+  CakeProductProfile,
   BuilderPreset,
   BuilderPresetItem,
   CustomizationGroup,
@@ -9,12 +10,15 @@ import {
   InventoryItem,
   OptionIncompatibility,
   Product,
+  ProductVariant,
   ProductCustomizationGroup,
   sequelize,
 } from '@database/models';
 import { SELECTION_TYPE, type SelectionType } from '@database/models/customizationGroup.model';
 import { OPTION_STATUS, type OptionStatus } from '@database/models/customizationOption.model';
 import { ApiError } from '@shared/errors/ApiError';
+import { Op, type Transaction } from 'sequelize';
+import { refreshCakeAllergens } from '@modules/catalog/cakeAllergens.service';
 
 /**
  * ABM DEL CONSTRUCTOR DE BOWLS (M05).
@@ -45,6 +49,19 @@ const assertKnownAllergens = async (codes: string[]): Promise<void> => {
       `Estos alergenos no existen en el maestro: ${unknown.join(', ')}`,
     );
   }
+};
+
+const invalidateCakeFoodReviewForGroup = async (groupId: number, transaction?: Transaction): Promise<void> => {
+  const links = await ProductCustomizationGroup.findAll({ where: { groupId }, attributes: ['productId'], transaction });
+  if (!links.length) return;
+  const profiles = await CakeProductProfile.findAll({
+    where: { productId: { [Op.in]: links.map((link) => link.productId) } },
+    attributes: ['productId'],
+    transaction,
+  });
+  const productIds = profiles.map((profile) => profile.productId);
+  if (!productIds.length) return;
+  for (const productId of productIds) await refreshCakeAllergens(productId, transaction);
 };
 
 /**
@@ -89,6 +106,11 @@ export const customizationAdminService = {
   async getConfig(productId: number) {
     const product = await Product.findByPk(productId);
     if (!product) throw ApiError.notFound('Producto no encontrado');
+    const variants = await ProductVariant.findAll({
+      where: { productId },
+      attributes: ['id', 'name', 'servingSize', 'servingUnit', 'isDefault', 'isActive'],
+      order: [['sortOrder', 'ASC'], ['id', 'ASC']],
+    });
 
     const links = await ProductCustomizationGroup.findAll({
       where: { productId },
@@ -130,6 +152,7 @@ export const customizationAdminService = {
         return {
           linkId: link.id,
           id: group.id,
+          variantId: link.variantId ?? null,
           code: group.code,
           name: group.name,
           description: group.description,
@@ -156,10 +179,7 @@ export const customizationAdminService = {
               spiceLevel: option.spiceLevel,
               priceDelta: Number(option.priceDelta),
               chargeAlways: option.chargeAlways,
-              calories: Number(option.calories),
-              protein: Number(option.protein),
-              carbs: Number(option.carbs),
-              fat: Number(option.fat),
+              cakeScaleWithServings: option.cakeScaleWithServings,
               maxPerItem: option.maxPerItem,
               status: option.status,
               inventoryItemId: option.inventoryItemId,
@@ -189,7 +209,16 @@ export const customizationAdminService = {
       .sort((a, b) => a.sortOrder - b.sortOrder);
 
     return {
+      customServings: (await CakeProductProfile.findByPk(productId))?.customServingsJson ?? null,
       product: { id: product.id, name: product.name, type: product.type },
+      variants: variants.map((variant) => ({
+        id: variant.id,
+        name: variant.name,
+        servingSize: variant.servingSize === null ? null : Number(variant.servingSize),
+        servingUnit: variant.servingUnit,
+        isDefault: variant.isDefault,
+        isActive: variant.isActive,
+      })),
       groups,
       inventoryItems: inventoryItems.map((item) => ({
         id: item.id,
@@ -219,6 +248,7 @@ export const customizationAdminService = {
       code: string;
       name: string;
       description?: string;
+      variantId?: number | null;
       selectionType: SelectionType;
       minSelection: number;
       maxSelection: number;
@@ -228,6 +258,22 @@ export const customizationAdminService = {
   ) {
     if (input.maxSelection < input.minSelection) {
       throw ApiError.badRequest('El maximo no puede ser menor que el minimo');
+    }
+    if (input.variantId != null && !await ProductVariant.findOne({ where: { id: input.variantId, productId } })) {
+      throw ApiError.badRequest('La presentación no pertenece a este producto');
+    }
+
+    const relatedLinks = await ProductCustomizationGroup.findAll({
+      where: { productId },
+      include: [{ model: CustomizationGroup, as: 'group', attributes: ['name'] }],
+    });
+    const normalizedName = input.name.trim().toLocaleLowerCase('es-PE');
+    if (relatedLinks.some((link) => {
+      const group = link.get('group') as CustomizationGroup | undefined;
+      return group?.name.trim().toLocaleLowerCase('es-PE') === normalizedName
+        && (input.variantId == null || link.variantId === null || link.variantId === input.variantId);
+    })) {
+      throw ApiError.conflict('Ya existe un grupo con ese nombre para esta presentación');
     }
 
     const existing = await CustomizationGroup.findOne({ where: { code: input.code } });
@@ -252,7 +298,7 @@ export const customizationAdminService = {
         {
           productId,
           groupId: group.id,
-          variantId: null,
+          variantId: input.variantId ?? null,
           sortOrder: input.sortOrder,
           minSelectionOverride: null,
           maxSelectionOverride: null,
@@ -260,6 +306,8 @@ export const customizationAdminService = {
         },
         { transaction },
       );
+
+      await refreshCakeAllergens(productId, transaction);
 
       return group;
     });
@@ -307,6 +355,7 @@ export const customizationAdminService = {
         { where: { groupId } },
       );
     }
+    if (input.minSelection !== undefined) await invalidateCakeFoodReviewForGroup(groupId);
     return { group, before };
   },
 
@@ -319,8 +368,14 @@ export const customizationAdminService = {
       );
     }
 
-    await ProductCustomizationGroup.destroy({ where: { groupId } });
-    await CustomizationGroup.destroy({ where: { id: groupId } });
+    await sequelize.transaction(async (transaction) => {
+      const links = await ProductCustomizationGroup.findAll({ where: { groupId }, attributes: ['productId'], transaction });
+      await ProductCustomizationGroup.destroy({ where: { groupId }, transaction });
+      await CustomizationGroup.destroy({ where: { id: groupId }, transaction });
+      for (const productId of new Set(links.map((link) => link.productId))) {
+        await refreshCakeAllergens(productId, transaction);
+      }
+    });
   },
 
   async createOption(
@@ -337,10 +392,7 @@ export const customizationAdminService = {
       sortOrder?: number;
       priceDelta: number;
       chargeAlways: boolean;
-      calories: number;
-      protein: number;
-      carbs: number;
-      fat: number;
+      cakeScaleWithServings?: boolean;
       maxPerItem: number;
       inventoryItemId?: number | null;
       consumptionQuantity?: number;
@@ -361,7 +413,8 @@ export const customizationAdminService = {
 
     const sortOrder = input.sortOrder ?? await CustomizationOption.count({ where: { groupId } });
 
-    return CustomizationOption.create({
+    return sequelize.transaction(async (transaction) => {
+    const option = await CustomizationOption.create({
       groupId,
       name: input.name,
       description: input.description ?? null,
@@ -374,16 +427,16 @@ export const customizationAdminService = {
       sortOrder,
       priceDelta: input.priceDelta,
       chargeAlways: input.chargeAlways,
-      calories: input.calories,
-      protein: input.protein,
-      carbs: input.carbs,
-      fat: input.fat,
+      cakeScaleWithServings: input.cakeScaleWithServings ?? true,
       maxPerItem: input.maxPerItem,
       inventoryItemId,
       // Sin insumo enlazado la cantidad no significa nada: se guarda en cero para
       // que no reaparezca al volver a enlazarlo.
       consumptionQuantity: inventoryItemId === null ? 0 : consumptionQuantity,
       ingredientId: null,
+    }, { transaction });
+    await invalidateCakeFoodReviewForGroup(groupId, transaction);
+    return option;
     });
   },
 
@@ -402,10 +455,7 @@ export const customizationAdminService = {
       sortOrder?: number;
       priceDelta?: number;
       chargeAlways?: boolean;
-      calories?: number;
-      protein?: number;
-      carbs?: number;
-      fat?: number;
+      cakeScaleWithServings?: boolean;
       maxPerItem?: number;
       status?: OptionStatus;
       inventoryItemId?: number | null;
@@ -419,12 +469,9 @@ export const customizationAdminService = {
       priceDelta: Number(option.priceDelta),
       chargeAlways: option.chargeAlways,
       status: option.status,
-      calories: Number(option.calories),
     };
 
-    /* El enlace con el insumo se valida solo cuando ESTE cambio lo toca: asi una
-     * correccion de macros o de alergenos no queda bloqueada por una fila antigua
-     * que ya venia con cantidad 0. */
+    /* El enlace con el insumo se valida solo cuando ESTE cambio lo toca. */
     let nextConsumption = input.consumptionQuantity;
     if (input.inventoryItemId !== undefined || input.consumptionQuantity !== undefined) {
       const inventoryItemId =
@@ -451,16 +498,19 @@ export const customizationAdminService = {
     if (input.sortOrder !== undefined) option.sortOrder = input.sortOrder;
     if (input.priceDelta !== undefined) option.priceDelta = input.priceDelta;
     if (input.chargeAlways !== undefined) option.chargeAlways = input.chargeAlways;
-    if (input.calories !== undefined) option.calories = input.calories;
-    if (input.protein !== undefined) option.protein = input.protein;
-    if (input.carbs !== undefined) option.carbs = input.carbs;
-    if (input.fat !== undefined) option.fat = input.fat;
+    if (input.cakeScaleWithServings !== undefined) option.cakeScaleWithServings = input.cakeScaleWithServings;
     if (input.maxPerItem !== undefined) option.maxPerItem = input.maxPerItem;
     if (input.status !== undefined) option.status = input.status;
     if (input.inventoryItemId !== undefined) option.inventoryItemId = input.inventoryItemId;
     if (nextConsumption !== undefined) option.consumptionQuantity = nextConsumption;
 
-    await option.save();
+    const ingredientsChanged = input.allergens !== undefined || input.dietaryTags !== undefined
+      || input.inventoryItemId !== undefined || input.consumptionQuantity !== undefined
+      || input.status !== undefined;
+    await sequelize.transaction(async (transaction) => {
+      await option.save({ transaction });
+      if (ingredientsChanged) await invalidateCakeFoodReviewForGroup(option.groupId, transaction);
+    });
     return { option, before };
   },
 
@@ -477,6 +527,7 @@ export const customizationAdminService = {
       await BuilderPresetItem.destroy({ where: { optionId }, transaction });
       await BranchOptionAvailability.destroy({ where: { optionId }, transaction });
       await option.destroy({ transaction });
+      await invalidateCakeFoodReviewForGroup(option.groupId, transaction);
     });
   },
 
@@ -545,10 +596,7 @@ export const customizationAdminService = {
       spiceLevel: source.spiceLevel,
       priceDelta: source.priceDelta,
       chargeAlways: source.chargeAlways,
-      calories: source.calories,
-      protein: source.protein,
-      carbs: source.carbs,
-      fat: source.fat,
+      cakeScaleWithServings: source.cakeScaleWithServings,
       maxPerItem: source.maxPerItem,
       inventoryItemId: source.inventoryItemId,
       consumptionQuantity: source.consumptionQuantity,

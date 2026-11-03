@@ -13,6 +13,22 @@ import { deliveryController } from './delivery.controller';
 const router = Router();
 
 router.use(authenticate);
+const evidenceParams = z.object({ deliveryId: z.coerce.number().int().positive(), stage: z.enum(['DEPARTURE', 'ARRIVAL']) });
+router.get('/:deliveryId/evidence/:stage', requirePermissions(PERMISSIONS.DELIVERY_READ), validate(z.object({ params: evidenceParams })), deliveryController.evidence);
+router.put('/:deliveryId/evidence/:stage', requirePermissions(PERMISSIONS.DELIVERY_OPERATE), validate(z.object({ params: evidenceParams, body: z.object({ dataUrl: z.string().max(300000) }) })), deliveryController.evidence);
+
+router.get('/transport', requirePermissions(PERMISSIONS.DELIVERY_ASSIGN), validate(z.object({ query: z.object({ branchId: z.coerce.number().int().positive() }) })), deliveryController.transport);
+router.put('/transport', requirePermissions(PERMISSIONS.DELIVERY_ASSIGN), validate(z.object({ body: z.object({
+  branchId: z.coerce.number().int().positive(), instructions: z.string().trim().min(10).max(1000).optional(),
+  defaultCarCapacity: z.coerce.number().int().min(0).max(500).optional(),
+  slots: z.array(z.object({ id: z.coerce.number().int().positive(), carCapacity: z.coerce.number().int().min(0).max(500) })).max(100).optional(),
+}) })), deliveryController.updateTransport);
+router.patch('/drivers/:driverId', requirePermissions(PERMISSIONS.DELIVERY_ASSIGN), validate(z.object({
+  params: z.object({ driverId: z.coerce.number().int().positive() }), body: z.object({
+    branchId: z.coerce.number().int().positive(), vehicleType: z.enum(['CAR', 'MOTORCYCLE', 'OTHER', 'UNSPECIFIED']),
+    vehicle: z.string().trim().max(50).nullable().optional(), status: z.enum(['AVAILABLE', 'BUSY', 'OFFLINE']).optional(),
+  }),
+})), deliveryController.updateDriver);
 
 router.get(
   '/board',
@@ -42,6 +58,7 @@ router.post(
           driverId: z.coerce.number().int().positive().optional(),
           provider: z.string().max(40).optional(),
           reference: z.string().max(120).optional(),
+          vehicleType: z.enum(['CAR', 'MOTORCYCLE', 'OTHER']).optional(),
           /** Motivo del cambio de repartidor. Queda en el evento del reparto. */
           reason: z.string().trim().max(200).optional(),
         })
@@ -63,6 +80,7 @@ router.post(
         .object({
           status: z.enum(['PICKED_UP', 'ON_ROUTE', 'DELIVERED', 'FAILED']),
           comment: z.string().trim().max(255).optional(),
+          recipientName: z.string().trim().min(2).max(120).optional(),
         })
         // Una entrega fallida sin motivo no se puede atender despues: no se sabe si
         // el cliente estaba ausente, si la direccion era falsa o si se pincho la moto.

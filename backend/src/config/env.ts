@@ -31,6 +31,9 @@ const booleanFromString = (defaultValue: boolean) =>
     .optional()
     .transform((value) => (value === undefined ? defaultValue : value.toLowerCase() === 'true'));
 
+/** Las URLs públicas son orígenes; una barra final no debe duplicar las rutas. */
+const publicOrigin = z.string().url().transform((value) => new URL(value).origin);
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
@@ -50,7 +53,7 @@ const envSchema = z.object({
 
   DB_HOST: z.string().default('localhost'),
   DB_PORT: z.coerce.number().int().positive().default(3306),
-  DB_NAME: z.string().default('verde_bowl_v3'),
+  DB_NAME: z.string().trim().min(1).default('DulceFlow'),
   DB_USER: z.string().default('root'),
   DB_PASSWORD: z.string().default(''),
   /**
@@ -77,16 +80,26 @@ const envSchema = z.object({
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
   BCRYPT_SALT_ROUNDS: z.coerce.number().int().min(8).max(14).default(10),
 
-  ADMIN_EMAIL: z.string().email().default('admin@verdebowl.com'),
+  ADMIN_EMAIL: z.string().email().default('admin@ejemplo.com'),
   ADMIN_PASSWORD: z.string().min(6).default('Admin123*'),
 
   // URL publica del frontend: se usa en los enlaces de retorno del pago.
-  FRONTEND_URL: z.string().url().default('http://localhost:5173'),
+  FRONTEND_URL: publicOrigin.default('http://localhost:5173'),
+  // WhatsApp Business Platform. Los avisos permanecen apagados hasta configurar
+  // credenciales y plantillas aprobadas en Meta.
+  WHATSAPP_ACCESS_TOKEN: z.string().optional(),
+  WHATSAPP_PHONE_NUMBER_ID: z.preprocess((value) => value === '' ? undefined : value, z.string().regex(/^\d+$/).optional()),
+  WHATSAPP_GRAPH_API_VERSION: z.preprocess((value) => value === '' ? undefined : value, z.string().regex(/^v\d+\.\d+$/).optional()),
+  WHATSAPP_TEMPLATE_LANGUAGE: z.string().default('es'),
+  WHATSAPP_TEMPLATE_ORDER_CONFIRMED: z.string().optional(),
+  WHATSAPP_TEMPLATE_ORDER_READY: z.string().optional(),
+  WHATSAPP_TEMPLATE_ORDER_OUT_FOR_DELIVERY: z.string().optional(),
+  WHATSAPP_TEMPLATE_DESIGN_QUOTED: z.string().optional(),
   // Origen web accesible desde el celular para volver de la pasarela a la app.
   // Si no se define, se reutiliza FRONTEND_URL.
   MOBILE_RETURN_BASE_URL: z.preprocess(
     (value) => (value === '' ? undefined : value),
-    z.string().url().optional(),
+    publicOrigin.optional(),
   ),
 
   // --- App movil: compuerta de version y mantenimiento -----------------------
@@ -106,7 +119,7 @@ const envSchema = z.object({
   // produccion exige un par persistente para no invalidar los dispositivos.
   VAPID_PUBLIC_KEY: z.string().optional(),
   VAPID_PRIVATE_KEY: z.string().optional(),
-  VAPID_SUBJECT: z.string().default('mailto:operaciones@verdebowl.com'),
+  VAPID_SUBJECT: z.string().default('mailto:operaciones@ejemplo.com'),
 
   // Geocodificacion. Geoapify es el proveedor recomendado para producción.
   // Photon permite autocompletar en desarrollo sin enviar cada tecla a Nominatim;
@@ -115,11 +128,38 @@ const envSchema = z.object({
   GEOAPIFY_BASE_URL: z.string().url().default('https://api.geoapify.com/v1/geocode'),
   PHOTON_BASE_URL: z.string().url().default('https://photon.komoot.io'),
   NOMINATIM_BASE_URL: z.string().url().default('https://nominatim.openstreetmap.org'),
-  ROUTING_BASE_URL: z.string().url().optional(),
+  ROUTING_BASE_URL: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.string().url().optional(),
+  ),
 
-  // Pagos. Sin STRIPE_SECRET_KEY se usa el simulador local (nunca en produccion).
+  // Generacion de imagenes en la biblioteca. Nunca se envian al navegador.
+  CLOUDFLARE_ACCOUNT_ID: z.string().trim().optional(),
+  CLOUDFLARE_API_TOKEN: z.string().trim().optional(),
+  CAKE_PREVIEW_MAX_PER_HOUR: z.coerce.number().int().min(1).max(120).default(12),
+
+  // Reconstrucción foto -> GLB. Separada del generador de imágenes 2D.
+  CAKE_3D_PROVIDER: z.enum(['disabled', 'meshy', 'hunyuan', 'triposr', 'sf3d', 'hunyuanmini']).default('disabled'),
+  MESHY_API_KEY: z.string().trim().optional(),
+  HUNYUAN_3D_URL: z.preprocess((value) => value === '' ? undefined : value, z.string().url().optional()),
+  HUNYUAN_3D_API_KEY: z.string().trim().optional(),
+  TRIPOSR_3D_URL: z.string().url().default('http://127.0.0.1:8091'),
+  SF3D_3D_URL: z.string().url().default('http://127.0.0.1:8091'),
+  HUNYUAN_MINI_3D_URL: z.string().url().default('http://127.0.0.1:8091'),
+  CAKE_3D_MAX_ACTIVE: z.coerce.number().int().min(1).max(10).default(2),
+  CAKE_3D_HOURLY_LIMIT: z.coerce.number().int().min(0).max(1000).default(6),
+
+  // Pagos. Sin pasarela configurada se usa el simulador local (nunca en produccion).
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  MERCADOPAGO_ACCESS_TOKEN: z.string().optional(),
+  MERCADOPAGO_WEBHOOK_SECRET: z.string().optional(),
+  // Ambos Access Token de Checkout Pro Orders (prueba y produccion) usan APP_USR-.
+  // El modo debe declararse segun la seccion del panel de donde se copio el token.
+  MERCADOPAGO_MODE: z.preprocess(
+    (value) => value === '' ? undefined : value,
+    z.enum(['test', 'live']).optional(),
+  ),
   MOCK_WEBHOOK_SECRET: z.string().min(8).default('dev-mock-webhook-secret'),
 
   // IGV. El precio del catalogo ya lo incluye (obligatorio de cara al consumidor en
@@ -129,7 +169,7 @@ const envSchema = z.object({
 
   // Pago contra entrega (efectivo al recibir). Dominante en delivery en Peru.
   // El tope acota el riesgo de pedidos falsos: por encima de ese monto, solo pago online.
-  COD_ENABLED: booleanFromString(true),
+  COD_ENABLED: booleanFromString(false),
   COD_MAX_AMOUNT: z.coerce.number().min(0).default(300),
 
   // Boleta: a partir de este importe SUNAT exige identificar al comprador con DNI.
@@ -140,14 +180,14 @@ const envSchema = z.object({
   // social, RUC, domicilio) y que encabezan el Libro de Reclamaciones y los correos.
   // Los valores por defecto son marcadores: rellenalos con los datos reales de tu
   // empresa antes de vender. No hacen falta para desarrollar.
-  BUSINESS_LEGAL_NAME: z.string().default('Verde Bowl S.A.C.'),
-  BUSINESS_COMMERCIAL_NAME: z.string().default('Verde Bowl'),
+  BUSINESS_LEGAL_NAME: z.string().default('Misky Challay (datos legales pendientes)'),
+  BUSINESS_COMMERCIAL_NAME: z.string().default('Misky Challay'),
   BUSINESS_RUC: z.string().default('20600000000'),
   BUSINESS_ADDRESS: z.string().default('Av. Ejemplo 123, Miraflores, Lima'),
   BUSINESS_PHONE: z.string().default('+51 999 999 999'),
-  BUSINESS_EMAIL: z.string().default('hola@verdebowl.com'),
+  BUSINESS_EMAIL: z.string().default('contacto@ejemplo.com'),
   /** Correo al que se dirigen los reclamos y las solicitudes de datos personales. */
-  BUSINESS_SUPPORT_EMAIL: z.string().default('reclamos@verdebowl.com'),
+  BUSINESS_SUPPORT_EMAIL: z.string().default('reclamos@ejemplo.com'),
   /** Dias habiles para responder un reclamo del Libro (INDECOPI). */
   COMPLAINT_RESPONSE_DAYS: z.coerce.number().int().min(1).max(60).default(15),
 
@@ -165,8 +205,8 @@ const envSchema = z.object({
   MAIL_PORT: z.coerce.number().int().positive().default(587),
   MAIL_USER: z.string().optional(),
   MAIL_PASSWORD: z.string().optional(),
-  MAIL_FROM: z.string().email().default('hola@verdebowl.com'),
-  MAIL_FROM_NAME: z.string().default('Verde Bowl'),
+  MAIL_FROM: z.string().email().default('contacto@ejemplo.com'),
+  MAIL_FROM_NAME: z.string().default('Misky Challay'),
   /** Clave del servidor para cifrar secretos SMTP guardados desde el superadmin. */
   SETTINGS_ENCRYPTION_KEY: z.string().min(32).optional(),
 });
@@ -202,6 +242,18 @@ const productionGuard = (value: z.infer<typeof envSchema>, ctx: z.RefinementCtx)
       'no uses una clave live fuera de producción: podría realizar cobros reales durante pruebas',
     );
   }
+  if (value.STRIPE_SECRET_KEY && value.MERCADOPAGO_ACCESS_TOKEN) {
+    fail('MERCADOPAGO_ACCESS_TOKEN', 'configura una sola pasarela online activa');
+  }
+  if (value.MERCADOPAGO_ACCESS_TOKEN && !value.MERCADOPAGO_WEBHOOK_SECRET) {
+    fail('MERCADOPAGO_WEBHOOK_SECRET', 'es obligatorio cuando Mercado Pago esta activo');
+  }
+  if (value.MERCADOPAGO_ACCESS_TOKEN && !value.MERCADOPAGO_MODE) {
+    fail('MERCADOPAGO_MODE', 'indica test o live segun las credenciales copiadas de Mercado Pago');
+  }
+  if (value.NODE_ENV !== 'production' && value.MERCADOPAGO_MODE === 'live') {
+    fail('MERCADOPAGO_MODE', 'usa credenciales de prueba fuera de produccion');
+  }
 
   if (value.NODE_ENV !== 'production') return;
 
@@ -215,6 +267,9 @@ const productionGuard = (value: z.infer<typeof envSchema>, ctx: z.RefinementCtx)
 
   if (!value.DB_PASSWORD) fail('DB_PASSWORD', 'es obligatoria en produccion');
   if (value.DB_USER === 'root') fail('DB_USER', 'no uses root en produccion');
+  if (/^(admin|contacto|reclamos)@(?:ejemplo|example)\.com$/i.test(value.ADMIN_EMAIL)) {
+    fail('ADMIN_EMAIL', 'reemplaza el correo de ejemplo por una cuenta real');
+  }
 
   if (value.ADMIN_PASSWORD === 'Admin123*')
     fail('ADMIN_PASSWORD', 'sigue siendo la contrasena de ejemplo publicada en .env.example');
@@ -235,21 +290,40 @@ const productionGuard = (value: z.infer<typeof envSchema>, ctx: z.RefinementCtx)
   if (value.CORS_ORIGIN.trim() === '*') fail('CORS_ORIGIN', 'no puede ser * con credentials: true');
   if (/localhost|127\.0\.0\.1/i.test(value.FRONTEND_URL))
     fail('FRONTEND_URL', 'apunta a localhost: los enlaces de pago y correo quedarian rotos');
+  if (/example\.com|ejemplo\.com/i.test(value.FRONTEND_URL))
+    fail('FRONTEND_URL', 'reemplaza el dominio de ejemplo por el dominio real');
   if (value.MOBILE_RETURN_BASE_URL && /localhost|127\.0\.0\.1/i.test(value.MOBILE_RETURN_BASE_URL))
     fail('MOBILE_RETURN_BASE_URL', 'debe ser accesible desde el telefono y no puede apuntar a localhost');
   if (!value.VAPID_PUBLIC_KEY) fail('VAPID_PUBLIC_KEY', 'es obligatoria para alertas push del KDS');
   if (!value.VAPID_PRIVATE_KEY) fail('VAPID_PRIVATE_KEY', 'es obligatoria para alertas push del KDS');
 
-  if (!value.STRIPE_SECRET_KEY)
-    fail('STRIPE_SECRET_KEY', 'es obligatoria en produccion: sin ella se usaria el simulador');
+  if (!value.STRIPE_SECRET_KEY && !value.MERCADOPAGO_ACCESS_TOKEN)
+    fail('MERCADOPAGO_ACCESS_TOKEN', 'configura Mercado Pago o Stripe para evitar el simulador en produccion');
   if (value.STRIPE_SECRET_KEY && !value.STRIPE_SECRET_KEY.startsWith('sk_live_'))
     fail('STRIPE_SECRET_KEY', 'producción requiere una clave sk_live_, no una clave de prueba');
-  if (!value.STRIPE_WEBHOOK_SECRET)
+  if (value.STRIPE_SECRET_KEY && !value.STRIPE_WEBHOOK_SECRET)
     fail('STRIPE_WEBHOOK_SECRET', 'es obligatoria: sin firma no se puede confirmar un pago');
+  if (value.MERCADOPAGO_ACCESS_TOKEN && value.MERCADOPAGO_MODE !== 'live')
+    fail('MERCADOPAGO_MODE', 'produccion requiere credenciales productivas');
   if (!value.MAIL_HOST)
     fail('MAIL_HOST', 'es obligatoria en produccion: los correos se perderian en la consola');
   if (!value.SETTINGS_ENCRYPTION_KEY)
     fail('SETTINGS_ENCRYPTION_KEY', 'es obligatoria para cifrar credenciales gestionadas desde el panel');
+
+  if (/example\.com|ejemplo\.com|verdebowl\.com/i.test(value.CORS_ORIGIN))
+    fail('CORS_ORIGIN', 'reemplaza el dominio de ejemplo por el dominio real');
+  if (/pendientes|ejemplo/i.test(value.BUSINESS_LEGAL_NAME))
+    fail('BUSINESS_LEGAL_NAME', 'completa la razon social real antes de vender');
+  if (value.BUSINESS_RUC === '20600000000')
+    fail('BUSINESS_RUC', 'reemplaza el RUC de ejemplo por el RUC real');
+  if (/example\.com|ejemplo\.com/i.test(value.BUSINESS_EMAIL))
+    fail('BUSINESS_EMAIL', 'reemplaza el correo comercial de ejemplo');
+  if (value.STRIPE_SECRET_KEY === 'sk_live_')
+    fail('STRIPE_SECRET_KEY', 'pega una clave live completa');
+  if (value.STRIPE_WEBHOOK_SECRET === 'whsec_')
+    fail('STRIPE_WEBHOOK_SECRET', 'pega un secreto de webhook completo');
+  if (value.MERCADOPAGO_ACCESS_TOKEN === 'APP_USR-')
+    fail('MERCADOPAGO_ACCESS_TOKEN', 'pega un Access Token productivo completo');
 
   if (value.TRUST_PROXY === 0)
     fail(

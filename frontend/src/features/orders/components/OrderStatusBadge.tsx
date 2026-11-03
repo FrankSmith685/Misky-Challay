@@ -12,6 +12,7 @@ export const ORDER_STATUS: StatusMap = {
   REFUNDED: { label: 'Reembolsado', variant: 'neutral' },
 };
 
-export const OrderStatusBadge = ({ status }: { status: string }) => (
-  <StatusBadge status={status} map={ORDER_STATUS} />
+export const OrderStatusBadge = ({ status, paymentState }: { status: string; paymentState?: string | null }) => (
+  <StatusBadge status={status === 'PENDING_PAYMENT' && ['REVIEW', 'OBSERVED'].includes(paymentState ?? '') ? paymentState! : status}
+    map={{ ...ORDER_STATUS, REVIEW: { label: 'Pago por verificar', variant: 'accent' }, OBSERVED: { label: 'Revisa tu reporte', variant: 'accent' } }} />
 );

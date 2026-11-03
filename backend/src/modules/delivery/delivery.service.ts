@@ -2,6 +2,7 @@ import { Op, Transaction } from 'sequelize';
 import {
   Delivery,
   DeliveryEvent,
+  DeliveryEvidence,
   Driver,
   Order,
   sequelize,
@@ -17,6 +18,7 @@ import { DELIVERY_TYPE, ORDER_STATUS } from '@config/constants';
 import { ApiError } from '@shared/errors/ApiError';
 import type { BranchScopeCheck } from '@shared/utils/scope';
 import { ordersService } from '@modules/orders/orders.service';
+import { cakeProductionService } from '@modules/cakes/cakeProduction.service';
 import { operationsService } from '@modules/operations/operations.service';
 
 /** El estado del reparto arrastra al del pedido. */
@@ -76,6 +78,7 @@ export const deliveryService = {
         carrier: DELIVERY_CARRIER.OWN,
         status: DELIVERY_STATUS.PENDING,
         cost: Number(order.deliveryFee),
+        vehicleType: order.deliveryVehicleType ?? null,
       },
       { transaction },
     );
@@ -126,15 +129,18 @@ export const deliveryService = {
             'contactPhone',
             'notes',
             'addressSnapshotJson',
+            'deliveryVehicleType',
+            'deliveryHandlingInstructions',
             'grandTotal',
           ],
         },
-        { model: Driver, as: 'driver', attributes: ['id', 'fullName', 'phone', 'vehicle'] },
+        { model: Driver, as: 'driver', attributes: ['id', 'fullName', 'phone', 'vehicle', 'vehicleType'] },
       ],
       order: [['id', 'ASC']],
     });
 
-    return deliveries;
+    const photos = deliveries.length ? await DeliveryEvidence.findAll({ where: { deliveryId: deliveries.map((delivery) => delivery.id) }, attributes: ['deliveryId', 'stage'] }) : [];
+    return deliveries.map((delivery) => ({ ...delivery.get({ plain: true }), evidence: photos.filter((photo) => photo.deliveryId === delivery.id).map((photo) => photo.stage) }));
   },
 
   async listDrivers(branchId: number) {
@@ -201,6 +207,11 @@ export const deliveryService = {
 
     return sequelize.transaction(async (transaction) => {
       const previousDriverId = delivery.driverId;
+      const currentDriver = await Driver.findByPk(driverId, { transaction, lock: transaction.LOCK.UPDATE });
+      const order = await Order.findByPk(delivery.orderId, { transaction });
+      if (!currentDriver?.isActive || currentDriver.status === 'OFFLINE') throw ApiError.unprocessable('El conductor ya no está disponible');
+      if (order?.deliveryVehicleType === 'CAR' && currentDriver.vehicleType !== 'CAR') throw ApiError.unprocessable('Esta torta requiere un conductor con auto. No se permite asignar una moto u otro vehículo.');
+      delivery.vehicleType = currentDriver.vehicleType;
 
       if (isReassignment) {
         delivery.driverId = driverId;
@@ -252,13 +263,17 @@ export const deliveryService = {
     reference: string,
     actorId: number,
     scope?: BranchScopeCheck,
+    vehicleType?: string,
   ) {
     const delivery = await Delivery.findByPk(deliveryId);
     if (!delivery) throw ApiError.notFound('Reparto no encontrado');
     scope?.(delivery.branchId);
 
     return sequelize.transaction(async (transaction) => {
+      const order = await Order.findByPk(delivery.orderId, { transaction });
+      if (order?.deliveryVehicleType === 'CAR' && vehicleType !== 'CAR') throw ApiError.unprocessable('Confirma que el proveedor externo realizará la entrega en auto');
       delivery.carrier = DELIVERY_CARRIER.EXTERNAL;
+      delivery.vehicleType = vehicleType ?? null;
       delivery.externalProvider = provider;
       delivery.externalReference = reference;
       await delivery.save({ transaction });
@@ -298,6 +313,14 @@ export const deliveryService = {
     const run = async (transaction: Transaction) => {
       const now = new Date();
       let order: Order | null = null;
+      if ([DELIVERY_STATUS.PICKED_UP, DELIVERY_STATUS.ON_ROUTE, DELIVERY_STATUS.DELIVERED].includes(next as 'PICKED_UP' | 'ON_ROUTE' | 'DELIVERED')) {
+        order = await Order.findByPk(delivery.orderId, { transaction });
+        if (order?.deliveryVehicleType === 'CAR') {
+          const assignedDriver = delivery.driverId ? await Driver.findByPk(delivery.driverId, { transaction }) : null;
+          const actualVehicle = delivery.carrier === DELIVERY_CARRIER.OWN ? assignedDriver?.vehicleType : delivery.vehicleType;
+          if (actualVehicle !== 'CAR') throw ApiError.unprocessable('Verifica la asignación de un auto antes de trasladar esta torta');
+        }
+      }
 
       // Asignar un repartidor mientras Cocina prepara sirve para ganar tiempo,
       // pero el retiro fisico solo puede ocurrir cuando el pedido esta READY.
@@ -309,6 +332,7 @@ export const deliveryService = {
         if (order.status !== ORDER_STATUS.READY) {
           throw ApiError.unprocessable('Cocina todavia no ha marcado el pedido como listo');
         }
+        await cakeProductionService.assertDispatchComplete(order.id, transaction);
         await operationsService.dispatchTicketForOrder(
           order.id,
           actorId,
@@ -322,7 +346,7 @@ export const deliveryService = {
       if (next === DELIVERY_STATUS.PICKED_UP) delivery.pickedUpAt = now;
       if (next === DELIVERY_STATUS.DELIVERED) {
         delivery.deliveredAt = now;
-        delivery.proofJson = options.proof ?? null;
+        delivery.proofJson = { ...delivery.proofJson, ...options.proof };
       }
       if (next === DELIVERY_STATUS.FAILED) {
         delivery.failureReason = options.failureReason ?? 'Entrega fallida';
@@ -383,7 +407,7 @@ export const deliveryService = {
     actorId: number,
     comment?: string,
     scope?: BranchScopeCheck,
-    options: { onlyDriverIds?: number[] } = {},
+    options: { onlyDriverIds?: number[]; proof?: Record<string, unknown> } = {},
   ) {
     const delivery = await Delivery.findByPk(deliveryId);
     if (!delivery) throw ApiError.notFound('Reparto no encontrado');
@@ -398,6 +422,7 @@ export const deliveryService = {
 
     return deliveryService.changeStatus(delivery, next, actorId, undefined, {
       comment,
+      proof: options.proof,
       // El motivo es lo UNICO que explica por que no se pudo entregar. Viajaba solo
       // como comentario del evento y `failureReason` se quedaba en el texto por
       // defecto, asi que la ficha del reparto no decia nada util.

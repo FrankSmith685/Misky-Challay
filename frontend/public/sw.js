@@ -1,5 +1,5 @@
-const CACHE = 'verde-bowl-shell-v4';
-const SHELL = ['/', '/favicon.svg', '/manifest.webmanifest'];
+const CACHE = 'misky-challay-shell-v2';
+const SHELL = ['/', '/brand/misky-app-icon.png', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -33,8 +33,8 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Los estilos y modulos de Vite cambian sin cambiar de URL. Con cache-first,
-  // el navegador seguia mostrando el tema verde aunque el servidor ya enviaba
-  // los nuevos archivos morados. Usar la red primero conserva el respaldo offline.
+  // el navegador seguia mostrando un tema anterior aunque el servidor ya enviaba
+  // los nuevos archivos. Usar la red primero conserva el respaldo offline.
   event.respondWith(
     fetch(request)
       .then((response) => {
@@ -48,11 +48,11 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-const show = (payload = {}) => self.registration.showNotification(payload.title || 'Verde Bowl', {
+const show = (payload = {}) => self.registration.showNotification(payload.title || 'Misky Challay', {
   body: payload.body || 'Hay una novedad en la operación.',
-  icon: '/favicon.svg',
-  badge: '/favicon.svg',
-  tag: payload.tag || 'verde-bowl-operation',
+  icon: '/brand/misky-app-icon.png',
+  badge: '/brand/misky-app-icon.png',
+  tag: payload.tag || 'misky-challay-operation',
   renotify: true,
   requireInteraction: payload.requireInteraction !== false,
   data: { url: payload.url || '/admin/cocina?kds=1' },

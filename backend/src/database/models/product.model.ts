@@ -17,6 +17,11 @@ export const PRODUCT_STATUS = {
 } as const;
 export type ProductStatus = (typeof PRODUCT_STATUS)[keyof typeof PRODUCT_STATUS];
 
+export const PRODUCT_FAMILIES = ['CAKE', 'DESSERT', 'NOUGAT', 'BITES'] as const;
+export type ProductFamily = (typeof PRODUCT_FAMILIES)[number];
+export const PREPARATION_MODES = ['MADE_TO_ORDER', 'READY_STOCK'] as const;
+export type PreparationMode = (typeof PREPARATION_MODES)[number];
+
 /**
  * Tabla `products` (seccion 14.2).
  * FIXED        -> se vende tal cual (con variantes de tamano).
@@ -26,6 +31,8 @@ export class Product extends Model<InferAttributes<Product>, InferCreationAttrib
   declare id: CreationOptional<number>;
   declare categoryId: number;
   declare type: CreationOptional<ProductType>;
+  declare family: CreationOptional<ProductFamily>;
+  declare preparationMode: CreationOptional<PreparationMode>;
   declare name: string;
   declare slug: string;
   declare description: CreationOptional<string | null>;
@@ -35,6 +42,7 @@ export class Product extends Model<InferAttributes<Product>, InferCreationAttrib
   declare status: CreationOptional<ProductStatus>;
   declare isFeatured: CreationOptional<boolean>;
   declare sortOrder: CreationOptional<number>;
+  declare allergensReviewedAt: CreationOptional<Date | null>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
   declare deletedAt: CreationOptional<Date | null>;
@@ -46,6 +54,8 @@ Product.init(
   {
     id: { type: DataTypes.BIGINT.UNSIGNED, autoIncrement: true, primaryKey: true },
     categoryId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+    family: { type: DataTypes.ENUM(...PRODUCT_FAMILIES), allowNull: false, defaultValue: 'CAKE' },
+    preparationMode: { type: DataTypes.ENUM(...PREPARATION_MODES), allowNull: false, defaultValue: 'MADE_TO_ORDER' },
     type: {
       type: DataTypes.ENUM(...Object.values(PRODUCT_TYPE)),
       allowNull: false,
@@ -64,6 +74,7 @@ Product.init(
     },
     isFeatured: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     sortOrder: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+    allergensReviewedAt: { type: DataTypes.DATE, allowNull: true, defaultValue: null },
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,
     deletedAt: DataTypes.DATE,

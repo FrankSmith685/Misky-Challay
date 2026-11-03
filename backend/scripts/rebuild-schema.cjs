@@ -15,7 +15,7 @@ const readline = require('node:readline');
 
 require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 
-const DB = process.env.DB_NAME || 'verde_bowl_v3';
+const DB = process.env.DB_NAME || 'DulceFlow';
 const BACKEND = path.resolve(__dirname, '..');
 
 const run = (command, args, env) =>

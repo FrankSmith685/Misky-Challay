@@ -39,7 +39,7 @@ export default function LoginScreen() {
       </View>
       <Pressable onPress={() => router.push('/(auth)/forgot-password')} style={styles.forgot}><Text style={styles.link}>¿Olvidaste tu contraseña?</Text></Pressable>
       <PrimaryButton label="Ingresar a mi cuenta" loading={isBusy} onPress={submit} />
-      <View style={styles.footer}><Text style={styles.footerCopy}>¿Primera vez en Verde Bowl?</Text><Pressable onPress={() => router.replace('/(auth)/register')}><Text style={styles.link}>Crear cuenta gratis</Text></Pressable></View>
+      <View style={styles.footer}><Text style={styles.footerCopy}>¿Primera vez en Misky Challay?</Text><Pressable onPress={() => router.replace('/(auth)/register')}><Text style={styles.link}>Crear cuenta gratis</Text></Pressable></View>
     </AuthScaffold>
   );
 }

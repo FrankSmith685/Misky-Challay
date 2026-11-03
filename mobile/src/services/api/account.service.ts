@@ -1,5 +1,4 @@
 import type {
-  AccountNotification,
   AccountNotificationsFeed,
   Address,
   AvailabilityAlert,
@@ -62,18 +61,11 @@ export const accountApi = {
    * La campana. El backend no publica un contador aparte, así que el número de
    * pendientes sale de la misma lista y se entrega ya resuelto.
    */
-  async notifications(): Promise<AccountNotificationsFeed> {
-    const items = await apiRequest<AccountNotification[]>(ENDPOINTS.account.notifications, {
-      auth: true,
-    });
-    return {
-      items,
-      unreadCount: items.filter((item) => item.readAt === null).length,
-    };
-  },
+  notifications: (page = 1): Promise<AccountNotificationsFeed> =>
+    apiRequest<AccountNotificationsFeed>('/account/notifications/feed', { query: { audience: 'ALL', page, pageSize: 20 }, auth: true }),
 
-  markNotificationsRead: () =>
-    apiRequest<null>(ENDPOINTS.account.notificationsRead, { method: 'PATCH', auth: true }),
+  markNotificationsRead: (input: { ids?: number[]; all?: boolean; throughId?: number }) =>
+    apiRequest<null>(ENDPOINTS.account.notificationsRead, { method: 'PATCH', body: { ...input, audience: 'ALL' }, auth: true }),
 
   foodPreferences: () =>
     apiRequest<FoodPreferences>(ENDPOINTS.account.foodPreferences, { auth: true }),

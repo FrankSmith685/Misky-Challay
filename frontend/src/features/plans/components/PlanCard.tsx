@@ -60,7 +60,7 @@ export const PlanCard = ({
 
         <h2 className="mt-5 text-xl font-black tracking-tight text-ink">{plan.name}</h2>
         <p className="mt-2 min-h-12 text-sm leading-6 text-ink-muted">
-          {plan.description ?? 'Saldo y beneficios para disfrutar Verde Bowl con mayor libertad.'}
+          {plan.description ?? 'Saldo y beneficios para disfrutar Misky Challay con mayor libertad.'}
         </p>
 
         <div className="mt-5 grid grid-cols-2 gap-2.5" aria-label={`Resumen económico de ${plan.name}`}>

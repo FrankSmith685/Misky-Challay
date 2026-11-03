@@ -9,7 +9,7 @@ import TableRow from '@mui/material/TableRow';
 import { cn } from '@lib/cn';
 
 /**
- * Tabla con el estilo de Verde Bowl (borde, cabecera tenue, filas separadas).
+ * Tabla con el estilo de Misky Challay (borde, cabecera tenue, filas separadas).
  * Uso: <Table caption="Pedidos del turno"><Thead>...<Th/></Thead><Tbody>...</Tbody></Table>
  * La Table ya incluye el contenedor con scroll horizontal.
  */

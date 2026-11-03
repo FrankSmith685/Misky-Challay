@@ -1,3 +1,4 @@
+import { useLiveRefresh } from '@services/realtime';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
@@ -56,6 +57,7 @@ const WalletPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
+  useLiveRefresh(["wallet","subscriptions","orders"], () => setRetryNonce((value) => value + 1));
   const [movementFilter, setMovementFilter] = useState<MovementFilter>('ALL');
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>(targetPlanId ? 'checking' : 'idle');
 
@@ -127,7 +129,7 @@ const WalletPage = () => {
       description="Revisa tu saldo disponible, sus fechas de vigencia y cada movimiento."
       icon={Wallet}
       crumbs={[{ label: 'Inicio', to: '/' }, { label: 'Mi cuenta' }, { label: 'Saldo' }]}
-      action={<Button component={Link} to={ROUTES.plans} variant="outline" leftIcon={<Sparkles className="size-4" />}>Ver planes</Button>}
+      action={<Button component={Link} to={ROUTES.plans} variant="outline" leftIcon={<Sparkles className="size-4" />}>Cajas mensuales</Button>}
       className="mb-6"
     />
   );
@@ -251,7 +253,7 @@ const WalletPage = () => {
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           <WalletRule number="1" title="Vigencias separadas" text="Cada compra y cada bono conserva su propia fecha." />
           <WalletRule number="2" title="Primero el que vence" text="En tus pedidos usamos antes el lote con menor vigencia." />
-          <WalletRule number="3" title="Sin cargos automáticos" text="Comprar un plan no crea una suscripción recurrente." />
+          <WalletRule number="3" title="Saldo anterior" text="Las recargas compradas antes no se renuevan ni generan nuevos cargos." />
         </div>
       </section>
 
@@ -263,7 +265,7 @@ const WalletPage = () => {
               <p className="font-extrabold text-ink">No tienes beneficios de un plan activos</p>
               <p className="mt-1 text-sm leading-6 text-ink-muted">El saldo pagado que todavía esté vigente puede seguir utilizándose normalmente.</p>
             </div>
-            <Button component={Link} to={ROUTES.plans} size="sm" className="sm:shrink-0">Comparar planes</Button>
+            <Button component={Link} to={ROUTES.plans} size="sm" className="sm:shrink-0">Ver cajas mensuales</Button>
           </div>
         </Card>
         </div>

@@ -6,6 +6,7 @@ import { MOBILE_APP, MOBILE_VERSION_PATTERN } from '@config/constants';
 import { logger } from '@config/logger';
 import { NOTIFICATION_STATUS } from '@database/models/notification.model';
 import { decryptSetting, encryptSetting } from '@shared/security/settingsEncryption';
+import { messagingConfigService } from '@modules/communications/communications.config';
 
 export interface EditableBusinessInfo {
   legalName: string;
@@ -19,6 +20,8 @@ export interface EditableBusinessInfo {
 }
 
 export interface EditableLocalPaymentSettings {
+  paymentWindowMinutes: number;
+  reviewAlertMinutes: number;
   yapeEnabled: boolean;
   yapePhone: string;
   yapeRecipient: string;
@@ -52,6 +55,8 @@ const receiptFromRow = (row: ReceiptSetting): EditableReceiptSettings => ({
 });
 
 const localPaymentsFromRow = (row: LocalPaymentSetting): EditableLocalPaymentSettings => ({
+  paymentWindowMinutes: row.paymentWindowMinutes ?? 15,
+  reviewAlertMinutes: row.reviewAlertMinutes ?? 10,
   yapeEnabled: row.yapeEnabled,
   yapePhone: row.yapePhone ?? '',
   yapeRecipient: row.yapeRecipient ?? '',
@@ -64,6 +69,8 @@ const localPaymentsFromRow = (row: LocalPaymentSetting): EditableLocalPaymentSet
 });
 
 const localPaymentsFallback = (): EditableLocalPaymentSettings => ({
+  paymentWindowMinutes: 15,
+  reviewAlertMinutes: 10,
   yapeEnabled: false,
   yapePhone: '',
   yapeRecipient: '',
@@ -92,6 +99,7 @@ export interface EditableCommunicationSettings {
   emailNotificationsEnabled: boolean;
   inAppNotificationsEnabled: boolean;
   orderUpdatesEnabled: boolean;
+  whatsappUpdatesEnabled: boolean;
   planUpdatesEnabled: boolean;
   staffAccessEnabled: boolean;
   availabilityAlertsEnabled: boolean;
@@ -117,6 +125,7 @@ const communicationFallback = (): RuntimeCommunicationSettings => ({
   emailNotificationsEnabled: true,
   inAppNotificationsEnabled: true,
   orderUpdatesEnabled: true,
+  whatsappUpdatesEnabled: false,
   planUpdatesEnabled: true,
   staffAccessEnabled: true,
   availabilityAlertsEnabled: true,
@@ -142,6 +151,7 @@ const runtimeFromCommunicationRow = (row: CommunicationSetting): RuntimeCommunic
     emailNotificationsEnabled: row.emailNotificationsEnabled,
     inAppNotificationsEnabled: row.inAppNotificationsEnabled,
     orderUpdatesEnabled: row.orderUpdatesEnabled,
+    whatsappUpdatesEnabled: row.whatsappUpdatesEnabled,
     planUpdatesEnabled: row.planUpdatesEnabled,
     staffAccessEnabled: row.staffAccessEnabled,
     availabilityAlertsEnabled: row.availabilityAlertsEnabled,
@@ -332,6 +342,8 @@ export const settingsService = {
   async updateLocalPaymentSettings(input: EditableLocalPaymentSettings, actorId: number) {
     const before = await settingsService.getLocalPaymentSettings();
     const values = {
+      paymentWindowMinutes: input.paymentWindowMinutes,
+      reviewAlertMinutes: input.reviewAlertMinutes,
       yapeEnabled: input.yapeEnabled,
       yapePhone: input.yapePhone.trim() || null,
       yapeRecipient: input.yapeRecipient.trim() || null,
@@ -407,6 +419,7 @@ export const settingsService = {
       emailNotificationsEnabled: input.emailNotificationsEnabled,
       inAppNotificationsEnabled: input.inAppNotificationsEnabled,
       orderUpdatesEnabled: input.orderUpdatesEnabled,
+      whatsappUpdatesEnabled: input.whatsappUpdatesEnabled,
       planUpdatesEnabled: input.planUpdatesEnabled,
       staffAccessEnabled: input.staffAccessEnabled,
       availabilityAlertsEnabled: input.availabilityAlertsEnabled,
@@ -445,6 +458,65 @@ export const settingsService = {
       Notification.count({ where: { status: NOTIFICATION_STATUS.FAILED } }),
     ]);
     return { totals: { sent, failed }, recent };
+  },
+
+  /** Estado seguro de las conexiones externas; nunca devuelve secretos. */
+  async getIntegrationStatus() {
+    const communication = await settingsService.getCommunicationSettings();
+    const stripe = Boolean(env.STRIPE_SECRET_KEY);
+    const mercadoPago = Boolean(env.MERCADOPAGO_ACCESS_TOKEN);
+    const webhook = Boolean(mercadoPago ? env.MERCADOPAGO_WEBHOOK_SECRET : env.STRIPE_WEBHOOK_SECRET);
+    const paymentsReady = (mercadoPago || stripe) && webhook;
+    const webPush = Boolean(env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY);
+    const messaging = await messagingConfigService.admin();
+    const whatsappConnectionReady = messaging.connectionReady && messaging.webhookReady;
+    const whatsappTemplatesReady = Object.values(messaging.config.events).filter((rule) => rule.whatsapp).every((rule) => Boolean(rule.template));
+    return {
+      checkedAt: new Date().toISOString(),
+      integrations: [
+        {
+          key: 'email',
+          name: 'Correo transaccional',
+          provider: communication.smtpHost ? 'SMTP' : isProduction ? 'Sin configurar' : 'Consola de desarrollo',
+          status: communication.smtpHost ? 'READY' : isProduction ? 'ACTION_REQUIRED' : 'DEVELOPMENT',
+          detail: communication.smtpHost ? `Remitente ${communication.fromEmail}` : 'Configura SMTP para enviar correos reales.',
+        },
+        {
+          key: 'payments',
+          name: 'Pagos online',
+          provider: mercadoPago
+            ? (env.MERCADOPAGO_MODE === 'live' ? 'Mercado Pago live' : 'Mercado Pago test')
+            : stripe ? (env.STRIPE_SECRET_KEY?.startsWith('sk_live_') ? 'Stripe live' : 'Stripe test') : 'Simulador local',
+          status: paymentsReady ? 'READY' : isProduction ? 'ACTION_REQUIRED' : 'DEVELOPMENT',
+          detail: paymentsReady ? 'Clave y firma de webhook configuradas.' : (mercadoPago || stripe) ? 'Falta la firma de webhook.' : 'Configura Mercado Pago o Stripe para cobrar online.',
+        },
+        {
+          key: 'web_push',
+          name: 'Avisos de cocina web',
+          provider: 'Web Push VAPID',
+          status: webPush ? 'READY' : isProduction ? 'ACTION_REQUIRED' : 'DEVELOPMENT',
+          detail: webPush ? 'Las estaciones pueden recibir alertas en tiempo real.' : 'Configura VAPID para conservar suscripciones.',
+        },
+        {
+          key: 'whatsapp',
+          name: 'WhatsApp para pedidos y diseños',
+          provider: 'WhatsApp Business Platform',
+          status: messaging.config.testMode ? 'DEVELOPMENT' : whatsappConnectionReady && whatsappTemplatesReady && communication.whatsappUpdatesEnabled && messaging.config.enabled ? 'READY' : 'ACTION_REQUIRED',
+          detail: messaging.config.testMode ? 'Modo de prueba: los avisos se simulan sin envío real. Gestiona Meta, el bot y las plantillas en Comunicaciones.' : !whatsappConnectionReady
+            ? 'Completa el número, token, versión Graph y webhook desde Comunicaciones.'
+            : !whatsappTemplatesReady
+              ? 'Configura las plantillas aprobadas de los eventos habilitados desde Comunicaciones.'
+              : communication.whatsappUpdatesEnabled ? 'Avisos activos para clientes que dieron su consentimiento.' : 'Conexión lista. Activa los avisos en Correo y avisos.',
+        },
+        {
+          key: 'mobile',
+          name: 'Aplicación móvil',
+          provider: 'API Misky Challay',
+          status: 'READY',
+          detail: 'Versionado, mantenimiento y notificaciones push gestionados desde el servidor.',
+        },
+      ],
+    };
   },
 };
 

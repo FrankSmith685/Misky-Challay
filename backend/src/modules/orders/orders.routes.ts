@@ -7,6 +7,7 @@ import {
   listOrdersSchema,
   orderNumberSchema,
   retryPaymentSchema,
+  balancePaymentSchema,
 } from './orders.validation';
 
 /**
@@ -20,6 +21,7 @@ const router = Router();
 
 router.get('/', authenticate, validate(listOrdersSchema), ordersController.list);
 router.get('/:orderNumber', optionalAuth, validate(orderNumberSchema), ordersController.detail);
+router.post('/:orderNumber/whatsapp/stop', authenticate, validate(orderNumberSchema), ordersController.stopWhatsapp);
 
 /*
  * Reintento del cobro. Exige sesion y solo lo puede pedir el dueno del pedido: el
@@ -34,6 +36,15 @@ router.post(
   authenticate,
   validate(retryPaymentSchema),
   ordersController.retryPayment,
+);
+
+router.post('/:orderNumber/payment/reconcile', authenticate, validate(orderNumberSchema), ordersController.reconcilePayment);
+
+router.post(
+  '/:orderNumber/payment/balance',
+  authenticate,
+  validate(balancePaymentSchema),
+  ordersController.balancePayment,
 );
 
 router.post(

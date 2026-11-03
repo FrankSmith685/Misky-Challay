@@ -1,4 +1,4 @@
-﻿import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import { router, type Href } from 'expo-router';
@@ -838,7 +838,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     backgroundColor: colors.surfaceDarkRaised,
   },
-  flowNumberActive: { backgroundColor: colors.accent500 },
+  flowNumberActive: { backgroundColor: colors.accent600 },
   flowNumberText: { ...type.caption, color: colors.onDarkMuted },
   flowNumberTextActive: { color: colors.surface },
   flowStepText: { ...type.caption, color: colors.onDarkMuted, fontSize: 10 },

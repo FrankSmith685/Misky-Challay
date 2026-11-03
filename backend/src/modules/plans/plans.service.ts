@@ -40,17 +40,9 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
 export const plansService = {
   /** Catalogo de planes con sus beneficios. */
   async listPlans(cityId?: number) {
-    return Plan.findAll({
-      where: {
-        isActive: true,
-        ...(cityId ? { [Op.or]: [{ cityId }, { cityId: null }] } : {}),
-      },
-      include: [{ model: PlanBenefit, as: 'benefits', where: { isActive: true }, required: false }],
-      order: [
-        ['sortOrder', 'ASC'],
-        ['price', 'ASC'],
-      ],
-    });
+    void cityId;
+    // Las recargas historicas siguen visibles en la billetera, pero ya no se venden.
+    return [] as Plan[];
   },
 
   /**
@@ -119,12 +111,16 @@ export const plansService = {
       const returnBaseUrl = mobileReturn
         ? (env.MOBILE_RETURN_BASE_URL ?? env.FRONTEND_URL)
         : env.FRONTEND_URL;
-      const successUrl = mobileReturn
-        ? `${returnBaseUrl}/planes/movil?plan=${userPlan.id}&resultado=aprobado`
-        : `${returnBaseUrl}/cuenta/saldo?plan=${userPlan.id}`;
-      const cancelUrl = mobileReturn
-        ? `${returnBaseUrl}/planes/movil?plan=${userPlan.id}&resultado=cancelado`
-        : `${returnBaseUrl}/planes`;
+      const successReturn = new URL(mobileReturn ? '/planes/movil' : '/cuenta/saldo', returnBaseUrl);
+      const cancelReturn = new URL(mobileReturn ? '/planes/movil' : '/planes', returnBaseUrl);
+      successReturn.searchParams.set('plan', String(userPlan.id));
+      if (mobileReturn) {
+        successReturn.searchParams.set('resultado', 'aprobado');
+        cancelReturn.searchParams.set('plan', String(userPlan.id));
+        cancelReturn.searchParams.set('resultado', 'cancelado');
+      }
+      const successUrl = successReturn.toString();
+      const cancelUrl = cancelReturn.toString();
 
       const checkout = await provider.createCheckout({
         orderId: userPlan.id,
@@ -132,7 +128,7 @@ export const plansService = {
         amount: Number(payment.amount),
         currency: payment.currency,
         customerEmail: user?.email ?? null,
-        description: `${plan.name} - Verde Bowl`,
+        description: `${plan.name} - Misky Challay`,
         displayName: plan.name,
         idempotencyKey,
         successUrl,

@@ -149,7 +149,7 @@ const styles = StyleSheet.create({
   container: {
     minHeight: 240,
     overflow: 'hidden',
-    backgroundColor: '#e7f1eb',
+    backgroundColor: '#eefaff',
   },
   marker: {
     width: 48,
@@ -183,7 +183,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
-    backgroundColor: '#edf6f1',
+    backgroundColor: '#eefaff',
   },
   loadingText: { ...type.caption, color: colors.brand700 },
   error: {

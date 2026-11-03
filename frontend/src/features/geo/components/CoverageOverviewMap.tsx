@@ -26,7 +26,7 @@ export const CoverageOverviewMap = ({ zones, branches }: { zones: OverviewZone[]
         <h2 className="font-extrabold text-ink">Mapa operativo</h2>
         <p className="mt-0.5 text-xs text-ink-muted">Zonas dibujadas y puntos de preparación activos.</p>
       </div>
-      <div className="flex gap-3 text-xs text-ink-muted"><span className="flex items-center gap-1.5"><i className="size-2.5 rounded-sm bg-brand-400/50" /> Cobertura</span><span className="flex items-center gap-1.5"><i className="size-2.5 rounded-full bg-brand-700" /> Cocina</span></div>
+      <div className="flex gap-3 text-xs text-ink-muted"><span className="flex items-center gap-1.5"><i className="size-2.5 rounded-sm bg-brand-400/50" /> Zona de entrega</span><span className="flex items-center gap-1.5"><i className="size-2.5 rounded-full bg-brand-700" /> Sucursal</span></div>
     </div>
     <div className="relative h-[340px] sm:h-[410px]">
       {/* Mapa de consulta: sin rueda atrapada y sin paneo tactil hasta que se pide.
@@ -36,10 +36,10 @@ export const CoverageOverviewMap = ({ zones, branches }: { zones: OverviewZone[]
         <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" />
         <MapGestureLock />
         {zones.filter((zone) => zone.isActive && (zone.polygon?.length ?? 0) >= 3).map((zone) => (
-          <Polygon key={zone.id} positions={zone.polygon!.map((point) => [point.lat, point.lng])} pathOptions={{ color: '#602060', fillColor: '#c88dc9', fillOpacity: .18, weight: 2 }}><Popup><strong>{zone.name}</strong><br />Zona de entrega activa</Popup></Polygon>
+          <Polygon key={zone.id} positions={zone.polygon!.map((point) => [point.lat, point.lng])} pathOptions={{ color: 'var(--color-brand-600)', fillColor: 'var(--color-brand-300)', fillOpacity: .18, weight: 2 }}><Popup><strong>{zone.name}</strong><br />Zona de entrega activa</Popup></Polygon>
         ))}
         {branches.filter((branch) => branch.isActive && branch.latitude != null && branch.longitude != null).map((branch) => (
-          <CircleMarker key={branch.id} center={[branch.latitude!, branch.longitude!]} radius={9} pathOptions={{ color: '#fff', fillColor: '#4e1a4e', fillOpacity: 1, weight: 4 }}><Popup><strong>{branch.name}</strong><br />{branch.addressLine}</Popup></CircleMarker>
+          <CircleMarker key={branch.id} center={[branch.latitude!, branch.longitude!]} radius={9} pathOptions={{ color: '#fff', fillColor: 'var(--color-brand-700)', fillOpacity: 1, weight: 4 }}><Popup><strong>{branch.name}</strong><br />{branch.addressLine}</Popup></CircleMarker>
         ))}
       </MapContainer>
     </div>

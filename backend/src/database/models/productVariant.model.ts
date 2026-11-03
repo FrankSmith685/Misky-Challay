@@ -8,6 +8,7 @@ import {
 } from 'sequelize';
 import { sequelize } from '../connection';
 import type { ProductNutrition } from './productNutrition.model';
+import type { CakeEffort } from './cakeProduction.model';
 
 /** Tabla `product_variants`: la presentacion comprable (Regular, Grande...). */
 export class ProductVariant extends Model<
@@ -21,6 +22,7 @@ export class ProductVariant extends Model<
   declare basePrice: number;
   declare servingSize: CreationOptional<number | null>;
   declare servingUnit: CreationOptional<string | null>;
+  declare productionMinutesJson: CreationOptional<CakeEffort>;
   declare isDefault: CreationOptional<boolean>;
   declare isActive: CreationOptional<boolean>;
   declare sortOrder: CreationOptional<number>;
@@ -40,6 +42,7 @@ ProductVariant.init(
     basePrice: { type: DataTypes.DECIMAL(12, 2), allowNull: false },
     servingSize: { type: DataTypes.DECIMAL(8, 2), allowNull: true },
     servingUnit: { type: DataTypes.STRING(10), allowNull: true, defaultValue: 'g' },
+    productionMinutesJson: { type: DataTypes.JSON, allowNull: false, defaultValue: {} },
     isDefault: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     isActive: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     sortOrder: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },

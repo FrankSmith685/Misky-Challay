@@ -25,6 +25,7 @@ interface AddressAutocompleteProps {
   placeholder?: string;
   error?: string;
   disabled?: boolean;
+  requireDistrict?: boolean;
 }
 
 const precisionLabel = (suggestion: AddressSuggestion) => {
@@ -35,8 +36,8 @@ const precisionLabel = (suggestion: AddressSuggestion) => {
 };
 
 /**
- * Autocomplete compartido para cobertura, cuenta y administración.
- * El distrito es obligatorio: limita las coincidencias y evita calles homónimas.
+ * Autocomplete compartido para cobertura, cuenta y checkout.
+ * En checkout permite buscar por calle y distrito en un solo campo.
  */
 export const AddressAutocomplete = ({
   value,
@@ -53,6 +54,7 @@ export const AddressAutocomplete = ({
   placeholder = 'Ej. Av. José Larco 345',
   error,
   disabled = false,
+  requireDistrict = true,
 }: AddressAutocompleteProps) => {
   const [options, setOptions] = useState<AddressSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
@@ -60,7 +62,7 @@ export const AddressAutocomplete = ({
   const [searchError, setSearchError] = useState('');
   const debounced = useDebounce(value.trim(), 350);
   const requestId = useRef(0);
-  const canSearch = Boolean(districtName);
+  const canSearch = !requireDistrict || Boolean(districtName);
 
   useEffect(() => {
     if (!canSearch || debounced.length < 2) {
@@ -139,9 +141,11 @@ export const AddressAutocomplete = ({
           ? `Buscando dentro de ${districtName ?? 'tu distrito'}…`
           : value.trim().length === 1
             ? 'Escribe un carácter más para comenzar la búsqueda.'
-            : options.length > 0
-              ? `${options.length} coincidencia${options.length === 1 ? '' : 's'} en ${districtName ?? cityName ?? 'la zona elegida'}.`
-              : `Las sugerencias se limitarán a ${districtName ?? cityName ?? 'la zona elegida'}.`);
+      : options.length > 0
+              ? `${options.length} coincidencia${options.length === 1 ? '' : 's'}${districtName ? ` en ${districtName}` : ''}.`
+              : districtName
+                ? `Las sugerencias se limitarán a ${districtName}.`
+                : 'Escribe la calle y el distrito; selecciona una coincidencia para calcular el delivery.');
 
   return (
     <Autocomplete<AddressSuggestion, false, false, true>
@@ -263,7 +267,7 @@ export const AddressAutocomplete = ({
               borderRadius: 'var(--radius-field)',
               px: 1.25,
               py: 1,
-              '&[aria-selected="true"]': { bgcolor: 'rgba(96,32,96,.1)' },
+              '&[aria-selected="true"]': { bgcolor: 'primary.50' },
             },
           },
         },

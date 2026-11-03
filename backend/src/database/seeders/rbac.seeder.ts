@@ -12,8 +12,7 @@ const P = PERMISSIONS;
  * Son un punto de partida: desde el panel se pueden crear roles nuevos y ajustar
  * los permisos de estos. Lo que NO se puede es borrarlos (los marca isSystem).
  *
- * Fijate en el nutricionista: es el rol interno mas restringido. Toca la comida,
- * NO toca el dinero ni los datos de los clientes.
+ * Los roles internos se limitan a las tareas operativas de la pastelería.
  */
 const ROLE_DEFINITIONS: Array<{
   code: string;
@@ -32,6 +31,12 @@ const ROLE_DEFINITIONS: Array<{
     name: 'Operador de cocina',
     description: 'Ve la cola de tickets y los avanza.',
     permissions: [P.KITCHEN_READ, P.KITCHEN_OPERATE, P.INVENTORY_READ],
+  },
+  {
+    code: ROLES.PURCHASING,
+    name: 'Compras y almacén',
+    description: 'Gestiona proveedores, órdenes de compra, lotes y costos de inventario.',
+    permissions: [P.INVENTORY_READ, P.PROCUREMENT_READ, P.PROCUREMENT_MANAGE],
   },
   {
     code: ROLES.WAITER,
@@ -89,20 +94,6 @@ const ROLE_DEFINITIONS: Array<{
       P.CATALOG_CATEGORY_WRITE,
       P.CATALOG_AVAILABILITY_WRITE,
       P.CATALOG_CUSTOMIZATION_WRITE,
-      P.NUTRITION_READ,
-    ],
-  },
-  {
-    code: ROLES.NUTRITIONIST,
-    name: 'Nutricionista',
-    description:
-      'Edita calorias, macros, alergenos y etiquetas dietarias. No ve ventas ni clientes.',
-    permissions: [
-      P.CATALOG_PRODUCT_READ,
-      P.NUTRITION_READ,
-      P.NUTRITION_WRITE,
-      P.ALLERGEN_WRITE,
-      P.DIETARY_TAG_WRITE,
     ],
   },
   {
@@ -122,6 +113,8 @@ const ROLE_DEFINITIONS: Array<{
       P.DELIVERY_OPERATE,
       P.INVENTORY_READ,
       P.INVENTORY_MANAGE,
+      P.PROCUREMENT_READ,
+      P.PROCUREMENT_MANAGE,
       P.CATALOG_PRODUCT_READ,
       P.CATALOG_AVAILABILITY_WRITE,
       P.PAYMENT_READ,
@@ -129,6 +122,8 @@ const ROLE_DEFINITIONS: Array<{
       P.INVOICE_MANAGE,
       P.REPORT_SALES_READ,
       P.REPORT_OPERATIONS_READ,
+      P.CAKE_FINANCE_READ,
+      P.CAKE_FINANCE_MANAGE,
     ],
   },
   {
@@ -147,13 +142,14 @@ const ROLE_DEFINITIONS: Array<{
       P.PAYMENT_READ,
       P.PLAN_READ,
       P.INVENTORY_READ,
+      P.PROCUREMENT_READ,
       P.KITCHEN_READ,
       P.DELIVERY_READ,
       P.CATALOG_PRODUCT_READ,
-      P.NUTRITION_READ,
       P.GEO_READ,
       P.REPORT_SALES_READ,
       P.REPORT_OPERATIONS_READ,
+      P.CAKE_FINANCE_READ,
       P.ROLE_READ,
       P.USER_READ,
     ],

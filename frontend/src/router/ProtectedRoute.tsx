@@ -1,5 +1,8 @@
-import type { ReactNode } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+﻿import type { ReactNode } from 'react';
+import { Link, Navigate, useLocation } from 'react-router-dom';
+import { EmptyState } from '@components/common/EmptyState';
+import { Button } from '@components/ui/Button';
+import { ShieldAlert } from 'lucide-react';
 import { useAppSelector } from '@app/hooks';
 import { usePermissions } from '@hooks/usePermissions';
 import { ROUTES } from '@constants/routes';
@@ -18,7 +21,7 @@ interface ProtectedRouteProps {
  * Guard de navegacion.
  *
  * Filtra por PERMISO, no por rol: asi un rol nuevo creado desde el panel
- * (por ejemplo "nutricionista junior") funciona sin tocar el router.
+ * (por ejemplo "editor de pastelería") funciona sin tocar el router.
  *
  * Es solo experiencia de usuario. La autorizacion real la valida el backend:
  * si alguien fuerza la URL, el API responde 403 igual (seccion 7.1).
@@ -35,17 +38,10 @@ export const ProtectedRoute = ({ children, permissions, anyPermission, superAdmi
     return <Navigate to={ROUTES.login} state={{ from }} replace />;
   }
 
-  if (superAdminOnly && !isSuperAdmin) {
-    return <Navigate to={ROUTES.home} replace />;
-  }
-
-  if (permissions && !can(...permissions)) {
-    return <Navigate to={ROUTES.home} replace />;
-  }
-
-  if (anyPermission && !canAny(...anyPermission)) {
-    return <Navigate to={ROUTES.home} replace />;
-  }
+  if ((superAdminOnly && !isSuperAdmin) || (permissions && !can(...permissions)) || (anyPermission && !canAny(...anyPermission))) return (
+    <main className="container-shell py-12"><EmptyState icon={ShieldAlert} title="No tienes acceso a esta vista" description="Tu cuenta no tiene los permisos necesarios para abrir este aviso o tus permisos cambiaron. Puedes consultar los avisos de tu cuenta." action={<Button component={Link} to={ROUTES.account}>Ir a mi cuenta</Button>} /></main>
+  );
 
   return <>{children}</>;
 };
+

@@ -15,7 +15,7 @@ interface FormSectionProps {
 
 /** Agrupa campos relacionados y hace escaneables los formularios extensos. */
 export const FormSection = ({ id, title, description, icon: Icon, children, className, tone = 'default' }: FormSectionProps) => (
-  <section id={id} className={cn('rounded-card border p-5 sm:p-6', tone === 'brand' ? 'border-brand-200 bg-brand-50/45' : 'border-line bg-white', className)}>
+  <section id={id} data-ui-form-section className={cn('rounded-card border p-5 sm:p-6', tone === 'brand' ? 'border-brand-200 bg-brand-50/45' : 'border-line bg-white', className)}>
     <div className="mb-5 flex items-start gap-3">
       {Icon && <span className="grid size-9 shrink-0 place-items-center rounded-card bg-brand-50 text-brand-700 ring-1 ring-brand-100"><Icon className="size-4" /></span>}
       <div className="min-w-0">
@@ -38,9 +38,9 @@ export const FormStack = ({
   spacing?: number;
 }) => (
   <Box
-    className={className}
+    className={cn('min-w-0', className)}
     data-form-stack
-    sx={{ display: 'grid', gap: spacing, alignItems: 'start' }}
+    sx={{ display: 'grid', gap: spacing, alignItems: 'start', minWidth: 0 }}
   >
     {children}
   </Box>
@@ -57,12 +57,13 @@ export const FormGrid = ({
   minColumnWidth?: number;
 }) => (
   <Box
-    className={className}
+    className={cn('min-w-0', className)}
     sx={{
       display: 'grid',
       gridTemplateColumns: `repeat(auto-fit, minmax(min(100%, ${minColumnWidth}px), 1fr))`,
       gap: { xs: 2.25, sm: 2.5 },
       alignItems: 'start',
+      minWidth: 0,
     }}
   >
     {children}

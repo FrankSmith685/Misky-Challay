@@ -6,6 +6,7 @@ import { validate } from '@middlewares/validate.middleware';
 import { PERMISSIONS } from '@config/constants';
 import { isDevelopment } from '@config/env';
 import { paymentsController } from './payments.controller';
+import directPaymentRoutes from './directPayments.routes';
 
 /**
  * Modulo PAYMENTS (M08).
@@ -15,6 +16,7 @@ import { paymentsController } from './payments.controller';
  * En app.ts se les entrega el body crudo (express.raw) para poder verificarla.
  */
 const router = Router();
+router.use(directPaymentRoutes);
 
 router.get(
   '/mobile/pending',
@@ -42,8 +44,14 @@ router.post(
   paymentsController.reviewMobile,
 );
 
+router.post('/:paymentId/cash/capture', authenticate, requirePermissions(PERMISSIONS.PAYMENT_VERIFY), validate(z.object({
+  params: z.object({ paymentId: z.coerce.number().int().positive() }),
+  body: z.object({ reference: z.string().trim().min(3).max(120) }),
+})), paymentsController.captureCash);
+
 // Stripe apunta aqui: stripe listen --forward-to localhost:4000/api/v1/payments/webhooks/stripe
 router.post('/webhooks/stripe', paymentsController.webhook);
+router.post('/webhooks/mercadopago', paymentsController.webhook);
 // Mismo handler para el simulador local (firma HMAC propia).
 router.post('/webhooks/mock', paymentsController.webhook);
 

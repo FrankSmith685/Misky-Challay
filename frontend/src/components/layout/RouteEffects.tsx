@@ -1,16 +1,26 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { ROUTES } from '@constants/routes';
+import { useStorefront } from '@features/home/content/StorefrontContext';
+import { applyStorefrontSeo } from '@features/home/content/storefrontSeo';
+import { defaultStorefront } from '@features/home/content/storefront.schema';
 
-const BRAND = 'Verde Bowl';
-const HOME_TITLE = `${BRAND} | Comida saludable a tu medida`;
+const BRAND = 'Misky Challay';
+const HOME_TITLE = `${BRAND} | Tortas personalizadas`;
+const FALLBACK_CONTENT = defaultStorefront();
 
 /** Titulo por ruta exacta. Se indexa por las constantes para que no se separen del router. */
 const EXACT_TITLES: Record<string, string> = {
-  [ROUTES.menu]: 'Menú',
-  [ROUTES.builder]: 'Arma tu bowl',
+  [ROUTES.business]: 'Para empresas',
+  [ROUTES.howToOrder]: 'Cómo hacer tu pedido',
+  [ROUTES.adminHomeContent]: 'Contenido del inicio',
+  [ROUTES.menu]: 'Catálogo',
+  [ROUTES.customCake]: 'Crea tu torta',
+  [ROUTES.builder]: 'Crea tu torta',
+  [ROUTES.designRequests]: 'Mis diseños',
+  [ROUTES.adminCakes]: 'Producción de tortas',
   [ROUTES.plans]: 'Planes',
-  [ROUTES.coverage]: 'Cobertura de entrega',
+  [ROUTES.coverage]: 'Zonas de entrega',
   [ROUTES.cart]: 'Tu carrito',
   [ROUTES.checkout]: 'Finalizar compra',
   [ROUTES.checkoutSuccess]: 'Pedido confirmado',
@@ -30,7 +40,7 @@ const EXACT_TITLES: Record<string, string> = {
   [ROUTES.accountWallet]: 'Mi saldo',
   [ROUTES.accountAddresses]: 'Mis direcciones',
   [ROUTES.accountFavorites]: 'Mis favoritos',
-  [ROUTES.accountSavedBowls]: 'Bowls guardados',
+  [ROUTES.accountSavedBowls]: 'Recetas guardadas',
 };
 
 /**
@@ -39,6 +49,7 @@ const EXACT_TITLES: Record<string, string> = {
  * efecto corre por debajo del de este componente.
  */
 const PATTERN_TITLES: Array<[RegExp, (match: RegExpMatchArray) => string]> = [
+  [/^\/tortas\/[^/]+$/, () => 'Crea tu torta'],
   [/^\/cuenta\/pedidos\/([^/]+)$/, (match) => `Pedido ${decodeURIComponent(match[1])}`],
   [
     /^\/menu\/([^/]+)$/,
@@ -54,7 +65,6 @@ const resolveTitle = (pathname: string): string => {
   // Sin la barra final, "/menu/" y "/menu" no son la misma clave.
   const path = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
   if (path === ROUTES.home) return HOME_TITLE;
-
   const exact = EXACT_TITLES[path];
   if (exact) return `${exact} | ${BRAND}`;
 
@@ -74,12 +84,13 @@ const resolveTitle = (pathname: string): string => {
  *  - Anuncia la página nueva por una región aria-live.
  */
 export const RouteEffects = () => {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
+  const { content } = useStorefront();
+  const seoContent = pathname === ROUTES.home || pathname === ROUTES.howToOrder ? content : FALLBACK_CONTENT;
   const [announcement, setAnnouncement] = useState('');
   const isFirstRender = useRef(true);
 
   useEffect(() => {
-    document.title = resolveTitle(pathname);
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
 
     // En la carga inicial no robamos el foco del navegador.
@@ -99,7 +110,11 @@ export const RouteEffects = () => {
       setAnnouncement(heading ? `${heading}. Página cargada.` : 'Página cargada.');
     }, 120);
     return () => window.clearTimeout(timer);
-  }, [pathname]);
+  }, [pathname, search]);
+
+  useEffect(() => {
+    applyStorefrontSeo(pathname, seoContent, resolveTitle(pathname));
+  }, [pathname, seoContent]);
 
   return (
     <div aria-live="polite" aria-atomic="true" className="sr-only">

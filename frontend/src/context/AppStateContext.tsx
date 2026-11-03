@@ -32,6 +32,8 @@ export interface SelectedAddress {
   longitude?: number;
   districtId?: number;
   reference?: string;
+  /** Whether a door number was confirmed by the geocoder or entered manually. */
+  hasHouseNumber?: boolean;
 }
 
 export interface SelectedPickupBranch {

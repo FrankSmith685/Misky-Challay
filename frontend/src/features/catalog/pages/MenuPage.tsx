@@ -1,169 +1,152 @@
-import { useMemo } from 'react';
-import { Link } from 'react-router-dom';
-import { CheckCircle2, Heart, MapPin, Store, UserCheck, X } from 'lucide-react';
-import { Button } from '@components/ui/Button';
-import { ProductMedia } from '@components/ui/ProductMedia';
-import { useAppDispatch } from '@app/hooks';
-import { formatCurrency } from '@lib/format';
+import { useLiveRefresh } from '@services/realtime';
+import { useEffect, useMemo, useState } from 'react';
+import axios from 'axios';
+import { CakeSlice, ChevronDown, Clock3, Cookie, Search, SearchX, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import { ROUTES } from '@constants/routes';
+import { useAppState } from '@context/AppStateContext';
+import { Button } from '@components/ui/Button';
+import { Input } from '@components/ui/Input';
+import { Select, SelectOption } from '@components/ui/Select';
+import { EmptyState } from '@components/common/EmptyState';
+import { getApiErrorMessage } from '@services/api/client';
 import { BranchPrompt } from '../components/BranchPrompt';
-import { CatalogFiltersBar } from '../components/CatalogFiltersBar';
-import { CatalogResults } from '../components/CatalogResults';
-import { MenuHero } from '../components/MenuHero';
-import { setFilters } from '../catalogSlice';
-import { useMenuCatalog } from '../hooks/useMenuCatalog';
+import { ProductCard } from '../components/ProductCard';
+import { ProductGridSkeleton } from '../components/ProductCardSkeleton';
+import { catalogApi } from '../services/catalog.service';
+import type { Category, Product } from '../types';
 
-/** Menú público con contexto de ubicación, filtros progresivos y catálogo real. */
-const MenuPage = () => {
-  const dispatch = useAppDispatch();
-  const {
-    products,
-    status,
-    error,
-    retry,
-    tags,
-    allergens,
-    filters,
-    favorites,
-    declaredAllergens,
-    appliedPreferences,
-    clearPreferenceFilters,
-    dismissPreferencesNotice,
-    branchId,
-    openLocationModal,
-    address,
-    pickupBranch,
-    deliveryType,
-  } = useMenuCatalog();
-  const isPickup = deliveryType === 'PICKUP';
-  const destination = isPickup ? pickupBranch?.name : address?.label;
+type Collection = 'ALL' | 'CUSTOM' | '24H' | 'DESSERT' | 'NOUGAT' | 'BITES' | 'STANDARD';
+const COLLECTIONS = [
+  { id: 'ALL', label: 'Todo el catálogo', icon: Cookie },
+  { id: 'CUSTOM', label: 'Torta personalizada', icon: Sparkles },
+  { id: '24H', label: 'Tortas 24 horas', icon: Clock3 },
+  { id: 'DESSERT', label: 'Postres', icon: CakeSlice },
+  { id: 'NOUGAT', label: 'Turrones', icon: Cookie },
+  { id: 'BITES', label: 'Bocaditos', icon: Cookie },
+] as const;
 
-  // El aviso explica el filtro con las palabras del perfil, no con códigos.
-  const preferenceLabels = useMemo(() => {
-    if (!appliedPreferences) return [];
-    return [
-      ...appliedPreferences.allergens.map((code) => {
-        const name = allergens.find((allergen) => allergen.code === code)?.name ?? code;
-        return `sin ${name.toLocaleLowerCase('es-PE')}`;
-      }),
-      ...appliedPreferences.dietaryTags.map(
-        (code) => tags.find((tag) => tag.code === code)?.name ?? code,
-      ),
-    ];
-  }, [allergens, appliedPreferences, tags]);
-
-  const allergenAlerts = useMemo(
-    () => allergens.filter((allergen) => declaredAllergens.includes(allergen.code)),
-    [allergens, declaredAllergens],
-  );
-
-  return (
-    <>
-      <MenuHero />
-
-      <section id="catalogo" className="relative scroll-mt-20 overflow-hidden bg-surface-muted pb-24 pt-10 sm:pt-12 lg:pb-28 lg:pt-16">
-        <div className="pointer-events-none absolute inset-0 opacity-45 [background-image:linear-gradient(rgba(96,32,96,.045)_1px,transparent_1px)] [background-size:100%_48px]" />
-        <div className="relative z-10 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <header className="mb-7 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
-            <div>
-              <div className="flex items-center gap-3"><span className="h-px w-8 bg-brand-600" /><p className="text-xs font-black uppercase tracking-[.18em] text-brand-700">Explora la cocina</p></div>
-              <h2 className="mt-3 text-3xl font-black tracking-[-.04em] text-ink sm:text-4xl">¿Qué te provoca hoy?</h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-muted sm:text-base">Elige un plato listo o arma el tuyo desde cero. Precio, nutrición y disponibilidad viven en un mismo menú.</p>
-            </div>
-            {branchId && (
-              <div className="flex items-center gap-3 rounded-card border border-brand-200 bg-white px-4 py-3 shadow-sm">
-                <span className="grid size-9 shrink-0 place-items-center rounded-card bg-brand-50 text-brand-700">{isPickup ? <Store className="size-4" /> : <MapPin className="size-4" />}</span>
-                <div className="min-w-0"><p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-brand-700"><CheckCircle2 className="size-3" /> Disponibilidad confirmada</p><p className="max-w-56 truncate text-xs font-bold text-ink">{destination ?? 'Sucursal seleccionada'}</p></div>
-                <Button variant="ghost" onClick={openLocationModal}>Cambiar</Button>
-              </div>
-            )}
-          </header>
-
-          {appliedPreferences && preferenceLabels.length > 0 && (
-            <div
-              role="status"
-              className="mb-4 flex flex-col gap-3 rounded-card border border-brand-200 bg-brand-50/80 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4"
-            >
-              <p className="flex items-start gap-2.5 text-xs leading-5 text-brand-900 sm:text-sm">
-                <UserCheck className="mt-0.5 size-4 shrink-0 text-brand-700" aria-hidden="true" />
-                <span>
-                  <strong className="font-extrabold">Filtramos el menú con tu perfil alimentario:</strong>{' '}
-                  {preferenceLabels.join(' · ')}.
-                </span>
-              </p>
-              <div className="flex shrink-0 items-center gap-2 self-end sm:self-auto">
-                <Button size="sm" variant="outline" onClick={clearPreferenceFilters}>
-                  Ver el menú completo
-                </Button>
-                <button
-                  type="button"
-                  onClick={dismissPreferencesNotice}
-                  aria-label="Ocultar este aviso y mantener el filtro"
-                  className="grid size-9 shrink-0 place-items-center rounded-field text-brand-800 transition-colors hover:bg-white"
-                >
-                  <X className="size-4" />
-                </button>
-              </div>
-            </div>
-          )}
-
-          <CatalogFiltersBar />
-
-          {!branchId && <div className="mt-5"><BranchPrompt onChooseLocation={openLocationModal} /></div>}
-
-          {favorites.length > 0 && !filters.onlyFavorites && (
-            <section
-              className="mt-5 rounded-card border border-line bg-white p-3 shadow-sm sm:p-4"
-              aria-labelledby="menu-favorites-heading"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <h3 id="menu-favorites-heading" className="inline-flex items-center gap-2 text-sm font-black text-ink">
-                  <Heart className="size-4 fill-current text-red-500" aria-hidden="true" />
-                  Tus favoritos ({favorites.length})
-                </h3>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => dispatch(setFilters({ onlyFavorites: true }))}
-                >
-                  Ver solo favoritos
-                </Button>
-              </div>
-              <ul className="mt-3 flex gap-3 overflow-x-auto pb-1 [scrollbar-width:thin]">
-                {favorites.slice(0, 8).map((item) => (
-                  <li key={item.productId} className="w-40 shrink-0 sm:w-44">
-                    <Link
-                      to={item.type === 'CUSTOMIZABLE' ? ROUTES.builder : ROUTES.product(item.slug)}
-                      className="block overflow-hidden rounded-card border border-line transition-colors hover:border-brand-300"
-                    >
-                      <ProductMedia src={item.imageUrl} alt={item.name} ratio="4/3" />
-                      <div className="p-2.5">
-                        <p className="truncate text-xs font-extrabold text-ink">{item.name}</p>
-                        <p className="mt-1 text-xs font-black text-brand-700">
-                          {item.type === 'CUSTOMIZABLE' ? 'Desde ' : ''}
-                          {formatCurrency(item.priceFrom)}
-                        </p>
-                      </div>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          <div className="mt-9 sm:mt-11">
-            <CatalogResults
-              products={products}
-              status={status}
-              error={error}
-              onRetry={retry}
-              allergenAlerts={allergenAlerts}
-            />
-          </div>
-        </div>
-      </section>
-    </>
-  );
+const matchesCollection = (product: Product, collection: Collection) => {
+  if (product.cakeSaleMode === 'ADVANCED') return false;
+  if (collection === 'CUSTOM') return (product.family ?? 'CAKE') === 'CAKE' && product.cakeSaleMode === 'SEMI_CUSTOM';
+  if (collection === '24H') return (product.family ?? 'CAKE') === 'CAKE' && product.preparationMode !== 'READY_STOCK' && product.minLeadHours === 24;
+  if (collection === 'STANDARD') return product.cakeSaleMode === 'STANDARD';
+  return collection === 'ALL' || product.family === collection;
 };
+const searchable = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es-PE');
 
+const MenuPage = () => {
+  const { branchId, address, pickupBranch, deliveryType, openLocationModal } = useAppState();
+  const [params, setParams] = useSearchParams();
+  const requestedMode = params.get('modo');
+  const requestedCollection = params.get('coleccion');
+  const businessRedirect = requestedCollection === 'DESIGNS' || requestedMode === 'ADVANCED';
+  const collection: Collection = requestedCollection && COLLECTIONS.some((entry) => entry.id === requestedCollection)
+    ? requestedCollection as Collection
+    : ['CUSTOM', 'SEMI_CUSTOM', 'ADVANCED'].includes(requestedMode ?? '') ? 'CUSTOM'
+      : requestedMode === 'STANDARD' ? 'STANDARD' : 'ALL';
+  const categoryId = Number(params.get('categoria')) || null;
+  const sugarFree = params.get('sin-azucar') === '1';
+  const preparation = params.get('preparacion') ?? '';
+  const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState('FEATURED');
+  const [filtersOpen, setFiltersOpen] = useState(Boolean(categoryId || preparation));
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [retry, setRetry] = useState(0);
+  useLiveRefresh(['catalog', 'inventory', 'coverage'], () => setRetry((value) => value + 1), { enabled: !businessRedirect });
+  const updateFilter = (name: string, value: string) => {
+    const next = new URLSearchParams(params);
+    if (value) next.set(name, value); else next.delete(name);
+    setParams(next);
+  };
+  const chooseCollection = (value: Collection) => {
+    const next = new URLSearchParams(params);
+    next.delete('modo'); next.delete('categoria');
+    if (value === 'ALL') next.delete('coleccion'); else next.set('coleccion', value);
+    setParams(next);
+  };
+  const clearFilters = () => { setParams({}); setSearch(''); };
+
+  useEffect(() => {
+    if (businessRedirect) return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let attempts = 0;
+    setLoading(true); setError('');
+    const load = async () => {
+      try {
+        const [rows, groups] = await Promise.all([catalogApi.getProducts({ branchId }), catalogApi.getCategories()]);
+        if (active) { setProducts(rows); setCategories(groups); setLoading(false); }
+      } catch (cause) {
+        if (!active) return;
+        if (axios.isAxiosError(cause) && cause.response?.status === 503 && attempts++ < 30) { timer = setTimeout(() => void load(), 2000); return; }
+        setError(getApiErrorMessage(cause)); setLoading(false);
+      }
+    };
+    void load();
+    return () => { active = false; clearTimeout(timer); };
+  }, [branchId, retry, businessRedirect]);
+
+  const visible = useMemo(() => products.filter((product) => matchesCollection(product, collection)
+    && (!categoryId || product.categoryId === categoryId)
+    && (!sugarFree || product.dietaryTags.includes('sin-azucar'))
+    && (!preparation || product.preparationMode === preparation)
+    && searchable(`${product.name} ${product.description ?? ''}`).includes(searchable(search.trim())))
+    .sort((a, b) => sort === 'PRICE' ? a.priceFrom - b.priceFrom
+      : sort === 'PRICE_DESC' ? b.priceFrom - a.priceFrom
+        : Number(b.isFeatured) - Number(a.isFeatured) || a.name.localeCompare(b.name, 'es')), [products, collection, categoryId, sugarFree, preparation, search, sort]);
+  const hasFilters = collection !== 'ALL' || categoryId !== null || sugarFree || preparation !== '' || search !== '';
+  const resultCount = visible.length;
+  const extraFilterCount = Number(categoryId !== null) + Number(preparation !== '');
+  const selectedLocation = branchId ? (deliveryType === 'PICKUP' ? pickupBranch?.name : address?.line1) : undefined;
+
+  if (businessRedirect) return <Navigate to={ROUTES.business} replace />;
+
+  return <section id="catalogo" className="container-shell py-8 sm:py-12" aria-labelledby="catalog-title">
+    <header className="mb-7 border-b border-line pb-7 sm:mb-8">
+      <div>
+      <p className="flex items-center gap-3 text-xs font-extrabold uppercase tracking-[.16em] text-brand-700"><span className="h-px w-8 bg-accent-500" aria-hidden="true" />Pastelería Misky Challay</p>
+      <h1 id="catalog-title" className="mt-3 text-3xl font-extrabold leading-tight sm:text-4xl">Algo dulce para cada momento.</h1>
+      <p className="mt-3 max-w-3xl text-sm leading-6 text-ink-muted sm:text-base">Una torta para celebrar, un postre para ti o algo dulce para compartir. Elige tu favorito y reserva la entrega.</p>
+      </div>
+    </header>
+
+    <div className="relative overflow-hidden rounded-card border border-line bg-white p-4 shadow-sm sm:p-6">
+      <div className="absolute inset-x-0 top-0 flex h-[3px]" aria-hidden="true"><span className="w-3/4 bg-brand-700" /><span className="flex-1 bg-accent-500" /></div>
+      <div className="flex items-start gap-3">
+        <Input type="search" aria-label="Buscar producto" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Busca tortas, postres o sabores" startAdornment={<Search className="size-4.5 text-ink-muted" />} />
+        <Button variant="outline" aria-expanded={filtersOpen} aria-controls="catalog-extra-filters" onClick={() => setFiltersOpen((open) => !open)} leftIcon={<SlidersHorizontal className="size-4" />} className="shrink-0" sx={{ minHeight: 52 }}>
+          Filtros{extraFilterCount > 0 ? ` (${extraFilterCount})` : ''}<ChevronDown className={`ml-1 size-4 transition-transform ${filtersOpen ? 'rotate-180' : ''}`} />
+        </Button>
+      </div>
+      <div className="mb-3 mt-6 flex items-center justify-between gap-2"><p className="text-[11px] font-extrabold uppercase tracking-widest text-ink-muted">Elige qué se te antoja</p><span className="text-[10px] text-ink-muted sm:hidden">Desliza para ver más →</span></div>
+      <nav aria-label="Colecciones del catálogo" className="-mx-4 flex gap-2 overflow-x-auto overscroll-x-contain px-4 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-x-visible sm:px-0 sm:pb-0">
+        {COLLECTIONS.map(({ id, label, icon: Icon }) => <button key={id} type="button" aria-pressed={collection === id} onClick={() => chooseCollection(id)} className={`inline-flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-field border px-3.5 py-2.5 text-sm font-semibold transition ${collection === id ? 'border-brand-700 bg-brand-700 text-white' : 'border-line bg-white text-ink hover:border-brand-400 hover:bg-brand-50'}`}><Icon className="size-4 shrink-0" aria-hidden="true" />{label}</button>)}
+        <button type="button" aria-pressed={sugarFree} onClick={() => updateFilter('sin-azucar', sugarFree ? '' : '1')} className={`min-h-11 shrink-0 whitespace-nowrap rounded-field border px-3.5 py-2.5 text-sm font-semibold ${sugarFree ? 'border-brand-700 bg-brand-50 text-brand-800' : 'border-line bg-white text-ink hover:bg-brand-50'}`}>Sin azúcar</button>
+      </nav>
+      <div id="catalog-extra-filters" hidden={!filtersOpen}>
+        <div className="mt-5 grid gap-4 border-t border-line pt-5 sm:grid-cols-2">
+          <Select label="Categoría" value={categoryId ? String(categoryId) : ''} onChange={(event) => updateFilter('categoria', event.target.value)}><SelectOption value="">Todas las categorías</SelectOption>{categories.map((category) => <SelectOption key={category.id} value={String(category.id)}>{category.name}</SelectOption>)}</Select>
+          <Select label="Preparación" value={preparation} onChange={(event) => updateFilter('preparacion', event.target.value)}><SelectOption value="">Todas</SelectOption><SelectOption value="MADE_TO_ORDER">Por encargo</SelectOption><SelectOption value="READY_STOCK">Producto preparado</SelectOption></Select>
+        </div>
+      </div>
+      {hasFilters && <div className="mt-4 flex justify-end"><button type="button" onClick={clearFilters} className="min-h-8 text-xs font-semibold text-brand-700 underline underline-offset-4">Limpiar filtros</button></div>}
+    </div>
+
+    {selectedLocation && <div className="mt-5"><BranchPrompt onChooseLocation={openLocationModal} selectedLocation={selectedLocation} /></div>}
+    {collection === '24H' && <p role="note" className="mt-5 text-sm leading-6 text-ink-muted"><strong className="text-ink">Pide con al menos 24 horas de anticipación.</strong> Confirmaremos la fecha según la capacidad del taller.</p>}
+    {sugarFree && <p className="mt-5 text-sm leading-6 text-ink-muted">Selección identificada como «Sin azúcar» por el negocio. Revisa los ingredientes y alérgenos de cada producto.</p>}
+    <div className="mb-6 mt-8 flex flex-wrap items-end justify-between gap-5 border-b border-line pb-5 sm:mt-10">
+      <div><p className="text-[11px] font-extrabold uppercase tracking-widest text-brand-700">Nuestro catálogo</p><h2 className="mt-1.5 text-xl font-extrabold sm:text-2xl" aria-live="polite">{loading ? 'Preparando algo especial…' : error ? 'Explora nuestros productos' : `${resultCount} producto${resultCount === 1 ? '' : 's'} para disfrutar`}</h2></div>
+      <div className="w-full sm:w-56"><Select label="Ordenar" value={sort} onChange={(event) => setSort(event.target.value)}><SelectOption value="FEATURED">Recomendados</SelectOption><SelectOption value="PRICE">Menor precio</SelectOption><SelectOption value="PRICE_DESC">Mayor precio</SelectOption></Select></div>
+    </div>
+    {error ? <div role="alert" className="rounded-xl bg-red-50 p-4 text-red-800"><p>{error}</p><Button className="mt-3" size="sm" variant="outline" onClick={() => setRetry((value) => value + 1)}>Reintentar</Button></div>
+      : loading ? <div role="status" aria-label="Cargando el catálogo"><ProductGridSkeleton count={6} /></div>
+        : resultCount ? <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:gap-6">{visible.map((product) => <ProductCard key={product.id} product={product} />)}</div>
+          : <EmptyState icon={hasFilters ? SearchX : CakeSlice} title={hasFilters ? 'No hay productos con esta selección' : 'Estamos preparando nuestro catálogo'} description={hasFilters ? 'Prueba otra categoría o limpia los filtros para explorar lo disponible.' : 'Los productos aparecerán aquí cuando estén publicados y listos para recibir pedidos.'} action={hasFilters ? <Button variant="outline" onClick={clearFilters}>Ver todo el catálogo</Button> : undefined} />}
+  </section>;
+};
 export default MenuPage;

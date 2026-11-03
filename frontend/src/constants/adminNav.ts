@@ -1,6 +1,9 @@
 import type { LucideIcon } from 'lucide-react';
 import {
   Banknote,
+  Building2,
+  Smartphone,
+  MessageCircle,
   Bike,
   BookText,
   ChefHat,
@@ -10,15 +13,15 @@ import {
   MapPin,
   Package,
   Palette,
-  Salad,
+  CakeSlice,
   ScrollText,
   ShieldCheck,
   Sliders,
   Store,
   Ticket,
   Users,
-  UtensilsCrossed,
-  Wallet,
+  ShoppingCart,
+  Truck,
 } from 'lucide-react';
 import { ROUTES } from './routes';
 import { PERM } from './permissions';
@@ -51,6 +54,8 @@ export interface AdminNavEntry {
   anyOf: string[];
   /** Bloque del menu lateral. */
   group?: string;
+  /** Pantalla heredada: sigue siendo accesible por URL/rol, pero no aparece en el menu. */
+  hidden?: boolean;
   /** Identidad legal y ajustes del sistema: no se delega a un rol creado desde el panel. */
   superAdminOnly?: boolean;
 }
@@ -66,17 +71,24 @@ export const ADMIN_AUDIT_PATH = ROUTES.adminAudit;
 /** Bloques del menu, en orden. */
 export const ADMIN_NAV_GROUPS = [
   { id: 'GENERAL', label: 'Vista general' },
-  { id: 'OPERACION', label: 'Operación' },
-  { id: 'NEGOCIO', label: 'Negocio' },
+  { id: 'VENTAS', label: 'Ventas y caja' },
+  { id: 'PRODUCCION', label: 'Producción y cocina' },
+  { id: 'LOGISTICA', label: 'Reparto y entrega' },
+  { id: 'ABASTECIMIENTO', label: 'Compras e inventario' },
+  { id: 'CATALOGO', label: 'Diseño y catálogo' },
   { id: 'GOBIERNO', label: 'Administración' },
 ] as const;
 
 /**
- * Las 17 pantallas del panel, en orden de menu. Incluye la Bitacora, que da
+ * Las pantallas visibles del panel, en orden de menu. Incluye la Bitacora, que da
  * destino al permiso `audit.read`: el backend ya lo exige en un endpoint completo
  * y hasta hoy no tenia ni ruta, ni menu, ni aterrizaje.
  */
 export const ADMIN_NAV: AdminNavEntry[] = [
+  { to: ROUTES.adminHomeContent, label: 'Contenido del inicio', icon: BookText, anyOf: [], superAdminOnly: true, group: 'CATALOGO' },
+  { to: '/admin/experiencias-qr', label: 'Experiencias QR', icon: Images, anyOf: [PERM.EXPERIENCE_READ, PERM.EXPERIENCE_WRITE, PERM.EXPERIENCE_PUBLISH], group: 'CATALOGO' },
+  { to: ROUTES.adminDirectPayments, label: 'Yape y Plin', icon: Smartphone, anyOf: [PERM.PAYMENT_VERIFY, PERM.PAYMENT_REFUND], group: 'VENTAS' },
+  { to: ROUTES.adminCommunications, label: 'Comunicaciones', icon: MessageCircle, anyOf: [PERM.COMMUNICATION_READ, PERM.COMMUNICATION_REPLY], group: 'VENTAS' },
   {
     to: ROUTES.adminDashboard,
     label: 'Resumen',
@@ -96,95 +108,129 @@ export const ADMIN_NAV: AdminNavEntry[] = [
       PERM.PAYMENT_READ,
       PERM.PAYMENT_REFUND,
     ],
-    group: 'OPERACION',
+    group: 'VENTAS',
   },
   {
     to: ROUTES.adminCash,
     label: 'Caja y rendimiento',
     icon: Banknote,
     anyOf: [PERM.REPORT_SALES_READ, PERM.PAYMENT_VERIFY],
-    group: 'OPERACION',
+    group: 'VENTAS',
   },
   {
+    to: ROUTES.adminPos,
+    label: 'Punto de venta',
+    icon: ShoppingCart,
+    anyOf: [PERM.DINING_OPERATE],
+    group: 'VENTAS',
+  },
+  {
+    // Compatibilidad con el modulo anterior: se conserva para roles de salon,
+    // pero no se ofrece en el menu de Misky Challay.
     to: ROUTES.adminDining,
-    label: 'Salón y comandas',
-    icon: UtensilsCrossed,
+    label: 'SalÃ³n y comandas',
+    icon: Store,
     anyOf: [PERM.DINING_READ, PERM.DINING_OPERATE],
-    group: 'OPERACION',
+    group: 'VENTAS',
+    hidden: true,
   },
   {
     to: ROUTES.adminKitchen,
     label: 'Cocina',
     icon: ChefHat,
     anyOf: [PERM.KITCHEN_READ, PERM.KITCHEN_OPERATE],
-    group: 'OPERACION',
+    group: 'PRODUCCION',
+  },
+  {
+    to: ROUTES.adminCakes,
+    label: 'Producción de pastelería',
+    icon: ChefHat,
+    anyOf: [PERM.KITCHEN_READ, PERM.KITCHEN_OPERATE, PERM.CATALOG_CUSTOMIZATION_WRITE, PERM.GEO_READ, PERM.GEO_WRITE, PERM.CAKE_FINANCE_READ],
+    group: 'PRODUCCION',
   },
   {
     to: ROUTES.adminDelivery,
     label: 'Reparto',
     icon: Bike,
     anyOf: [PERM.DELIVERY_READ, PERM.DELIVERY_ASSIGN, PERM.DELIVERY_OPERATE],
-    group: 'OPERACION',
+    group: 'LOGISTICA',
   },
   {
     to: ROUTES.adminInventory,
     label: 'Inventario',
     icon: Package,
     anyOf: [PERM.INVENTORY_READ, PERM.INVENTORY_MANAGE],
-    group: 'OPERACION',
+    group: 'ABASTECIMIENTO',
   },
   {
-    // El nutricionista entra aqui: le basta con nutrition.read.
+    to: ROUTES.adminProcurement,
+    label: 'Compras y proveedores',
+    icon: Truck,
+    anyOf: [PERM.PROCUREMENT_READ, PERM.PROCUREMENT_MANAGE],
+    group: 'ABASTECIMIENTO',
+  },
+  {
     to: ROUTES.adminCatalog,
     label: 'Catálogo',
-    icon: Salad,
+    icon: CakeSlice,
     anyOf: [
       PERM.CATALOG_PRODUCT_READ,
       PERM.CATALOG_PRODUCT_WRITE,
       PERM.CATALOG_PRODUCT_PUBLISH,
       PERM.CATALOG_CATEGORY_WRITE,
       PERM.CATALOG_AVAILABILITY_WRITE,
-      PERM.NUTRITION_READ,
-      PERM.NUTRITION_WRITE,
       PERM.ALLERGEN_WRITE,
       PERM.DIETARY_TAG_WRITE,
     ],
-    group: 'NEGOCIO',
+    group: 'CATALOGO',
   },
   {
-    // Los alergenos y macros de cada ingrediente se editan aqui: el nutricionista
-    // tambien entra, aunque no pueda tocar el resto del constructor.
+    to: ROUTES.adminCakeThemes,
+    label: 'Para empresas',
+    icon: Building2,
+    anyOf: [PERM.CATALOG_PRODUCT_READ],
+    group: 'CATALOGO',
+  },
+  {
     to: ROUTES.adminBuilder,
-    label: 'Constructor',
+    label: 'Personalización',
     icon: Sliders,
-    anyOf: [PERM.CATALOG_CUSTOMIZATION_WRITE, PERM.NUTRITION_WRITE, PERM.ALLERGEN_WRITE],
-    group: 'NEGOCIO',
+    anyOf: [PERM.CATALOG_CUSTOMIZATION_WRITE, PERM.ALLERGEN_WRITE, PERM.DIETARY_TAG_WRITE],
+    group: 'CATALOGO',
   },
   {
     to: ROUTES.adminMedia,
     label: 'Biblioteca multimedia',
     icon: Images,
     anyOf: [PERM.CATALOG_PRODUCT_WRITE, PERM.CATALOG_CUSTOMIZATION_WRITE],
-    group: 'NEGOCIO',
+    group: 'CATALOGO',
   },
   {
     to: ROUTES.adminCoupons,
     label: 'Cupones',
     icon: Ticket,
     anyOf: [PERM.PROMOTION_MANAGE],
-    group: 'NEGOCIO',
+    group: 'CATALOGO',
   },
   {
-    // El backend ya abrio GET /admin/plans a plan.read; el panel lo cerraba a plan.manage.
     to: ROUTES.adminPlans,
-    label: 'Planes',
-    icon: Wallet,
-    anyOf: [PERM.PLAN_MANAGE, PERM.PLAN_READ],
-    group: 'NEGOCIO',
+    label: 'Suscripciones',
+    icon: Package,
+    anyOf: [PERM.PLAN_READ, PERM.PLAN_MANAGE],
+    group: 'CATALOGO',
+  },
+  {
+    to: ROUTES.adminLegacyPlans,
+    // Historial y configuración de recargas antiguas; no se muestran en el menú.
+    label: 'Recargas anteriores',
+    icon: Package,
+    anyOf: [PERM.PLAN_READ, PERM.PLAN_MANAGE],
+    group: 'CATALOGO',
+    hidden: true,
   },
   {
     to: ROUTES.adminCoverage,
-    label: 'Cobertura y cocinas',
+    label: 'Zonas y sucursales',
     icon: MapPin,
     anyOf: [PERM.GEO_READ, PERM.GEO_WRITE],
     group: 'GOBIERNO',
@@ -194,6 +240,13 @@ export const ADMIN_NAV: AdminNavEntry[] = [
     label: 'Usuarios',
     icon: Users,
     anyOf: [PERM.USER_READ, PERM.USER_MANAGE],
+    group: 'GOBIERNO',
+  },
+  {
+    to: ROUTES.adminTeams,
+    label: 'Equipos y accesos',
+    icon: Users,
+    anyOf: [PERM.USER_READ, PERM.USER_MANAGE, PERM.ROLE_READ, PERM.ROLE_MANAGE],
     group: 'GOBIERNO',
   },
   {
@@ -246,8 +299,9 @@ export const ADMIN_NAV: AdminNavEntry[] = [
  */
 const LANDING_PRIORITY: string[] = [
   ROUTES.adminDashboard,
+  ROUTES.adminDirectPayments,
   ROUTES.adminCash,
-  ROUTES.adminDining,
+  ROUTES.adminPos,
   ROUTES.adminDelivery,
   ROUTES.adminKitchen,
   ROUTES.adminOrders,
@@ -256,7 +310,6 @@ const LANDING_PRIORITY: string[] = [
   ROUTES.adminBuilder,
   ROUTES.adminMedia,
   ROUTES.adminCoupons,
-  ROUTES.adminPlans,
   ROUTES.adminCoverage,
   ROUTES.adminComplaints,
   ADMIN_AUDIT_PATH,

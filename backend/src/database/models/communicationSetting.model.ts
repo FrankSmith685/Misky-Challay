@@ -16,6 +16,7 @@ export class CommunicationSetting extends Model<
   declare emailNotificationsEnabled: CreationOptional<boolean>;
   declare inAppNotificationsEnabled: CreationOptional<boolean>;
   declare orderUpdatesEnabled: CreationOptional<boolean>;
+  declare whatsappUpdatesEnabled: CreationOptional<boolean>;
   declare planUpdatesEnabled: CreationOptional<boolean>;
   declare staffAccessEnabled: CreationOptional<boolean>;
   declare availabilityAlertsEnabled: CreationOptional<boolean>;
@@ -40,6 +41,7 @@ CommunicationSetting.init(
     emailNotificationsEnabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     inAppNotificationsEnabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     orderUpdatesEnabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    whatsappUpdatesEnabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     planUpdatesEnabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     staffAccessEnabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     availabilityAlertsEnabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },

@@ -18,8 +18,6 @@ export const PERM = {
   CATALOG_AVAILABILITY_WRITE: 'catalog.availability.write',
   CATALOG_CUSTOMIZATION_WRITE: 'catalog.customization.write',
 
-  NUTRITION_READ: 'nutrition.read',
-  NUTRITION_WRITE: 'nutrition.write',
   ALLERGEN_WRITE: 'allergen.write',
   DIETARY_TAG_WRITE: 'dietary_tag.write',
 
@@ -30,6 +28,9 @@ export const PERM = {
   ORDER_UPDATE_STATUS: 'order.update_status',
   ORDER_CANCEL: 'order.cancel',
 
+  EXPERIENCE_READ: 'experience.read',
+  EXPERIENCE_WRITE: 'experience.write',
+  EXPERIENCE_PUBLISH: 'experience.publish',
   KITCHEN_READ: 'kitchen.read',
   KITCHEN_OPERATE: 'kitchen.operate',
 
@@ -38,6 +39,8 @@ export const PERM = {
 
   INVENTORY_READ: 'inventory.read',
   INVENTORY_MANAGE: 'inventory.manage',
+  PROCUREMENT_READ: 'procurement.read',
+  PROCUREMENT_MANAGE: 'procurement.manage',
 
   DELIVERY_READ: 'delivery.read',
   DELIVERY_ASSIGN: 'delivery.assign',
@@ -55,6 +58,8 @@ export const PERM = {
 
   REPORT_SALES_READ: 'report.sales.read',
   REPORT_OPERATIONS_READ: 'report.operations.read',
+  CAKE_FINANCE_READ: 'cake.finance.read',
+  CAKE_FINANCE_MANAGE: 'cake.finance.manage',
 
   USER_READ: 'user.read',
   USER_MANAGE: 'user.manage',
@@ -62,5 +67,7 @@ export const PERM = {
   ROLE_MANAGE: 'role.manage',
   AUDIT_READ: 'audit.read',
   SETTINGS_MANAGE: 'settings.manage',
+  COMMUNICATION_READ: 'communication.read',
+  COMMUNICATION_REPLY: 'communication.reply',
   COMPLAINT_MANAGE: 'complaint.manage',
 } as const;

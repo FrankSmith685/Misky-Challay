@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getApiErrorMessage } from '@services/api/client';
+import { DATA_CHANGED } from '@services/realtime';
 
 /** A partir de aqui los datos en pantalla dejan de ser "de ahora mismo". */
 const STALE_AFTER_MS = 30_000;
@@ -46,6 +47,7 @@ export const usePolling = <T>(
   intervalMs = 5000,
 ): PollingState<T> => {
   const [data, setData] = useState<T | null>(null);
+  const loadedFetcher = useRef(fetcher);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [lastSuccessAt, setLastSuccessAt] = useState<number | null>(null);
@@ -62,6 +64,7 @@ export const usePolling = <T>(
     let inFlight: AbortController | null = null;
 
     // Fuente nueva (otra sucursal, otro filtro): lo anterior ya no describe esto.
+    loadedFetcher.current = fetcher;
     setData(null);
     setError(null);
     setLastSuccessAt(null);
@@ -108,6 +111,9 @@ export const usePolling = <T>(
       if (!document.hidden) void run(false);
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener(DATA_CHANGED, onVisibilityChange);
+    window.addEventListener('online', onVisibilityChange);
+    window.addEventListener('focus', onVisibilityChange);
 
     return () => {
       cancelled = true;
@@ -115,6 +121,9 @@ export const usePolling = <T>(
       runRef.current = null;
       clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener(DATA_CHANGED, onVisibilityChange);
+      window.removeEventListener('online', onVisibilityChange);
+      window.removeEventListener('focus', onVisibilityChange);
     };
   }, [fetcher, intervalMs]);
 
@@ -125,5 +134,6 @@ export const usePolling = <T>(
   const isStale =
     error !== null && lastSuccessAt !== null && Date.now() - lastSuccessAt > STALE_AFTER_MS;
 
-  return { data, error, isLoading, lastSuccessAt, isStale, refresh };
+  const sameSource = loadedFetcher.current === fetcher;
+  return { data: sameSource ? data : null, error: sameSource ? error : null, isLoading: !sameSource || isLoading, lastSuccessAt: sameSource ? lastSuccessAt : null, isStale: sameSource && isStale, refresh };
 };

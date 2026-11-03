@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-label="Paletitas de torta decoradas">
+<defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#e9f1ee"/><stop offset="1" stop-color="#fffaf3"/></linearGradient></defs>
+<rect width="800" height="600" fill="url(#bg)"/><circle cx="690" cy="60" r="180" fill="#fff" opacity=".4"/><ellipse cx="400" cy="495" rx="310" ry="64" fill="#fffdfa"/><path d="M145 495q255-85 510 0" fill="none" stroke="#e6dbcf" stroke-width="3"/>
+<g stroke="#d4ad84" stroke-width="16" stroke-linecap="round"><path d="M212 510V294"/><path d="M339 510V245"/><path d="M465 510V273"/><path d="M590 510V296"/></g>
+<g><circle cx="212" cy="248" r="66" fill="#a65a50"/><circle cx="339" cy="201" r="66" fill="#f0b8c9"/><circle cx="465" cy="229" r="66" fill="#d6a16e"/><circle cx="590" cy="250" r="66" fill="#efcf85"/></g>
+<g fill="none" stroke="#fff9ee" stroke-width="10" stroke-linecap="round"><path d="M172 235q40-30 82 4M176 263q42-28 77 7"/><path d="M299 187q43-31 79 4M304 215q42-29 76 7"/><path d="M425 215q42-31 80 5M430 243q42-28 76 8"/><path d="M550 237q42-30 81 3M554 266q40-27 75 7"/></g>
+<g fill="#8ea99b"><circle cx="196" cy="208" r="7"/><circle cx="242" cy="258" r="7"/><circle cx="328" cy="158" r="7"/><circle cx="369" cy="221" r="7"/><circle cx="449" cy="188" r="7"/><circle cx="494" cy="239" r="7"/><circle cx="577" cy="209" r="7"/><circle cx="615" cy="272" r="7"/></g></svg>

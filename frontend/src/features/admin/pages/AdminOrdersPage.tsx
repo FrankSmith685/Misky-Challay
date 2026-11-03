@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, ChefHat, CircleCheck, ClipboardList, Clock3, Eye, MapPin, ReceiptText, RefreshCw, Search, ShoppingBag, Store, Truck, WifiOff, XCircle } from 'lucide-react';
 import toast from '@components/mui/MuiToast';
 import { Card } from '@components/ui/Card';
@@ -41,6 +41,14 @@ const STATUS_FILTERS = [
   { value: 'CANCELLED', label: 'Cancelados' },
 ];
 
+const STATUS_HELP = [
+  ['Esperando pago', 'Revisa el cobro en Detalles. Cocina aún no debe prepararlo.'],
+  ['En curso', 'Incluye confirmados, en preparación y listos. Abre Detalles para ver quién debe actuar.'],
+  ['En camino', 'Reparto tiene la entrega; consulta su avance antes de responder al cliente.'],
+  ['Entregados', 'La entrega terminó. Revisa el ticket, el cobro y el comprobante si aplica.'],
+  ['Cancelados', 'Consulta el motivo y verifica si quedó una devolución pendiente.'],
+] as const;
+
 /**
  * Espejo de `ORDER_STATUS_FLOW` del backend, recortado a lo que acepta el endpoint.
  *
@@ -61,9 +69,16 @@ const CANCELLABLE_STATUSES = new Set<AdminOrderStatus>([
 ]);
 
 const nextStepCopy = (order: AdminOrderRow, internalOnly = false): string => {
-  if (order.status === 'PENDING_PAYMENT') return 'Esperar confirmación del pago';
+  if (order.status === 'PENDING_PAYMENT') return 'Revisar el cobro en Detalles; todavía no enviarlo a Cocina';
+  if (order.status === 'CONFIRMED' && !order.kitchenTicket && order.cakeTasks?.length) {
+    const pending = order.cakeTasks.filter((task) => task.status !== 'DONE');
+    if (pending.some((task) => task.status === 'BLOCKED')) return 'Producción bloqueada; resolver la etapa antes de entregar';
+    if (pending.some((task) => !task.assigned)) return 'Asignar responsables en Producción de tortas';
+    if (pending.length) return `Producción planificada: siguiente etapa ${pending[0].workDate}`;
+    return 'Producción terminada; revisar comanda de cierre y entrega';
+  }
   if (order.status === 'CONFIRMED' && order.serviceMode === 'SCHEDULED' && order.scheduledAt) {
-    return `Programado para ${formatDate(order.scheduledAt)}; entrara a Cocina al iniciar su preparacion`;
+    return `Programado para ${formatDate(order.scheduledAt)}; entrará a Cocina al iniciar su preparación`;
   }
   if (order.status === 'CONFIRMED') return 'Cocina debe aceptar y comenzar';
   if (order.status === 'PREPARING') return 'Cocina debe marcarlo como listo';
@@ -79,6 +94,15 @@ const nextStepCopy = (order: AdminOrderRow, internalOnly = false): string => {
 
 const attentionFor = (order: AdminOrderRow): { late: boolean; label: string } => {
   if (['DELIVERED', 'CANCELLED', 'REFUNDED'].includes(order.status)) return { late: false, label: 'Cerrado' };
+  if (order.cakeTasks?.length) {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+    const part = (type: string) => parts.find((entry) => entry.type === type)?.value ?? '';
+    const today = `${part('year')}-${part('month')}-${part('day')}`;
+    const pending = order.cakeTasks.filter((task) => task.status !== 'DONE');
+    if (pending.some((task) => task.workDate < today)) return { late: true, label: 'Producción atrasada' };
+    if (pending.some((task) => task.status === 'BLOCKED')) return { late: true, label: 'Producción bloqueada' };
+    if (pending.some((task) => task.workDate === today)) return { late: false, label: 'Producción para hoy' };
+  }
   if (order.serviceMode === 'SCHEDULED' && order.scheduledAt && new Date(order.scheduledAt).getTime() > Date.now()) {
     return { late: false, label: `Programado ${formatDate(order.scheduledAt)}` };
   }
@@ -110,6 +134,8 @@ const AdminOrdersPage = () => {
   // reescribe cuando el usuario deja de escribir.
   const [search, setSearch] = useState(urlSearch);
   const debouncedSearch = useDebounce(search, 400);
+  const lastUrlSearch = useRef(urlSearch);
+  const skipSearchWrite = useRef(false);
 
   const updateParams = useCallback(
     (changes: Record<string, string>, resetPage = true) => {
@@ -130,7 +156,20 @@ const AdminOrdersPage = () => {
   );
 
   useEffect(() => {
-    if (debouncedSearch !== urlSearch) updateParams({ q: debouncedSearch });
+    if (lastUrlSearch.current === urlSearch) return;
+    lastUrlSearch.current = urlSearch;
+    skipSearchWrite.current = true;
+    setSearch(urlSearch);
+  }, [urlSearch]);
+  useEffect(() => {
+    if (skipSearchWrite.current) {
+      skipSearchWrite.current = false;
+      return;
+    }
+    if (debouncedSearch !== urlSearch) {
+      lastUrlSearch.current = debouncedSearch;
+      updateParams({ q: debouncedSearch });
+    }
   }, [debouncedSearch, urlSearch, updateParams]);
 
   const { branchId, branches, setBranchId, isLoadingBranches, branchesError, reloadBranches } =
@@ -167,7 +206,8 @@ const AdminOrdersPage = () => {
   const activeBranchName = branches.find((branch) => branch.id === branchId)?.name ?? null;
   /** Filtro o pagina nuevos: hay peticion en vuelo y todavia no hay respuesta. */
   const isRefetching = data === null && hasLoadedOnce && error === null;
-  const delayedOrders = orders.filter((order) => attentionFor(order).late);
+  const delayedOrders = orders.filter((order) => attentionFor(order).late)
+    .sort((a, b) => new Date(a.placedAt).getTime() - new Date(b.placedAt).getTime());
   const metrics = [
     { label: 'Por atender', value: orders.filter((order) => order.status === 'CONFIRMED').length, icon: Clock3, tone: 'accent' as const },
     { label: 'En cocina', value: orders.filter((order) => order.status === 'PREPARING').length, icon: ChefHat, tone: 'brand' as const },
@@ -187,6 +227,11 @@ const AdminOrdersPage = () => {
   useEffect(() => {
     setSelected([]);
   }, [status, urlSearch, page, branchId]);
+  useEffect(() => {
+    const allowed = new Set(selectable.map((order) => order.orderNumber));
+    setSelected((current) => current.every((number) => allowed.has(number))
+      ? current : current.filter((number) => allowed.has(number)));
+  }, [selectable]);
 
   const toggle = (orderNumber: string) =>
     setSelected((current) =>
@@ -202,17 +247,31 @@ const AdminOrdersPage = () => {
   // --- Acciones ---
   const [busyOrder, setBusyOrder] = useState<string | null>(null);
   const [isBulkRunning, setIsBulkRunning] = useState(false);
-  const [detailOrder, setDetailOrder] = useState<string | null>(null);
+  const detailOrder = params.get('pedido');
+  const setDetailOrder = (orderNumber: string | null) => setParams((current) => {
+    const next = new URLSearchParams(current);
+    if (orderNumber) next.set('pedido', orderNumber); else next.delete('pedido');
+    return next;
+  }, { replace: true });
+  const [refundAttention, setRefundAttention] = useState<string[]>([]);
+  const filtersActive = Boolean(status || urlSearch);
+  const clearFilters = () => {
+    setSearch('');
+    updateParams({ estado: '', q: '' });
+  };
 
   const cancelCopy = (count: number) => ({
     title: count === 1 ? 'Cancelar el pedido' : `Cancelar ${count} pedidos`,
     message:
-      'Se libera el cupo de la franja, se devuelve el stock, se cierra el ticket de cocina y se aborta el reparto. Si hay un cobro con tarjeta se intentara devolver. No se puede deshacer.',
+      `Se libera el cupo de la franja, se restaura el stock que corresponda y se cierran las tareas de Cocina y Reparto. ${can(PERM.PAYMENT_REFUND) ? 'Se intentarán devolver los cobros online. Efectivo, Yape y Plin requieren entregar el dinero antes de registrar la devolución en Detalles.' : 'Los cobros confirmados quedarán pendientes para alguien con permiso de reembolsos.'} ${count > 1 ? 'El mismo motivo se aplicará a todos los pedidos seleccionados. ' : ''}La cancelación no se puede deshacer.`,
     confirmLabel: count === 1 ? 'Cancelar el pedido' : `Cancelar ${count} pedidos`,
     cancelLabel: 'Volver',
     tone: 'danger' as const,
     reasonLabel: 'Motivo (se guarda en el historial del pedido)',
+    reasonHint: 'De 4 a 255 caracteres. Se guarda en el historial; revisa después si el cobro necesita devolución.',
     reasonRequired: true,
+    reasonMinLength: 4,
+    reasonMaxLength: 255,
   });
 
   const changeStatus = async (order: AdminOrderRow, next: 'CANCELLED') => {
@@ -236,9 +295,12 @@ const AdminOrdersPage = () => {
       // El servidor avisa aqui cuando queda un cobro sin devolver. Ese mensaje se
       // estaba tirando a la basura (`updateOrderStatus` devolvia `void`) y el dinero
       // se quedaba sin devolver en silencio. `refundPending` viaja en la respuesta;
-      // el `in` evita depender de que el tipo compartido ya lo declare.
-      const pending = 'refundPending' in result && result.refundPending === true;
-      if (pending) toast.error(result.message);
+      // El contrato incluye `refundPending` para no confundir cancelación con devolución.
+      const pending = result.refundPending;
+      if (pending) {
+        setRefundAttention((current) => [...new Set([...current, order.orderNumber])]);
+        toast.warning(result.message);
+      }
       else toast.success(result.message);
       refresh();
     } catch (actionError) {
@@ -256,9 +318,11 @@ const AdminOrdersPage = () => {
     // Secuencial a proposito: cada cancelacion bloquea la fila del pedido y la de
     // su franja horaria, y lanzarlas a la vez solo produce esperas y reintentos.
     const failed: string[] = [];
+    const pendingRefunds: string[] = [];
     for (const orderNumber of selected) {
       try {
-        await adminApi.updateOrderStatus(orderNumber, 'CANCELLED', answer.reason);
+        const result = await adminApi.updateOrderStatus(orderNumber, 'CANCELLED', answer.reason);
+        if (result.refundPending) pendingRefunds.push(orderNumber);
       } catch (bulkError) {
         failed.push(`${orderNumber}: ${getApiErrorMessage(bulkError)}`);
       }
@@ -266,18 +330,20 @@ const AdminOrdersPage = () => {
     setIsBulkRunning(false);
     setSelected([]);
     refresh();
+    if (pendingRefunds.length) setRefundAttention((current) => [...new Set([...current, ...pendingRefunds])]);
 
     const done = selected.length - failed.length;
-    if (failed.length === 0) toast.success(`${done} pedidos cancelados`);
-    else toast.error(`${done} de ${selected.length} cancelados. ${failed[0]}`);
+    if (failed.length) toast.error(`${done} de ${selected.length} cancelados. ${failed[0]}`);
+    else if (pendingRefunds.length) toast.warning(`${done} pedidos cancelados; ${pendingRefunds.length} requieren revisar su devolución.`);
+    else toast.success(`${done} pedidos cancelados`);
   };
 
   const header = (
     <PageHeader
       eyebrow="Operaciones"
       icon={ClipboardList}
-      title="Gestion de pedidos"
-      description="Atiende incidencias, confirma el destino operativo y sigue el avance entre Cocina y Reparto."
+      title="Gestión de pedidos"
+      description="Consulta qué pidió el cliente, verifica pagos y sigue la preparación y la entrega desde una sola lista."
       action={
         <>
           <BranchSelector
@@ -319,13 +385,8 @@ const AdminOrdersPage = () => {
 
     return (
       <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end">
-        {!internalOnly && canManageInvoices && order.status === 'DELIVERED' && order.invoiceStatus !== 'ISSUED' && (
-          <Button size="sm" leftIcon={<ReceiptText className="size-4" />} onClick={() => setDetailOrder(order.orderNumber)}>
-            Gestionar comprobante
-          </Button>
-        )}
-        <Button size="sm" variant="outline" leftIcon={<Eye className="size-4" />} onClick={() => setDetailOrder(order.orderNumber)}>
-          {internalOnly && order.status === 'DELIVERED' ? 'Pedido y ticket' : order.status === 'DELIVERED' && order.invoiceStatus !== 'ISSUED' ? 'Pedido y CPE' : 'Detalles'}
+        <Button size="sm" variant={!internalOnly && canManageInvoices && order.status === 'DELIVERED' && order.invoiceStatus !== 'ISSUED' ? 'primary' : 'outline'} leftIcon={!internalOnly && canManageInvoices && order.status === 'DELIVERED' && order.invoiceStatus !== 'ISSUED' ? <ReceiptText className="size-4" /> : <Eye className="size-4" />} onClick={() => setDetailOrder(order.orderNumber)}>
+          {!internalOnly && canManageInvoices && order.status === 'DELIVERED' && order.invoiceStatus !== 'ISSUED' ? 'Detalle y comprobante' : internalOnly && order.status === 'DELIVERED' ? 'Pedido y ticket' : 'Ver detalles'}
         </Button>
 
         {kitchenActive && (
@@ -339,7 +400,7 @@ const AdminOrdersPage = () => {
           </Button>
         )}
 
-        {cancellable && <Button size="sm" variant="ghost" disabled={busyOrder === order.orderNumber} onClick={() => void changeStatus(order, 'CANCELLED')} className="text-red-700">Cancelar</Button>}
+        {cancellable && <Button size="sm" variant="ghost" disabled={isBulkRunning || busyOrder !== null} onClick={() => void changeStatus(order, 'CANCELLED')} className="text-red-700">Cancelar</Button>}
       </div>
     );
   };
@@ -353,6 +414,46 @@ const AdminOrdersPage = () => {
 
       <OperationFlowGuide stage="orders" branchName={activeBranchName} />
 
+      <Card className="mb-4 border-brand-200 bg-brand-50/40 p-4 sm:p-5" shadow="e1">
+        <h2 className="text-base font-black text-ink">Qué hacer en esta pantalla</h2>
+        <p className="mt-1 text-sm text-ink-muted">Este es el seguimiento de pedidos de clientes. Las órdenes para comprar insumos se gestionan en Compras.</p>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <div className="rounded-lg border border-brand-100 bg-white p-3">
+            <strong className="text-sm text-ink">1. Encuentra el pedido</strong>
+            <p className="mt-1 text-xs leading-5 text-ink-muted">Filtra por estado o busca su número, el nombre o el teléfono del cliente. Selecciona la cocina para acotar la lista.</p>
+          </div>
+          <div className="rounded-lg border border-brand-100 bg-white p-3">
+            <strong className="text-sm text-ink">2. Abre Detalles</strong>
+            <p className="mt-1 text-xs leading-5 text-ink-muted">Comprueba productos, indicaciones, contacto, pago, entrega e historial antes de responder o actuar.</p>
+          </div>
+          <div className="rounded-lg border border-brand-100 bg-white p-3">
+            <strong className="text-sm text-ink">3. Sigue la siguiente etapa</strong>
+            <p className="mt-1 text-xs leading-5 text-ink-muted">Cocina prepara; Reparto entrega a domicilio; Salón atiende mesas. Aquí puedes revisar incidencias, registrar datos del pedido y cancelar con un motivo si tu rol lo permite.</p>
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs font-bold text-brand-700">
+          {(can(PERM.KITCHEN_READ) || can(PERM.KITCHEN_OPERATE)) && <Link className="hover:underline" to={ROUTES.adminKitchen}>Ir a Cocina →</Link>}
+          {(can(PERM.DELIVERY_READ) || can(PERM.DELIVERY_ASSIGN) || can(PERM.DELIVERY_OPERATE)) && <Link className="hover:underline" to={ROUTES.adminDelivery}>Ir a Reparto →</Link>}
+          {(can(PERM.DINING_READ) || can(PERM.DINING_OPERATE)) && <Link className="hover:underline" to={ROUTES.adminDining}>Ir a Salón →</Link>}
+          {(can(PERM.REPORT_SALES_READ) || can(PERM.PAYMENT_VERIFY)) && <Link className="hover:underline" to={ROUTES.adminCash}>Ir a Caja →</Link>}
+        </div>
+        <details className="mt-4 rounded-lg border border-line bg-white px-3 py-2 text-sm">
+          <summary className="cursor-pointer font-bold text-ink">Qué significa cada filtro de estado</summary>
+          <dl className="mt-3 grid gap-2 sm:grid-cols-2">
+            {STATUS_HELP.map(([label, meaning]) => <div key={label}><dt className="font-bold text-ink">{label}</dt><dd className="text-xs leading-5 text-ink-muted">{meaning}</dd></div>)}
+          </dl>
+        </details>
+      </Card>
+
+      {refundAttention.length > 0 && (
+        <div role="alert" className="mb-4 flex flex-wrap items-center gap-3 rounded-card border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+          <AlertTriangle className="size-5 shrink-0" />
+          <div className="min-w-0 flex-1"><strong>Revisar devolución pendiente</strong><p className="mt-1 text-xs">La cancelación se registró, pero el reembolso requiere seguimiento en {refundAttention.join(', ')}. Abre Detalles y revisa el cobro.</p></div>
+          <Button size="sm" variant="outline" onClick={() => setDetailOrder(refundAttention[0])}>Abrir pedido</Button>
+          <Button size="sm" variant="ghost" onClick={() => setRefundAttention([])}>Entendido</Button>
+        </div>
+      )}
+
       <Card className="mb-4 p-4" shadow="e1">
         <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
           <div><p className="font-extrabold text-ink">Pulso de la operación</p><p className="text-xs text-ink-muted">Conteos de la página actual · actualización automática cada 8 segundos</p></div>
@@ -364,7 +465,7 @@ const AdminOrdersPage = () => {
       {delayedOrders.length > 0 && (
         <div className="mb-4 flex flex-col gap-3 rounded-card border border-red-200 bg-red-50 p-4 sm:flex-row sm:items-center">
           <span className="grid size-10 shrink-0 place-items-center rounded-card bg-red-100 text-red-700"><AlertTriangle className="size-5" /></span>
-          <div className="min-w-0 flex-1"><p className="font-bold text-red-800">{delayedOrders.length === 1 ? '1 pedido necesita seguimiento' : `${delayedOrders.length} pedidos necesitan seguimiento`}</p><p className="mt-0.5 text-xs leading-relaxed text-red-700">Revisa primero: {delayedOrders.slice(0, 4).map((order) => order.orderNumber).join(', ')}{delayedOrders.length > 4 ? '…' : ''}. La prioridad se calcula según estado y tiempo transcurrido.</p></div>
+          <div className="min-w-0 flex-1"><p className="font-bold text-red-800">{delayedOrders.length === 1 ? '1 pedido necesita seguimiento' : `${delayedOrders.length} pedidos necesitan seguimiento`}</p><p className="mt-0.5 text-xs leading-relaxed text-red-700">Revisa primero: {delayedOrders.slice(0, 4).map((order) => order.orderNumber).join(', ')}{delayedOrders.length > 4 ? '…' : ''}. Esta señal orientativa compara el estado con el tiempo desde que se hizo el pedido; verifica la situación real en Detalles.</p></div>
           <Button size="sm" variant="outline" onClick={() => setDetailOrder(delayedOrders[0].orderNumber)}>Revisar el más antiguo</Button>
         </div>
       )}
@@ -407,7 +508,9 @@ const AdminOrdersPage = () => {
             className="h-11 w-full rounded-field border border-line bg-surface-muted pl-9 pr-3 text-sm outline-none transition-colors focus:border-brand-500 focus:bg-surface sm:w-72"
           />
         </div>
+        {filtersActive && <Button size="sm" variant="ghost" onClick={clearFilters}>Limpiar filtros</Button>}
       </div>
+      <p className="mt-2 text-xs text-ink-muted">La lista se actualiza cada 8 segundos. Los filtros y la búsqueda no cambian el estado de ningún pedido.</p>
 
       {/* El fallo de carga se pintaba como "No hay pedidos": se ramifica ANTES de
           mirar la longitud de la lista. Y mientras se recarga por un filtro nuevo
@@ -434,7 +537,7 @@ const AdminOrdersPage = () => {
                         aria-label="Seleccionar todos los pedidos cancelables"
                         className="size-4 accent-brand-600"
                         checked={allSelected}
-                        disabled={selectable.length === 0}
+                        disabled={selectable.length === 0 || isBulkRunning}
                         onChange={toggleAll}
                       />
                     </th>
@@ -459,7 +562,7 @@ const AdminOrdersPage = () => {
                           aria-label={`Seleccionar ${order.orderNumber}`}
                           className="size-4 accent-brand-600"
                           checked={selected.includes(order.orderNumber)}
-                          disabled={!CANCELLABLE_STATUSES.has(order.status as AdminOrderStatus)}
+                          disabled={isBulkRunning || !CANCELLABLE_STATUSES.has(order.status as AdminOrderStatus)}
                           onChange={() => toggle(order.orderNumber)}
                         />
                       </td>
@@ -470,6 +573,7 @@ const AdminOrdersPage = () => {
                         {order.deliveryType === 'DELIVERY' ? 'Delivery' : order.deliveryType === 'DINE_IN' ? 'Salón' : 'Recojo'}
                         {order.contactName ? ` · ${order.contactName}` : ''}
                       </p>
+                      {order.source !== 'POS' && !order.customerContactJson && ['PENDING_PAYMENT', 'CONFIRMED', 'PREPARING', 'READY'].includes(order.status) && <p className="mt-1 text-xs font-semibold text-brand-700">Contacto inicial pendiente</p>}
                       <p className="mt-1 flex items-center gap-1 text-xs text-ink-muted">
                         {order.deliveryType === 'DELIVERY' ? <MapPin className="size-3" /> : <Store className="size-3" />}
                         {order.deliveryType === 'DELIVERY'
@@ -489,6 +593,7 @@ const AdminOrdersPage = () => {
                       ) : (
                         <span className="text-xs text-ink-muted">—</span>
                       )}
+                      {Boolean(order.cakeTasks?.length) && <p className="mt-1.5 text-xs font-semibold text-brand-700">Torta: {order.cakeTasks?.filter((task) => task.status === 'DONE').length}/{order.cakeTasks?.length} etapas</p>}
                     </td>
                     <td className="p-3 text-xs text-ink-muted">
                       <p className="font-bold text-ink">{order.items.reduce((total, item) => total + item.quantity, 0)} platos</p>
@@ -503,7 +608,7 @@ const AdminOrdersPage = () => {
             </table>
 
             {orders.length === 0 && (
-              <EmptyState icon={ShoppingBag} title="No hay pedidos" description="No encontramos pedidos con los filtros seleccionados." className="m-4" />
+              <EmptyState icon={ShoppingBag} title={filtersActive ? 'No hay pedidos con estos filtros' : 'Aún no hay pedidos'} description={filtersActive ? 'Prueba otro estado, nombre, teléfono o número de pedido.' : 'Los pedidos de clientes aparecerán aquí cuando se registren desde la web, Salón o Punto de venta.'} action={filtersActive ? <Button size="sm" variant="outline" onClick={clearFilters}>Mostrar todos</Button> : undefined} className="m-4" />
             )}
           </div>
 
@@ -519,6 +624,7 @@ const AdminOrdersPage = () => {
                         aria-label={`Seleccionar ${order.orderNumber}`}
                         className="mt-1 size-4 accent-brand-600"
                         checked={selected.includes(order.orderNumber)}
+                        disabled={isBulkRunning}
                         onChange={() => toggle(order.orderNumber)}
                       />
                     )}
@@ -529,6 +635,7 @@ const AdminOrdersPage = () => {
                         {order.deliveryType === 'DELIVERY' ? 'Delivery' : order.deliveryType === 'DINE_IN' ? 'Salón' : 'Recojo'}
                         {order.contactName ? ` · ${order.contactName}` : ''}
                       </p>
+                      {order.source !== 'POS' && !order.customerContactJson && ['PENDING_PAYMENT', 'CONFIRMED', 'PREPARING', 'READY'].includes(order.status) && <p className="mt-1 text-xs font-semibold text-brand-700">Contacto inicial pendiente</p>}
                       <p className="mt-1 flex items-center gap-1 text-xs text-ink-muted">
                         {order.deliveryType === 'DELIVERY' ? <MapPin className="size-3" /> : <Store className="size-3" />}
                         {order.deliveryType === 'DELIVERY'
@@ -548,6 +655,7 @@ const AdminOrdersPage = () => {
                   <p className="text-[10px] font-extrabold uppercase tracking-wide text-brand-700">Siguiente paso</p>
                   <p className="mt-1 text-sm font-bold text-brand-900">{nextStepCopy(order, internalOnly)}</p>
                   {order.kitchenTicket && <div className="mt-2"><KitchenStatusBadge status={order.kitchenTicket.status} /></div>}
+                  {Boolean(order.cakeTasks?.length) && <p className="mt-2 text-xs font-bold text-brand-700">Producción de torta: {order.cakeTasks?.filter((task) => task.status === 'DONE').length}/{order.cakeTasks?.length} etapas</p>}
                 </div>
                 <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
                   <div>
@@ -558,7 +666,7 @@ const AdminOrdersPage = () => {
                 </div>
               </Card>
             ))}
-            {orders.length === 0 && <EmptyState icon={ShoppingBag} title="No hay pedidos" description="No encontramos pedidos con los filtros seleccionados." />}
+            {orders.length === 0 && <EmptyState icon={ShoppingBag} title={filtersActive ? 'No hay pedidos con estos filtros' : 'Aún no hay pedidos'} description={filtersActive ? 'Prueba otro estado, nombre, teléfono o número de pedido.' : 'Los pedidos de clientes aparecerán aquí cuando se registren desde la web, Salón o Punto de venta.'} action={filtersActive ? <Button size="sm" variant="outline" onClick={clearFilters}>Mostrar todos</Button> : undefined} />}
           </div>
 
           {/* La lista se cortaba en 20 filas SIN AVISAR: el fetcher no mandaba
@@ -582,8 +690,8 @@ const AdminOrdersPage = () => {
       {selected.length > 0 && (
         <>
           <div className="sticky bottom-4 z-20 mt-4 hidden items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 shadow-e3 xl:flex">
-            <p className="min-w-0 flex-1 text-sm font-medium text-ink">{bulkLabel}</p>
-            <Button variant="ghost" onClick={() => setSelected([])}>
+            <p className="min-w-0 flex-1 text-sm font-medium text-ink">{bulkLabel} · se aplicará el mismo motivo de cancelación a todos</p>
+            <Button variant="ghost" disabled={isBulkRunning} onClick={() => setSelected([])}>
               Quitar seleccion
             </Button>
             <Button
@@ -597,7 +705,7 @@ const AdminOrdersPage = () => {
           </div>
 
           <StickyActionBar hideFrom="xl" maxWidth="6xl" label="Seleccion" value={bulkLabel}>
-            <Button variant="outline" onClick={() => setSelected([])}>
+            <Button variant="outline" disabled={isBulkRunning} onClick={() => setSelected([])}>
               Quitar
             </Button>
             <Button
