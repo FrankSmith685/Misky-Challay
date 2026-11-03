@@ -1,6 +1,8 @@
-# Verde Bowl V3
+# DulceFlow
 
-Plataforma web de comida saludable: catálogo, constructor de bowls, planes con saldo, cobertura por zona y operación (cocina, inventario, delivery).
+Plataforma web y móvil de tortas personalizadas: catálogo, configuración, reservas por capacidad, cotizaciones de diseño y producción.
+
+El alcance de las etapas 1 a 5 y los datos iniciales editables se describen en [docs/TORTAS_DULCEFLOW.md](docs/TORTAS_DULCEFLOW.md). Parte de la infraestructura anterior conserva nombres técnicos para mantener la compatibilidad con datos y enlaces existentes.
 
 Monorepo con **npm workspaces**: un solo `npm run dev` levanta frontend y backend a la vez.
 
@@ -27,11 +29,11 @@ Edita `backend/.env` y pon la contraseña de tu MySQL:
 ```env
 DB_USER=root
 DB_PASSWORD=tu_password_de_mysql
-DB_NAME=verde_bowl_v3
+DB_NAME=DulceFlow
 ```
 
 > **No hace falta crear la base de datos a mano.** Al arrancar, el backend ejecuta
-> `CREATE DATABASE IF NOT EXISTS verde_bowl_v3`, crea las tablas desde los modelos
+> `CREATE DATABASE IF NOT EXISTS DulceFlow`, crea las tablas desde los modelos
 > y carga permisos, roles, el superadmin, el maestro UBIGEO y los datos comerciales
 > necesarios para revisar la aplicación.
 
@@ -41,15 +43,15 @@ npm run dev                 # backend :4000  +  frontend :5173
 
 - Frontend: http://localhost:5173
 - API: http://localhost:4000/api/v1/health
-- Superadmin inicial: `admin@verdebowl.com` / `Admin123*` (se configura en `backend/.env`)
+- Superadmin inicial de ejemplo: `admin@ejemplo.com` / `Admin123*` (se configura en `backend/.env`)
 
-La portada muestra un panel de diagnóstico que confirma si el frontend está hablando con el backend y con la base de datos.
+La portada muestra el catálogo de tortas DulceFlow. Los precios y horarios iniciales son datos de demostración editables.
 
 ### Levantar la pila completa con Docker
 
 ```bash
-cp .env.docker.example .env      # rellena los CAMBIAME
-docker compose up -d --build     # web en http://localhost:8080
+# completa las claves y dominios de .env.docker
+docker compose --env-file .env.docker up -d --build  # web en http://localhost:8080
 ```
 
 Las migraciones corren como paso previo y separado: si fallan, el API no arranca.
@@ -60,6 +62,7 @@ Despliegue, copias de seguridad y restauración en [docs/DESPLIEGUE.md](docs/DES
 | Comando                                | Qué hace                              |
 | -------------------------------------- | ------------------------------------- |
 | `npm run dev`                          | Levanta backend y frontend en paralelo |
+| `npm run dev:local3d`                  | Levanta la web, API y motor local de foto a 3D |
 | `npm run dev:backend` / `dev:frontend` | Solo una de las dos capas             |
 | `npm run build`                        | Compila ambos para producción         |
 | `npm run typecheck`                    | Verifica tipos en ambos proyectos     |
@@ -67,13 +70,28 @@ Despliegue, copias de seguridad y restauración en [docs/DESPLIEGUE.md](docs/DES
 | `npm run format`                       | Prettier sobre todo el repo           |
 | `npm run db:seed`                      | Reejecuta los seeders (idempotentes)  |
 
+Para reconstruir una torta desde una fotografía, consultar
+[Conversión de foto a 3D](docs/CONVERSION_FOTO_3D.md). El entorno local revisado
+usa Hunyuan3D Mini Turbo, con pesos instalados en un entorno Python aislado y
+selección mediante `backend/.env`. La generación tarda varios minutos; el visor
+permite girar, comparar y cambiar el tono al terminar.
+
+### Migraciones y entorno de DulceFlow
+
+En una base nueva como DulceFlow, aplica primero el esquema y luego, solo en desarrollo, los datos de demostracion:
+
+    npm run db:migrate:status --workspace backend
+    npm run db:migrate --workspace backend
+    npm run db:seed --workspace backend
+
+El comando de seed es idempotente. En produccion revisa el estado y aplica migraciones durante el despliegue, con DB_AUTO_CREATE=false, DB_SYNC=false, DB_ALTER=false, DB_FORCE=false y SEED_DEMO_DATA=false. No uses el seed de demostracion para cargar precios, stock, horarios o personal reales.
 ## 4. Interruptores de la base de datos
 
 Están en [backend/src/index.ts](backend/src/index.ts) (`DATABASE_STARTUP`) y se controlan desde `backend/.env`:
 
 | Variable         | Efecto                                                                  |
 | ---------------- | ----------------------------------------------------------------------- |
-| `DB_AUTO_CREATE` | Crea `verde_bowl_v3` si no existe                                       |
+| `DB_AUTO_CREATE` | Crea `DulceFlow` si no existe                                           |
 | `DB_SYNC`        | `true`: crea/actualiza tablas desde los modelos. `false`: no las toca   |
 | `DB_ALTER`       | `true`: agrega columnas nuevas **sin borrar datos**                     |
 | `DB_FORCE`       | `true`: **BORRA** todas las tablas y las recrea vacías (empezar de cero) |
@@ -97,9 +115,11 @@ Lo que evita que el híbrido se rompa es el **chequeo de deriva**: levanta dos b
 
 **2. Seeds idempotentes.** En desarrollo puedes dejar `DB_SEED=true` y `SEED_DEMO_DATA=true`: solo crea los datos que falten y conserva los cambios hechos desde el panel. En producción usa `SEED_DEMO_DATA=false` para cargar solamente permisos, roles, superadmin y UBIGEO.
 
-## 5. Pagos con Stripe
+## 5. Pagos de tortas
 
-Mientras `STRIPE_SECRET_KEY` esté vacía, el sistema usa un **simulador local**: mismo ciclo, mismo webhook firmado, misma confirmación por evento. Al pagar te lleva a `/checkout/simulador`, donde eliges "pago aprobado" o "tarjeta rechazada".
+Mientras `STRIPE_SECRET_KEY` y `MERCADOPAGO_ACCESS_TOKEN` estén vacías, el sistema usa un **simulador local de desarrollo**: mismo ciclo y webhook firmado, pero sin cobrar dinero real. Al pagar te lleva a `/checkout/simulador`, donde eliges "pago aprobado" o "tarjeta rechazada".
+
+Stripe no admite actualmente abrir una cuenta de cobros para una empresa registrada solo en Perú. Para cobros reales desde Perú, DulceFlow incluye Mercado Pago Checkout Pro: consulta [docs/MERCADOPAGO.md](docs/MERCADOPAGO.md). Las tortas crean sesiones dinámicas; no hay que darlas de alta como productos en Stripe. La comisión del 15 % se registra como liquidación y no se transfiere automáticamente.
 
 La guía completa de cuenta, pruebas, tarjetas, webhooks y paso a producción está
 en [docs/STRIPE.md](docs/STRIPE.md).
@@ -117,12 +137,12 @@ stripe listen --forward-to localhost:4000/api/v1/payments/webhooks/stripe
 STRIPE_WEBHOOK_SECRET=whsec_...
 ```
 
-Reinicia y listo: el botón de pagar abre la página de Stripe. **Nada más cambia**, porque el resto del sistema solo conoce la interfaz `PaymentProvider` ([backend/src/integrations/payments/](backend/src/integrations/payments/)).
+Con una cuenta de Stripe elegible, reinicia el backend para que el botón de pagar abra la página de Stripe. El resto del sistema usa la interfaz `PaymentProvider` ([backend/src/integrations/payments/](backend/src/integrations/payments/)).
 
 Reglas implementadas y probadas:
 
 - Un pedido pasa a `CONFIRMED` **solo** por un webhook con firma válida. La página de éxito no confirma nada: consulta el estado al backend.
-- El mismo evento reenviado por Stripe no confirma dos veces (`webhook_events` con UNIQUE por `event_id`).
+- El mismo evento reenviado por la pasarela no confirma dos veces (`webhook_events` con UNIQUE por `event_id`).
 - Dos clics en "Pagar" con la misma clave de idempotencia devuelven el mismo pedido, no dos.
 - Si el pago falla, el pedido se cancela y se liberan el cupón, el cupo de la franja y el saldo.
 
@@ -266,7 +286,7 @@ Entra con el superadmin a http://localhost:5173/admin:
 | Catálogo         | Productos, precios, nutrición, alérgenos y publicación                     |
 | **Constructor**  | Pasos del bowl: mínimos, máximos, incluidas, precios e incompatibilidades  |
 | **Cupones**      | Crear, apagar y ver el uso de cada cupón                                   |
-| **Planes**       | Precio, saldo otorgado, vigencia y beneficios                              |
+| **Suscripciones**       | Precio mensual, contenido de caja, sucursales y cupos                              |
 | **Cobertura**    | Crear zonas/cocinas, distritos UBIGEO, horarios y generación de franjas    |
 | Usuarios y Roles | Personal interno, roles y permisos                                         |
 
@@ -279,17 +299,13 @@ Cómo se mueve el stock solo, sin que nadie lo toque:
 3. Si el pedido se cancela, los insumos se **liberan**.
 4. Si un insumo llega a cero, las opciones que lo usan se marcan **agotadas** en esa sucursal y desaparecen del constructor. Al reponer stock, vuelven solas.
 
-## 10. Planes y saldo
+## 10. Suscripciones mensuales y saldo histórico
 
-El plan es una **recarga con beneficios**, no una suscripción: no hay renovación automática.
+Las nuevas cajas mensuales se cobran de forma recurrente y cada mensualidad pagada habilita un recojo. Superadmin gestiona precio, contenido, sucursales, anticipación y cupos. La contratación, cancelación y programación están disponibles en web y móvil. Consulta [docs/SUSCRIPCIONES.md](docs/SUSCRIPCIONES.md) para la configuración y las reglas.
 
-| Plan         | Paga   | Recibe | Vigencia | Beneficios                          |
-| ------------ | ------ | ------ | -------- | ----------------------------------- |
-| Prueba       | S/ 150 | S/ 165 | 30 días  | Delivery gratis                     |
-| Semana Verde | S/ 300 | S/ 345 | 45 días  | Delivery gratis + 5% (hasta S/ 10)  |
-| Mes Completo | S/ 600 | S/ 720 | 60 días  | Delivery gratis + 10% (hasta S/ 20) |
+Las recargas de saldo anteriores ya no se venden. Los clientes conservan el saldo, bonos y beneficios adquiridos según sus fechas originales.
 
-Reglas del dinero, todas implementadas y probadas:
+Reglas del saldo comprado anteriormente:
 
 - El saldo **solo se acredita cuando el webhook confirma el pago** del plan. Antes de eso, el saldo es cero.
 - Todo movimiento pasa por `wallet_transactions` con su saldo resultante congelado. **El saldo nunca se edita a mano**: un error se corrige con un movimiento nuevo.
@@ -298,7 +314,7 @@ Reglas del dinero, todas implementadas y probadas:
 - Si el saldo cubre todo el pedido, **no se pasa por Stripe**: se registra un pago `wallet` y se confirma internamente.
 - El saldo se administra por lotes FEFO: el bono y los beneficios vencen con el plan; el dinero pagado conserva 180 días. Un vencimiento nunca recorta otra compra.
 
-Los planes y sus beneficios son **datos**: cambiar precios, bonificaciones o porcentajes no requiere tocar código.
+Los planes anteriores permanecen en el historial para respetar sus saldos y fechas.
 
 ## 11. Regla de estados en el frontend
 
@@ -311,4 +327,5 @@ Los planes y sus beneficios son **datos**: cambiar precios, bonificaciones o por
 ## 12. Siguientes pasos
 
 Ver [docs/ROADMAP.md](docs/ROADMAP.md): tareas ordenadas por fases, derivadas del análisis funcional.
-"# Verde_bowl" 
+#   M i s k y - C h a l l a y  
+ 
