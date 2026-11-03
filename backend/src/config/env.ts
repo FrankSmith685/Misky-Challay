@@ -82,6 +82,8 @@ const envSchema = z.object({
 
   ADMIN_EMAIL: z.string().email().default('admin@ejemplo.com'),
   ADMIN_PASSWORD: z.string().min(6).default('Admin123*'),
+  /** Entorno de prueba: sincroniza una vez la clave del superadmin existente. */
+  ADMIN_PASSWORD_RESET: booleanFromString(false),
 
   // URL publica del frontend: se usa en los enlaces de retorno del pago.
   FRONTEND_URL: publicOrigin.default('http://localhost:5173'),
@@ -264,6 +266,8 @@ const productionGuard = (value: z.infer<typeof envSchema>, ctx: z.RefinementCtx)
     fail('SEED_DEMO_DATA', 'debe ser false en produccion: inyecta catalogo de prueba');
   if (value.DB_AUTO_CREATE)
     fail('DB_AUTO_CREATE', 'debe ser false en produccion: la base se crea con migraciones');
+  if (value.ADMIN_PASSWORD_RESET)
+    fail('ADMIN_PASSWORD_RESET', 'solo se permite en entornos de prueba');
 
   if (!value.DB_PASSWORD) fail('DB_PASSWORD', 'es obligatoria en produccion');
   if (value.DB_USER === 'root') fail('DB_USER', 'no uses root en produccion');

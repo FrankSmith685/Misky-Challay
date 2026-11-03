@@ -241,10 +241,19 @@ export const seedRbac = async (): Promise<void> => {
     });
     await UserRole.create({ userId: admin.id, roleId: adminRole.id });
     logger.success(`Superadmin creado: ${env.ADMIN_EMAIL}`);
-  } else if (existingAdmin && !existingAdmin.isSuperAdmin) {
-    // Nunca dejar el sistema sin dueno.
-    await existingAdmin.update({ isSuperAdmin: true });
-    logger.info(`${env.ADMIN_EMAIL} marcado como superadmin`);
+  } else if (existingAdmin) {
+    if (!existingAdmin.isSuperAdmin) {
+      // Nunca dejar el sistema sin dueno.
+      await existingAdmin.update({ isSuperAdmin: true });
+      logger.info(`${env.ADMIN_EMAIL} marcado como superadmin`);
+    }
+    if (env.ADMIN_PASSWORD_RESET) {
+      existingAdmin.passwordHash = await bcrypt.hash(env.ADMIN_PASSWORD, env.BCRYPT_SALT_ROUNDS);
+      existingAdmin.status = USER_STATUS.ACTIVE;
+      existingAdmin.tokenVersion += 1;
+      await existingAdmin.save();
+      logger.warn(`Clave del superadmin sincronizada para prueba: ${env.ADMIN_EMAIL}`);
+    }
   }
 
   logger.success(
