@@ -147,9 +147,8 @@ async function ensureProfile(db, productId, mode, leadHours, effort) {
 
 async function ensureVariant(db, productId, variant, sku, effort) {
   const found = await query(db, 'SELECT id FROM product_variants WHERE sku=? LIMIT 1', [sku]);
-  const values = [productId, variant.name, sku, variant.price, variant.servings, JSON.stringify(effort), variant.sortOrder];
   if (found.length) {
-    await query(db, 'UPDATE product_variants SET product_id=?, name=?, base_price=?, serving_size=?, serving_unit=\'porciones\', production_minutes_json=?, is_default=?, is_active=1, sort_order=?, deleted_at=NULL, updated_at=NOW() WHERE id=?', [...values.slice(0, 6), variant.sortOrder === 0 ? 1 : 0, variant.sortOrder, found[0].id]);
+    await query(db, 'UPDATE product_variants SET product_id=?, name=?, base_price=?, serving_size=?, serving_unit=\'porciones\', production_minutes_json=?, is_default=?, is_active=1, sort_order=?, deleted_at=NULL, updated_at=NOW() WHERE id=?', [productId, variant.name, variant.price, variant.servings, JSON.stringify(effort), variant.sortOrder === 0 ? 1 : 0, variant.sortOrder, found[0].id]);
     return found[0].id;
   }
   const result = await query(db, 'INSERT INTO product_variants (product_id, name, sku, base_price, serving_size, serving_unit, production_minutes_json, is_default, is_active, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, \'porciones\', ?, ?, 1, ?, NOW(), NOW())', [productId, variant.name, sku, variant.price, variant.servings, JSON.stringify(effort), variant.sortOrder === 0 ? 1 : 0, variant.sortOrder]);
@@ -317,12 +316,24 @@ async function seed(db) {
     for (const productId of [customProductId, advancedProductId]) {
       const variants = variantByProduct.get(productId);
       for (const [index, group] of links.entries()) {
-        if (productId === customProductId && index > 1) continue;
         await linkGroup(db, productId, group.id, variants[sizes.findIndex((entry) => entry.key === size.key)].id, index + 1);
       }
     }
     for (const group of links) for (const optionId of group.optionIds) {
       for (const branch of branches) await query(db, 'INSERT INTO branch_option_availability (branch_id, option_id, is_available, price_override, created_at, updated_at) VALUES (?, ?, 1, NULL, NOW(), NOW()) ON DUPLICATE KEY UPDATE is_available=1, price_override=NULL, updated_at=NOW()', [branch.id, optionId]);
+    }
+  }
+  // Conserva variantes adicionales creadas desde el panel (por ejemplo,
+  // "Extra grande") y dales la misma configuración completa que la variante
+  // grande, para que el constructor no se quede sin grupos al seleccionarlas.
+  const grandeGroups = optionGroupsForSize(sizes[sizes.length - 1])
+    .map((definition) => groupMap.get(`${sizes[sizes.length - 1].key}:${definition.name}`))
+    .filter(Boolean);
+  for (const productId of [customProductId, advancedProductId]) {
+    const knownVariantIds = new Set((variantByProduct.get(productId) || []).map((variant) => Number(variant.id)));
+    const extraVariants = await query(db, 'SELECT id FROM product_variants WHERE product_id=? AND is_active=1 AND deleted_at IS NULL', [productId]);
+    for (const variant of extraVariants.filter((entry) => !knownVariantIds.has(Number(entry.id)))) {
+      for (const [index, group] of grandeGroups.entries()) await linkGroup(db, productId, group.id, variant.id, index + 1);
     }
   }
   const { cakeAddons } = require('./demo-cake-addons.cjs');
