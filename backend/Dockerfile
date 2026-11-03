@@ -65,4 +65,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
 ENTRYPOINT ["/sbin/tini", "--"]
 # Ejecuta las migraciones antes de iniciar la API. Al estar definido como
 # arreglo JSON, Render no tiene que interpretar ningun `&&` en su panel.
-CMD ["sh", "-c", "node backend/dist/database/migrate.js && exec node backend/dist/index.js"]
+CMD ["sh", "-c", "node backend/dist/database/migrate.js up && exec node backend/dist/index.js"]
