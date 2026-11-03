@@ -328,4 +328,5 @@ Los planes anteriores permanecen en el historial para respetar sus saldos y fech
 
 Ver [docs/ROADMAP.md](docs/ROADMAP.md): tareas ordenadas por fases, derivadas del análisis funcional.
 #   M i s k y - C h a l l a y  
+ #   M i s k y - C h a l l a y  
  
