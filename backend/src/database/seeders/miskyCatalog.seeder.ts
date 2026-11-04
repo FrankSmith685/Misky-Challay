@@ -55,14 +55,14 @@ export const seedMiskyCatalog = async (): Promise<void> => {
   const activeVariants = existing
     ? await ProductVariant.findAll({ where: { productId: existing.id, isActive: true }, attributes: ['id'] })
     : [];
-  const requiredGroupFragments = ['sabor', 'relleno', 'cobertura', 'decoracion'];
+  const requiredGroupFragments = ['sabor', 'relleno'];
   const hasReadyGroup = (link: typeof customizationLinks[number]) => {
     const group = groupById.get(link.groupId);
     return Boolean(group && (optionCounts.get(group.id) || 0) > 0);
   };
-  // La torta personalizada necesita 3 tamaños con bizcocho y relleno, más
-  // cobertura y decoración, además del grupo opcional de adicionales:
-  // 7 enlaces y al menos una opción activa por grupo.
+  // La torta personalizada necesita 3 tamaños con sabor y relleno, además
+  // del grupo opcional de adicionales. Cobertura y decoración pertenecen al
+  // flujo de diseño avanzado, no a Crea tu torta.
   const requiredGroupsComplete = activeVariants.length >= 3 && activeVariants.every((variant) => {
     const links = customizationLinks.filter((link) => Number(link.variantId) === Number(variant.id) && hasReadyGroup(link));
     return requiredGroupFragments.every((fragment) => links.some((link) => groupById.get(link.groupId)?.code.includes(`misky_catalog_${fragment}_`)));

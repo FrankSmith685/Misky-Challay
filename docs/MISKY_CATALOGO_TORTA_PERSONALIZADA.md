@@ -52,7 +52,7 @@ hornear, sal, ingredientes del sabor y empaque según el factor del tamaño.
 
 **Crea tu torta** tiene dos grupos por variante y uno compartido:
 
-- **Sabor del bizcocho:** 13 opciones.
+- **Sabores:** 13 opciones.
 - **Relleno:** 12 opciones, incluidos los de las imágenes compartidas.
 - **Adicionales:** grupo opcional de mini alfajores, cupcakes, paletitas de torta,
   galletas decoradas y brownies. Se eligen por caja y se puede aumentar la cantidad.

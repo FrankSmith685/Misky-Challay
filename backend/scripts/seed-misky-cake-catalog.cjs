@@ -251,7 +251,7 @@ function optionGroupsForSize(size) {
     { name: 'Color a medida', code: 'MC-COLORANTES', delta: 15, quantity: scaled(8, size.factor), description: 'Color personalizado para la cobertura.', allergens: [], effort: { DECORATING: 12 } },
   ];
   return [
-    { code: `misky_catalog_sabor_${size.key.toLowerCase()}`, name: 'Sabor del bizcocho', description: 'Elige un sabor. Los recargos siguen la tabla de tamaños.', selectionType: 'SINGLE', minSelection: 1, maxSelection: 1, freeQuantity: 1, sortOrder: 1, options: flavorOptions },
+    { code: `misky_catalog_sabor_${size.key.toLowerCase()}`, name: 'Sabores', description: 'Elige un sabor. Los recargos siguen la tabla de tamaños.', selectionType: 'SINGLE', minSelection: 1, maxSelection: 1, freeQuantity: 1, sortOrder: 1, options: flavorOptions },
     { code: `misky_catalog_relleno_${size.key.toLowerCase()}`, name: 'Relleno', description: 'Elige un relleno para las capas de tu torta.', selectionType: 'SINGLE', minSelection: 1, maxSelection: 1, freeQuantity: 1, sortOrder: 2, options: fillingOptions },
     { code: `misky_catalog_cobertura_${size.key.toLowerCase()}`, name: 'Cobertura', description: 'Define el acabado exterior.', selectionType: 'SINGLE', minSelection: 1, maxSelection: 1, freeQuantity: 1, sortOrder: 3, options: coverOptions },
     { code: `misky_catalog_decoracion_${size.key.toLowerCase()}`, name: 'Decoración', description: 'Agrega un detalle final si quieres.', selectionType: 'SINGLE', minSelection: 1, maxSelection: 1, freeQuantity: 1, sortOrder: 4, options: decorationOptions },
@@ -316,6 +316,9 @@ async function seed(db) {
     for (const productId of [customProductId, advancedProductId]) {
       const variants = variantByProduct.get(productId);
       for (const [index, group] of links.entries()) {
+        // Crea tu torta conserva el flujo comercial original: sabor, relleno y
+        // adicionales. Cobertura y decoración solo aplican al diseño avanzado.
+        if (productId === customProductId && index > 1) continue;
         await linkGroup(db, productId, group.id, variants[sizes.findIndex((entry) => entry.key === size.key)].id, index + 1);
       }
     }
@@ -332,8 +335,9 @@ async function seed(db) {
   for (const productId of [customProductId, advancedProductId]) {
     const knownVariantIds = new Set((variantByProduct.get(productId) || []).map((variant) => Number(variant.id)));
     const extraVariants = await query(db, 'SELECT id FROM product_variants WHERE product_id=? AND is_active=1 AND deleted_at IS NULL', [productId]);
+    const groupsForProduct = productId === customProductId ? grandeGroups.slice(0, 2) : grandeGroups;
     for (const variant of extraVariants.filter((entry) => !knownVariantIds.has(Number(entry.id)))) {
-      for (const [index, group] of grandeGroups.entries()) await linkGroup(db, productId, group.id, variant.id, index + 1);
+      for (const [index, group] of groupsForProduct.entries()) await linkGroup(db, productId, group.id, variant.id, index + 1);
     }
   }
   const { cakeAddons } = require('./demo-cake-addons.cjs');
