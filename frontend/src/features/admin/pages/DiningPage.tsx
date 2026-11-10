@@ -206,7 +206,7 @@ const DiningPage = () => {
   const qrUrl = qrTable ? `${window.location.origin}/mesa/${qrTable.qrToken}` : '';
   useEffect(() => {
     if (!qrUrl) { setQrImage(''); return; }
-    void QRCode.toDataURL(qrUrl, { width: 420, margin: 2, color: { dark: '#0050a6', light: '#ffffff' } })
+    void QRCode.toDataURL(qrUrl, { width: 420, margin: 2, color: { dark: '#003a60', light: '#ffffff' } })
       .then(setQrImage)
       .catch(() => toast.error('No se pudo generar el QR'));
   }, [qrUrl]);

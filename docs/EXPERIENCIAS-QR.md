@@ -1,15 +1,38 @@
 # Estudio privado de experiencias QR
 
+## Tarjeta impresa estable y marcador
+
+La tarjeta genÃ©rica debe usar como destino permanente `/experiencia-ar`. Esa ruta
+lee la plantilla AR activa que el superadmin asociÃ³ al servicio AR con precio vigente.
+Si todavÃ­a no existe un servicio AR activo, la ruta muestra la demostraciÃ³n y el
+panel indica que falta publicar la plantilla.
+No se debe
+imprimir un `vista` de pedido en una pieza reutilizable: esos enlaces tienen una
+vigencia limitada y se reservan para tarjetas generadas por pedido. Desde la vista
+estable se puede descargar una tarjeta de prueba con QR y abrir la experiencia 3D
+cuando la cÃ¡mara no estÃ© disponible.
+
+El editor permite indicar quÃ© debe enfocar el cliente (por ejemplo, `la tarjeta` o
+`el topper del gallo`). Esa indicaciÃ³n debe coincidir con la imagen que se suba y se
+compile como archivo `.mind`; MindAR no reconoce otra fotografÃ­a por aproximaciÃ³n.
+El flujo muestra estados de preparaciÃ³n, bÃºsqueda, reconocimiento y error, y ofrece
+reintento o regreso al visor 3D.
+
+La mediciÃ³n anÃ³nima registra apertura del QR, solicitud y preparaciÃ³n de cÃ¡mara,
+detecciÃ³n del marcador, pÃ©rdida del marcador y errores. Se puede consultar en el
+resumen del panel para detectar si el problema estÃ¡ en el QR, los permisos o la
+calidad de la imagen.
+
 ## Probar la demostración ahora
 
 1. Abre `http://localhost:5173/experiencias/demo` o entra en **Para empresas → Ver demostración QR**.
-2. Gira el alien en la vista 3D y reproduce el video original de saludo. La demostración es pública y no crea pedidos ni cobros.
+2. Gira la torta 3D en la vista previa y reproduce el saludo original. La demostración es pública y no crea pedidos ni cobros.
 3. Pulsa **Descargar tarjeta con QR** e imprime la imagen completa, sin recortarla, preferiblemente en papel mate. También puedes mostrarla en otra pantalla.
 4. Escanea el QR desde un teléfono, activa la cámara y enfoca **la fotografía de la tarjeta**, incluyendo sus bordes. El QR abre la página; la fotografía es el marcador de reconocimiento.
 5. Para usar el teléfono, la tienda y `/experience-camera.html` deben estar servidas por una URL HTTPS pública que llegue al frontend y a su API. `localhost` en el teléfono apunta al propio teléfono. La configuración pública de URL del proyecto también se utiliza al generar el QR.
 6. Deniega el permiso de cámara para comprobar que el sitio informa el motivo y permite regresar al video y al visor 3D.
 
-No se necesita un token de Meta, Mercado Pago ni un modelo externo para esta demostración. El ejemplo contiene un alien original creado con geometría, una dedicatoria y un video WebM de seis segundos, sin audio. No pretende reproducir exactamente una torta física.
+No se necesita un token de Meta, Mercado Pago ni un modelo externo para esta demostración. El ejemplo contiene una torta 3D original creada con geometría, una dedicatoria y un video WebM de seis segundos, sin audio. Sirve como base visual para una experiencia de pastelería.
 
 ## Administración
 
@@ -17,7 +40,9 @@ No se necesita un token de Meta, Mercado Pago ni un modelo externo para esta dem
 
 - La demostración combina escena 3D, video y dedicatoria en una composición adaptable. El QR de acceso también se muestra en pantalla, junto a la descarga de la tarjeta.
 - El estudio muestra un resumen de trabajos recientes y permite filtrar por estado o buscar por pedido/servicio.
-- Los servicios y las plantillas utilizan una lista de selección y un editor con secciones. Los ajustes de posición, escala y animación se encuentran en **Ajustes de la escena 3D**.
+- El superadmin puede consultar todas las sucursales o una sola, aplicar rango de fechas y ver la sede asociada a cada trabajo.
+- Los servicios y las plantillas utilizan una lista de selección y un editor con secciones. Los ajustes de posición, escala, animación y capas se encuentran en el editor de la escena.
+- Los cambios de escena se guardan como borrador automáticamente; puedes descartarlos, restaurar una versión anterior o salir con aviso antes de perder trabajo.
 - **Ver versión guardada** abre una vista previa privada en un diálogo y conserva los cambios pendientes del formulario. Es necesario guardar esos cambios antes de solicitar revisión o publicar.
 - El detalle del cliente muestra las etapas de creación, revisión, aprobación y publicación, con sus acciones de revisión agrupadas.
 
@@ -30,7 +55,7 @@ Ruta: `/admin/experiencias-qr`.
 | Plantillas          | Crear escenas reutilizables y generar o cargar archivos para futuros pedidos. Requiere alcance global.                                                                       |
 | Demostración        | Abrir el ejemplo público y descargar su tarjeta.                                                                                                                             |
 
-Se crean dos servicios **inactivos y con precio cero**: Video personalizado y Experiencia AR con 3D y video. No aparecen en el checkout hasta configurar un precio mayor a cero y activarlos. No se asignaron tarifas comerciales de prueba al negocio.
+Se crean dos servicios **inactivos y con precio cero**: Video personalizado y Experiencia AR con torta 3D. El video puede añadirse como contenido complementario. No aparecen en el checkout hasta configurar un precio mayor a cero y activarlos. No se asignaron tarifas comerciales de prueba al negocio.
 
 Permisos delegables desde la gestión de roles:
 
@@ -45,15 +70,15 @@ El superadministrador tiene acceso global. Las nuevas migraciones registran los 
 1. **Superadmin → Servicios y precios:** abre un servicio, configura sus condiciones y un precio real, y activa **Ofrecer en el checkout**.
 2. **Cliente:** añade una torta al carrito. En el checkout selecciona el adicional QR y escribe una idea de al menos diez caracteres. Selecciona una entrega que respete la anticipación del servicio. El resumen muestra por separado productos, experiencia digital y envío.
 3. **Pago:** utiliza Mercado Pago, Yape o Plin según la configuración existente. En transferencias directas, caja debe comprobar el ingreso y aprobarlo. Reportar un pago no lo confirma.
-4. **Equipo → Trabajos por pedido:** abre el pedido. Elige la plantilla o prepara su escena, título, dedicatoria, color, posición, escala y animación. Puedes subir un GLB, video o audio. Los archivos del trabajo son privados y no se reutilizan desde otro pedido.
-5. Para crear un saludo dentro del panel, pulsa **Crear video personalizado**. Genera ocho segundos de animación del alien con el título, dedicatoria y color actuales, sin cámara, micrófono ni audio. Mantén la pestaña abierta durante la generación. También puedes subir un video editado externamente.
+4. **Equipo → Trabajos por pedido:** abre el pedido. Elige la plantilla o prepara su escena, título, dedicatoria, color, posición, escala, animación y capas. Puedes usar la torta 3D, subir un GLB, video o audio, y agregar botones de reproducción o compartir. Los archivos del trabajo son privados y no se reutilizan desde otro pedido.
+5. Para crear un saludo dentro del panel, pulsa **Crear video personalizado**. Genera ocho segundos de animación de la torta con el título, dedicatoria y color actuales, sin cámara, micrófono ni audio. Mantén la pestaña abierta durante la generación. También puedes subir un video editado externamente.
 6. Si deseas una tarjeta propia, usa **Subir y compilar tarjeta**. La imagen y su archivo de reconocimiento quedan vinculados. Si no cargas una imagen, se usa la fotografía de demostración ya compilada.
 7. Pulsa **Guardar versión** y **Ver versión guardada**. Guardar cambios invalida una aprobación anterior y retira la publicación anterior mientras se prepara la nueva versión.
-8. Con el pago requerido verificado y los archivos completos, pulsa **Solicitar revisión del cliente**. Ambos servicios requieren video; el servicio AR también requiere una escena 3D. El plazo para revisar la propuesta es de siete días.
+8. Con el pago requerido verificado y los archivos completos, pulsa **Solicitar revisión del cliente**. El servicio de video requiere un archivo de video. La experiencia AR puede publicarse con la torta 3D sola o combinarla con video y audio. El plazo para revisar la propuesta es de siete días.
 9. **Cliente → Mis pedidos → Detalle:** revisa el video y la escena, aprueba esa versión o solicita cambios con un comentario. Los cambios consumen las revisiones incluidas. Al agotarlas se indica contactar con la tienda; no se generan cargos extra automáticamente.
 10. **Equipo con permiso de publicación:** publica la versión aprobada, inmediatamente o desde una fecha programada. La duración se toma de las condiciones guardadas al comprar.
 11. **Cliente:** descarga la tarjeta con QR desde su pedido cuando la publicación está disponible y comparte el enlace. Los invitados acceden sin iniciar sesión. El enlace público no contiene datos del pedido, cliente, dirección ni operaciones de pago.
-12. Prueba **Pausar**: el enlace público deja de abrir la experiencia. Reactivar o renovar conserva el mismo QR. Una versión con cambios requiere otra aprobación. Un pedido cancelado/reembolsado o una vigencia agotada bloquean el acceso público.
+12. Prueba **Pausar**: registra opcionalmente el motivo y el enlace público deja de abrir la experiencia. Reactivar o renovar conserva el mismo QR. Si el QR se comparte fuera del pedido, **Renovar QR** revoca el enlace anterior y genera uno nuevo. Una versión con cambios requiere otra aprobación. Un pedido cancelado/reembolsado o una vigencia agotada bloquean el acceso público.
 
 La experiencia tiene su propio estado, independiente de la preparación y entrega del pastel. El detalle del cliente se actualiza cada quince segundos, incluso después de terminar el pedido de alimentos.
 
@@ -65,6 +90,7 @@ La experiencia tiene su propio estado, independiente de la preparación y entreg
 - La selección se vuelve a validar al confirmar. Un cambio de versión/precio del servicio obliga a actualizar el resumen.
 - La publicación puede exigir pago total o anticipo verificado, según el servicio comprado. En planes con anticipo, elegir pago total impide publicar hasta verificar también el saldo.
 - El servicio no genera devoluciones ni cobros adicionales automáticamente; se utilizan los procedimientos existentes de caja.
+- Guardar, publicar, pausar y restaurar usan claves de idempotencia para que un reintento de red no duplique versiones ni notificaciones.
 
 ## Correo y WhatsApp
 
@@ -92,7 +118,7 @@ La creación local de videos depende de MediaRecorder; si el navegador no lo adm
 
 ## Instalación en otro entorno
 
-Las migraciones `0054-qr-experiences` y `0055-experience-asset-ownership` agregan las tablas, línea digital, permisos, borradores y vinculación de archivos. Ya se aplicaron en la base local durante esta implementación.
+Las migraciones `0054-qr-experiences` y `0055-experience-asset-ownership` agregan las tablas, línea digital, permisos y vinculación de archivos. La migración `0077-experience-governance` agrega borradores persistentes, instantáneas restaurables, idempotencia y cuotas de archivos.
 
 En otro entorno, realiza el respaldo habitual y ejecuta desde la raíz:
 

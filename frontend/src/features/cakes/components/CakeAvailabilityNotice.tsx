@@ -6,10 +6,12 @@ import type { CheckoutItemInput } from '@features/checkout/types';
 import { getApiErrorMessage } from '@services/api/client';
 import { Button } from '@components/ui/Button';
 export function CakeAvailabilityNotice({ item }: { item: CheckoutItemInput | null }) {
-  const { branchId, address, deliveryType, openLocationModal } = useAppState();
+  const { branchId, address, deliveryType, pickupBranch, openLocationModal } = useAppState();
   const [message, setMessage] = useState('');
   const [retry, setRetry] = useState(0);
   const key = JSON.stringify({ item, branchId, address, deliveryType });
+  const hasDestination = Boolean(branchId && (deliveryType === 'PICKUP' || address));
+  const destinationLabel = deliveryType === 'PICKUP' ? pickupBranch?.name : address?.line1;
   useLiveRefresh(['availability', 'production', 'delivery', 'coverage', 'inventory'], () =>
     setRetry((value) => value + 1),
   );
@@ -33,7 +35,9 @@ export function CakeAvailabilityNotice({ item }: { item: CheckoutItemInput | nul
           .then((result) => {
             if (!active) return;
             setMessage(
-              result.slots.length
+              result.leadHours === 0
+                ? 'Disponible lo antes posible mientras haya existencias en el taller. El tiempo exacto se confirma al finalizar el pedido.'
+                : result.slots.length
                 ? `Primera franja disponible: ${new Date(result.slots[0].startsAt).toLocaleString('es-PE')}. Confirmarás fecha y horario al comprar; esta consulta no reserva cupo.`
                 : result.reasons.map((reason) => reason.message).join(' ') ||
                     'No hay franjas disponibles para esta combinación.',
@@ -59,9 +63,16 @@ export function CakeAvailabilityNotice({ item }: { item: CheckoutItemInput | nul
       <p role="status" className="text-sm">
         {message}
       </p>
-      <Button size="sm" variant="ghost" onClick={openLocationModal}>
-        Cambiar destino o taller
-      </Button>
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <Button size="sm" variant={hasDestination ? 'ghost' : 'primary'} onClick={openLocationModal}>
+          {hasDestination ? 'Cambiar destino o taller' : 'Elegir dirección o taller'}
+        </Button>
+        {destinationLabel && (
+          <span className="text-xs text-ink-muted">
+            {deliveryType === 'PICKUP' ? 'Recojo en' : 'Entrega en'}: {destinationLabel}
+          </span>
+        )}
+      </div>
     </aside>
   );
 }

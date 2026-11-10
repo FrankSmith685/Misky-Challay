@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Building2, ExternalLink, Palette, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Building2, Copy, ExternalLink, Eye, Palette, Plus, Trash2 } from 'lucide-react';
 import toast from '@components/mui/MuiToast';
 import { PageHeader } from '@components/common/PageHeader';
 import { Button } from '@components/ui/Button';
@@ -20,7 +20,7 @@ import { ROUTES } from '@constants/routes';
 import { getApiErrorMessage } from '@services/api/client';
 import { formatCurrency } from '@lib/format';
 import { cakesApi, type CakeConfiguration, type RecipeInventoryItem } from '../cakes.service';
-import { cakeThemesApi, type AdminCakeTheme, type CakeThemeDraft, type CakeThemeRule } from '../cakeThemes.service';
+import { cakeThemesApi, type AdminCakeTheme, type CakeThemeDraft, type CakeThemeRule, type ThemeHealth } from '../cakeThemes.service';
 
 const empty = (productId = 0, lead = 72): CakeThemeDraft => ({ productId, name: '', theme: '', description: '', imageUrlsJson: [''], saleMode: 'CONFIGURED', minLeadHours: lead, minServings: 1, maxServings: 500, variantRulesJson: [], isActive: false, sortOrder: 0 });
 const CakeThemesAdminPage = () => {
@@ -29,6 +29,7 @@ const CakeThemesAdminPage = () => {
   const canPublish = can(PERM.CATALOG_PRODUCT_PUBLISH);
   const confirm = useConfirm();
   const [rows, setRows] = useState<AdminCakeTheme[]>([]);
+  const [health, setHealth] = useState<ThemeHealth | null>(null);
   const [bases, setBases] = useState<CakeConfiguration[]>([]);
   const [inventory, setInventory] = useState<RecipeInventoryItem[]>([]);
   const [options, setOptions] = useState<BuilderConfig | null>(null);
@@ -45,8 +46,8 @@ const CakeThemesAdminPage = () => {
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const [themes, configuration, supplies] = await Promise.all([cakeThemesApi.admin(), canEdit ? cakesApi.configuration() : Promise.resolve([]), canEdit ? cakesApi.recipes() : Promise.resolve({ inventoryItems: [] })]);
-      setRows(themes); setBases(configuration.filter((entry) => entry.product.family === 'CAKE' && entry.profile.saleMode === 'SEMI_CUSTOM'));
+      const [themes, configuration, supplies, healthState] = await Promise.all([cakeThemesApi.admin(), canEdit ? cakesApi.configuration() : Promise.resolve([]), canEdit ? cakesApi.recipes() : Promise.resolve({ inventoryItems: [] }), cakeThemesApi.health()]);
+      setRows(themes); setHealth(healthState); setBases(configuration.filter((entry) => entry.product.family === 'CAKE' && entry.profile.saleMode === 'SEMI_CUSTOM'));
       setInventory(supplies.inventoryItems);
     } catch (cause) { setError(getApiErrorMessage(cause)); }
     finally { setLoading(false); }
@@ -91,12 +92,19 @@ const CakeThemesAdminPage = () => {
     catch (cause) { setError(getApiErrorMessage(cause)); }
     finally { setBusy(false); }
   };
+  const duplicate = async (row: AdminCakeTheme) => {
+    setBusy(true);
+    try { await cakeThemesApi.duplicate(row); toast.success('Diseño duplicado como borrador'); await load(); }
+    catch (cause) { setError(getApiErrorMessage(cause)); }
+    finally { setBusy(false); }
+  };
   const visible = rows.filter((row) => (status === 'ALL' || row.isActive === (status === 'ACTIVE')) && `${row.name} ${row.theme}`.toLocaleLowerCase('es').includes(search.toLocaleLowerCase('es')));
   return <div>
     <PageHeader eyebrow="Para empresas" icon={Building2} title="Diseños para empresas" description="Gestiona los modelos de la sección Para empresas. Los diseños publicados conservan sus precios, materiales, opciones y tiempos de producción." action={<><Button component={Link} to={ROUTES.business} variant="outline" leftIcon={<ExternalLink className="size-4" />}>Ver página de empresas</Button><Button component={Link} to={ROUTES.adminCatalog} variant="outline" leftIcon={<ArrowLeft className="size-4" />}>Volver al catálogo</Button>{canEdit && <Button onClick={() => edit()} disabled={!bases.length || loading} leftIcon={<Plus className="size-4" />}>Nuevo diseño</Button>}</>} />
+    {health && <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><div className="rounded-card border border-line bg-white p-4"><p className="text-xs text-ink-muted">Diseños publicados</p><p className="mt-1 text-2xl font-black">{health.themes.filter((theme) => theme.published).length}</p></div><div className="rounded-card border border-line bg-white p-4"><p className="text-xs text-ink-muted">Listos para publicar</p><p className="mt-1 text-2xl font-black">{health.themes.filter((theme) => theme.ready).length}</p></div><div className="rounded-card border border-line bg-white p-4"><p className="text-xs text-ink-muted">Solicitudes nuevas</p><p className="mt-1 text-2xl font-black">{health.quoteRequests.SUBMITTED ?? 0}</p></div><div className="rounded-card border border-line bg-white p-4"><p className="text-xs text-ink-muted">Cotizaciones pendientes</p><p className="mt-1 text-2xl font-black">{health.quoteRequests.QUOTED ?? 0}</p></div></div>}
     {error && <div role="alert" className="mb-5 rounded-xl bg-red-50 p-4 text-sm text-red-800">{error}<Button onClick={() => void load()} className="ml-3" variant="outline" size="sm">Reintentar</Button></div>}
     <div className="mb-6 grid gap-4 rounded-card border border-line bg-white p-4 sm:grid-cols-[minmax(0,1fr)_240px]"><Input label="Buscar diseño o temática" value={search} onChange={(event) => setSearch(event.target.value)} /><Select label="Estado del diseño" value={status} onChange={(event) => setStatus(event.target.value)}><SelectOption value="ALL">Todos</SelectOption><SelectOption value="ACTIVE">Publicados</SelectOption><SelectOption value="DRAFT">No publicados</SelectOption></Select></div>
-    {loading ? <p role="status">Cargando diseños…</p> : !visible.length ? <p className="rounded-card border border-line bg-white p-6 text-sm text-ink-muted">{rows.length ? 'No hay diseños con estos filtros.' : 'Crea un diseño, configura sus reglas y publícalo para mostrarlo en Para empresas.'}</p> : <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">{visible.map((row) => <article key={row.id} className="overflow-hidden rounded-card border border-line bg-white"><img src={row.imageUrlsJson[0] ?? '/images/cakes/custom.svg'} alt={row.name} className="aspect-[4/3] w-full bg-surface-muted object-cover" /><div className="p-5"><p className="text-xs font-semibold text-brand-700">{row.theme} · {row.isActive ? 'Publicado' : 'No publicado'}</p><h2 className="mt-2 text-lg font-bold">{row.name}</h2><p className="mt-1 text-sm text-ink-muted">{row.saleMode === 'CONFIGURED' ? 'Precio configurado por presentación' : 'Requiere cotización'} · {row.minLeadHours} h</p><div className="mt-4 flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={() => edit(row)} disabled={!canEdit || (row.isActive && !canPublish)}>Editar diseño</Button>{canEdit && canPublish && <Button size="sm" variant={row.isActive ? 'ghost' : 'primary'} disabled={busy} onClick={() => void toggle(row)}>{row.isActive ? 'Retirar' : 'Publicar'}</Button>}</div></div></article>)}</div>}
+    {loading ? <p role="status">Cargando diseños…</p> : !visible.length ? <p className="rounded-card border border-line bg-white p-6 text-sm text-ink-muted">{rows.length ? 'No hay diseños con estos filtros.' : 'Crea un diseño, configura sus reglas y publícalo para mostrarlo en Para empresas.'}</p> : <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">{visible.map((row) => { const status = health?.themes.find((entry) => entry.themeId === row.id); return <article key={row.id} className="overflow-hidden rounded-card border border-line bg-white"><img src={row.imageUrlsJson[0] ?? '/images/cakes/custom.svg'} alt={row.name} className="aspect-[4/3] w-full bg-surface-muted object-cover" /><div className="p-5"><p className="text-xs font-semibold text-brand-700">{row.theme} · {row.isActive ? 'Publicado' : 'No publicado'}</p><h2 className="mt-2 text-lg font-bold">{row.name}</h2><p className="mt-1 text-sm text-ink-muted">{row.saleMode === 'CONFIGURED' ? 'Precio configurado por presentación' : 'Requiere cotización'} · {row.minLeadHours} h</p>{status && <p className={`mt-2 text-xs font-semibold ${status.ready ? 'text-emerald-700' : 'text-amber-700'}`}>{status.ready ? 'Listo para vender' : 'Revisión pendiente'} · {status.branchHealth.filter((branch) => branch.available).length}/{status.branchHealth.length || 0} sucursales con materiales</p>}<div className="mt-4 flex flex-wrap gap-2"><Button component={Link} to={`${ROUTES.business}?diseno=${encodeURIComponent(row.slug)}`} target="_blank" variant="ghost" size="sm" leftIcon={<Eye className="size-4" />}>Vista previa</Button><Button variant="outline" size="sm" onClick={() => edit(row)} disabled={!canEdit || (row.isActive && !canPublish)}>Editar diseño</Button>{canEdit && <Button variant="ghost" size="sm" disabled={busy} onClick={() => void duplicate(row)} leftIcon={<Copy className="size-4" />}>Duplicar</Button>}{canEdit && canPublish && <Button size="sm" variant={row.isActive ? 'ghost' : 'primary'} disabled={busy} onClick={() => void toggle(row)}>{row.isActive ? 'Retirar' : 'Publicar'}</Button>}</div></div></article>; })}</div>}
 
     <Modal isOpen={open} onClose={() => void close()} title={editing ? 'Editar diseño especial' : 'Nuevo diseño especial'} description="Cada modelo reutiliza la receta base y agrega sus propias reglas de decoración." icon={Palette} eyebrow="Para empresas" maxWidth="lg" disableBackdropClose actions={<><Button variant="outline" disabled={busy} onClick={() => void close()}>Cancelar</Button><Button isLoading={busy} onClick={() => void save()}>Guardar diseño</Button></>}>
       <FormStack spacing={3}>

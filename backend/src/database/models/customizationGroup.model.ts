@@ -34,6 +34,7 @@ export class CustomizationGroup extends Model<
   declare isActive: CreationOptional<boolean>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
+  declare version: CreationOptional<number>;
 
   declare options?: NonAttribute<CustomizationOption[]>;
 }
@@ -56,6 +57,7 @@ CustomizationGroup.init(
     isActive: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,
+    version: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 1 },
   },
   {
     sequelize,

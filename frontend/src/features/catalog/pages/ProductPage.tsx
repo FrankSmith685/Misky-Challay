@@ -235,6 +235,10 @@ const ProductPage = () => {
         extrasTotal: 0,
         lineTotal: total,
         selections: [],
+        preparationMode: product.preparationMode,
+        requiresScheduledDelivery: product.preparationMode !== 'READY_STOCK',
+        requiresCarDelivery: product.family === 'CAKE',
+        minLeadHours: product.preparationMode === 'READY_STOCK' ? 0 : product.minLeadHours,
       }),
     );
 

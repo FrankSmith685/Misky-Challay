@@ -138,7 +138,7 @@ El checkout normal ya tiene publicación gestionable y evidencia completa. Las s
 
 **Prioridad: media. Web. Evidencia estática.**
 
-Hay textos visibles de “bowls” y “platos” en favoritos, y mensajes como `TelÃ©fono invÃ¡lido` en el esquema del perfil (`frontend/src/features/account/pages/ProfilePage.tsx:53`). También quedan ejemplos de comida ajenos a pastelería en el checkout. La carga de preferencias del perfil falla de forma silenciosa, de modo que un error puede parecer una configuración vacía.
+Hay textos visibles de “bowls” y “platos” en favoritos, y mensajes como `Teléfono inválido` en el esquema del perfil (`frontend/src/features/account/pages/ProfilePage.tsx:53`). También quedan ejemplos de comida ajenos a pastelería en el checkout. La carga de preferencias del perfil falla de forma silenciosa, de modo que un error puede parecer una configuración vacía.
 
 **Recomendación:** revisar el lenguaje de las vistas de cuenta, errores y ejemplos; conservar la terminología que corresponda a cada familia real del catálogo. Mostrar un error recuperable al cargar preferencias y evitar que un guardado sobrescriba datos que no se pudieron consultar.
 

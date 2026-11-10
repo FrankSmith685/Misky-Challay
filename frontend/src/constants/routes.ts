@@ -6,6 +6,7 @@ export const ROUTES = {
   howToOrder: '/como-hacer-tu-pedido',
   adminHomeContent: '/admin/contenido-inicio',
   customCake: '/crea-tu-torta',
+  specialCake: '/tortas/diseno-especial',
   menuMode: (mode: 'STANDARD' | 'CUSTOM' | 'SEMI_CUSTOM' | 'ADVANCED') => mode === 'STANDARD' ? '/menu?modo=STANDARD' : mode === 'ADVANCED' ? '/empresas' : '/crea-tu-torta',
   product: (slug = ':slug') => `/menu/${slug}`,
   builder: '/arma-tu-bowl',
@@ -42,6 +43,7 @@ export const ROUTES = {
   paymentSimulator: '/checkout/simulador',
 
   account: '/cuenta',
+  accountNotifications: '/cuenta/notificaciones',
   accountOrders: '/cuenta/pedidos',
   accountOrderDetail: (id: string | number = ':id') => `/cuenta/pedidos/${id}`,
   accountAddresses: '/cuenta/direcciones',
@@ -76,6 +78,7 @@ export const ROUTES = {
   adminLegacyPlans: '/admin/recargas',
   adminCoverage: '/admin/cobertura',
   adminUsers: '/admin/usuarios',
+  adminCustomers: '/admin/clientes',
   adminRoles: '/admin/roles',
   adminComplaints: '/admin/reclamaciones',
   /** Bitacora de cambios sensibles. Es la pantalla que da destino a `audit.read`. */

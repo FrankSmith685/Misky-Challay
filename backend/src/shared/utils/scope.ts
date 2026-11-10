@@ -11,7 +11,8 @@ import { ApiError } from '@shared/errors/ApiError';
  * El administrador de Miraflores y el de San Isidro tienen los mismos permisos;
  * lo que los separa es la sucursal asignada en `user_roles.branch_id`.
  *
- * Regla: sin sucursal asignada = alcance GLOBAL (admin general, soporte).
+ * Regla: el superadmin tiene alcance GLOBAL. El administrador debe tener
+ * sucursales asignadas; dejar la lista vacia no le concede acceso global.
  *        Con sucursales asignadas = solo esas.
  *
  * El branchId que llega en la peticion NO se cree a ciegas: se valida contra el
@@ -24,7 +25,10 @@ export const assertBranchScope = (req: Request, branchId: number): number => {
   if (req.user.isSuperAdmin) return branchId;
 
   const scope = req.user.branchIds ?? [];
-  if (scope.length === 0) return branchId; // alcance global
+  if (scope.length === 0 && req.user.roles?.includes('admin')) {
+    throw ApiError.forbidden('Tu cuenta de administrador necesita una sucursal asignada');
+  }
+  if (scope.length === 0) return branchId; // alcance global solo para perfiles operativos globales
 
   if (!scope.includes(branchId)) {
     throw ApiError.forbidden('No tienes acceso a esa sucursal');
@@ -61,6 +65,34 @@ export const resolveBranchId = (req: Request, requested?: number | string): numb
   }
 
   const scope = req.user?.branchIds ?? [];
+  if (scope.length === 0 && req.user?.roles?.includes('admin') && !req.user.isSuperAdmin) {
+    throw ApiError.badRequest('Indica una sucursal asignada a tu cuenta');
+  }
+  if (scope.length === 1) return scope[0];
+
+  throw ApiError.badRequest('Indica la sucursal (branchId)');
+};
+
+/**
+ * Resuelve el alcance de una consulta que puede trabajar con todas las
+ * sucursales. La ausencia de `branchId` solo abre el alcance global para el
+ * superadmin o para una cuenta que ya tenga alcance global; una cuenta con
+ * varias sucursales asignadas debe elegir una explícitamente.
+ */
+export const resolveOptionalBranchId = (
+  req: Request,
+  requested?: number | string,
+): number | undefined => {
+  if (requested !== undefined && requested !== '') {
+    return assertBranchScope(req, Number(requested));
+  }
+
+  const scope = req.user?.branchIds ?? [];
+  if (req.user?.isSuperAdmin) return undefined;
+  if (scope.length === 0 && req.user?.roles?.includes('admin')) {
+    throw ApiError.badRequest('Indica una sucursal asignada a tu cuenta');
+  }
+  if (scope.length === 0) return undefined;
   if (scope.length === 1) return scope[0];
 
   throw ApiError.badRequest('Indica la sucursal (branchId)');

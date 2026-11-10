@@ -11,6 +11,7 @@ export interface AdminVariant {
   servingUnit: string | null;
   isDefault: boolean;
   isActive: boolean;
+  version: number;
 }
 
 export interface AdminProduct {
@@ -27,6 +28,7 @@ export interface AdminProduct {
   isFeatured: boolean;
   imageUrl: string | null;
   imageAlt: string | null;
+  version: number;
   category?: { id: number; name: string };
   /** El menú público de tortas exige un perfil activo además del estado Publicado. */
   cakeProfile?: { isActive: boolean; saleMode: 'STANDARD' | 'SEMI_CUSTOM' | 'ADVANCED'; minLeadHours: number } | null;
@@ -44,9 +46,19 @@ export interface CatalogMeta {
     productCount: number;
     sortOrder: number;
     isActive: boolean;
+    version: number;
   }>;
   allergens: Array<{ id: number; code: string; name: string }>;
   dietaryTags: Array<{ id: number; code: string; name: string }>;
+  health?: {
+    total: number;
+    active: number;
+    drafts: number;
+    inactive: number;
+    withoutImage: number;
+    withoutActiveVariant: number;
+    pendingAllergenReview: number;
+  };
 }
 
 export interface DemoProductPurgePlan {
@@ -89,6 +101,7 @@ export const catalogAdminApi = {
     servingUnit?: string;
     description?: string;
     imageUrl?: string | null;
+    imageAlt?: string | null;
     variantName: string;
     basePrice: number;
   }): Promise<{ id: number; slug: string }> {
@@ -106,14 +119,21 @@ export const catalogAdminApi = {
       preparationMode?: PreparationMode;
       isFeatured?: boolean;
       imageUrl?: string | null;
+      imageAlt?: string | null;
+      expectedVersion?: number;
     },
   ): Promise<void> {
     await api.patch(`${BASE}/products/${productId}`, input);
   },
 
+  async duplicateProduct(productId: number): Promise<{ id: number; slug: string }> {
+    const { data } = await api.post<ApiSuccess<{ id: number; slug: string }>>(`${BASE}/products/${productId}/duplicate`);
+    return data.data;
+  },
+
   /** Publicar o retirar del menu (permiso propio). */
-  async changeStatus(productId: number, status: 'DRAFT' | 'ACTIVE' | 'INACTIVE'): Promise<void> {
-    await api.patch(`${BASE}/products/${productId}/status`, { status });
+  async changeStatus(productId: number, status: 'DRAFT' | 'ACTIVE' | 'INACTIVE', expectedVersion?: number): Promise<void> {
+    await api.patch(`${BASE}/products/${productId}/status`, { status, expectedVersion });
   },
 
   async deleteDraftProduct(productId: number): Promise<void> {
@@ -143,7 +163,7 @@ export const catalogAdminApi = {
   /** Cambiar el PRECIO queda auditado en el backend. */
   async updateVariant(
     variantId: number,
-    input: { name?: string; basePrice?: number; servingSize?: number | null; servingUnit?: string; isActive?: boolean },
+    input: { name?: string; basePrice?: number; servingSize?: number | null; servingUnit?: string; isActive?: boolean; expectedVersion?: number },
   ): Promise<void> {
     await api.patch(`${BASE}/variants/${variantId}`, input);
   },
@@ -182,7 +202,7 @@ export const catalogAdminApi = {
     const { data } = await api.post<ApiSuccess<{ id: number }>>(`${BASE}/categories`, input);
     return data.data;
   },
-  async updateCategory(id: number, input: { name?: string; imageUrl?: string | null; sortOrder?: number; isActive?: boolean }): Promise<void> {
+  async updateCategory(id: number, input: { name?: string; imageUrl?: string | null; sortOrder?: number; isActive?: boolean; expectedVersion?: number }): Promise<void> {
     await api.patch(`${BASE}/categories/${id}`, input);
   },
   async deleteCategory(id: number): Promise<void> {

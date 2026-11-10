@@ -21,13 +21,19 @@ export interface CakeThemeDraft {
   variantRulesJson: CakeThemeRule[]; isActive: boolean; sortOrder: number;
 }
 export interface AdminCakeTheme extends CakeThemeDraft { id: number; slug: string; version: number }
+export interface ThemeHealth {
+  themes: Array<{ themeId: number; productId: number; productName: string; published: boolean; ready: boolean; baseReady: boolean; imageCount: number; activeVariantCount: number; materialCount: number; branchHealth: Array<{ id: number; name: string; available: boolean; missingMaterialCount: number }> }>;
+  quoteRequests: Record<string, number>;
+}
 const unwrap = <T>(result: { data: ApiSuccess<T> }) => result.data.data;
 export const cakeThemesApi = {
   list: async (branchId?: number | null) => unwrap(await api.get<ApiSuccess<CakeTheme[]>>('/cake-themes', { params: branchId ? { branchId } : {} })),
   get: async (slug: string, branchId?: number | null) => unwrap(await api.get<ApiSuccess<CakeTheme>>(`/cake-themes/${encodeURIComponent(slug)}`, { params: branchId ? { branchId } : {} })),
   admin: async () => unwrap(await api.get<ApiSuccess<AdminCakeTheme[]>>('/cake-themes/admin')),
+  health: async () => unwrap(await api.get<ApiSuccess<ThemeHealth>>('/cake-themes/admin/health')),
   save: async (draft: CakeThemeDraft, current?: AdminCakeTheme) => current
     ? unwrap(await api.put<ApiSuccess<AdminCakeTheme>>(`/cake-themes/${current.id}`, { ...draft, expectedVersion: current.version }))
     : unwrap(await api.post<ApiSuccess<AdminCakeTheme>>('/cake-themes', draft)),
   archive: async (theme: AdminCakeTheme) => unwrap(await api.post<ApiSuccess<AdminCakeTheme>>(`/cake-themes/${theme.id}/archive`, { expectedVersion: theme.version })),
+  duplicate: async (theme: AdminCakeTheme) => unwrap(await api.post<ApiSuccess<AdminCakeTheme>>(`/cake-themes/${theme.id}/duplicate`)),
 };

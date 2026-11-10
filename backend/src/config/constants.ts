@@ -86,6 +86,7 @@ export const PAYMENT_PROVIDER = {
   MERCADOPAGO_SUBSCRIPTION: 'mercadopago_subscription',
   WALLET: 'wallet',
   CASH: 'cash',
+  POS: 'pos',
   YAPE: 'yape',
   PLIN: 'plin',
 } as const;
@@ -201,6 +202,7 @@ export const PERMISSIONS = {
   // --- Salón y comandas ---
   DINING_READ: 'dining.read',
   DINING_OPERATE: 'dining.operate',
+  POS_SELL: 'pos.sell',
 
   // --- Inventario ---
   INVENTORY_READ: 'inventory.read',
@@ -231,15 +233,27 @@ export const PERMISSIONS = {
   CAKE_FINANCE_MANAGE: 'cake.finance.manage',
 
   // --- Gobierno de accesos ---
+  CUSTOMER_READ: 'customer.read',
+  CUSTOMER_MANAGE: 'customer.manage',
   USER_READ: 'user.read',
   USER_MANAGE: 'user.manage',
   ROLE_READ: 'role.read',
   ROLE_MANAGE: 'role.manage',
   AUDIT_READ: 'audit.read',
+  AUDIT_EXPORT: 'audit.export',
+  AUDIT_VERIFY: 'audit.verify',
+  AUDIT_RETENTION: 'audit.retention',
   SETTINGS_MANAGE: 'settings.manage',
+  SETTINGS_DESIGN_READ: 'settings.design.read',
+  SETTINGS_DESIGN_MANAGE: 'settings.design.manage',
+  SETTINGS_DESIGN_PUBLISH: 'settings.design.publish',
   COMMUNICATION_READ: 'communication.read',
   COMMUNICATION_REPLY: 'communication.reply',
   COMPLAINT_MANAGE: 'complaint.manage',
+  COMPLAINT_READ: 'complaint.read',
+  COMPLAINT_RESPOND: 'complaint.respond',
+  COMPLAINT_EXPORT: 'complaint.export',
+  COMPLAINT_REOPEN: 'complaint.reopen',
 } as const;
 export type PermissionCode = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 
@@ -300,6 +314,7 @@ export const PERMISSION_CATALOG: Array<{
     permissions: [
       { code: PERMISSIONS.DINING_READ, label: 'Ver mesas y comandas' },
       { code: PERMISSIONS.DINING_OPERATE, label: 'Abrir, cobrar y cerrar comandas' },
+      { code: PERMISSIONS.POS_SELL, label: 'Vender en el punto de venta' },
     ],
   },
   {
@@ -354,15 +369,27 @@ export const PERMISSION_CATALOG: Array<{
     module: 'access',
     label: 'Usuarios y accesos',
     permissions: [
+      { code: PERMISSIONS.CUSTOMER_READ, label: 'Ver clientes y su actividad' },
+      { code: PERMISSIONS.CUSTOMER_MANAGE, label: 'Bloquear o reactivar clientes' },
       { code: PERMISSIONS.USER_READ, label: 'Ver usuarios internos' },
       { code: PERMISSIONS.USER_MANAGE, label: 'Crear usuarios y asignar roles' },
       { code: PERMISSIONS.ROLE_READ, label: 'Ver roles' },
       { code: PERMISSIONS.ROLE_MANAGE, label: 'Crear y editar roles' },
       { code: PERMISSIONS.AUDIT_READ, label: 'Ver la bitacora de auditoria' },
+        { code: PERMISSIONS.AUDIT_EXPORT, label: 'Exportar la bitacora con motivo' },
+        { code: PERMISSIONS.AUDIT_VERIFY, label: 'Verificar la integridad de la bitacora' },
+        { code: PERMISSIONS.AUDIT_RETENTION, label: 'Gestionar la retencion de auditoria' },
       { code: PERMISSIONS.SETTINGS_MANAGE, label: 'Cambiar la configuracion del sistema' },
+      { code: PERMISSIONS.SETTINGS_DESIGN_READ, label: 'Consultar el sistema de diseño' },
+      { code: PERMISSIONS.SETTINGS_DESIGN_MANAGE, label: 'Editar borradores del sistema de diseño' },
+      { code: PERMISSIONS.SETTINGS_DESIGN_PUBLISH, label: 'Publicar el sistema de diseño' },
       { code: PERMISSIONS.COMMUNICATION_READ, label: 'Consultar conversaciones y avisos (alcance global)' },
       { code: PERMISSIONS.COMMUNICATION_REPLY, label: 'Atender conversaciones y reintentar avisos (alcance global)' },
       { code: PERMISSIONS.COMPLAINT_MANAGE, label: 'Gestionar el Libro de Reclamaciones' },
+      { code: PERMISSIONS.COMPLAINT_READ, label: 'Consultar reclamos y datos personales' },
+      { code: PERMISSIONS.COMPLAINT_RESPOND, label: 'Responder reclamos' },
+      { code: PERMISSIONS.COMPLAINT_EXPORT, label: 'Exportar el Libro de Reclamaciones' },
+      { code: PERMISSIONS.COMPLAINT_REOPEN, label: 'Reabrir reclamos atendidos' },
     ],
   },
 ];

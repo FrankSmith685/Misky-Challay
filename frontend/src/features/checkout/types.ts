@@ -36,7 +36,7 @@ export interface CheckoutInput {
   /** Gastar el saldo del plan en este pedido. */
   useWallet?: boolean;
   /** Pasarela online o transferencia directa a la cuenta de Yape/Plin de la tienda. */
-  paymentMethod?: 'ONLINE' | 'YAPE' | 'PLIN';
+  paymentMethod?: 'ONLINE' | 'YAPE' | 'PLIN' | 'CASH';
   mobilePayment?: { operationCode: string; payerPhone?: string };
   /** Comprobante: boleta (por defecto) o factura con RUC. */
   billing?: {
@@ -76,6 +76,8 @@ export interface OrderQuote {
   items: QuoteLine[];
   subtotal: number;
   deliveryFee: number;
+  /** Recargo logístico aplicado una sola vez por un pedido con tortas. */
+  cakeDeliveryFee?: number;
   extraDeliveryFee?: number;
   discountTotal: number;
   /** Saldo del plan aplicado a este pedido. */
@@ -179,6 +181,7 @@ export interface OrderDetail {
   scheduledAt: string | null;
   subtotal: number;
   deliveryFee: number;
+  cakeDeliveryFee?: number;
   discountTotal: number;
   walletAmount?: number;
   /** Tasa de IGV congelada en el pedido. Opcional: los pedidos anteriores al

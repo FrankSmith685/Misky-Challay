@@ -2,6 +2,7 @@ import { type Transaction } from 'sequelize';
 import {
   Branch, CakeDesignQuote, CakeDesignRequest, CakeDesignReference, CakeProductProfile, DeliverySlot, InventoryItem, Product, ProductVariant, User, sequelize,
 } from '@database/models';
+import { Op } from 'sequelize';
 import type { CakeDesignBrief, CakeEffort } from '@database/models/cakeProduction.model';
 import { PRODUCT_STATUS } from '@database/models/product.model';
 import { ApiError } from '@shared/errors/ApiError';
@@ -56,6 +57,9 @@ const decodeReference = (dataUrl: string) => {
 };
 
 export const cakeDesignService = {
+  async expireStaleQuotes() {
+    await CakeDesignQuote.update({ status: 'EXPIRED' }, { where: { status: 'PROPOSED', expiresAt: { [Op.lte]: new Date() } } });
+  },
   async stopWhatsapp(requestId: number, userId: number) {
     const request = await CakeDesignRequest.findOne({ where: { id: requestId, userId } });
     if (!request) throw ApiError.notFound('Solicitud no encontrada');
@@ -114,6 +118,7 @@ export const cakeDesignService = {
   },
 
   async mine(userId: number) {
+    await cakeDesignService.expireStaleQuotes();
     const requests = await CakeDesignRequest.findAll({ where: { userId }, attributes: { exclude: ['referenceBytes'] }, include: [{ model: CakeDesignReference, as: 'references', attributes: ['id'] }], order: [['createdAt', 'DESC']] });
     return Promise.all(requests.map(async (request) => ({
       ...publicRequest(request),
@@ -134,6 +139,7 @@ export const cakeDesignService = {
   },
 
   async board(branchId: number) {
+    await cakeDesignService.expireStaleQuotes();
     const requests = await CakeDesignRequest.findAll({ where: { branchId }, attributes: { exclude: ['referenceBytes'] }, include: [{ model: CakeDesignReference, as: 'references', attributes: ['id'] }], order: [['createdAt', 'DESC']], limit: 100 });
     return Promise.all(requests.map(async (request) => ({
       ...publicRequest(request),
@@ -213,7 +219,11 @@ export const cakeDesignService = {
       const quote = await CakeDesignQuote.findByPk(quoteId, { transaction, lock: transaction.LOCK.UPDATE });
       const request = quote ? await CakeDesignRequest.findByPk(quote.requestId, { transaction, lock: transaction.LOCK.UPDATE }) : null;
       if (!quote || !request || request.userId !== userId) throw ApiError.notFound('Cotizacion no encontrada');
-      if (quote.status !== 'PROPOSED' || quote.expiresAt <= new Date() || request.status !== 'QUOTED') throw ApiError.conflict('La cotizacion ya no esta vigente');
+      if (quote.status === 'PROPOSED' && quote.expiresAt <= new Date()) {
+        quote.status = 'EXPIRED';
+        await quote.save({ transaction });
+      }
+      if (quote.status !== 'PROPOSED' || request.status !== 'QUOTED') throw ApiError.conflict('La cotizacion ya no esta vigente');
       const slot = await DeliverySlot.findOne({ where: { branchId: request.branchId, startsAt: quote.proposedAt, isActive: true }, transaction });
       if (!slot || slot.availableCount <= 0 || slot.orderCutoffAt <= new Date()) throw ApiError.unprocessable('La franja propuesta ya no tiene cupo');
       const availability = await cakeProductionService.availabilityForDesign(request.branchId, request.productId, quote.effortJson, quote.proposedAt, false);
@@ -226,6 +236,7 @@ export const cakeDesignService = {
   },
 
   async purchasableQuote(quoteId: number, input: { userId?: number | null; branchId: number; productId: number; variantId: number; quantity: number; selections: CakeSelection[] }) {
+    await cakeDesignService.expireStaleQuotes();
     const quote = await CakeDesignQuote.findByPk(quoteId);
     const request = quote ? await CakeDesignRequest.findByPk(quote.requestId, { attributes: { exclude: ['referenceBytes'] } }) : null;
     if (!quote || !request || quote.status !== 'ACCEPTED' || quote.expiresAt <= new Date() || quote.orderId

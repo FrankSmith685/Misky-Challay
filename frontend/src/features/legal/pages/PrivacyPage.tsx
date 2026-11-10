@@ -15,7 +15,7 @@ const PrivacyPage = () => {
       title: 'Responsable del tratamiento',
       body: (
         <p>
-          <strong>{b.legalName}</strong>, RUC {b.ruc}, con domicilio en {b.address}, es responsable
+          <strong>{b.legalName}</strong>{b.ruc ? `, RUC ${b.ruc}` : ''}{b.address ? `, con domicilio en ${b.address}` : ''}, es responsable
           de los bancos de datos usados por Misky Challay. Para consultas o solicitudes relacionadas con
           privacidad, escribe a <Link href={`mailto:${b.supportEmail}`}>{b.supportEmail}</Link>.
         </p>

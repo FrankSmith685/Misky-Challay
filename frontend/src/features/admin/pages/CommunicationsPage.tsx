@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { MessageCircle, RefreshCw, Send, ArrowLeft } from 'lucide-react';
+import { MessageCircle, RefreshCw, Send, ArrowLeft, WifiOff } from 'lucide-react';
 import { CommunicationsConfiguration } from '../components/CommunicationsConfiguration';
 import { PageHeader } from '@components/common/PageHeader';
 import { Button } from '@components/ui/Button';
@@ -11,7 +11,7 @@ import { Tabs } from '@components/ui/Tabs';
 import { useConfirm } from '@components/ui/ConfirmDialog';
 import toast from '@components/mui/MuiToast';
 import { getApiErrorMessage } from '@services/api/client';
-import { formatDate } from '@lib/format';
+import { formatDate, formatRelative } from '@lib/format';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAppSelector } from '@app/hooks';
 import { PERM } from '@constants/permissions';
@@ -22,10 +22,18 @@ import {
   EVENT_LABELS,
   type Conversation,
   type ConversationDetail,
-  type Delivery,
+  type DeliveryPage,
   type MessagingSettings,
   type Paged,
 } from '../services/communications.service';
+
+type CommunicationPeriod = 'all' | '7' | '30' | 'custom';
+const limaToday = (): string => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+const shiftDate = (iso: string, days: number): string => {
+  const date = new Date(`${iso}T12:00:00-05:00`);
+  date.setDate(date.getDate() + days);
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+};
 
 export default function CommunicationsPage() {
   const { can, canAny, isSuperAdmin } = usePermissions();
@@ -37,13 +45,21 @@ export default function CommunicationsPage() {
   const [settings, setSettings] = useState<MessagingSettings | null>(null);
   const [conversations, setConversations] = useState<Paged<Conversation> | null>(null);
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
-  const [deliveries, setDeliveries] = useState<Paged<Delivery> | null>(null);
+  const [deliveries, setDeliveries] = useState<DeliveryPage | null>(null);
   const [search, setSearch] = useState('');
   const [conversationPage, setConversationPage] = useState(1);
+  const [conversationMode, setConversationMode] = useState('');
+  const [unreadFilter, setUnreadFilter] = useState('');
+  const [assignmentFilter, setAssignmentFilter] = useState('all');
+  const [testFilter, setTestFilter] = useState('');
   const [page, setPage] = useState(1);
   const [state, setState] = useState('');
   const [channel, setChannel] = useState('');
   const [deliveryEvent, setDeliveryEvent] = useState('');
+  const [historyPeriod, setHistoryPeriod] = useState<CommunicationPeriod>('all');
+  const today = limaToday();
+  const [historyFrom, setHistoryFrom] = useState(() => shiftDate(today, -29));
+  const [historyTo, setHistoryTo] = useState(today);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [version, setVersion] = useState(0);
@@ -55,8 +71,15 @@ export default function CommunicationsPage() {
   const [testText, setTestText] = useState('hola');
   const [testEmail, setTestEmail] = useState('');
   const [testResult, setTestResult] = useState('');
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const canReply = can(PERM.COMMUNICATION_REPLY);
   const canRead = canAny(PERM.COMMUNICATION_READ, PERM.COMMUNICATION_REPLY);
+  const historyRange = useMemo(() => {
+    if (historyPeriod === '7') return { from: shiftDate(today, -6), to: today };
+    if (historyPeriod === '30') return { from: shiftDate(today, -29), to: today };
+    if (historyPeriod === 'custom') return { from: historyFrom, to: historyTo };
+    return { from: undefined, to: undefined };
+  }, [historyFrom, historyPeriod, historyTo, today]);
   const refresh = () => setVersion((value) => value + 1);
   useEffect(() => {
     if (!isSuperAdmin) return;
@@ -80,11 +103,17 @@ export default function CommunicationsPage() {
       try {
         if (tab === 'inbox') {
           const [list, conversation] = await Promise.all([
-            communicationsApi.conversations(search, conversationPage),
+            communicationsApi.conversations(search, conversationPage, {
+              mode: conversationMode || undefined,
+              unread: unreadFilter || undefined,
+              assigned: assignmentFilter,
+              isTest: testFilter || undefined,
+            }),
             selectedId ? communicationsApi.conversation(selectedId) : null,
           ]);
           if (active) {
             setConversations(list);
+            setLastUpdatedAt(new Date().toISOString());
             setDetail((current) => {
               if (!conversation || current?.conversation.id !== conversation.conversation.id)
                 return conversation;
@@ -100,8 +129,8 @@ export default function CommunicationsPage() {
             });
           }
         } else {
-          const list = await communicationsApi.deliveries(page, state, channel, deliveryEvent);
-          if (active) setDeliveries(list);
+          const list = await communicationsApi.deliveries(page, state, channel, deliveryEvent, historyRange.from, historyRange.to);
+          if (active) { setDeliveries(list); setLastUpdatedAt(new Date().toISOString()); }
         }
         if (active) setError('');
       } catch (cause) {
@@ -122,10 +151,16 @@ export default function CommunicationsPage() {
     search,
     selectedId,
     conversationPage,
+    conversationMode,
+    unreadFilter,
+    assignmentFilter,
+    testFilter,
     page,
     state,
     channel,
     deliveryEvent,
+    historyRange.from,
+    historyRange.to,
     version,
     canRead,
   ]);
@@ -218,6 +253,17 @@ export default function CommunicationsPage() {
           </span>
         </div>
       )}
+      {settings && !settings.config.testMode && settings.whatsappUpdatesEnabled !== false && !settings.readyToSend && (
+        <div role="alert" className="flex flex-wrap items-start gap-3 rounded-card border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <WifiOff className="mt-0.5 size-4 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <strong>WhatsApp no está listo para envíos reales.</strong>
+            <p className="mt-1 text-xs">Completa Meta, el webhook y las plantillas antes de enviar avisos por este canal.</p>
+            {settings.missingWhatsappTemplates.length > 0 && <p className="mt-1 text-xs">Faltan plantillas: {settings.missingWhatsappTemplates.join(', ')}.</p>}
+          </div>
+          <Button size="sm" variant="outline" onClick={() => setParams({ tab: 'settings' })}>Revisar configuración</Button>
+        </div>
+      )}
       <nav aria-label="Secciones de comunicaciones" className="min-w-0">
         <Tabs
           value={tab}
@@ -259,6 +305,20 @@ export default function CommunicationsPage() {
                 setConversationPage(1);
               }}
             />
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <select aria-label="Filtrar conversaciones por modo" className="min-h-10 rounded-field border border-line bg-white px-2 text-xs" value={conversationMode} onChange={(event) => { setConversationMode(event.target.value); setConversationPage(1); }}>
+                <option value="">Todos los modos</option><option value="HUMAN">Atención humana</option><option value="BOT">Bot activo</option>
+              </select>
+              <select aria-label="Filtrar conversaciones por lectura" className="min-h-10 rounded-field border border-line bg-white px-2 text-xs" value={unreadFilter} onChange={(event) => { setUnreadFilter(event.target.value); setConversationPage(1); }}>
+                <option value="">Todas</option><option value="true">No leídas</option><option value="false">Leídas</option>
+              </select>
+              <select aria-label="Filtrar conversaciones por asignación" className="min-h-10 rounded-field border border-line bg-white px-2 text-xs" value={assignmentFilter} onChange={(event) => { setAssignmentFilter(event.target.value); setConversationPage(1); }}>
+                <option value="all">Todas las asignaciones</option><option value="mine">Asignadas a mí</option><option value="unassigned">Sin asignar</option>
+              </select>
+              <select aria-label="Filtrar conversaciones reales o de prueba" className="min-h-10 rounded-field border border-line bg-white px-2 text-xs" value={testFilter} onChange={(event) => { setTestFilter(event.target.value); setConversationPage(1); }}>
+                <option value="">Reales y pruebas</option><option value="false">Reales</option><option value="true">Pruebas</option>
+              </select>
+            </div>
             <div className="mt-3 grid gap-2">
               {conversations?.items.map((conversation) => (
                 <button
@@ -274,6 +334,8 @@ export default function CommunicationsPage() {
                     {conversation.mode === 'HUMAN' ? 'Atención humana' : 'Bot'}
                   </span>
                   <span className="mt-1 block truncate text-xs">{conversation.lastMessage}</span>
+                  {conversation.orders?.[0] && <span className="mt-1 block truncate text-xs font-semibold text-brand-800">{conversation.orders[0].orderNumber} · {conversation.orders[0].branchName ?? 'Sucursal'}</span>}
+                  {conversation.lastInboundAt && <span className="mt-1 block text-[11px] text-ink-muted">Último mensaje {formatRelative(conversation.lastInboundAt)}</span>}
                   {conversation.unread > 0 && (
                     <span className="text-xs font-bold text-brand-700">
                       {conversation.unread} pendientes
@@ -369,6 +431,12 @@ export default function CommunicationsPage() {
                     </Button>
                   )}
                 </div>
+                {(detail.customer || detail.orders?.length) && (
+                  <div className="mt-3 grid gap-2 rounded-card border border-brand-100 bg-brand-50 p-3 text-xs text-brand-900 sm:grid-cols-2">
+                    {detail.customer && <p><strong>Cliente:</strong> {detail.customer.name}{detail.customer.email ? ` · ${detail.customer.email}` : ''}</p>}
+                    {detail.orders?.[0] && <p><strong>Último pedido:</strong> {detail.orders[0].orderNumber} · {detail.orders[0].status} · {detail.orders[0].branchName ?? 'Sucursal'} <a className="font-bold underline" href={`/admin/pedidos?pedido=${encodeURIComponent(detail.orders[0].orderNumber)}`}>Abrir pedido</a></p>}
+                  </div>
+                )}
                 <div
                   ref={logRef}
                   onScroll={(event) => {
@@ -489,7 +557,7 @@ export default function CommunicationsPage() {
       )}
       {tab === 'history' && (
         <section className="grid min-w-0 gap-3 rounded-card border border-line bg-white p-4">
-          <div className="grid min-w-0 gap-3 sm:grid-cols-3">
+          <div className="grid min-w-0 gap-3 sm:grid-cols-4">
             <label className="grid gap-1 text-xs font-semibold">
               Canal
               <select
@@ -546,7 +614,15 @@ export default function CommunicationsPage() {
                 ))}
               </select>
             </label>
+            <label className="grid min-w-0 gap-1 text-xs font-semibold">
+              Periodo
+              <select aria-label="Filtrar historial por periodo" className="min-h-11 min-w-0 rounded-field border border-line bg-white px-3" value={historyPeriod} onChange={(event) => { setHistoryPeriod(event.target.value as CommunicationPeriod); setPage(1); }}>
+                <option value="all">Todo el historial</option><option value="7">Últimos 7 días</option><option value="30">Últimos 30 días</option><option value="custom">Personalizado</option>
+              </select>
+            </label>
           </div>
+          {historyPeriod === 'custom' && <div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1 text-xs font-semibold">Desde<input aria-label="Desde historial" type="date" value={historyFrom} max={historyTo} onChange={(event) => { setHistoryFrom(event.target.value); setPage(1); }} className="min-h-11 rounded-field border border-line bg-white px-3" /></label><label className="grid gap-1 text-xs font-semibold">Hasta<input aria-label="Hasta historial" type="date" value={historyTo} min={historyFrom} max={today} onChange={(event) => { setHistoryTo(event.target.value); setPage(1); }} className="min-h-11 rounded-field border border-line bg-white px-3" /></label></div>}
+          {deliveries?.summary && <div className="flex flex-wrap gap-2 text-xs">{Object.entries(deliveries.summary.states).map(([key, count]) => <span key={key} className="rounded-pill bg-surface-muted px-2.5 py-1 font-semibold text-ink-muted">{DELIVERY_LABELS[key] ?? key}: {Number(count)}</span>)}{lastUpdatedAt && <span className="ml-auto text-ink-muted">Actualizado {formatRelative(lastUpdatedAt)}</span>}</div>}
           <p className="text-xs text-ink-muted">
             «Aceptado» significa que el proveedor recibió la solicitud. La entrega o lectura de
             WhatsApp se confirma cuando Meta lo comunica. Para correo, comprueba también el buzón
@@ -560,9 +636,10 @@ export default function CommunicationsPage() {
                   <p className="break-all text-xs text-ink-muted">
                     {delivery.channel === 'EMAIL' ? 'Correo' : 'WhatsApp'} · {delivery.recipient} ·{' '}
                     {formatDate(delivery.createdAt)}
+                  {delivery.orderNumber && <a className="mt-1 inline-block text-xs font-bold text-brand-700 underline" href={`/admin/pedidos?pedido=${encodeURIComponent(delivery.orderNumber)}`}>Pedido {delivery.orderNumber}</a>}
                   </p>
                   <p className="mt-1 text-xs font-semibold text-brand-800">
-                    {DELIVERY_LABELS[delivery.state] ?? delivery.state} · {delivery.attempts}{' '}
+                    {EVENT_LABELS[delivery.event] ?? delivery.event} · {DELIVERY_LABELS[delivery.state] ?? delivery.state} · {delivery.attempts}{' '}
                     intentos
                   </p>
                 </div>

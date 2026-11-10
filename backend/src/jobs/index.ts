@@ -8,7 +8,7 @@ import { PAYMENT_HOLD_MINUTES, PAYMENT_EXPIRED_REASON } from '@modules/communica
 import { plansService } from '@modules/plans/plans.service';
 import { subscriptionsService } from '@modules/subscriptions/subscriptions.service';
 import { Op } from 'sequelize';
-import { AdminDraft, Branch, CakeProductionTask, KitchenTicket, MobilePaymentClaim, MobilePaymentEvent, Order, Payment, Subscription, sequelize } from '@database/models';
+import { AdminDraft, AuditLog, Branch, CakeProductionTask, KitchenTicket, MobilePaymentClaim, MobilePaymentEvent, Order, Payment, Subscription, sequelize } from '@database/models';
 import { SUBSCRIPTION_STATUS } from '@database/models/subscription.model';
 import { ORDER_STATUS, PAYMENT_PROVIDER, PAYMENT_STATUS, PERMISSIONS, PUSH_CHANNEL, PUSH_TEMPLATE } from '@config/constants';
 import { PAYABLE_TYPE } from '@database/models/payment.model';
@@ -28,6 +28,9 @@ import { operationsService } from '@modules/operations/operations.service';
 import { sendMobilePushToStaff } from '@modules/notifications/mobilePush.service';
 import { dayInLima } from '@modules/cakes/cakeProduction.service';
 import { addDaysToIsoDate } from '@shared/utils/datetime';
+import { storefrontService } from '@modules/settings/storefront.service';
+import { customizationAdminService } from '@modules/customization/customizationAdmin.service';
+import { ExperienceEvent, ExperienceProject } from '@database/models/experience.model';
 
 /**
  * TAREAS PROGRAMADAS
@@ -44,6 +47,34 @@ const HOUR = 60 * 60 * 1000;
 const MINUTE = 60 * 1000;
 const PAYMENT_CONFIRMATION_GRACE_MINUTES = 5;
 const KITCHEN_ACCEPT_SLA_MINUTES = 2;
+
+/** Marca las experiencias vencidas para que el panel y la auditoría reflejen el estado real. */
+const expireExperienceProjectsJob = async (): Promise<void> => {
+  try {
+    const projects = await ExperienceProject.findAll({
+      where: { status: 'PUBLISHED', expiresAt: { [Op.lte]: new Date() } },
+      limit: 200,
+      order: [['expiresAt', 'ASC']],
+    });
+    for (const project of projects) {
+      const [changed] = await ExperienceProject.update(
+        { status: 'EXPIRED' },
+        { where: { id: project.id, status: 'PUBLISHED' } },
+      );
+      if (!changed) continue;
+      await ExperienceEvent.create({
+        projectId: project.id,
+        actorId: null,
+        action: 'EXPIRED',
+        version: project.version,
+        note: `La vigencia terminó el ${project.expiresAt?.toISOString() ?? 'fecha desconocida'}.`,
+      });
+    }
+    if (projects.length) logger.info(`Experiencias QR vencidas: ${projects.length}`);
+  } catch (error) {
+    logger.error('Fallo la expiración de experiencias QR', error);
+  }
+};
 
 /** Libera comandas programadas solo al comenzar su ventana de preparacion. */
 const releaseScheduledKitchenOrdersJob = async (): Promise<void> => {
@@ -240,12 +271,47 @@ const publishAdminDraftsJob = async (): Promise<void> => {
 
   for (const draft of drafts) {
     try {
+      if (draft.scope === 'builder') {
+        const payload = draft.payload as { productId?: number };
+        if (!payload.productId) throw new Error('Borrador de constructor sin producto');
+        await customizationAdminService.publishDraft(payload.productId, draft.ownerUserId, `scheduled-builder-${draft.id}`);
+        await draft.update({ status: 'PUBLISHED', errorMessage: null });
+        logger.info(`Borrador de constructor publicado: ${draft.key}`);
+        continue;
+      }
       if (draft.scope !== 'coverage-zone') throw new Error(`Tipo de borrador no publicable: ${draft.scope}`);
       const payload = draft.payload as {
-        cityId: number; name: string; deliveryFee: number; minimumOrder: number;
-        estimatedMinutes: number; priority: number; polygon?: Array<{ lat: number; lng: number }>;
+        operation?: 'CREATE' | 'UPDATE'; zoneId?: number; expectedVersion?: number;
+        cityId: number; name: string; deliveryFee: number; cakeDeliveryFee?: number; minimumOrder: number;
+        estimatedMinutes: number; priority: number; extraCoverageKm?: number; extraFeePerKm?: number;
+        polygon?: Array<{ lat: number; lng: number }>; effectiveFrom?: string | null;
       };
-      await commercialAdminService.createZone(payload);
+      if (payload.operation === 'UPDATE') {
+        if (!payload.zoneId) throw new Error('Borrador de cobertura sin zona');
+        await commercialAdminService.updateZone(payload.zoneId, {
+          name: payload.name,
+          deliveryFee: payload.deliveryFee,
+          cakeDeliveryFee: payload.cakeDeliveryFee,
+          extraCoverageKm: payload.extraCoverageKm,
+          extraFeePerKm: payload.extraFeePerKm,
+          minimumOrder: payload.minimumOrder,
+          estimatedMinutes: payload.estimatedMinutes,
+          priority: payload.priority,
+          polygon: payload.polygon ?? null,
+          expectedVersion: payload.expectedVersion,
+          effectiveFrom: null,
+        });
+      } else {
+        await commercialAdminService.createZone({ ...payload, effectiveFrom: null });
+      }
+      await AuditLog.create({
+        actorId: draft.ownerUserId,
+        action: 'geo.coverage.publish.scheduled',
+        entity: 'coverage_zones',
+        entityId: payload.zoneId ? String(payload.zoneId) : null,
+        beforeJson: null,
+        afterJson: { operation: payload.operation ?? 'CREATE', publishAt: draft.publishAt },
+      });
       await draft.update({ status: 'PUBLISHED', errorMessage: null });
       logger.info(`Borrador publicado: ${draft.key}`);
     } catch (error) {
@@ -255,6 +321,37 @@ const publishAdminDraftsJob = async (): Promise<void> => {
         logger.error(`No se pudo marcar como fallido el borrador ${draft.key}`, updateError);
       }
       logger.error(`Fallo la publicacion programada ${draft.key}`, error);
+    }
+  }
+};
+
+/** Publica el borrador de portada cuando llega su fecha programada. */
+const publishStorefrontDraftsJob = async (): Promise<void> => {
+  let drafts: AdminDraft[];
+  try {
+    drafts = await AdminDraft.findAll({
+      where: { scope: 'storefront', status: 'SCHEDULED', publishAt: { [Op.lte]: new Date() } },
+      limit: 10,
+      order: [['publishAt', 'ASC']],
+    });
+  } catch (error) {
+    logger.error('Fallo la consulta de publicaciones programadas de portada', error);
+    return;
+  }
+  for (const draft of drafts) {
+    try {
+      const result = await storefrontService.publishDraft(draft.ownerUserId, `scheduled-${draft.id}`, draft);
+      await AuditLog.create({
+        actorId: draft.ownerUserId,
+        action: 'STOREFRONT_PUBLISHED_SCHEDULED',
+        entity: 'storefront_settings',
+        entityId: '1',
+        beforeJson: result.before,
+        afterJson: result.after,
+      });
+    } catch (error) {
+      await draft.update({ status: 'FAILED', errorMessage: error instanceof Error ? error.message.slice(0, 500) : 'No se pudo publicar' }).catch((updateError) => logger.error('No se pudo marcar el borrador de portada', updateError));
+      logger.error(`Fallo la publicacion programada de portada ${draft.id}`, error);
     }
   }
 };
@@ -394,10 +491,12 @@ export const startJobs = (): void => {
   void reconcileMercadoPagoPaymentsJob();
   void reconcileSubscriptionsJob();
   void publishAdminDraftsJob();
+  void publishStorefrontDraftsJob();
   void generateDeliverySlotsJob();
   void releaseScheduledKitchenOrdersJob();
   void notifyCakeProductionJob();
   void escalateUnacceptedKitchenTicketsJob();
+  void expireExperienceProjectsJob();
   timers.push(
     setInterval(() => void processCommunicationQueue(), 10_000),
     setInterval(() => void processPaymentReminders(), MINUTE),
@@ -406,10 +505,12 @@ export const startJobs = (): void => {
     setInterval(() => void reconcileMercadoPagoPaymentsJob(), 2 * MINUTE),
     setInterval(() => void reconcileSubscriptionsJob(), 30 * MINUTE),
     setInterval(() => void publishAdminDraftsJob(), MINUTE),
+    setInterval(() => void publishStorefrontDraftsJob(), MINUTE),
     setInterval(() => void generateDeliverySlotsJob(), 6 * HOUR),
     setInterval(() => void releaseScheduledKitchenOrdersJob(), 30_000),
     setInterval(() => void notifyCakeProductionJob(), HOUR),
     setInterval(() => void escalateUnacceptedKitchenTicketsJob(), 30_000),
+    setInterval(() => void expireExperienceProjectsJob(), HOUR),
   );
 
   logger.info(

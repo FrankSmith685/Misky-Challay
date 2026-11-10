@@ -24,6 +24,7 @@ router.post('/favorites/:productId', authenticate, validate(favoriteProductSchem
 router.delete('/favorites/:productId', authenticate, validate(favoriteProductSchema), engagementController.removeFavorite);
 
 router.get('/reviews/pending', authenticate, engagementController.pendingReviews);
+router.get('/reviews/mine', authenticate, engagementController.myReviews);
 router.post('/reviews', authenticate, validate(createReviewSchema), engagementController.createReview);
 router.put('/reviews/:reviewId', authenticate, validate(updateReviewSchema), engagementController.updateReview);
 router.get('/products/:productId/reviews', validate(reviewsQuerySchema), engagementController.productReviews);

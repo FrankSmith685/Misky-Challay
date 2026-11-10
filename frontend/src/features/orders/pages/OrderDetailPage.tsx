@@ -42,6 +42,7 @@ import { OrderTracker } from '../components/OrderTracker';
 import type { OrderWithPayment } from '@features/checkout/types';
 import { CakeThemeReference } from '@features/cakes/components/CakeThemeBanner';
 import { OrderCakeReference } from '@features/cakes/components/OrderCakeReference';
+import { CakeOrderArCard } from '@features/cakes/components/CakeOrderArCard';
 import { DirectPaymentCard } from '@features/checkout/components/DirectPaymentCard';
 import { directPaymentsApi } from '@features/checkout/directPayments';
 
@@ -380,6 +381,9 @@ const OrderDetailPage = () => {
         {/* Items + totales */}
         <div className="grid min-w-0 gap-4 lg:col-span-2">
           <OrderExperienceCard orderNumber={orderNumber} />
+          {![...TERMINAL, 'PENDING_PAYMENT'].includes(order.status) && (
+            <CakeOrderArCard orderNumber={order.orderNumber} items={order.items} />
+          )}
           {data.payment?.directPayment && (
             <DirectPaymentCard
               key={data.payment.id}
@@ -458,7 +462,12 @@ const OrderDetailPage = () => {
             <dl className="mt-4 space-y-1.5 border-t border-line pt-4 text-sm">
               <Row label="Subtotal" value={formatCurrency(order.subtotal)} />
               {order.deliveryFee > 0 && (
-                <Row label="Envio" value={formatCurrency(order.deliveryFee)} />
+                <>
+                  <Row label="Delivery" value={formatCurrency(order.deliveryFee)} />
+                  {order.cakeDeliveryFee && order.cakeDeliveryFee > 0 && (
+                    <p className="text-xs text-ink-muted">Incluye {formatCurrency(order.cakeDeliveryFee)} por manejo especial de torta.</p>
+                  )}
+                </>
               )}
               {order.discountTotal > 0 && (
                 <Row label="Descuentos" value={`- ${formatCurrency(order.discountTotal)}`} accent />

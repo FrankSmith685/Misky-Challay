@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
-import { Link } from 'react-router-dom';
 import { Box, Check, Copy, Download, ImagePlus, Link2, QrCode, Share2 } from 'lucide-react';
 import { Modal } from '@components/ui/Modal';
 import { getApiErrorMessage } from '@services/api/client';
@@ -11,11 +10,10 @@ import { cakeDesignForNewReference, cakePreviewDesign, type CakeVisualDesign } f
 import { compactCakeReference, prepareCakeReference } from '../utils/prepareCakeReference';
 import { useCakeReconstruction } from '../hooks/useCakeReconstruction';
 import { CakeReconstructionStatus } from './CakeReconstructionStatus';
-import { cakeArPath } from '../ar/cakeAr';
 
 interface ShareLink { token: string; url: string; qr: string; expiresAt: string }
 
-export const Cake3dExperience = ({ config, shareInput, existingShare, visualDesign, onDesignChange, referenceDataUrl, onReferenceChange, compact = false, viewerOpen, onViewerOpenChange, modalOnly = false }: {
+export const Cake3dExperience = ({ config, shareInput, existingShare, visualDesign, onDesignChange, referenceDataUrl, onReferenceChange, compact = false, viewerOpen, onViewerOpenChange, modalOnly = false, allowShare = false }: {
   config: CakePreviewSnapshot;
   shareInput?: CakePreviewShareInput;
   existingShare?: { token: string; url: string; expiresAt: string };
@@ -27,6 +25,8 @@ export const Cake3dExperience = ({ config, shareInput, existingShare, visualDesi
   viewerOpen?: boolean;
   onViewerOpenChange?: (open: boolean) => void;
   modalOnly?: boolean;
+  /** Compartir por QR se reserva para la experiencia posterior a la compra. */
+  allowShare?: boolean;
 }) => {
   const [shared, setShared] = useState<ShareLink | null>(null);
   const [busy, setBusy] = useState(false);
@@ -131,7 +131,7 @@ export const Cake3dExperience = ({ config, shareInput, existingShare, visualDesi
     catch (cause) { if (!(cause instanceof DOMException && cause.name === 'AbortError')) setError('No se pudo compartir. Puedes copiar el enlace.'); }
   };
   const actionClass = 'inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-brand-200 bg-white px-3 text-xs font-semibold text-brand-800';
-  const sharePanel = (shareInput || existingShare) && <div>
+  const sharePanel = allowShare && (shareInput || existingShare) && <div>
     {reference && <label className="mb-3 flex cursor-pointer items-start gap-2 rounded-lg border border-line bg-white p-3 text-xs leading-5 text-ink"><input type="checkbox" checked={includeReference} onChange={(event) => setIncludeReference(event.target.checked)} className="mt-1 size-4 shrink-0 accent-brand-700" /><span><strong>Incluir mi imagen en el QR{reconstruction.enabled ? ' y su reconstrucción 3D' : ''}.</strong> Cualquier persona con el enlace podrá verla. Sin esta opción se comparte la torta base.</span></label>}
     {includeReference && reconstruction.enabled && !reconstruction.token && <p role="status" className="mb-3 text-xs leading-5 text-ink-muted">Espera a que termine la conversión para compartir el modelo de tu foto.</p>}
     {!shared ? <button type="button" disabled={busy || referenceBusy || includeReference && reconstruction.enabled && !reconstruction.token} onClick={() => void share()} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 text-xs font-semibold text-brand-800 disabled:opacity-60"><QrCode className="size-4" />{busy ? 'Preparando enlace…' : 'Ver en mi celular y compartir'}</button> : <div className="space-y-3 rounded-xl bg-brand-50 p-3 text-center">
@@ -144,7 +144,6 @@ export const Cake3dExperience = ({ config, shareInput, existingShare, visualDesi
         <a href={shared.url} target="_blank" rel="noreferrer" className={actionClass}><Link2 className="size-3.5" /> Abrir</a>
       </div>
       <input aria-label="Enlace de la vista 3D" readOnly value={shared.url} onFocus={(event) => event.currentTarget.select()} className="w-full rounded-lg border border-brand-200 bg-white px-2 py-2 text-xs" />
-      <Link to={cakeArPath(shared.token)} onClick={() => setShareOpen(false)} className={`${actionClass} w-full`}><Box className="size-4" /> Ver sobre tarjeta y descargar tarjeta AR</Link>
       <p className="text-[11px] text-ink-muted">Disponible hasta el {new Date(shared.expiresAt).toLocaleDateString('es-PE', { timeZone: 'America/Lima', day: 'numeric', month: 'long' })}. Comparte una copia de estas opciones.</p>
       {isLocalPreviewUrl(shared.url) && <p role="status" className="rounded-lg bg-amber-50 p-2 text-left text-xs leading-5 text-amber-900">Este enlace apunta a esta computadora. Para abrirlo desde otro celular, entra a la web usando su dirección pública.</p>}
     </div>}
@@ -172,8 +171,8 @@ export const Cake3dExperience = ({ config, shareInput, existingShare, visualDesi
     <Modal isOpen={expanded} onClose={() => setExpanded(false)} title="Tu torta en 3D" description="Gira, amplía y compara con la foto original." icon={Box} maxWidth="lg" actions={<>{shareButton}<button type="button" onClick={() => setExpanded(false)} className={actionClass}>Volver al resumen</button></>}>
       {expanded && viewer(true)}
     </Modal>
-    <Modal isOpen={shareOpen} onClose={() => setShareOpen(false)} title="Comparte tu torta" description="Abre esta vista en otro celular con un código QR." icon={QrCode} maxWidth="sm">
+    {allowShare && <Modal isOpen={shareOpen} onClose={() => setShareOpen(false)} title="Comparte tu torta" description="Abre esta vista en otro celular con un código QR." icon={QrCode} maxWidth="sm">
       {sharePanel}
-    </Modal>
+    </Modal>}
   </section>;
 };

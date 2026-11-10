@@ -119,7 +119,16 @@ const cartSlice = createSlice({
     clearCart: () => initialState,
     consumePurchasedItems: (state, action: PayloadAction<CartItem[]>) => {
       state.items = state.items.filter((item) => !action.payload.some((bought) => bought.id === item.id && JSON.stringify(bought) === JSON.stringify(item)));
-      if (!state.items.length) return initialState;
+      if (!state.items.length) {
+        state.couponCode = null;
+        state.subtotal = 0;
+        state.discountTotal = 0;
+        state.deliveryFee = 0;
+        state.walletAmount = 0;
+        state.grandTotal = 0;
+        state.editingItemId = null;
+        return;
+      }
       recalculate(state);
     },
   },

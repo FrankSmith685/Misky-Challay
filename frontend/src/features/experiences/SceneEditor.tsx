@@ -6,9 +6,14 @@ import {
   Check,
   FileVideo,
   Image as ImageIcon,
+  Layers3,
+  MapPin,
   Palette,
+  QrCode,
+  Plus,
   Settings2,
   Sparkles,
+  Trash2,
   Upload,
   Video,
 } from 'lucide-react';
@@ -16,7 +21,19 @@ import { Alert } from '@components/ui/Alert';
 import { FormGrid } from '@components/ui/FormSection';
 import { Button } from '@components/ui/Button';
 import { getApiErrorMessage } from '@services/api/client';
-import { experiencesApi, type ExperienceScene, type ExperienceAsset } from './experiences.service';
+import {
+  experiencesApi,
+  type ExperienceLayer,
+  type ExperienceScene,
+  type ExperienceAsset,
+} from './experiences.service';
+
+const demoAppearance: ExperienceScene['appearance'] = {
+  preset: 'PASTRY', exposure: 1, ambientIntensity: 1.8, keyIntensity: 2.3,
+  roughness: 0.62, metalness: 0, environment: 'ROOM', toneMapping: 'ACES',
+};
+const demoCamera: ExperienceScene['camera'] = { autoRotate: true, autoRotateSpeed: 0.65, fov: 38, distance: 2.4 };
+const demoQr: ExperienceScene['qr'] = { dark: '#003a60', light: '#ffffff', frame: 'LIGHT', label: 'Escanea y descubre', logo: 'BRAND', background: 'SOFT' };
 
 export function SceneEditor({
   value,
@@ -68,43 +85,76 @@ export function SceneEditor({
   };
   const field = <K extends keyof ExperienceScene>(key: K, next: ExperienceScene[K]) =>
     onChange({ ...value, [key]: next });
-  const upload = async (file: File, kind: ExperienceAsset['kind']) => {
+  const layers = value.layers ?? [];
+  const addLayer = (kind: ExperienceLayer['kind']) => {
+    const index = layers.length + 1;
+    const layer: ExperienceLayer = {
+      id: `layer-${Date.now()}-${index}`.slice(0, 40),
+      kind,
+      name: kind === 'BUTTON' ? 'Boton ' + index : kind === 'HOTSPOT' ? 'Punto ' + index : 'Texto ' + index,
+      text: kind === 'BUTTON' ? 'Ver mi sorpresa' : kind === 'HOTSPOT' ? 'Descubre este detalle' : 'Una sorpresa hecha para celebrar',
+      action: kind === 'BUTTON' || kind === 'HOTSPOT' ? 'PLAY_VIDEO' : 'NONE',
+      position: { x: 0, y: kind === 'BUTTON' ? -0.95 : 1.25, z: 0 },
+      scale: 1,
+      visible: true,
+    };
+    field('layers', [...layers, layer]);
+  };
+  const updateLayer = (id: string, patch: Partial<ExperienceLayer>) =>
+    field(
+      'layers',
+      layers.map((layer) => (layer.id === id ? { ...layer, ...patch } : layer)),
+    );
+  const removeLayer = (id: string) => field('layers', layers.filter((layer) => layer.id !== id));
+  const upload = async (input: File | File[], kind: ExperienceAsset['kind']) => {
     setError('');
-    setBusy('Subiendo archivo…');
+    setBusy('Subiendo archivo...');
     try {
+      const files = Array.isArray(input) ? input : [input];
+      const file = files[0];
       const limits = { VIDEO: 20, MODEL: 10, AUDIO: 8, IMAGE: 3, TARGET: 5 };
-      if (file.size > limits[kind] * 1024 * 1024) throw new Error(`Máximo ${limits[kind]} MB.`);
+      if (!file || files.some((entry) => entry.size > limits[kind] * 1024 * 1024)) throw new Error(`Maximo ${limits[kind]} MB por archivo.`);
       if (kind === 'IMAGE') {
-        const url = URL.createObjectURL(file);
+        if (files.length > 8) throw new Error('Puedes compilar hasta 8 tarjetas por escena.');
+        if (files.some((entry) => !['image/png', 'image/jpeg'].includes(entry.type)))
+          throw new Error('Las tarjetas deben ser imagenes PNG o JPEG.');
+        const urls = files.map((entry) => URL.createObjectURL(entry));
         try {
-          const image = new Image();
-          image.src = url;
-          await image.decode();
-          if (image.width < 300 || image.height < 300 || image.width > 3000 || image.height > 3000)
-            throw new Error('Usa una imagen entre 300 y 3000 píxeles por lado.');
+          const images = await Promise.all(urls.map(async (source) => {
+            const image = new Image();
+            image.src = source;
+            await image.decode();
+            if (image.width < 300 || image.height < 300 || image.width > 3000 || image.height > 3000)
+              throw new Error('Usa imagenes entre 300 y 3000 pixeles por lado.');
+            return image;
+          }));
           const { Compiler } = await import('@/vendor/mindar/mindar-image.prod.js');
           const compiler = new Compiler();
-          await compiler.compileImageTargets([image], (progress) =>
-            setBusy(`Compilando tarjeta: ${Math.round(progress)}%`),
-          );
+          await compiler.compileImageTargets(images, (progress) => setBusy(`Compilando ${files.length} marcadores: ${Math.round(progress)}%`));
           const bytes = compiler.exportData();
-          const picture = await experiencesApi.upload(file, 'IMAGE', undefined, projectId);
+          const pictures = await Promise.all(files.map((entry) => experiencesApi.upload(entry, 'IMAGE', undefined, projectId)));
           const target = await experiencesApi.upload(
-            new File([new Uint8Array(bytes)], 'tarjeta.mind', { type: 'application/octet-stream' }),
+            new File([new Uint8Array(bytes)], 'tarjetas-multiples.mind', { type: 'application/octet-stream' }),
             'TARGET',
-            picture.id,
+            pictures[0].id,
             projectId,
           );
-          onUploaded([picture, target]);
-          onChange({ ...value, targetImageAssetId: picture.id, targetAssetId: target.id });
+          const markers = pictures.map((picture, index) => ({
+            id: `marker-${picture.id}`,
+            name: files[index].name.replace(/\.[^.]+$/, '').slice(0, 100),
+            imageAssetId: picture.id,
+            targetAssetId: target.id,
+            enabled: true,
+          }));
+          onUploaded([...pictures, target]);
+          onChange({ ...value, targetImageAssetId: pictures[0].id, targetAssetId: target.id, markers });
         } finally {
-          URL.revokeObjectURL(url);
+          urls.forEach((source) => URL.revokeObjectURL(source));
         }
       } else {
         const asset = await experiencesApi.upload(file, kind, undefined, projectId);
         onUploaded([asset]);
-        const key =
-          kind === 'VIDEO' ? 'videoAssetId' : kind === 'MODEL' ? 'modelAssetId' : 'audioAssetId';
+        const key = kind === 'VIDEO' ? 'videoAssetId' : kind === 'MODEL' ? 'modelAssetId' : 'audioAssetId';
         field(key, asset.id);
       }
     } catch (e) {
@@ -112,8 +162,7 @@ export function SceneEditor({
     } finally {
       setBusy('');
     }
-  };
-  const sectionHeading = (number: string, title: string, description: string) => (
+  };  const sectionHeading = (number: string, title: string, description: string) => (
     <div className="exp-editor-section__title">
       <span className="exp-icon text-xs font-extrabold">{number}</span>
       <div>
@@ -139,6 +188,7 @@ export function SceneEditor({
           >
             {[
               ['ALIEN', 'Alien animado original'],
+              ['CAKE', 'Torta 3D Misky Challay'],
               ['MODEL', 'Modelo 3D (GLB)'],
               ['VIDEO', 'Video'],
               ['COMBINED', 'Modelo 3D y video'],
@@ -169,20 +219,29 @@ export function SceneEditor({
             '/400 caracteres · El cliente verá este mensaje junto a su experiencia.'
           }
         />
+        <TextField
+          fullWidth
+          sx={{ mt: 2.5 }}
+          label="Qué debe enfocar el cliente"
+          value={value.recognitionLabel ?? 'la tarjeta'}
+          slotProps={{ htmlInput: { maxLength: 80 } }}
+          onChange={(e) => field('recognitionLabel', e.target.value)}
+          helperText="Ejemplos: la tarjeta, el topper del gallo o la imagen del pastel."
+        />
         <div className="mt-4 flex flex-wrap items-center gap-3 rounded-field border border-line bg-surface-muted px-4 py-3">
           <Palette size={16} className="text-brand-600" />
           <label
             className="min-w-0 flex-1 text-xs font-semibold text-ink"
             htmlFor={'experience-color-' + (projectId ?? 'template')}
           >
-            Color del alien
+            Color de la escena
             <span className="mt-1 block font-normal text-ink-muted">
-              Se aplica a la escena original y al saludo animado.
+              Se aplica a la torta 3D, los acentos y el saludo animado.
             </span>
           </label>
           <input
             id={'experience-color-' + (projectId ?? 'template')}
-            aria-label="Color del alien"
+            aria-label="Color de la escena"
             type="color"
             value={value.color}
             onChange={(e) => field('color', e.target.value)}
@@ -274,7 +333,7 @@ export function SceneEditor({
                 <p className="my-3 flex min-h-4 items-center gap-1.5 truncate text-[10px] text-ink-muted">
                   {value[key] ? (
                     <>
-                      <Check size={11} className="shrink-0 text-[#527363]" />
+                      <Check size={11} className="shrink-0 text-emerald-600" />
                       {selected?.size
                         ? (selected.size / 1024 / 1024).toFixed(1) + ' MB · Archivo vinculado'
                         : 'Archivo vinculado a la escena'}
@@ -369,6 +428,30 @@ export function SceneEditor({
             </p>
           </div>
         </div>
+        {(value.markers ?? []).length > 0 && (
+          <div className="mt-4 grid gap-2 rounded-field border border-line bg-white p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold text-ink">Marcadores de la escena</p>
+                <p className="mt-1 text-[11px] text-ink-muted">Puedes reconocer varias tarjetas con el mismo contenido.</p>
+              </div>
+              <span className="rounded-pill bg-brand-50 px-2 py-1 text-[10px] font-bold text-brand-700">{value.markers?.length}/8</span>
+            </div>
+            <div className="grid gap-2">
+              {(value.markers ?? []).map((marker) => (
+                <div key={marker.id} className="flex items-center gap-3 rounded-field border border-line bg-surface-muted px-3 py-2">
+                  <Checkbox size="small" checked={marker.enabled} onChange={(e) => onChange({ ...value, markers: (value.markers ?? []).map((entry) => entry.id === marker.id ? { ...entry, enabled: e.target.checked } : entry) })} />
+                  <span className="min-w-0 flex-1 truncate text-xs font-semibold text-ink">{marker.name}</span>
+                  {canUpload && <Button variant="ghost" size="sm" aria-label={`Eliminar marcador ${marker.name}`} onClick={() => {
+                    const markers = (value.markers ?? []).filter((entry) => entry.id !== marker.id);
+                    const fallback = markers[0];
+                    onChange({ ...value, markers, ...(value.targetImageAssetId === marker.imageAssetId ? { targetImageAssetId: fallback?.imageAssetId ?? null, targetAssetId: fallback?.targetAssetId ?? null } : {}) });
+                  }}><Trash2 size={14} /></Button>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="mt-3 flex flex-wrap gap-2">
           {canUpload && (
             <Button
@@ -378,14 +461,15 @@ export function SceneEditor({
               disabled={Boolean(busy)}
               leftIcon={<Upload size={14} />}
             >
-              Subir y compilar tarjeta (3 MB)
+                Subir y compilar tarjetas (varias, 3 MB cada una)
               <input
                 hidden
+                  multiple
                 type="file"
                 accept="image/png,image/jpeg"
                 onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) void upload(file, 'IMAGE');
+                  const files = Array.from(e.target.files ?? []);
+                  if (files.length) void upload(files, 'IMAGE');
                   e.target.value = '';
                 }}
               />
@@ -401,6 +485,136 @@ export function SceneEditor({
             </Button>
           )}
         </div>
+      </section>
+      <section className="exp-editor-section">
+        {sectionHeading(
+          '04',
+          'Capas y acciones premium',
+          'Agrega texto sobre la torta o botones para reproducir contenido y compartir la experiencia.',
+        )}
+        <div className="mb-4 flex flex-wrap gap-2">
+          {canUpload && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                leftIcon={<Plus size={14} />}
+                onClick={() => addLayer('TEXT')}
+              >
+                Agregar texto
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                leftIcon={<Plus size={14} />}
+                onClick={() => addLayer('BUTTON')}
+              >
+                Agregar botón
+              </Button>
+              <Button variant="outline" size="sm" leftIcon={<MapPin size={14} />} onClick={() => addLayer('HOTSPOT')}>
+                Agregar punto
+              </Button>
+            </>
+          )}
+        </div>
+        {layers.length ? (
+          <div className="grid gap-3">
+            {layers.map((layer, index) => (
+              <div key={layer.id} className="rounded-field border border-line bg-surface-muted p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="exp-icon"><Layers3 size={15} /></span>
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-bold text-ink">{layer.name}</p>
+                      <p className="text-[10px] text-ink-muted">
+                        {layer.kind === 'BUTTON' ? 'Boton interactivo' : layer.kind === 'HOTSPOT' ? 'Punto de interes' : 'Texto 3D'} · Capa {index + 1}
+                      </p>
+                    </div>
+                  </div>
+                  {canUpload && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`Eliminar ${layer.name}`}
+                      onClick={() => removeLayer(layer.id)}
+                    >
+                      <Trash2 size={15} />
+                    </Button>
+                  )}
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <TextField
+                    fullWidth
+                    label="Nombre de capa"
+                    value={layer.name}
+                    disabled={!canUpload}
+                    onChange={(e) => updateLayer(layer.id, { name: e.target.value })}
+                  />
+                  <TextField
+                    fullWidth
+                    label="Texto visible"
+                    value={layer.text}
+                    disabled={!canUpload}
+                    slotProps={{ htmlInput: { maxLength: 240 } }}
+                    onChange={(e) => updateLayer(layer.id, { text: e.target.value })}
+                  />
+                  {(layer.kind === 'BUTTON' || layer.kind === 'HOTSPOT') && (
+                    <TextField
+                      fullWidth
+                      select
+                      label="Acción al pulsar"
+                      value={layer.action}
+                      disabled={!canUpload}
+                      onChange={(e) =>
+                        updateLayer(layer.id, {
+                          action: e.target.value as ExperienceLayer['action'],
+                        })
+                      }
+                    >
+                      <MenuItem value="NONE">Sin acción</MenuItem>
+                      <MenuItem value="PLAY_VIDEO">Reproducir video</MenuItem>
+                      <MenuItem value="PLAY_AUDIO">Reproducir audio</MenuItem>
+                      <MenuItem value="SHARE">Compartir experiencia</MenuItem>
+                    </TextField>
+                  )}
+                  <FormGrid minColumnWidth={105}>
+                    {(['x', 'y', 'z'] as const).map((axis) => (
+                      <TextField
+                        key={axis}
+                        label={`Posición ${axis.toUpperCase()}`}
+                        type="number"
+                        value={layer.position[axis]}
+                        disabled={!canUpload}
+                        slotProps={{ htmlInput: { min: -2, max: 2, step: 0.05 } }}
+                        onChange={(e) =>
+                          updateLayer(layer.id, {
+                            position: { ...layer.position, [axis]: Number(e.target.value) },
+                          })
+                        }
+                      />
+                    ))}
+                  </FormGrid>
+                </div>
+                <FormControlLabel
+                  className="mt-2"
+                  control={
+                    <Checkbox
+                      checked={layer.visible}
+                      disabled={!canUpload}
+                      onChange={(e) => updateLayer(layer.id, { visible: e.target.checked })}
+                    />
+                  }
+                  label={<span className="text-xs">Visible en la escena</span>}
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-field border border-dashed border-line bg-surface-muted p-4 text-xs leading-relaxed text-ink-muted">
+            Aún no hay capas. Agrega un texto para mostrar el nombre del festejado o un botón para
+            reproducir el saludo, escuchar el audio o compartir el enlace.
+          </div>
+        )}
       </section>
       <details className="exp-settings mt-6">
         <summary>
@@ -463,6 +677,65 @@ export function SceneEditor({
               </span>
             }
           />
+          <div className="grid gap-4 rounded-field border border-line bg-white p-4">
+            <div className="flex items-start gap-3">
+              <span className="exp-icon"><Palette size={16} /></span>
+              <div>
+                <p className="text-xs font-bold text-ink">Iluminacion y materiales</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-ink-muted">Ajusta el acabado del modelo sin editar el GLB.</p>
+              </div>
+            </div>
+            <FormGrid minColumnWidth={150}>
+              <TextField select label="Preset visual" value={value.appearance?.preset ?? 'PASTRY'} onChange={(e) => field('appearance', { ...(value.appearance ?? demoAppearance), preset: e.target.value as ExperienceScene['appearance']['preset'] })}>
+                <MenuItem value="PASTRY">Pasteleria calida</MenuItem>
+                <MenuItem value="ELEGANT">Elegante</MenuItem>
+                <MenuItem value="NATURAL">Natural</MenuItem>
+                <MenuItem value="NIGHT">Nocturno</MenuItem>
+              </TextField>
+              <TextField label="Exposicion" type="number" value={value.appearance?.exposure ?? 1} slotProps={{ htmlInput: { min: 0.4, max: 2, step: 0.05 } }} onChange={(e) => field('appearance', { ...(value.appearance ?? demoAppearance), exposure: Number(e.target.value) })} />
+              <TextField label="Luz ambiente" type="number" value={value.appearance?.ambientIntensity ?? 1.8} slotProps={{ htmlInput: { min: 0, max: 5, step: 0.1 } }} onChange={(e) => field('appearance', { ...(value.appearance ?? demoAppearance), ambientIntensity: Number(e.target.value) })} />
+              <TextField label="Luz principal" type="number" value={value.appearance?.keyIntensity ?? 2.3} slotProps={{ htmlInput: { min: 0, max: 6, step: 0.1 } }} onChange={(e) => field('appearance', { ...(value.appearance ?? demoAppearance), keyIntensity: Number(e.target.value) })} />
+              <TextField label="Rugosidad" type="number" value={value.appearance?.roughness ?? 0.62} slotProps={{ htmlInput: { min: 0, max: 1, step: 0.05 } }} onChange={(e) => field('appearance', { ...(value.appearance ?? demoAppearance), roughness: Number(e.target.value) })} />
+              <TextField label="Metalness" type="number" value={value.appearance?.metalness ?? 0} slotProps={{ htmlInput: { min: 0, max: 1, step: 0.05 } }} onChange={(e) => field('appearance', { ...(value.appearance ?? demoAppearance), metalness: Number(e.target.value) })} />
+            </FormGrid>
+          </div>
+          <div className="grid gap-4 rounded-field border border-line bg-white p-4">
+            <div className="flex items-start gap-3">
+              <span className="exp-icon"><Settings2 size={16} /></span>
+              <div>
+                <p className="text-xs font-bold text-ink">Camara y movimiento</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-ink-muted">Define como se presenta la escena al abrirla.</p>
+              </div>
+            </div>
+            <FormGrid minColumnWidth={150}>
+              <TextField label="Campo de vision" type="number" value={value.camera?.fov ?? 38} slotProps={{ htmlInput: { min: 25, max: 70, step: 1 } }} onChange={(e) => field('camera', { ...(value.camera ?? demoCamera), fov: Number(e.target.value) })} />
+              <TextField label="Velocidad de giro" type="number" value={value.camera?.autoRotateSpeed ?? 0.65} slotProps={{ htmlInput: { min: 0, max: 3, step: 0.05 } }} onChange={(e) => field('camera', { ...(value.camera ?? demoCamera), autoRotateSpeed: Number(e.target.value) })} />
+              <TextField label="Distancia inicial" type="number" value={value.camera?.distance ?? 2.4} slotProps={{ htmlInput: { min: 1.2, max: 12, step: 0.1 } }} onChange={(e) => field('camera', { ...(value.camera ?? demoCamera), distance: Number(e.target.value) })} />
+            </FormGrid>
+            <FormControlLabel control={<Checkbox checked={value.camera?.autoRotate ?? true} onChange={(e) => field('camera', { ...(value.camera ?? demoCamera), autoRotate: e.target.checked })} />} label={<span className="text-xs">Giro automatico al abrir</span>} />
+          </div>
+          <div className="grid gap-4 rounded-field border border-line bg-white p-4">
+            <div className="flex items-start gap-3">
+              <span className="exp-icon"><QrCode size={16} /></span>
+              <div>
+                <p className="text-xs font-bold text-ink">Codigo QR</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-ink-muted">Personaliza el QR que acompana esta experiencia.</p>
+              </div>
+            </div>
+            <FormGrid minColumnWidth={150}>
+              <TextField label="Color QR" type="color" value={value.qr?.dark ?? '#003a60'} onChange={(e) => field('qr', { ...(value.qr ?? demoQr), dark: e.target.value })} />
+              <TextField label="Fondo QR" type="color" value={value.qr?.light ?? '#ffffff'} onChange={(e) => field('qr', { ...(value.qr ?? demoQr), light: e.target.value })} />
+              <TextField label="Texto" value={value.qr?.label ?? 'Escanea y descubre'} slotProps={{ htmlInput: { maxLength: 80 } }} onChange={(e) => field('qr', { ...(value.qr ?? demoQr), label: e.target.value })} />
+              <TextField select label="Logo central" value={value.qr?.logo ?? 'BRAND'} onChange={(e) => field('qr', { ...(value.qr ?? demoQr), logo: e.target.value as ExperienceScene['qr']['logo'] })}>
+                <MenuItem value="BRAND">Marca Misky</MenuItem>
+                <MenuItem value="NONE">Sin logo</MenuItem>
+              </TextField>
+              <TextField select label="Fondo del logo" value={value.qr?.background ?? 'SOFT'} onChange={(e) => field('qr', { ...(value.qr ?? demoQr), background: e.target.value as ExperienceScene['qr']['background'] })}>
+                <MenuItem value="SOFT">Suave</MenuItem>
+                <MenuItem value="SOLID">Sólido</MenuItem>
+              </TextField>
+            </FormGrid>
+          </div>
         </div>
       </details>
       {error && (

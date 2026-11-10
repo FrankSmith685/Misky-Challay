@@ -12,7 +12,15 @@
 
 const PERFIL = process.env.EAS_BUILD_PROFILE ?? '';
 const esProduccion = PERFIL === 'production';
-const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? '';
+// EAS inyecta `build[profile].env` antes de evaluar la configuración. Leer el
+// mismo perfil como respaldo permite validar una compilación local con
+// `EAS_BUILD_PROFILE=production` y evita que esta comprobación dependa del orden
+// interno del CLI.
+const easConfig = require('./eas.json');
+const profileEnv = easConfig.build?.[PERFIL]?.env ?? {};
+const apiUrl = (esProduccion ? profileEnv.EXPO_PUBLIC_API_URL : process.env.EXPO_PUBLIC_API_URL)
+  ?? process.env.EXPO_PUBLIC_API_URL
+  ?? '';
 
 // Fuera de producción se permite HTTP salvo que se pida lo contrario explícitamente.
 const permitirHttp = esProduccion

@@ -1,14 +1,70 @@
 import { z } from 'zod';
 import { ApiError } from '@shared/errors/ApiError';
 
+export const sceneLayerSchema = z.object({
+  id: z.string().regex(/^[a-z0-9_-]{1,40}$/),
+  kind: z.enum(['TEXT', 'BUTTON', 'HOTSPOT']),
+  name: z.string().trim().min(1).max(80),
+  text: z.string().trim().max(240).default(''),
+  action: z.enum(['NONE', 'PLAY_VIDEO', 'PLAY_AUDIO', 'SHARE']).default('NONE'),
+  position: z
+    .object({
+      x: z.number().min(-2).max(2),
+      y: z.number().min(-2).max(2),
+      z: z.number().min(-2).max(2),
+    })
+    .default({ x: 0, y: 0, z: 0 }),
+  scale: z.number().min(0.25).max(3).default(1),
+  visible: z.boolean().default(true),
+});
+
+export const sceneAppearanceSchema = z.object({
+  preset: z.enum(['PASTRY', 'ELEGANT', 'NIGHT', 'NATURAL']).default('PASTRY'),
+  exposure: z.number().min(0.4).max(2).default(1),
+  ambientIntensity: z.number().min(0).max(5).default(1.8),
+  keyIntensity: z.number().min(0).max(6).default(2.3),
+  roughness: z.number().min(0).max(1).default(0.62),
+  metalness: z.number().min(0).max(1).default(0),
+  environment: z.enum(['ROOM', 'NONE']).default('ROOM'),
+  toneMapping: z.enum(['ACES', 'NONE']).default('ACES'),
+});
+
+export const sceneCameraSchema = z.object({
+  autoRotate: z.boolean().default(true),
+  autoRotateSpeed: z.number().min(0).max(3).default(0.65),
+  fov: z.number().min(25).max(70).default(38),
+  distance: z.number().min(1.2).max(12).default(2.4),
+});
+
+export const sceneMarkerSchema = z.object({
+  id: z.string().regex(/^[a-z0-9_-]{1,40}$/),
+  name: z.string().trim().min(1).max(100),
+  imageAssetId: z.number().int().positive(),
+  targetAssetId: z.number().int().positive(),
+  enabled: z.boolean().default(true),
+});
+
+export const sceneQrSchema = z.object({
+  dark: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#003a60'),
+  light: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#ffffff'),
+  frame: z.enum(['NONE', 'LIGHT', 'DARK']).default('LIGHT'),
+  label: z.string().trim().max(80).default('Escanea y descubre'),
+  logo: z.enum(['BRAND', 'NONE']).default('BRAND'),
+  background: z.enum(['SOLID', 'SOFT']).default('SOFT'),
+});
+
 export const sceneSchema = z.object({
-  content: z.enum(['ALIEN', 'MODEL', 'VIDEO', 'COMBINED']).default('ALIEN'),
-  title: z.string().trim().min(1).max(100).default('Un momento fuera de este mundo'),
-  message: z.string().trim().max(400).default('Gracias por celebrar con nosotros.'),
+  content: z.enum(['ALIEN', 'CAKE', 'MODEL', 'VIDEO', 'COMBINED']).default('ALIEN'),
+  title: z.string().trim().min(1).max(100).default('Una torta hecha para celebrar'),
+  message: z
+    .string()
+    .trim()
+    .max(400)
+    .default('Tu torta cobra vida con una sorpresa especial. Gracias por celebrar con Misky Challay.'),
   color: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/)
-    .default('#8ba959'),
+    .default('#b15a83'),
   scale: z.number().min(0.1).max(3).default(1),
   position: z
     .object({
@@ -25,8 +81,16 @@ export const sceneSchema = z.object({
   targetAssetId: z.number().int().positive().nullable().default(null),
   animationIndex: z.number().int().min(0).max(100).default(0),
   videoOnTarget: z.boolean().default(false),
+  /** Texto que se muestra al cliente para indicar qué debe enfocar. */
+  recognitionLabel: z.string().trim().min(1).max(80).default('la tarjeta'),
+  appearance: sceneAppearanceSchema.default({}),
+  camera: sceneCameraSchema.default({}),
+  qr: sceneQrSchema.default({}),
+  markers: z.array(sceneMarkerSchema).max(8).default([]),
+  layers: z.array(sceneLayerSchema).max(8).default([]),
 });
 export type ExperienceScene = z.infer<typeof sceneSchema>;
+export type ExperienceSceneLayer = z.infer<typeof sceneLayerSchema>;
 export const packageSchema = z
   .object({
     name: z.string().trim().min(3).max(100),
@@ -56,6 +120,7 @@ export const EXPERIENCE_STATUSES = [
   'APPROVED',
   'PUBLISHED',
   'PAUSED',
+  'EXPIRED',
 ] as const;
 export type ExperienceStatus = (typeof EXPERIENCE_STATUSES)[number];
 export const sceneAssetIds = (scene: ExperienceScene): number[] => [
@@ -66,6 +131,7 @@ export const sceneAssetIds = (scene: ExperienceScene): number[] => [
       scene.audioAssetId,
       scene.targetAssetId,
       scene.targetImageAssetId,
+      ...(scene.markers ?? []).flatMap((marker) => [marker.imageAssetId, marker.targetAssetId]),
     ].filter((id): id is number => id !== null),
   ),
 ];

@@ -1,4 +1,4 @@
-import { Edit3, Sparkles, Trash2 } from 'lucide-react';
+import { CalendarClock, Edit3, Sparkles, Trash2 } from 'lucide-react';
 import { ProductMedia } from '@components/ui/ProductMedia';
 import { QuantityStepper } from '@components/ui/QuantityStepper';
 import { formatCurrency } from '@lib/format';
@@ -13,6 +13,20 @@ interface CartItemCardProps {
   onEdit?: () => void;
 }
 
+const leadTimeLabel = (hours: number) => {
+  if (hours < 24) return `Requiere al menos ${hours} h de anticipación`;
+  const days = Math.ceil(hours / 24);
+  return `Requiere al menos ${days} ${days === 1 ? 'día' : 'días'} de anticipación`;
+};
+
+const preparationSummary = (item: CartItem) => {
+  if (item.designQuoteId) return 'Diseño aprobado · precio y fecha se revisan en checkout';
+  if (item.preparationMode === 'READY_STOCK') return 'Producto preparado · sujeto a existencias';
+  if (item.minLeadHours && item.minLeadHours > 0) return leadTimeLabel(item.minLeadHours);
+  if (item.requiresScheduledDelivery || item.preferredSlotId) return 'Preparación programada';
+  return 'Preparado por encargo';
+};
+
 /** Línea de carrito responsive con imagen, personalización, cantidad y precio. */
 export const CartItemCard = ({ item, onQuantityChange, onRemove, onEdit }: CartItemCardProps) => {
   const unitTotal = item.unitPrice + item.extrasTotal;
@@ -21,7 +35,7 @@ export const CartItemCard = ({ item, onQuantityChange, onRemove, onEdit }: CartI
   const canEdit = onEdit != null && item.selections.length > 0 && !item.designQuoteId;
 
   return (
-    <article className="overflow-hidden rounded-card border border-line bg-white shadow-e2 transition hover:border-brand-200">
+    <article id={`cart-item-${item.id}`} className="overflow-hidden rounded-card border border-line bg-white shadow-e2 transition hover:border-brand-200">
       <div className="grid grid-cols-[88px_minmax(0,1fr)] gap-3 p-3 sm:grid-cols-[116px_minmax(0,1fr)_auto] sm:gap-5 sm:p-5">
         <ProductMedia
           src={item.imageUrl}
@@ -36,6 +50,16 @@ export const CartItemCard = ({ item, onQuantityChange, onRemove, onEdit }: CartI
             <div className="min-w-0">
               <h2 className="line-clamp-2 font-extrabold leading-snug text-ink">{item.name}</h2>
               <p className="mt-1 text-xs font-semibold text-brand-700 sm:text-sm">{item.variantName}</p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-1 text-[10px] font-bold text-brand-800">
+                  <CalendarClock className="size-3" /> {preparationSummary(item)}
+                </span>
+                {item.requestedServings != null && item.requestedServings > 0 && (
+                  <span className="rounded-full bg-surface-muted px-2 py-1 text-[10px] font-semibold text-ink-muted">
+                    {item.requestedServings} porciones
+                  </span>
+                )}
+              </div>
             </div>
             <p className="shrink-0 font-black text-brand-800 sm:hidden">
               {formatCurrency(item.lineTotal)}

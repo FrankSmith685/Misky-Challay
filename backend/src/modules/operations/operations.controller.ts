@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import { ok } from '@shared/http/ApiResponse';
 import { asyncHandler } from '@shared/utils/asyncHandler';
 import { ApiError } from '@shared/errors/ApiError';
-import { branchScopeCheck, resolveBranchId } from '@shared/utils/scope';
+import { branchScopeCheck, resolveBranchId, resolveOptionalBranchId } from '@shared/utils/scope';
 import type { TicketStatus } from '@database/models/kitchenTicket.model';
 import type { MovementType } from '@database/models/inventoryMovement.model';
 import { operationsService } from './operations.service';
@@ -47,9 +47,29 @@ export const operationsController = {
     return ok(res, { id: ticket.id, status: ticket.status }, 'Ticket actualizado');
   }),
 
+  holdTicket: asyncHandler(async (req: Request, res: Response) => {
+    const ticket = await operationsService.advance(Number(req.params.ticketId), 'ON_HOLD', requireActor(req), req.body.reason, branchScopeCheck(req));
+    return ok(res, { id: ticket.id, status: ticket.status }, 'Incidencia registrada');
+  }),
+
+  resumeTicket: asyncHandler(async (req: Request, res: Response) => {
+    const ticket = await operationsService.resume(Number(req.params.ticketId), requireActor(req), branchScopeCheck(req));
+    return ok(res, { id: ticket.id, status: ticket.status }, 'Ticket reanudado');
+  }),
+
+  assignTicket: asyncHandler(async (req: Request, res: Response) => {
+    const ticket = await operationsService.assign(Number(req.params.ticketId), requireActor(req), req.body, branchScopeCheck(req));
+    return ok(res, { id: ticket.id, status: ticket.status, station: ticket.station, assignedTo: ticket.assignedTo }, 'Asignacion actualizada');
+  }),
+
+  recordKitchenPrint: asyncHandler(async (req: Request, res: Response) => {
+    const result = await operationsService.recordPrint(Number(req.params.ticketId), requireActor(req), branchScopeCheck(req));
+    return ok(res, result, 'Impresion registrada');
+  }),
+
   stock: asyncHandler(async (req: Request, res: Response) => {
-    const branchId = resolveBranchId(req, req.query.branchId as string | undefined);
-    const stock = await inventoryService.listStock(branchId);
+    const branchId = resolveOptionalBranchId(req, req.query.branchId as string | undefined);
+    const stock = branchId === undefined ? await inventoryService.listGlobalStock() : await inventoryService.listStock(branchId);
     return ok(res, stock);
   }),
 
@@ -80,6 +100,7 @@ export const operationsController = {
       expectedOnHand: req.body.expectedOnHand === undefined ? undefined : Number(req.body.expectedOnHand),
       expectedReserved: req.body.expectedReserved === undefined ? undefined : Number(req.body.expectedReserved),
       reason: req.body.reason,
+      idempotencyKey: req.body.idempotencyKey,
       actorId: requireActor(req),
     });
 

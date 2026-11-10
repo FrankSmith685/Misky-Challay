@@ -7,9 +7,9 @@ export const CakeQuoteSummary = ({ productName, productImage, onReturn }: { prod
     <div className="cake-surface overflow-hidden">
       <div className="relative h-40 overflow-hidden bg-surface-muted"><img src={productImage ?? '/images/cakes/custom.svg'} alt={productName} className="size-full object-cover" /><span className="absolute bottom-3 right-3 rounded-md bg-white/95 px-2 py-1 text-[9px] text-ink-muted">Imagen referencial</span></div>
       <div className="p-6">
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-50 px-2.5 py-1 text-[11px] font-medium text-accent-700"><MessageSquareText className="size-3.5" aria-hidden="true" /> Diseño a medida</span>
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-50 px-2.5 py-1 text-[11px] font-medium text-accent-700"><MessageSquareText className="size-3.5" aria-hidden="true" /> Solicitud especial</span>
         <h2 className="mt-4 text-xl font-semibold tracking-tight text-ink">Tu idea, nuestra propuesta</h2>
-        <p className="mt-2 text-sm leading-6 text-ink-muted">El precio se define después de revisar tu diseño, las porciones y la fecha solicitada.</p>
+        <p className="mt-2 text-sm leading-6 text-ink-muted">Revisaremos tu diseño, las porciones y la fecha solicitada antes de enviarte el precio.</p>
         <ol className="mt-6 space-y-5">
           {[
             ['Cuéntanos tu idea', 'Comparte los detalles y, si quieres, una imagen.'],

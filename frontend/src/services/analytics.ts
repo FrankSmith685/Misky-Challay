@@ -1,6 +1,6 @@
 import { api } from '@services/api/client';
 
-export type UxEventType = 'COVERAGE_SUCCESS' | 'COVERAGE_FAIL' | 'COVERAGE_ERROR' | 'CHECKOUT_START' | 'CHECKOUT_ERROR' | 'PAYMENT_REDIRECT';
+export type UxEventType = 'COVERAGE_SUCCESS' | 'COVERAGE_FAIL' | 'COVERAGE_ERROR' | 'CHECKOUT_START' | 'CHECKOUT_ERROR' | 'PAYMENT_REDIRECT' | 'AR_QR_OPEN' | 'AR_CAMERA_REQUEST' | 'AR_CAMERA_READY' | 'AR_TARGET_FOUND' | 'AR_TARGET_LOST' | 'AR_CAMERA_ERROR' | 'AR_FALLBACK_3D';
 
 export type AnalyticsConsent = 'accepted' | 'rejected' | null;
 const CONSENT_KEY = 'verde-bowl:analytics-consent';

@@ -68,6 +68,15 @@ export const createApp = (): Application => {
     );
   }
 
+  if (env.PREVIEW_MODE) {
+    app.use((req, res, next) => {
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+      if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+      res.setHeader('Cache-Control', 'no-store');
+      return res.status(503).json({ success: false, message: 'Vista previa: pedidos y cambios desactivados.' });
+    });
+  }
+
   // Las sondas van ANTES del limitador: si el orquestador sondea cada pocos segundos
   // desde varias instancias, acabaria consumiendo la cuota y recibiendo 429. Un 429
   // en /ready se lee como "instancia enferma" y el balanceador retira nodos sanos:

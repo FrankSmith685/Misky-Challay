@@ -6,11 +6,12 @@ import { requireAnyPermission, requirePermissions } from '@middlewares/rbac.midd
 import { validate } from '@middlewares/validate.middleware';
 import { PERMISSIONS } from '@config/constants';
 import { TICKET_STATUS } from '@database/models/kitchenTicket.model';
+import type { MovementType } from '@database/models/inventoryMovement.model';
 import { Allergen } from '@database/models';
 import { ApiError } from '@shared/errors/ApiError';
 import { ok } from '@shared/http/ApiResponse';
 import { asyncHandler } from '@shared/utils/asyncHandler';
-import { resolveBranchId } from '@shared/utils/scope';
+import { branchScopeCheck, resolveBranchId, resolveOptionalBranchId } from '@shared/utils/scope';
 import { audit } from '@shared/utils/audit';
 import { operationsController } from './operations.controller';
 import { inventoryService } from './inventory.service';
@@ -39,7 +40,7 @@ const diningItemsSchema = z.array(z.object({
   selections: z.array(z.object({ optionId: z.coerce.number().int().positive(), quantity: z.coerce.number().int().min(1).max(20) })).optional(),
 })).min(1).max(50);
 
-// La carta QR usa un token aleatorio de capacidad, no una sesiÃ³n del cliente.
+// La carta QR usa un token aleatorio de capacidad, no una sesión del cliente.
 // Debe declararse antes del middleware de personal.
 router.get(
   '/dining/qr/:token',
@@ -199,7 +200,7 @@ router.post(
       params: z.object({ ticketId: z.coerce.number().int().positive() }),
       body: z
         .object({
-          status: z.enum(['ACCEPTED', 'PREPARING', 'READY', 'DISPATCHED', 'CANCELLED']),
+          status: z.enum(['ACCEPTED', 'PREPARING', 'READY', 'DISPATCHED', 'CANCELLED', 'ON_HOLD']),
           comment: z.string().trim().max(255).optional(),
         })
         // El motivo es lo unico que le queda al cliente y a soporte para saber por
@@ -215,6 +216,40 @@ router.post(
   operationsController.advance,
 );
 
+router.post(
+  '/kitchen/tickets/:ticketId/hold',
+  requirePermissions(PERMISSIONS.KITCHEN_OPERATE),
+  validate(z.object({ params: z.object({ ticketId: z.coerce.number().int().positive() }), body: z.object({ reason: z.string().trim().min(3).max(500) }) })),
+  operationsController.holdTicket,
+);
+
+router.post(
+  '/kitchen/tickets/:ticketId/resume',
+  requirePermissions(PERMISSIONS.KITCHEN_OPERATE),
+  validate(z.object({ params: z.object({ ticketId: z.coerce.number().int().positive() }) })),
+  operationsController.resumeTicket,
+);
+
+router.patch(
+  '/kitchen/tickets/:ticketId/assignment',
+  requirePermissions(PERMISSIONS.KITCHEN_OPERATE),
+  validate(z.object({
+    params: z.object({ ticketId: z.coerce.number().int().positive() }),
+    body: z.object({
+      station: z.string().trim().max(40).optional().nullable(),
+      assignedTo: z.coerce.number().int().positive().optional().nullable(),
+    }).refine((body) => body.station !== undefined || body.assignedTo !== undefined, { message: 'Indica una estacion o un responsable' }),
+  })),
+  operationsController.assignTicket,
+);
+
+router.post(
+  '/kitchen/tickets/:ticketId/print',
+  requirePermissions(PERMISSIONS.KITCHEN_READ),
+  validate(z.object({ params: z.object({ ticketId: z.coerce.number().int().positive() }) })),
+  operationsController.recordKitchenPrint,
+);
+
 // --- Salón y comandas ---
 router.get(
   '/dining/tables',
@@ -228,7 +263,7 @@ router.get(
 
 router.get(
   '/dining/catalog',
-  requirePermissions(PERMISSIONS.DINING_OPERATE),
+  requirePermissions(PERMISSIONS.DINING_READ),
   validate(z.object({ query: z.object({ branchId: z.coerce.number().int().positive() }) })),
   asyncHandler(async (req: Request, res: Response) => {
     const branchId = resolveBranchId(req, req.query.branchId as string | undefined);
@@ -325,7 +360,7 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const offering = await diningService.createOffering({ ...req.body, branchId: resolveBranchId(req, req.body.branchId) });
     await audit(req, { action: 'dining.offering.create', entity: 'dining_offerings', entityId: offering.id, after: offering });
-    return ok(res, offering, 'MenÃº programado');
+    return ok(res, offering, 'Menú programado');
   }),
 );
 
@@ -336,7 +371,7 @@ router.patch(
     params: z.object({ offeringId: z.coerce.number().int().positive() }),
     body: z.object({ branchId: z.coerce.number().int().positive(), isActive: z.boolean().optional(), price: z.coerce.number().positive().max(9999).optional(), dailyLimit: z.coerce.number().int().positive().max(10000).optional().nullable(), startsAt: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(), endsAt: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional() }),
   })),
-  asyncHandler(async (req: Request, res: Response) => ok(res, await diningService.updateOffering({ ...req.body, branchId: resolveBranchId(req, req.body.branchId), offeringId: Number(req.params.offeringId) }), 'MenÃº actualizado')),
+  asyncHandler(async (req: Request, res: Response) => ok(res, await diningService.updateOffering({ ...req.body, branchId: resolveBranchId(req, req.body.branchId), offeringId: Number(req.params.offeringId) }), 'Menú actualizado')),
 );
 
 router.patch(
@@ -383,28 +418,56 @@ router.post(
 );
 
 // --- Punto de venta ---
-// Comparte el permiso del cajero (`dining.operate`) para que los roles actuales
-// puedan empezar a vender sin una migración de usuarios. La venta queda como POS,
-// genera ticket de cocina y activa el mismo motor de reservas de inventario.
+// El POS tiene permiso propio: vender en mostrador no habilita por accidente la
+// operacion de mesas y comandas. La venta queda como POS, genera ticket de cocina
+// y activa el mismo motor de reservas de inventario.
 router.get(
   '/pos/catalog',
-  requirePermissions(PERMISSIONS.DINING_OPERATE),
+  requirePermissions(PERMISSIONS.POS_SELL),
   validate(z.object({ query: z.object({ branchId: z.coerce.number().int().positive() }) })),
   asyncHandler(async (req: Request, res: Response) => ok(res, await diningService.counterCatalog(resolveBranchId(req, req.query.branchId as string | undefined)))),
 );
 
 router.post(
-  '/pos/sales',
-  requirePermissions(PERMISSIONS.DINING_OPERATE),
+  '/pos/quote',
+  requirePermissions(PERMISSIONS.POS_SELL),
   validate(z.object({
     body: z.object({
       branchId: z.coerce.number().int().positive(),
       items: diningItemsSchema,
-      paymentMethod: z.enum(['cash', 'card', 'yape', 'plin']),
+      couponCode: z.string().trim().max(40).optional().nullable(),
+    }),
+  })),
+  asyncHandler(async (req: Request, res: Response) => ok(res, await diningService.quoteCounterSale({ ...req.body, branchId: resolveBranchId(req, req.body.branchId) }))),
+);
+
+router.post(
+  '/pos/sales',
+  requirePermissions(PERMISSIONS.POS_SELL),
+  validate(z.object({
+    body: z.object({
+      branchId: z.coerce.number().int().positive(),
+      items: diningItemsSchema,
+      payments: z.array(z.object({
+        method: z.enum(['cash', 'card', 'yape', 'plin']),
+        amount: z.coerce.number().finite().positive().max(99_999_999.99),
+        reference: z.string().trim().max(80).optional().nullable(),
+        operationCode: z.string().trim().max(24).optional().nullable(),
+        payerPhone: z.string().trim().max(20).optional().nullable(),
+      })).min(1).max(4).optional(),
+      // Se mantiene solo para clientes antiguos; los nuevos deben enviar payments.
+      paymentMethod: z.enum(['cash', 'card', 'yape', 'plin']).optional(),
+      cashReceived: z.coerce.number().finite().min(0).max(99_999_999.99).optional().nullable(),
       customerName: z.string().trim().max(120).optional().nullable(),
       notes: z.string().trim().max(500).optional().nullable(),
+      couponCode: z.string().trim().max(40).optional().nullable(),
+      documentType: z.enum(['BOLETA', 'FACTURA']).optional(),
+      billingDocType: z.enum(['DNI', 'RUC', 'CE']).optional().nullable(),
+      billingDocNumber: z.string().trim().max(20).optional().nullable(),
+      billingName: z.string().trim().max(160).optional().nullable(),
+      billingAddress: z.string().trim().max(255).optional().nullable(),
       idempotencyKey: z.string().trim().min(8).max(80).optional(),
-    }),
+    }).refine((body) => Boolean(body.payments?.length || body.paymentMethod), { message: 'Debes indicar al menos un medio de pago' }),
   })),
   asyncHandler(async (req: Request, res: Response) => {
     if (!req.user) throw ApiError.unauthorized();
@@ -413,8 +476,8 @@ router.post(
       branchId: resolveBranchId(req, req.body.branchId),
       actorId: req.user.sub,
     });
-    await audit(req, { action: 'pos.sale.create', entity: 'orders', entityId: sale.orderNumber, after: { branchId: req.body.branchId, total: sale.total, paymentMethod: req.body.paymentMethod } });
-    return ok(res, sale, sale.reused ? 'Venta ya registrada' : 'Venta registrada y enviada a cocina');
+    await audit(req, { action: 'pos.sale.create', entity: 'orders', entityId: sale.orderNumber, after: { branchId: req.body.branchId, total: sale.total, payments: req.body.payments ?? [{ method: req.body.paymentMethod, amount: sale.total }], documentType: req.body.documentType ?? 'BOLETA', paymentPending: sale.paymentPending } });
+    return ok(res, sale, sale.reused ? 'Venta ya registrada' : sale.paymentPending ? 'Venta registrada; pago pendiente de verificación' : 'Venta registrada y enviada a cocina');
   }),
 );
 
@@ -422,7 +485,7 @@ router.post(
 router.get(
   '/inventory',
   requireAnyPermission(PERMISSIONS.INVENTORY_READ, PERMISSIONS.INVENTORY_MANAGE),
-  validate(z.object({ query: z.object({ branchId: z.coerce.number().int().positive() }) })),
+  validate(z.object({ query: z.object({ branchId: z.coerce.number().int().positive().optional() }) })),
   operationsController.stock,
 );
 
@@ -430,14 +493,18 @@ router.get(
   '/inventory/movements',
   requireAnyPermission(PERMISSIONS.INVENTORY_READ, PERMISSIONS.INVENTORY_MANAGE),
   validate(z.object({ query: z.object({
-    branchId: z.coerce.number().int().positive(),
+    branchId: z.coerce.number().int().positive().optional(),
     inventoryItemId: z.coerce.number().int().positive().optional(),
-    limit: z.coerce.number().int().min(1).max(100).default(30),
+    limit: z.coerce.number().int().min(1).max(1000).default(50),
+    type: z.enum(['PURCHASE', 'RESERVE', 'RELEASE', 'CONSUME', 'WASTE', 'ADJUSTMENT', 'TRANSFER_OUT', 'TRANSFER_IN']).optional(),
+    from: z.string().date().optional(),
+    to: z.string().date().optional(),
   }) })),
   asyncHandler(async (req: Request, res: Response) => ok(res, await inventoryService.listMovements(
-    resolveBranchId(req, req.query.branchId as string | undefined),
+    resolveOptionalBranchId(req, req.query.branchId as string | undefined),
     req.query.inventoryItemId ? Number(req.query.inventoryItemId) : undefined,
     Number(req.query.limit),
+    { type: req.query.type as MovementType | undefined, from: req.query.from as string | undefined, to: req.query.to as string | undefined },
   ))),
 );
 
@@ -553,6 +620,7 @@ router.post(
           quantity: z.coerce.number().finite().min(-9_999_999_999.99).max(9_999_999_999.99).refine((value) => Math.abs(value * 100 - Math.round(value * 100)) < 0.000001, 'Usa como máximo dos decimales'),
           expectedOnHand: inventoryQuantity.optional(),
           expectedReserved: inventoryQuantity.optional(),
+          idempotencyKey: z.string().trim().min(8).max(100).optional(),
           reason: z.string().trim().min(3).max(255),
         })
         .refine(
@@ -566,6 +634,32 @@ router.post(
   ),
   operationsController.adjustStock,
 );
+
+// --- Transferencias y conteos físicos ---
+const transferLine = z.object({ inventoryItemId: z.coerce.number().int().positive(), quantity: inventoryQuantity.refine((value) => value > 0, 'La cantidad debe ser mayor que cero') });
+router.get(
+  '/inventory/transfers',
+  requireAnyPermission(PERMISSIONS.INVENTORY_READ, PERMISSIONS.INVENTORY_MANAGE),
+  validate(z.object({ query: z.object({ branchId: z.coerce.number().int().positive().optional() }) })),
+  asyncHandler(async (req: Request, res: Response) => ok(res, await inventoryService.listTransfers(resolveOptionalBranchId(req, req.query.branchId as string | undefined)))),
+);
+router.post(
+  '/inventory/transfers',
+  requirePermissions(PERMISSIONS.INVENTORY_MANAGE),
+  validate(z.object({ body: z.object({ sourceBranchId: z.coerce.number().int().positive(), destinationBranchId: z.coerce.number().int().positive(), notes: z.string().trim().max(500).optional().nullable(), items: z.array(transferLine).min(1).max(100) }) })),
+  asyncHandler(async (req: Request, res: Response) => { if (!req.user) throw ApiError.unauthorized(); const transfer = await inventoryService.createTransfer({ ...req.body, sourceBranchId: resolveBranchId(req, req.body.sourceBranchId), destinationBranchId: resolveBranchId(req, req.body.destinationBranchId), actorId: req.user.sub }); await audit(req, { action: 'inventory.transfer.create', entity: 'inventory_transfers', entityId: String(transfer.id), after: { status: transfer.status, sourceBranchId: req.body.sourceBranchId, destinationBranchId: req.body.destinationBranchId } }); return ok(res, transfer, 'Transferencia solicitada'); }),
+);
+router.post('/inventory/transfers/:transferId/approve', requirePermissions(PERMISSIONS.INVENTORY_MANAGE), validate(z.object({ params: z.object({ transferId: z.coerce.number().int().positive() }) })), asyncHandler(async (req: Request, res: Response) => { if (!req.user) throw ApiError.unauthorized(); const transfer = await inventoryService.approveTransfer(Number(req.params.transferId), req.user.sub, branchScopeCheck(req)); await audit(req, { action: 'inventory.transfer.approve', entity: 'inventory_transfers', entityId: String(req.params.transferId), after: { status: transfer.status } }); return ok(res, transfer, 'Transferencia aprobada'); }));
+router.post('/inventory/transfers/:transferId/ship', requirePermissions(PERMISSIONS.INVENTORY_MANAGE), validate(z.object({ params: z.object({ transferId: z.coerce.number().int().positive() }) })), asyncHandler(async (req: Request, res: Response) => { if (!req.user) throw ApiError.unauthorized(); const transfer = await inventoryService.shipTransfer(Number(req.params.transferId), req.user.sub, branchScopeCheck(req)); await audit(req, { action: 'inventory.transfer.ship', entity: 'inventory_transfers', entityId: String(req.params.transferId), after: { status: transfer.status } }); return ok(res, transfer, 'Transferencia despachada'); }));
+router.post('/inventory/transfers/:transferId/receive', requirePermissions(PERMISSIONS.INVENTORY_MANAGE), validate(z.object({ params: z.object({ transferId: z.coerce.number().int().positive() }) })), asyncHandler(async (req: Request, res: Response) => { if (!req.user) throw ApiError.unauthorized(); const transfer = await inventoryService.receiveTransfer(Number(req.params.transferId), req.user.sub, branchScopeCheck(req)); await audit(req, { action: 'inventory.transfer.receive', entity: 'inventory_transfers', entityId: String(req.params.transferId), after: { status: transfer.status } }); return ok(res, transfer, 'Transferencia recibida'); }));
+router.post('/inventory/transfers/:transferId/cancel', requirePermissions(PERMISSIONS.INVENTORY_MANAGE), validate(z.object({ params: z.object({ transferId: z.coerce.number().int().positive() }), body: z.object({ reason: z.string().trim().min(3).max(500) }) })), asyncHandler(async (req: Request, res: Response) => { if (!req.user) throw ApiError.unauthorized(); const transfer = await inventoryService.cancelTransfer(Number(req.params.transferId), req.body.reason, req.user.sub, branchScopeCheck(req)); await audit(req, { action: 'inventory.transfer.cancel', entity: 'inventory_transfers', entityId: String(req.params.transferId), after: { status: transfer.status, reason: req.body.reason } }); return ok(res, transfer, 'Transferencia cancelada'); }));
+
+router.get('/inventory/counts', requireAnyPermission(PERMISSIONS.INVENTORY_READ, PERMISSIONS.INVENTORY_MANAGE), validate(z.object({ query: z.object({ branchId: z.coerce.number().int().positive().optional() }) })), asyncHandler(async (req: Request, res: Response) => ok(res, await inventoryService.listCounts(resolveOptionalBranchId(req, req.query.branchId as string | undefined)))));
+router.post('/inventory/counts', requirePermissions(PERMISSIONS.INVENTORY_MANAGE), validate(z.object({ body: z.object({ branchId: z.coerce.number().int().positive(), name: z.string().trim().min(3).max(120), notes: z.string().trim().max(500).optional().nullable(), inventoryItemIds: z.array(z.coerce.number().int().positive()).max(500).optional() }) })), asyncHandler(async (req: Request, res: Response) => { if (!req.user) throw ApiError.unauthorized(); const count = await inventoryService.startCount({ ...req.body, branchId: resolveBranchId(req, req.body.branchId), actorId: req.user.sub }); await audit(req, { action: 'inventory.count.start', entity: 'inventory_count_sessions', entityId: String(count.id), after: { branchId: req.body.branchId, name: req.body.name } }); return ok(res, count, 'Conteo físico iniciado'); }));
+router.patch('/inventory/counts/:countId/items/:itemId', requirePermissions(PERMISSIONS.INVENTORY_MANAGE), validate(z.object({ params: z.object({ countId: z.coerce.number().int().positive(), itemId: z.coerce.number().int().positive() }), body: z.object({ countedOnHand: inventoryQuantity }) })), asyncHandler(async (req: Request, res: Response) => ok(res, await inventoryService.updateCountItem(Number(req.params.countId), Number(req.params.itemId), Number(req.body.countedOnHand), branchScopeCheck(req)), 'Conteo guardado')));
+router.post('/inventory/counts/:countId/submit', requirePermissions(PERMISSIONS.INVENTORY_MANAGE), validate(z.object({ params: z.object({ countId: z.coerce.number().int().positive() }) })), asyncHandler(async (req: Request, res: Response) => { if (!req.user) throw ApiError.unauthorized(); const count = await inventoryService.submitCount(Number(req.params.countId), req.user.sub, branchScopeCheck(req)); await audit(req, { action: 'inventory.count.submit', entity: 'inventory_count_sessions', entityId: String(req.params.countId), after: { status: count.status } }); return ok(res, count, 'Conteo enviado a aprobación'); }));
+router.post('/inventory/counts/:countId/approve', requirePermissions(PERMISSIONS.INVENTORY_MANAGE), validate(z.object({ params: z.object({ countId: z.coerce.number().int().positive() }) })), asyncHandler(async (req: Request, res: Response) => { if (!req.user) throw ApiError.unauthorized(); const count = await inventoryService.approveCount(Number(req.params.countId), req.user.sub, branchScopeCheck(req)); await audit(req, { action: 'inventory.count.approve', entity: 'inventory_count_sessions', entityId: String(req.params.countId), after: { status: count.status } }); return ok(res, count, 'Conteo aprobado y ajustes registrados'); }));
+router.post('/inventory/counts/:countId/cancel', requirePermissions(PERMISSIONS.INVENTORY_MANAGE), validate(z.object({ params: z.object({ countId: z.coerce.number().int().positive() }) })), asyncHandler(async (req: Request, res: Response) => ok(res, await inventoryService.cancelCount(Number(req.params.countId), branchScopeCheck(req)), 'Conteo cancelado')));
 
 /**
  * Maestro de insumos con la marca de cuales ya se controlan en esta cocina.
@@ -677,22 +771,22 @@ router.patch(
 router.get(
   '/procurement/purchase-orders',
   requireAnyPermission(PERMISSIONS.PROCUREMENT_READ, PERMISSIONS.PROCUREMENT_MANAGE),
-  validate(z.object({ query: z.object({ branchId: z.coerce.number().int().positive(), status: z.string().optional() }) })),
-  asyncHandler(async (req: Request, res: Response) => ok(res, await procurementService.listPurchaseOrders(resolveBranchId(req, req.query.branchId as string | undefined), req.query.status as string | undefined))),
+  validate(z.object({ query: z.object({ branchId: z.coerce.number().int().positive().optional(), status: z.string().optional() }) })),
+  asyncHandler(async (req: Request, res: Response) => ok(res, await procurementService.listPurchaseOrders(resolveOptionalBranchId(req, req.query.branchId as string | undefined), req.query.status as string | undefined))),
 );
 
 router.get(
   '/procurement/purchase-orders/:orderId',
   requireAnyPermission(PERMISSIONS.PROCUREMENT_READ, PERMISSIONS.PROCUREMENT_MANAGE),
-  validate(z.object({ params: z.object({ orderId: z.coerce.number().int().positive() }), query: z.object({ branchId: z.coerce.number().int().positive() }) })),
-  asyncHandler(async (req: Request, res: Response) => ok(res, await procurementService.getPurchaseOrder(Number(req.params.orderId), resolveBranchId(req, req.query.branchId as string | undefined)))),
+  validate(z.object({ params: z.object({ orderId: z.coerce.number().int().positive() }), query: z.object({ branchId: z.coerce.number().int().positive().optional() }) })),
+  asyncHandler(async (req: Request, res: Response) => ok(res, await procurementService.getPurchaseOrder(Number(req.params.orderId), resolveOptionalBranchId(req, req.query.branchId as string | undefined)))),
 );
 
 router.post(
   '/procurement/purchase-orders',
   requirePermissions(PERMISSIONS.PROCUREMENT_MANAGE),
   validate(z.object({ body: z.object({
-    branchId: z.coerce.number().int().positive(), supplierId: z.coerce.number().int().positive(), expectedAt: z.string().date().optional().nullable(),
+    branchId: z.coerce.number().int().positive(), supplierId: z.coerce.number().int().positive(), idempotencyKey: z.string().trim().min(8).max(100).optional(), expectedAt: z.string().date().optional().nullable(),
     notes: z.string().trim().max(2_000).optional().nullable(), tax: purchaseAmount.optional(),
     items: z.array(z.object({ inventoryItemId: z.coerce.number().int().positive(), quantity: purchaseQuantity, unitCost: purchaseCost, notes: z.string().trim().max(255).optional().nullable() })).min(1).max(100),
   }) })),
@@ -701,6 +795,18 @@ router.post(
     const order = await procurementService.createPurchaseOrder({ ...req.body, branchId: resolveBranchId(req, req.body.branchId), actorId: req.user.sub });
     await audit(req, { action: 'procurement.purchase_order.create', entity: 'purchase_orders', entityId: order.id, after: { orderNumber: order.orderNumber, total: order.total } });
     return ok(res, order, 'Orden de compra creada');
+  }),
+);
+
+router.post(
+  '/procurement/purchase-orders/:orderId/approve',
+  requirePermissions(PERMISSIONS.PROCUREMENT_MANAGE),
+  validate(z.object({ params: z.object({ orderId: z.coerce.number().int().positive() }), body: z.object({ branchId: z.coerce.number().int().positive() }) })),
+  asyncHandler(async (req: Request, res: Response) => {
+    if (!req.user) throw ApiError.unauthorized();
+    const order = await procurementService.approvePurchaseOrder({ orderId: Number(req.params.orderId), branchId: resolveBranchId(req, req.body.branchId), actorId: req.user.sub });
+    await audit(req, { action: 'procurement.purchase_order.approve', entity: 'purchase_orders', entityId: order.id, after: { status: order.status, approvedBy: req.user.sub } });
+    return ok(res, order, 'Orden aprobada y lista para enviar');
   }),
 );
 
@@ -716,7 +822,8 @@ router.patch(
     }),
   })),
   asyncHandler(async (req: Request, res: Response) => {
-    const order = await procurementService.updatePurchaseOrder({ ...req.body, orderId: Number(req.params.orderId), branchId: resolveBranchId(req, req.body.branchId) });
+    if (!req.user) throw ApiError.unauthorized();
+    const order = await procurementService.updatePurchaseOrder({ ...req.body, orderId: Number(req.params.orderId), branchId: resolveBranchId(req, req.body.branchId), actorId: req.user.sub });
     await audit(req, { action: 'procurement.purchase_order.update', entity: 'purchase_orders', entityId: order.id, after: { orderNumber: order.orderNumber, total: order.total, supplierId: order.supplierId } });
     return ok(res, order, 'Orden de compra actualizada');
   }),
@@ -726,7 +833,7 @@ router.post(
   '/procurement/purchase-orders/:orderId/receive',
   requirePermissions(PERMISSIONS.PROCUREMENT_MANAGE),
   validate(z.object({ params: z.object({ orderId: z.coerce.number().int().positive() }), body: z.object({
-    branchId: z.coerce.number().int().positive(), lines: z.array(z.object({ purchaseOrderItemId: z.coerce.number().int().positive(), quantity: purchaseQuantity, lotCode: z.string().trim().min(1).max(80), expiresAt: z.string().date().optional().nullable(), unitCost: purchaseCost.optional() })).min(1).max(100),
+    branchId: z.coerce.number().int().positive(), idempotencyKey: z.string().trim().min(8).max(100).optional(), lines: z.array(z.object({ purchaseOrderItemId: z.coerce.number().int().positive(), quantity: purchaseQuantity, lotCode: z.string().trim().min(1).max(80), expiresAt: z.string().date().optional().nullable(), unitCost: purchaseCost.optional() })).min(1).max(100),
   }) })),
   asyncHandler(async (req: Request, res: Response) => {
     if (!req.user) throw ApiError.unauthorized();
@@ -750,15 +857,15 @@ router.post(
 router.get(
   '/procurement/lots',
   requireAnyPermission(PERMISSIONS.PROCUREMENT_READ, PERMISSIONS.PROCUREMENT_MANAGE),
-  validate(z.object({ query: z.object({ branchId: z.coerce.number().int().positive(), status: z.string().optional() }) })),
-  asyncHandler(async (req: Request, res: Response) => ok(res, await procurementService.listLots(resolveBranchId(req, req.query.branchId as string | undefined), req.query.status as string | undefined))),
+  validate(z.object({ query: z.object({ branchId: z.coerce.number().int().positive().optional(), status: z.string().optional() }) })),
+  asyncHandler(async (req: Request, res: Response) => ok(res, await procurementService.listLots(resolveOptionalBranchId(req, req.query.branchId as string | undefined), req.query.status as string | undefined))),
 );
 
 router.get(
   '/procurement/cost-summary',
   requireAnyPermission(PERMISSIONS.PROCUREMENT_READ, PERMISSIONS.PROCUREMENT_MANAGE),
-  validate(z.object({ query: z.object({ branchId: z.coerce.number().int().positive(), from: z.string().date().optional(), to: z.string().date().optional() }) })),
-  asyncHandler(async (req: Request, res: Response) => ok(res, await procurementService.costSummary(resolveBranchId(req, req.query.branchId as string | undefined), req.query.from as string | undefined, req.query.to as string | undefined))),
+  validate(z.object({ query: z.object({ branchId: z.coerce.number().int().positive().optional(), from: z.string().date().optional(), to: z.string().date().optional() }) })),
+  asyncHandler(async (req: Request, res: Response) => ok(res, await procurementService.costSummary(resolveOptionalBranchId(req, req.query.branchId as string | undefined), req.query.from as string | undefined, req.query.to as string | undefined))),
 );
 
 export default router;

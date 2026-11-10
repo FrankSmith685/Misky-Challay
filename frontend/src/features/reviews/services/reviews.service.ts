@@ -1,7 +1,7 @@
 import { api } from '@services/api/client';
 import { ENDPOINTS } from '@services/api/endpoints';
 import type { ApiSuccess } from '@/types/api';
-import type { PendingReview, ProductReviews } from '../types';
+import type { MyReview, PendingReview, ProductReviews } from '../types';
 
 export const reviewsApi = {
   async product(productId: number): Promise<ProductReviews> {
@@ -17,9 +17,21 @@ export const reviewsApi = {
     return data.data;
   },
 
+  async mine(): Promise<MyReview[]> {
+    const { data } = await api.get<ApiSuccess<MyReview[]>>(ENDPOINTS.engagement.myReviews);
+    return data.data;
+  },
+
   async create(orderItemId: number, rating: number, comment: string): Promise<void> {
     await api.post(ENDPOINTS.engagement.createReview, {
       orderItemId,
+      rating,
+      comment: comment.trim() || null,
+    });
+  },
+
+  async update(reviewId: number, rating: number, comment: string): Promise<void> {
+    await api.put(ENDPOINTS.engagement.updateReview(reviewId), {
       rating,
       comment: comment.trim() || null,
     });

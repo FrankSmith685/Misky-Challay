@@ -109,6 +109,13 @@ export const ENDPOINTS = {
     newsletter: '/engagement/newsletter',
   },
 
+  experiences: {
+    packages: '/experiences/packages',
+    customer: (orderNumber: string) => `/experiences/orders/${encodeURIComponent(orderNumber)}`,
+    review: (orderNumber: string) => `/experiences/orders/${encodeURIComponent(orderNumber)}/review`,
+    public: (token: string) => `/experiences/public/${encodeURIComponent(token)}`,
+  },
+
   complaints: {
     root: '/complaints',
     track: '/complaints/track',

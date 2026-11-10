@@ -8,6 +8,7 @@ import {
   WhatsappConversation,
   WhatsappMessage,
 } from '@database/models/messaging.model';
+import { Branch, Order, User } from '@database/models';
 import { PERMISSIONS } from '@config/constants';
 import { authenticate } from '@middlewares/auth.middleware';
 import {
@@ -29,6 +30,41 @@ import { whatsappInbox } from './whatsapp.inbox';
 import { subscribeCommunicationChanges } from './communications.events';
 
 const router = Router();
+
+const conversationContext = async (phone: string) => {
+  const suffix = phone.replace(/\D/g, '').slice(-9);
+  if (!suffix) return { customer: null, orders: [] };
+  const phoneLike = { [Op.like]: `%${suffix}` };
+  const [customer, orders] = await Promise.all([
+    User.findOne({
+      where: { phone: phoneLike },
+      attributes: ['id', 'firstName', 'lastName', 'email'],
+    }),
+    Order.findAll({
+      where: { contactPhone: phoneLike },
+      attributes: ['orderNumber', 'status', 'grandTotal', 'currency', 'branchId', 'placedAt'],
+      order: [['placedAt', 'DESC']],
+      limit: 5,
+    }),
+  ]);
+  const branches = orders.length
+    ? await Branch.findAll({ where: { id: { [Op.in]: [...new Set(orders.map((order) => order.branchId))] } }, attributes: ['id', 'name'] })
+    : [];
+  const branchNames = new Map(branches.map((branch) => [branch.id, branch.name]));
+  return {
+    customer: customer
+      ? { id: customer.id, name: customer.fullName || customer.email || phone, email: customer.email }
+      : null,
+    orders: orders.map((order) => ({
+      orderNumber: order.orderNumber,
+      status: order.status,
+      grandTotal: Number(order.grandTotal),
+      currency: order.currency,
+      branchName: branchNames.get(order.branchId) ?? null,
+      placedAt: order.placedAt,
+    })),
+  };
+};
 router.get(
   '/webhook',
   asyncHandler(async (req, res) => {
@@ -122,7 +158,8 @@ router.put(
   requireSuperAdmin,
   validate(z.object({ body: messagingUpdateSchema })),
   asyncHandler(async (req, res) => {
-    const result = await messagingConfigService.update(req.body, req.user!.sub);
+    const communication = await settingsService.getCommunicationSettings();
+    const result = await messagingConfigService.update(req.body, req.user!.sub, communication.whatsappUpdatesEnabled);
     await audit(req, {
       action: 'communications.settings.update',
       entity: 'messaging_settings',
@@ -180,20 +217,41 @@ router.get(
         state: z.string().max(20).optional(),
         channel: z.enum(['EMAIL', 'WHATSAPP']).optional(),
         event: z.string().max(60).optional(),
+        from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       })
       .parse(req.query);
+    if (query.from && query.to && query.from > query.to)
+      throw ApiError.badRequest('El periodo de fechas no es válido');
+    const createdAt = query.from || query.to
+      ? {
+          ...(query.from ? { [Op.gte]: new Date(`${query.from}T00:00:00-05:00`) } : {}),
+          ...(query.to ? { [Op.lte]: new Date(`${query.to}T23:59:59.999-05:00`) } : {}),
+        }
+      : undefined;
+    const where = {
+      ...(query.state ? { state: query.state } : {}),
+      ...(query.channel ? { channel: query.channel } : {}),
+      ...(query.event ? { event: query.event } : {}),
+      ...(createdAt ? { createdAt } : {}),
+    };
     const result = await CommunicationDelivery.findAndCountAll({
-      where: {
-        ...(query.state ? { state: query.state } : {}),
-        ...(query.channel ? { channel: query.channel } : {}),
-        ...(query.event ? { event: query.event } : {}),
-      },
+      where,
       attributes: { exclude: ['payload', 'lockedAt'] },
       order: [['id', 'DESC']],
       limit: 30,
       offset: (query.page - 1) * 30,
     });
-    return ok(res, { items: result.rows, total: result.count, page: query.page, pageSize: 30 });
+    const orderIds = result.rows.map((row) => row.orderId).filter((id): id is number => Boolean(id));
+    const orderRows = orderIds.length
+      ? await Order.findAll({ where: { id: { [Op.in]: orderIds } }, attributes: ['id', 'orderNumber'] })
+      : [];
+    const orderNumbers = new Map(orderRows.map((order) => [order.id, order.orderNumber]));
+    const items = result.rows.map((row) => ({ ...row.toJSON(), orderNumber: row.orderId ? orderNumbers.get(row.orderId) ?? null : null }));
+    const stateRows = await CommunicationDelivery.findAll({ where, attributes: ['state'] });
+    const states: Record<string, number> = {};
+    for (const row of stateRows) states[row.state] = (states[row.state] ?? 0) + 1;
+    return ok(res, { items, total: result.count, page: query.page, pageSize: 30, summary: { total: result.count, states } });
   }),
 );
 router.post(
@@ -224,11 +282,18 @@ router.get(
         search: z.string().trim().max(100).default(''),
         page: z.coerce.number().int().min(1).max(10000).default(1),
         mode: z.enum(['BOT', 'HUMAN']).optional(),
+        unread: z.enum(['true', 'false']).optional(),
+        assigned: z.enum(['all', 'mine', 'unassigned']).default('all'),
+        isTest: z.enum(['true', 'false']).optional(),
       })
       .parse(req.query);
     const result = await WhatsappConversation.findAndCountAll({
       where: {
         ...(query.mode ? { mode: query.mode } : {}),
+        ...(query.unread ? { unread: query.unread === 'true' ? { [Op.gt]: 0 } : 0 } : {}),
+        ...(query.assigned === 'mine' ? { assignedTo: req.user!.sub } : {}),
+        ...(query.assigned === 'unassigned' ? { assignedTo: null } : {}),
+        ...(query.isTest ? { isTest: query.isTest === 'true' } : {}),
         ...(query.search
           ? {
               [Op.or]: [
@@ -245,7 +310,11 @@ router.get(
       limit: 30,
       offset: (query.page - 1) * 30,
     });
-    return ok(res, { items: result.rows, total: result.count, page: query.page, pageSize: 30 });
+    const items = await Promise.all(result.rows.map(async (conversation) => ({
+      ...conversation.toJSON(),
+      ...(await conversationContext(conversation.phone)),
+    })));
+    return ok(res, { items, total: result.count, page: query.page, pageSize: 30 });
   }),
 );
 router.get(
@@ -255,6 +324,7 @@ router.get(
     const id = z.coerce.number().int().positive().parse(req.params.id);
     const before = z.coerce.number().int().positive().optional().parse(req.query.before);
     const conversation = await WhatsappConversation.findByPk(id);
+    const context = conversation ? await conversationContext(conversation.phone) : null;
     if (!conversation) throw ApiError.notFound('Conversación no encontrada');
     const messages = await WhatsappMessage.findAll({
       where: { conversationId: id, ...(before ? { id: { [Op.lt]: before } } : {}) },
@@ -270,6 +340,7 @@ router.get(
       : [];
     return ok(res, {
       conversation,
+      ...(context ?? {}),
       messages: visible.map((message) => ({
         ...message.toJSON(),
         state:

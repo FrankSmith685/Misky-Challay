@@ -647,8 +647,8 @@ export const notificationsService = {
     });
   },
 
-  async notifyComplaintResponded(complaint: Complaint): Promise<void> {
-    if (!complaint.response) return;
+  async notifyComplaintResponded(complaint: Complaint, responseVersion?: number): Promise<{ status: 'SENT' | 'FAILED' | 'SIMULATED'; error: string | null }> {
+    if (!complaint.response) return { status: 'FAILED', error: 'No hay respuesta para enviar' };
 
     const content = TEMPLATES.COMPLAINT_RESPONDED({
       code: complaint.code ?? '',
@@ -659,7 +659,9 @@ export const notificationsService = {
     });
 
     // La clave incluye respondedAt: si se responde otra vez (correccion), se reenvia.
-    const idempotencyKey = `complaint-${complaint.id}-responded-${complaint.respondedAt?.getTime() ?? 'x'}`;
+    const idempotencyKey = responseVersion !== undefined
+      ? `complaint-${complaint.id}-response-v${responseVersion}`
+      : `complaint-${complaint.id}-responded-${complaint.respondedAt?.getTime() ?? 'x'}`;
     await deliver({
       category: 'COMPLAINT',
       template: 'COMPLAINT_RESPONDED',
@@ -684,6 +686,11 @@ export const notificationsService = {
       template: PUSH_TEMPLATE.COMPLAINT_RESPONDED,
       idempotencyKey,
     });
+    const email = await Notification.findOne({ where: { idempotencyKey: `${idempotencyKey}:email` } });
+    if (email?.status === NOTIFICATION_STATUS.SENT) {
+      return { status: email.provider === 'console' ? 'SIMULATED' : 'SENT', error: null };
+    }
+    return { status: 'FAILED', error: 'No se pudo confirmar el envío por correo. Revisa la configuración de comunicaciones y reintenta.' };
   },
 
   /** Enlace de recuperacion de contrasena. El token en claro solo viaja en este correo. */

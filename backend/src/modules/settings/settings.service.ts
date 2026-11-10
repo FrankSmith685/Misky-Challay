@@ -1,4 +1,4 @@
-import { BusinessSetting, CommunicationSetting, LocalPaymentSetting, Notification, ReceiptSetting } from '@database/models';
+import { BusinessSetting, CommunicationSetting, LocalPaymentSetting, Notification, ReceiptSetting, SettingRevision, ThemeSetting } from '@database/models';
 import { RECEIPT_MODE, type ReceiptMode } from '@database/models/receiptSetting.model';
 import { businessInfo as environmentBusinessInfo } from '@config/business';
 import { env, isProduction } from '@config/env';
@@ -7,6 +7,8 @@ import { logger } from '@config/logger';
 import { NOTIFICATION_STATUS } from '@database/models/notification.model';
 import { decryptSetting, encryptSetting } from '@shared/security/settingsEncryption';
 import { messagingConfigService } from '@modules/communications/communications.config';
+import { ApiError } from '@shared/errors/ApiError';
+import { DEFAULT_THEME_TOKENS, type ThemeTokens } from '@config/theme';
 
 export interface EditableBusinessInfo {
   legalName: string;
@@ -17,6 +19,10 @@ export interface EditableBusinessInfo {
   email: string;
   supportEmail: string;
   complaintResponseDays: number;
+  timeZone: string;
+  currency: string;
+  taxRate: number;
+  platformCommissionRate: number;
 }
 
 export interface EditableLocalPaymentSettings {
@@ -82,6 +88,19 @@ const localPaymentsFallback = (): EditableLocalPaymentSettings => ({
   instructions: 'Paga el importe exacto y escribe el codigo de operacion que aparece en tu aplicativo.',
 });
 
+const assertSettingVersion = (actual: number, expected?: number): void => {
+  if (expected !== undefined && actual !== expected) {
+    throw ApiError.conflict('La configuración cambió mientras la editabas. Recarga la pantalla antes de guardar.');
+  }
+};
+
+const recordRevision = async (scope: 'business' | 'local-payments' | 'receipts' | 'communication' | 'theme', version: number, snapshot: unknown, actorId: number, reason: string): Promise<void> => {
+  await SettingRevision.create({ scope, version, snapshotEncrypted: encryptSetting(JSON.stringify(snapshot)), actorId, reason });
+};
+
+const themeFromRow = (row: ThemeSetting): ThemeTokens => ({ ...DEFAULT_THEME_TOKENS, ...row.draftTokensJson });
+const publishedThemeFromRow = (row: ThemeSetting): ThemeTokens => ({ ...DEFAULT_THEME_TOKENS, ...row.publishedTokensJson });
+
 const fromRow = (row: BusinessSetting): EditableBusinessInfo => ({
   legalName: row.legalName,
   commercialName: row.commercialName,
@@ -91,9 +110,13 @@ const fromRow = (row: BusinessSetting): EditableBusinessInfo => ({
   email: row.email,
   supportEmail: row.supportEmail,
   complaintResponseDays: row.complaintResponseDays,
+  timeZone: row.timeZone,
+  currency: row.currency,
+  taxRate: Number(row.taxRate),
+  platformCommissionRate: Number(row.platformCommissionRate ?? 0.15),
 });
 
-const fallback = (): EditableBusinessInfo => ({ ...environmentBusinessInfo });
+const fallback = (): EditableBusinessInfo => ({ ...environmentBusinessInfo, platformCommissionRate: 0.15 });
 
 export interface EditableCommunicationSettings {
   emailNotificationsEnabled: boolean;
@@ -295,6 +318,65 @@ export const settingsService = {
     };
   },
 
+  async getTheme(): Promise<ThemeTokens> {
+    const row = await ThemeSetting.findByPk(1);
+    return row ? publishedThemeFromRow(row) : DEFAULT_THEME_TOKENS;
+  },
+
+  async getThemeForAdmin() {
+    const row = await ThemeSetting.findByPk(1);
+    return {
+      draft: row ? themeFromRow(row) : DEFAULT_THEME_TOKENS,
+      published: row ? publishedThemeFromRow(row) : DEFAULT_THEME_TOKENS,
+      draftVersion: row?.draftVersion ?? 0,
+      publishedVersion: row?.publishedVersion ?? 0,
+      updatedAt: row?.updatedAt ?? null,
+      updatedBy: row?.updatedBy ?? null,
+      publishedBy: row?.publishedBy ?? null,
+      source: row ? ('database' as const) : ('default' as const),
+    };
+  },
+
+  async updateThemeDraft(tokens: ThemeTokens, actorId: number, expectedVersion?: number) {
+    const [row] = await ThemeSetting.findOrCreate({
+      where: { id: 1 },
+      defaults: {
+        id: 1,
+        draftTokensJson: DEFAULT_THEME_TOKENS,
+        publishedTokensJson: DEFAULT_THEME_TOKENS,
+        draftVersion: 1,
+        publishedVersion: 1,
+        updatedBy: null,
+        publishedBy: null,
+      },
+    });
+    assertSettingVersion(row.draftVersion, expectedVersion);
+    row.set({ draftTokensJson: tokens, draftVersion: row.draftVersion + 1, updatedBy: actorId });
+    await row.save();
+    await recordRevision('theme', row.draftVersion, tokens, actorId, 'Borrador del sistema de diseño guardado');
+    return this.getThemeForAdmin();
+  },
+
+  async publishTheme(actorId: number, expectedVersion?: number) {
+    const [row] = await ThemeSetting.findOrCreate({
+      where: { id: 1 },
+      defaults: {
+        id: 1,
+        draftTokensJson: DEFAULT_THEME_TOKENS,
+        publishedTokensJson: DEFAULT_THEME_TOKENS,
+        draftVersion: 1,
+        publishedVersion: 1,
+        updatedBy: null,
+        publishedBy: null,
+      },
+    });
+    assertSettingVersion(row.draftVersion, expectedVersion);
+    row.set({ publishedTokensJson: row.draftTokensJson, publishedVersion: row.draftVersion, publishedBy: actorId });
+    await row.save();
+    await recordRevision('theme', row.publishedVersion, publishedThemeFromRow(row), actorId, 'Tema publicado');
+    return this.getThemeForAdmin();
+  },
+
   /** Base de datos primero; variables de entorno solo como respaldo de primera instalación. */
   async getBusinessInfo(): Promise<EditableBusinessInfo> {
     const row = await BusinessSetting.findByPk(1);
@@ -309,19 +391,21 @@ export const settingsService = {
       isConfigured: Boolean(row),
       updatedAt: row?.updatedAt ?? null,
       updatedBy: row?.updatedBy ?? null,
+      version: row?.version ?? 0,
     };
   },
 
-  async updateBusinessInfo(input: EditableBusinessInfo, actorId: number) {
+  async updateBusinessInfo(input: EditableBusinessInfo, actorId: number, expectedVersion?: number) {
     const before = await settingsService.getBusinessInfo();
     const [row] = await BusinessSetting.findOrCreate({
       where: { id: 1 },
       defaults: { id: 1, ...input, updatedBy: actorId },
     });
-
-    row.set({ ...input, updatedBy: actorId });
+    assertSettingVersion(row.version ?? 1, expectedVersion);
+    row.set({ ...input, updatedBy: actorId, version: (row.version ?? 0) + 1 });
     await row.save();
-    return { before, business: fromRow(row), updatedAt: row.updatedAt };
+    await recordRevision('business', row.version, input, actorId, 'Actualización desde configuración del negocio');
+    return { before, business: fromRow(row), updatedAt: row.updatedAt, version: row.version };
   },
 
   async getLocalPaymentSettings(): Promise<EditableLocalPaymentSettings> {
@@ -336,10 +420,11 @@ export const settingsService = {
       isConfigured: Boolean(row),
       updatedAt: row?.updatedAt ?? null,
       updatedBy: row?.updatedBy ?? null,
+      version: row?.version ?? 0,
     };
   },
 
-  async updateLocalPaymentSettings(input: EditableLocalPaymentSettings, actorId: number) {
+  async updateLocalPaymentSettings(input: EditableLocalPaymentSettings, actorId: number, expectedVersion?: number) {
     const before = await settingsService.getLocalPaymentSettings();
     const values = {
       paymentWindowMinutes: input.paymentWindowMinutes,
@@ -359,9 +444,11 @@ export const settingsService = {
       where: { id: 1 },
       defaults: { id: 1, ...values },
     });
-    row.set(values);
+    assertSettingVersion(row.version ?? 1, expectedVersion);
+    row.set({ ...values, version: (row.version ?? 0) + 1 });
     await row.save();
-    return { before, localPayments: localPaymentsFromRow(row), updatedAt: row.updatedAt };
+    await recordRevision('local-payments', row.version, values, actorId, 'Actualización de cuentas Yape y Plin');
+    return { before, localPayments: localPaymentsFromRow(row), updatedAt: row.updatedAt, version: row.version };
   },
 
   async getReceiptSettings(): Promise<EditableReceiptSettings> {
@@ -376,19 +463,22 @@ export const settingsService = {
       isConfigured: Boolean(row),
       updatedAt: row?.updatedAt ?? null,
       updatedBy: row?.updatedBy ?? null,
+      version: row?.version ?? 0,
     };
   },
 
-  async updateReceiptSettings(input: EditableReceiptSettings, actorId: number) {
+  async updateReceiptSettings(input: EditableReceiptSettings, actorId: number, expectedVersion?: number) {
     const before = await settingsService.getReceiptSettings();
     const values = { ...input, updatedBy: actorId };
     const [row] = await ReceiptSetting.findOrCreate({
       where: { id: 1 },
       defaults: { id: 1, ...values },
     });
-    row.set(values);
+    assertSettingVersion(row.version ?? 1, expectedVersion);
+    row.set({ ...values, version: (row.version ?? 0) + 1 });
     await row.save();
-    return { before, receipts: receiptFromRow(row), updatedAt: row.updatedAt };
+    await recordRevision('receipts', row.version, input, actorId, 'Actualización del flujo de comprobantes');
+    return { before, receipts: receiptFromRow(row), updatedAt: row.updatedAt, version: row.version };
   },
 
   async getCommunicationSettings(): Promise<RuntimeCommunicationSettings> {
@@ -405,10 +495,11 @@ export const settingsService = {
       isConfigured: Boolean(row),
       updatedAt: row?.updatedAt ?? null,
       updatedBy: row?.updatedBy ?? null,
+      version: row?.version ?? 0,
     };
   },
 
-  async updateCommunicationSettings(input: EditableCommunicationSettings, actorId: number) {
+  async updateCommunicationSettings(input: EditableCommunicationSettings, actorId: number, expectedVersion?: number) {
     const existing = await CommunicationSetting.findByPk(1);
     const beforeRuntime = existing ? runtimeFromCommunicationRow(existing) : communicationFallback();
     let storedPassword = existing?.smtpPasswordEncrypted ?? null;
@@ -437,13 +528,16 @@ export const settingsService = {
     };
 
     const row = existing ?? CommunicationSetting.build({ id: 1, ...values });
-    row.set(values);
+    assertSettingVersion(row.version ?? 1, expectedVersion);
+    row.set({ ...values, version: (row.version ?? 0) + 1 });
     await row.save();
+    await recordRevision('communication', row.version, values, actorId, 'Actualización de comunicaciones');
     const runtime = runtimeFromCommunicationRow(row);
     return {
       before: sanitizeCommunication(beforeRuntime),
       communication: sanitizeCommunication(runtime),
       updatedAt: row.updatedAt,
+      version: row.version,
     };
   },
 
@@ -460,6 +554,22 @@ export const settingsService = {
     return { totals: { sent, failed }, recent };
   },
 
+  async listSettingRevisions(scope: 'business' | 'local-payments' | 'receipts' | 'communication' | 'theme') {
+    return SettingRevision.findAll({ where: { scope }, attributes: ['id', 'scope', 'version', 'actorId', 'reason', 'createdAt'], order: [['version', 'DESC']], limit: 50 });
+  },
+
+  async rollbackSetting(scope: 'business' | 'local-payments' | 'receipts' | 'communication' | 'theme', revisionId: number, actorId: number, expectedVersion?: number) {
+    const revision = await SettingRevision.findOne({ where: { id: revisionId, scope } });
+    if (!revision) throw ApiError.notFound('Versión de configuración no encontrada');
+    const snapshot = JSON.parse(decryptSetting(revision.snapshotEncrypted)) as Record<string, unknown>;
+    if (scope === 'business') return this.updateBusinessInfo(snapshot as unknown as EditableBusinessInfo, actorId, expectedVersion);
+    if (scope === 'local-payments') return this.updateLocalPaymentSettings(snapshot as unknown as EditableLocalPaymentSettings, actorId, expectedVersion);
+    if (scope === 'receipts') return this.updateReceiptSettings(snapshot as unknown as EditableReceiptSettings, actorId, expectedVersion);
+    if (scope === 'theme') return this.updateThemeDraft(snapshot as unknown as ThemeTokens, actorId, expectedVersion);
+    const current = await this.getCommunicationSettings();
+    return this.updateCommunicationSettings({ ...current, ...snapshot, smtpPassword: '', clearSmtpPassword: false } as EditableCommunicationSettings, actorId, expectedVersion);
+  },
+
   /** Estado seguro de las conexiones externas; nunca devuelve secretos. */
   async getIntegrationStatus() {
     const communication = await settingsService.getCommunicationSettings();
@@ -470,7 +580,7 @@ export const settingsService = {
     const webPush = Boolean(env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY);
     const messaging = await messagingConfigService.admin();
     const whatsappConnectionReady = messaging.connectionReady && messaging.webhookReady;
-    const whatsappTemplatesReady = Object.values(messaging.config.events).filter((rule) => rule.whatsapp).every((rule) => Boolean(rule.template));
+    const whatsappTemplatesReady = !communication.whatsappUpdatesEnabled || Object.values(messaging.config.events).filter((rule) => rule.whatsapp).every((rule) => Boolean(rule.template));
     return {
       checkedAt: new Date().toISOString(),
       integrations: [

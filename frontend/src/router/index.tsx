@@ -21,9 +21,10 @@ const HomeContentPage = lazy(() => import('@features/admin/pages/HomeContentPage
 const MenuPage = lazy(() => import('@features/catalog/pages/MenuPage'));
 const BusinessPage = lazy(() => import('@features/cakes/pages/BusinessPage'));
 const CustomCakeEntryPage = lazy(() => import('@features/cakes/pages/CustomCakeEntryPage'));
+const SpecialCakeRequestEntryPage = lazy(() => import('@features/cakes/pages/SpecialCakeRequestEntryPage'));
 const CakePage = lazy(() => import('@features/cakes/pages/CakePage'));
 const CakeSharedPreviewPage = lazy(() => import('@features/cakes/pages/CakeSharedPreviewPage'));
-const CakeCardArPage = lazy(() => import('@features/cakes/pages/CakeCardArPage'));
+const ExperienceCampaignPage = lazy(() => import('@features/experiences/ExperienceCampaignPage'));
 const DesignRequestsPage = lazy(() => import('@features/cakes/pages/AccountDesignRequestsPage'));
 const AdminCakesPage = lazy(() => import('@features/cakes/pages/AdminCakesPage'));
 const CakeThemesAdminPage = lazy(() => import('@features/cakes/pages/CakeThemesAdminPage'));
@@ -72,6 +73,7 @@ const PlansAdminPage = lazy(() => import('@features/admin/pages/PlansAdminPage')
 const SubscriptionsAdminPage = lazy(() => import('@features/subscriptions/SubscriptionsAdminPage'));
 const AdminCoveragePage = lazy(() => import('@features/admin/pages/CoveragePage'));
 const UsersPage = lazy(() => import('@features/admin/pages/UsersPage'));
+const CustomersPage = lazy(() => import('@features/admin/pages/CustomersPage'));
 const TeamsPage = lazy(() => import('@features/admin/pages/TeamsPage'));
 const RolesPage = lazy(() => import('@features/admin/pages/RolesPage'));
 const DesignSystemPage = lazy(() => import('@features/admin/pages/DesignSystemPage'));
@@ -84,6 +86,7 @@ const DeleteAccountPage = lazy(() => import('@features/legal/pages/DeleteAccount
 const AdminComplaintsPage = lazy(() => import('@features/admin/pages/AdminComplaintsPage'));
 const AuditLogPage = lazy(() => import('@features/admin/pages/AuditLogPage'));
 const AccountHomePage = lazy(() => import('@features/account/pages/AccountHomePage'));
+const NotificationsPage = lazy(() => import('@features/account/pages/NotificationsPage'));
 const NotFoundPage = lazy(() => import('@features/home/pages/NotFoundPage'));
 
 const withSuspense = (element: React.ReactNode) => (
@@ -110,7 +113,7 @@ const navAnyOf = (to: string): string[] => {
 
 // Las sesiones de pago abiertas antes de corregir la URL base conservan un
 // retorno con "//". Recuperarlas antes de crear el router evita mostrar un 404
-// despuÃ©s del cobro y preserva el nÃºmero de pedido en la query.
+// después del cobro y preserva el número de pedido en la query.
 const legacyPaymentPath = window.location.pathname.replace(/^\/{2,}/, '/');
 if (legacyPaymentPath !== window.location.pathname && new Set([
   ROUTES.checkoutSuccess, '/checkout/movil', '/planes/movil', '/cuenta/saldo', '/planes',
@@ -131,10 +134,11 @@ export const router = createBrowserRouter([
       { path: '/experiencias/:token', element: withSuspense(<ExperiencePage />) },
       { path: ROUTES.business, element: withSuspense(<BusinessPage />) },
       { path: ROUTES.customCake, element: withSuspense(<CustomCakeEntryPage />) },
+      { path: ROUTES.specialCake, element: withSuspense(<SpecialCakeRequestEntryPage />) },
       { path: ROUTES.product(), element: withSuspense(<CakePage />) },
       { path: ROUTES.cake(), element: withSuspense(<CakePage />) },
       { path: ROUTES.cakePreview(), element: withSuspense(<CakeSharedPreviewPage />) },
-      { path: ROUTES.cakeAr, element: withSuspense(<CakeCardArPage />) },
+      { path: ROUTES.cakeAr, element: withSuspense(<ExperienceCampaignPage />) },
       { path: ROUTES.legacyDesignRequests, element: <Navigate to={ROUTES.designRequests} replace /> },
       { path: ROUTES.builder, element: withSuspense(<BuilderPage />) },
       { path: ROUTES.plans, element: withSuspense(<PlansPage />) },
@@ -192,6 +196,7 @@ export const router = createBrowserRouter([
       // El indice es el panel de inicio: aterrizar en el formulario de perfil dejaba
       // ademas la navegacion sin ninguna seccion marcada.
       { index: true, element: withSuspense(<AccountHomePage />) },
+      { path: 'notificaciones', element: withSuspense(<NotificationsPage />) },
       { path: 'perfil', element: withSuspense(<ProfilePage />) },
       { path: 'pedidos', element: withSuspense(<OrdersPage />) },
       { path: 'pedidos/:orderNumber', element: withSuspense(<OrderDetailPage />) },
@@ -377,9 +382,17 @@ export const router = createBrowserRouter([
         ),
       },
       {
+        path: 'clientes',
+        element: (
+          <ProtectedRoute anyPermission={navAnyOf(ROUTES.adminCustomers)}>
+            {withSuspense(<CustomersPage />)}
+          </ProtectedRoute>
+        ),
+      },
+      {
         path: 'equipos',
         element: (
-          <ProtectedRoute anyPermission={navAnyOf(ROUTES.adminTeams)}>
+          <ProtectedRoute superAdminOnly>
             {withSuspense(<TeamsPage />)}
           </ProtectedRoute>
         ),
@@ -387,7 +400,7 @@ export const router = createBrowserRouter([
       {
         path: 'roles',
         element: (
-          <ProtectedRoute anyPermission={navAnyOf(ROUTES.adminRoles)}>
+          <ProtectedRoute superAdminOnly>
             {withSuspense(<RolesPage />)}
           </ProtectedRoute>
         ),
@@ -426,7 +439,7 @@ export const router = createBrowserRouter([
       {
         path: 'sistema-diseno',
         element: (
-          <ProtectedRoute anyPermission={navAnyOf(ROUTES.adminDesign)}>
+          <ProtectedRoute superAdminOnly>
             {withSuspense(<DesignSystemPage />)}
           </ProtectedRoute>
         ),

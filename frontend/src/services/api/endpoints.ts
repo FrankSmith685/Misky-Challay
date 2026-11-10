@@ -85,19 +85,30 @@ export const ENDPOINTS = {
 
   settings: {
     public: '/settings/public',
+    theme: '/settings/theme',
+    themeAdmin: '/settings/theme/admin',
+    themeDraft: '/settings/theme/draft',
+    themePublish: '/settings/theme/publish',
+    themeReset: '/settings/theme/reset',
+    themeRevisions: '/settings/theme/revisions',
+    themeRollback: (revisionId: number | string) => `/settings/theme/rollback/${revisionId}`,
     business: '/settings/business',
     localPayments: '/settings/local-payments',
+    localPaymentsCheck: '/settings/local-payments/check',
     receipts: '/settings/receipts',
     communication: '/settings/communication',
     communicationTest: '/settings/communication/test',
     notificationHistory: '/settings/notification-history',
     integrations: '/settings/integrations',
+    integrationsCheck: '/settings/integrations/check',
   },
 
   engagement: {
     reviews: (productId: number | string) => `/engagement/products/${productId}/reviews`,
     pendingReviews: '/engagement/reviews/pending',
+    myReviews: '/engagement/reviews/mine',
     createReview: '/engagement/reviews',
+    updateReview: (reviewId: number | string) => `/engagement/reviews/${reviewId}`,
   },
 
   complaints: {

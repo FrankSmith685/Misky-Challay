@@ -137,6 +137,8 @@ export const AiImageGenerator = ({ category, contextCategory, purpose, subjectNa
         fileName: `flux-${Date.now()}.${extension}`,
         altText: altText.trim(),
         category,
+        sourceType: 'AI',
+        sourcePrompt: selectedImage.prompt,
       });
       onSaved(asset);
       toast.success('Imagen generada y guardada en la biblioteca');

@@ -3,9 +3,9 @@
 ## Puesta en marcha
 
 1. Haz una copia de seguridad de la base de datos antes de desplegar los cambios.
-2. Si usas migraciones, aplica `0031-cake-finance.ts` a `0034-design-quote-costs.ts` en orden. Si la instalación de desarrollo usa `DB_SYNC=true` y `DB_ALTER=true`, el arranque agrega las tablas y columnas de los modelos.
+2. Si usas migraciones, aplica las migraciones pendientes, incluida `0072-cake-production-incidents.ts`, en orden. Si la instalación de desarrollo usa `DB_SYNC=true` y `DB_ALTER=true`, el arranque agrega las tablas y columnas de los modelos.
 3. Mantén `DB_SEED=true` en el arranque o ejecuta `npm run db:seed` para incorporar los permisos `cake.finance.read` y `cake.finance.manage` a los roles existentes.
-4. Revisa que `ADMIN_EMAIL` corresponda a la cuenta propietaria y que esa cuenta esté activa y marcada como superadministradora. Solo esa identidad puede ajustar y registrar transferencias de la comisión. El otro superadministrador puede consultar las liquidaciones.
+4. Comprueba que la cuenta que administrará la plataforma esté activa y marcada como superadministradora. Cualquier superadministrador activo puede ajustar y registrar transferencias de la comisión. `ADMIN_EMAIL` se usa para crear o sincronizar la cuenta inicial, no para limitar la gestión.
 
 ## Alta y venta de una torta
 
@@ -23,10 +23,15 @@
 
 ## Comisión de DulceFlow
 
-- La tasa es **15 %** del valor de las tortas después de descuentos y reembolsos; el delivery y los demás productos quedan fuera de la base. Si se cobra 50 % de anticipo, se devenga la parte proporcional; el saldo completa la base cuando se acredita. Un reembolso parcial sin detalle por producto se reparte proporcionalmente entre los conceptos cobrados.
-- Mercado Pago deposita el cobro en la cuenta del comercio. El 15 % **no se separa automáticamente**. En **Liquidaciones de tortas**, la cuenta propietaria puede ajustar una liquidación pendiente y registrar transferencias parciales o totales con referencia única. El panel muestra lo devengado, recibido, pendiente y pagado de más. El segundo superadministrador tiene acceso de lectura; el administrador del negocio opera sus costos y consulta el cargo del 15 %.
-- Los gastos internos de DulceFlow solo los registra y ve el propietario. Su resumen muestra comisión devengada, transferencias recibidas y gastos de plataforma. Son cifras de gestión, no sustituyen conciliación bancaria ni declaración tributaria.
+- La tasa configurada (15 % por defecto) se aplica sobre el valor de los productos después de descuentos y reembolsos; el delivery queda fuera de la base. Si se cobra 50 % de anticipo, se devenga la parte proporcional; el saldo completa la base cuando se acredita. Un reembolso parcial sin detalle por producto se reparte proporcionalmente entre los conceptos cobrados.
+- Mercado Pago deposita el cobro en la cuenta del comercio. El 15 % **no se separa automáticamente**. En **Liquidaciones**, cualquier superadministrador activo puede ajustar una liquidación pendiente y registrar transferencias parciales o totales con referencia única. El panel muestra lo devengado, recibido, pendiente y pagado de más. El administrador del negocio opera sus costos y consulta el cargo de la tasa configurada.
+- Los gastos internos de DulceFlow pueden registrarlos los superadministradores. Su resumen muestra comisión devengada, transferencias recibidas y gastos de plataforma. Son cifras de gestión, no sustituyen conciliación bancaria ni declaración tributaria.
 
 ## Comprobación recomendada
 
-Prueba en un entorno aislado: venta de catálogo con descuento y delivery; diseño especial con anticipo y saldo; consumo real mayor y menor que la receta; vencimiento de un lote; gasto por pedido y general; reembolso parcial; conciliación de tarifa; transferencia de comisión repetida con la misma referencia. Verifica que la segunda cuenta superadministradora no pueda ajustar ni liquidar la comisión.
+Prueba en un entorno aislado: venta de catálogo con descuento y delivery; diseño especial con anticipo y saldo; consumo real mayor y menor que la receta; vencimiento de un lote; gasto por pedido y general; reembolso parcial; conciliación de tarifa; transferencia de comisión repetida con la misma referencia. Verifica que cualquier cuenta superadministradora activa pueda ajustar y liquidar la comisión, y que los usuarios no superadmin sigan limitados por sus permisos y sucursal.
+
+## Controles de operación
+
+- Si una etapa se bloquea en **Tortas → Producción**, el responsable debe registrar el motivo. El cambio queda auditado con usuario y fecha para que el superadmin pueda revisar la incidencia antes de reanudarla.
+- El superadmin puede consultar las liquidaciones de todas las sucursales desde el alcance **Todas las sucursales**. El panel identifica el local de cada pedido y alerta si encuentra un pedido de torta cobrado sin comisión generada.

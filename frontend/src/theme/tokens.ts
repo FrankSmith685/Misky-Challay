@@ -17,14 +17,48 @@ export type ThemeTokens = {
   tertiary: string;
   /** Radio de bordes base en px (MUI shape.borderRadius). */
   radius: number;
+  /** Familia tipográfica segura; no requiere descargar una fuente nueva. */
+  fontFamily: 'inter' | 'system' | 'serif';
+  /** Tamaño base del texto, limitado para conservar legibilidad y ritmo. */
+  baseFontSize: number;
+  density: 'comfortable' | 'compact';
+  shadowStrength: number;
 };
 
-/** Valores por defecto. Coinciden con styles/index.css para no alterar el look inicial. */
+/** Valores por defecto de la identidad visual actual. */
 export const DEFAULT_TOKENS: ThemeTokens = {
+  primary: '#006fb9',
+  secondary: '#ffbd16',
+  tertiary: '#f15b3a',
+  radius: 5,
+  fontFamily: 'inter',
+  baseFontSize: 16,
+  density: 'comfortable',
+  shadowStrength: 100,
+};
+
+/** Identidad anterior inmediata, usada solo para migrar preferencias guardadas. */
+const PREVIOUS_DEFAULT_TOKENS: ThemeTokens = {
+  primary: '#24577a',
+  secondary: '#e29a3b',
+  tertiary: '#3e7d72',
+  radius: 5,
+  fontFamily: 'inter',
+  baseFontSize: 16,
+  density: 'comfortable',
+  shadowStrength: 100,
+};
+
+/** Identidad histórica, usada solo para migrar preferencias guardadas. */
+const LEGACY_DEFAULT_TOKENS: ThemeTokens = {
   primary: '#8b3d59',
   secondary: '#c28a47',
   tertiary: '#527363',
   radius: 5,
+  fontFamily: 'inter',
+  baseFontSize: 16,
+  density: 'comfortable',
+  shadowStrength: 100,
 };
 
 /**
@@ -32,16 +66,16 @@ export const DEFAULT_TOKENS: ThemeTokens = {
  * usuario no ha tocado el primary, para que el arranque sea pixel-identico.
  */
 export const DEFAULT_BRAND_RAMP: ColorRamp = {
-  50: '#fcf5f6',
-  100: '#f5e6eb',
-  200: '#e9cbd6',
-  300: '#d8a5b8',
-  400: '#bf7893',
-  500: '#a55475',
-  600: '#8b3d59',
-  700: '#713047',
-  800: '#572538',
-  900: '#391b28',
+  50: '#ebf3f9',
+  100: '#d6e8f4',
+  200: '#add1e9',
+  300: '#7ab4db',
+  400: '#4294cb',
+  500: '#1a7dc0',
+  600: '#006fb9',
+  700: '#005b98',
+  800: '#00497a',
+  900: '#003a60',
 };
 
 /**
@@ -49,30 +83,30 @@ export const DEFAULT_BRAND_RAMP: ColorRamp = {
  * ancla en el stop 500 (no en 600 como brand), asi que 600..900 son sombras.
  */
 export const DEFAULT_ACCENT_RAMP: ColorRamp = {
-  50: '#fcf7ee',
-  100: '#f6ecd8',
-  200: '#ead6b1',
-  300: '#dbba83',
-  400: '#ce9f60',
-  500: '#c28a47',
-  600: '#a16b31',
-  700: '#805027',
-  800: '#633e23',
-  900: '#442b1c',
+  50: '#fffbf1',
+  100: '#fff6e1',
+  200: '#ffedbe',
+  300: '#ffde8b',
+  400: '#ffc940',
+  500: '#ffbd16',
+  600: '#b88810',
+  700: '#8f6a0c',
+  800: '#6e5109',
+  900: '#543e07',
 };
 
 /** Color complementario compartido por Tailwind y Material UI. */
 export const DEFAULT_TERTIARY_RAMP: ColorRamp = {
-  50: '#f2f7f3',
-  100: '#e4eee6',
-  200: '#c8dccd',
-  300: '#a2bfa9',
-  400: '#80a48c',
-  500: '#658a73',
-  600: '#527363',
-  700: '#415c4e',
-  800: '#33483d',
-  900: '#24332c',
+  50: '#fef2ef',
+  100: '#fde5df',
+  200: '#fbcbc0',
+  300: '#f8aa99',
+  400: '#f5866d',
+  500: '#f26b4e',
+  600: '#f15b3a',
+  700: '#c64b30',
+  800: '#9f3c26',
+  900: '#7d2f1e',
 };
 
 /**
@@ -100,10 +134,10 @@ export const DEFAULT_ERROR_RAMP: ColorRamp = {
  */
 export const SURFACE = {
   base: '#ffffff',
-  muted: '#faf6f1',
-  line: '#e7ddd5',
-  ink: '#352721',
-  inkMuted: '#76665e',
+  muted: '#f5faff',
+  line: '#d6e5ef',
+  ink: '#17324d',
+  inkMuted: '#5b7185',
 } as const;
 
 /** Rampas completas 50..900 derivadas de los tokens gestionables. */
@@ -144,14 +178,28 @@ export const loadTokens = (): ThemeTokens => {
       && saved.tertiary?.toLowerCase() === '#008dd4') {
       return { ...DEFAULT_TOKENS, radius: typeof saved.radius === 'number' ? Math.min(RADIUS_RANGE.max, Math.max(RADIUS_RANGE.min, saved.radius)) : DEFAULT_TOKENS.radius };
     }
+    const migrateLegacy = <K extends 'primary' | 'secondary' | 'tertiary'>(key: K): string =>
+      [PREVIOUS_DEFAULT_TOKENS, LEGACY_DEFAULT_TOKENS].some((previous) => saved[key]?.toLowerCase() === previous[key])
+        ? DEFAULT_TOKENS[key]
+        : saved[key] ?? DEFAULT_TOKENS[key];
     return {
-      primary: isHex(saved.primary ?? '') ? saved.primary! : DEFAULT_TOKENS.primary,
-      secondary: isHex(saved.secondary ?? '') ? saved.secondary! : DEFAULT_TOKENS.secondary,
-      tertiary: isHex(saved.tertiary ?? '') ? saved.tertiary! : DEFAULT_TOKENS.tertiary,
+      primary: isHex(migrateLegacy('primary')) ? migrateLegacy('primary') : DEFAULT_TOKENS.primary,
+      secondary: isHex(migrateLegacy('secondary')) ? migrateLegacy('secondary') : DEFAULT_TOKENS.secondary,
+      tertiary: isHex(migrateLegacy('tertiary')) ? migrateLegacy('tertiary') : DEFAULT_TOKENS.tertiary,
       radius:
         typeof saved.radius === 'number'
           ? Math.min(RADIUS_RANGE.max, Math.max(RADIUS_RANGE.min, saved.radius))
           : DEFAULT_TOKENS.radius,
+      fontFamily: saved.fontFamily === 'system' || saved.fontFamily === 'serif' || saved.fontFamily === 'inter'
+        ? saved.fontFamily
+        : DEFAULT_TOKENS.fontFamily,
+      baseFontSize: typeof saved.baseFontSize === 'number'
+        ? Math.min(18, Math.max(14, saved.baseFontSize))
+        : DEFAULT_TOKENS.baseFontSize,
+      density: saved.density === 'compact' ? 'compact' : 'comfortable',
+      shadowStrength: typeof saved.shadowStrength === 'number'
+        ? Math.min(150, Math.max(0, saved.shadowStrength))
+        : DEFAULT_TOKENS.shadowStrength,
     };
   } catch {
     return DEFAULT_TOKENS;

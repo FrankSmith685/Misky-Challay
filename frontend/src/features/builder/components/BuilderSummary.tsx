@@ -94,7 +94,7 @@ export const BuilderSummary = ({
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs font-extrabold uppercase tracking-[.16em] text-brand-700">Resumen en vivo</p>
-            <h2 className="mt-1.5 text-2xl font-black tracking-tight text-ink">AsÃ­ va tu bowl</h2>
+            <h2 className="mt-1.5 text-2xl font-black tracking-tight text-ink">Así va tu bowl</h2>
           </div>
           <div className="flex items-center gap-2">
             {selectedOptions.length > 0 && (
@@ -155,7 +155,7 @@ export const BuilderSummary = ({
           </div>
         ) : (
           <div className="rounded-card border border-dashed border-line bg-surface-muted/45 px-4 py-5 text-center text-sm leading-6 text-ink-muted">
-            Elige ingredientes y aparecerÃ¡n aquÃ­ mientras construyes.
+            Elige ingredientes y aparecerán aquí mientras construyes.
           </div>
         )}
 
@@ -164,7 +164,7 @@ export const BuilderSummary = ({
             <ShieldAlert className="mt-0.5 size-4 shrink-0" />
             <span>
               <strong>Revisa antes de continuar:</strong> seleccionaste ingredientes con{' '}
-              {preferenceConflicts.join(', ')}, marcados como alÃ©rgenos en tu perfil.
+              {preferenceConflicts.join(', ')}, marcados como alérgenos en tu perfil.
             </span>
           </p>
         )}
@@ -173,7 +173,7 @@ export const BuilderSummary = ({
           <p className="mt-3 flex items-start gap-2 rounded-card bg-amber-50 p-3 text-xs leading-5 text-amber-900">
             <ShieldAlert className="mt-0.5 size-4 shrink-0" />
             <span>
-              <strong>AlÃ©rgenos declarados:</strong> {selectedAllergens.join(', ')}. Si tienes una
+              <strong>Alérgenos declarados:</strong> {selectedAllergens.join(', ')}. Si tienes una
               alergia severa, consulta al local antes de pedir.
             </span>
           </p>
@@ -220,7 +220,7 @@ export const BuilderSummary = ({
                           <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-brand-300" />
                           <span>
                             {line.optionName}
-                            {line.chargedQuantity > 1 ? ` Ã— ${line.chargedQuantity}` : ''}
+                            {line.chargedQuantity > 1 ? ` × ${line.chargedQuantity}` : ''}
                           </span>
                         </span>
                       ),
@@ -240,7 +240,7 @@ export const BuilderSummary = ({
             ]}
             totalLabel="Total del bowl"
             totalValue={formatCurrency(quote?.lineTotal ?? variant?.basePrice ?? 0)}
-            note="El precio se actualiza automÃ¡ticamente con cada selecciÃ³n."
+            note="El precio se actualiza automáticamente con cada selección."
           />
         </section>
 
@@ -287,7 +287,7 @@ export const BuilderSummary = ({
               onClick={onRetryQuote}
               className="mt-2 inline-flex items-center gap-1 font-bold underline underline-offset-2"
             >
-              <RefreshCw className="size-3" /> Reintentar cotizaciÃ³n
+              <RefreshCw className="size-3" /> Reintentar cotización
             </button>
           </div>
         )}
@@ -323,7 +323,7 @@ export const BuilderSummary = ({
             </Button>
           ) : (
             <p className="px-3 text-center text-[11px] leading-4 text-ink-muted">
-              Al completar los pasos podrÃ¡s agregar o guardar tu combinaciÃ³n.
+              Al completar los pasos podrás agregar o guardar tu combinación.
             </p>
           )}
           <div className="border-t border-line pt-1">
@@ -339,7 +339,7 @@ export const BuilderSummary = ({
 
         {!hasBranch && (
           <p className="mt-4 rounded-card bg-surface-muted p-3 text-xs leading-5 text-ink-muted">
-            Elige tu direcciÃ³n para confirmar disponibilidad y tiempos de preparaciÃ³n.
+            Elige tu dirección para confirmar disponibilidad y tiempos de preparación.
           </p>
         )}
       </div>

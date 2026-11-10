@@ -12,6 +12,7 @@ import type { InventoryItem } from './inventoryItem.model';
 
 export const PURCHASE_ORDER_STATUS = {
   DRAFT: 'DRAFT',
+  APPROVED: 'APPROVED',
   ORDERED: 'ORDERED',
   PARTIALLY_RECEIVED: 'PARTIALLY_RECEIVED',
   RECEIVED: 'RECEIVED',
@@ -67,6 +68,10 @@ export class PurchaseOrder extends Model<InferAttributes<PurchaseOrder>, InferCr
   declare branchId: number;
   declare supplierId: number;
   declare status: CreationOptional<PurchaseOrderStatus>;
+  declare approvalRequired: CreationOptional<boolean>;
+  declare approvedBy: CreationOptional<number | null>;
+  declare approvedAt: CreationOptional<Date | null>;
+  declare idempotencyKey: CreationOptional<string | null>;
   declare orderedAt: CreationOptional<Date | null>;
   declare expectedAt: CreationOptional<Date | null>;
   declare receivedAt: CreationOptional<Date | null>;
@@ -88,6 +93,10 @@ PurchaseOrder.init({
   branchId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
   supplierId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: false },
   status: { type: DataTypes.ENUM(...Object.values(PURCHASE_ORDER_STATUS)), allowNull: false, defaultValue: PURCHASE_ORDER_STATUS.DRAFT },
+  approvalRequired: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+  approvedBy: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
+  approvedAt: { type: DataTypes.DATE, allowNull: true },
+  idempotencyKey: { type: DataTypes.STRING(100), allowNull: true },
   orderedAt: { type: DataTypes.DATE, allowNull: true },
   expectedAt: { type: DataTypes.DATE, allowNull: true },
   receivedAt: { type: DataTypes.DATE, allowNull: true },
@@ -104,6 +113,7 @@ PurchaseOrder.init({
 }, { sequelize, modelName: 'PurchaseOrder', tableName: 'purchase_orders', indexes: [
   { name: 'uq_purchase_orders_number', unique: true, fields: ['order_number'] },
   { name: 'idx_purchase_orders_branch_status', fields: ['branch_id', 'status', 'created_at'] },
+  { name: 'uq_purchase_orders_idempotency', unique: true, fields: ['idempotency_key'] },
 ] });
 
 export class PurchaseOrderItem extends Model<InferAttributes<PurchaseOrderItem>, InferCreationAttributes<PurchaseOrderItem>> {

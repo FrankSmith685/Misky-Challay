@@ -6,6 +6,9 @@ import {
   Order,
   Payment,
   Refund,
+  Branch,
+  CakeCommission,
+  CakeCommissionSettlement,
   User,
   sequelize,
 } from '@database/models';
@@ -18,7 +21,7 @@ import {
 } from '@modules/settings/settings.service';
 import { ordersService } from '@modules/orders/orders.service';
 import { inventoryService } from '@modules/operations/inventory.service';
-import { cakeCommissionService } from '@modules/cakes/cakeCommission.service';
+import { cakeCommissionService, getPlatformCommissionRate } from '@modules/cakes/cakeCommission.service';
 import { confirmPaidOrder } from './payments.service';
 import { paymentNotifications } from '@modules/communications/paymentNotifications.service';
 import {
@@ -49,6 +52,41 @@ const eventAttributes = [
 ];
 const snapshotOf = (payment: Payment): DirectPaymentSnapshot | null =>
   (payment.safeResponseJson?.directPayment as DirectPaymentSnapshot | undefined) ?? null;
+
+type PlatformCommissionSummary = {
+  rate: number;
+  baseAmount: number | null;
+  amount: number | null;
+  settledAmount: number;
+  outstandingAmount: number | null;
+  status: string | null;
+};
+
+const commissionSummary = async (orderId: number): Promise<PlatformCommissionSummary> => {
+  const commission = await CakeCommission.findOne({ where: { orderId } });
+  if (!commission) {
+    return {
+      rate: await getPlatformCommissionRate(),
+      baseAmount: null,
+      amount: null,
+      settledAmount: 0,
+      outstandingAmount: null,
+      status: null,
+    };
+  }
+  const settledAmount = Number(
+    (await CakeCommissionSettlement.sum('amount', { where: { commissionId: commission.id } })) ?? 0,
+  );
+  const amount = round2(Number(commission.commissionAmount));
+  return {
+    rate: Number(commission.rate),
+    baseAmount: round2(Number(commission.baseAmount)),
+    amount,
+    settledAmount: round2(settledAmount),
+    outstandingAmount: round2(Math.max(0, amount - settledAmount)),
+    status: commission.status,
+  };
+};
 const logEvent = (
   paymentId: number,
   kind: string,
@@ -342,17 +380,38 @@ export const directPaymentsService = {
     if (access.userId) assertOwner(order, access.userId);
     else if (access.scopeCheck) access.scopeCheck(order.branchId);
     else throw ApiError.forbidden('No tienes acceso al pago');
-    return directPaymentsService.serialize(payment, order);
+    if (!access.scopeCheck) return directPaymentsService.serialize(payment, order);
+    const [branch, commission] = await Promise.all([
+      Branch.findByPk(order.branchId, { attributes: ['name'] }),
+      commissionSummary(order.id),
+    ]);
+    return directPaymentsService.serialize(payment, order, {
+      branchName: branch?.name ?? null,
+      commission,
+      internal: true,
+    });
   },
 
-  async serialize(payment: Payment, order: Order) {
-    const claim = await MobilePaymentClaim.findOne({ where: { paymentId: payment.id } });
-    const events = await MobilePaymentEvent.findAll({
-      where: { paymentId: payment.id },
-      attributes: eventAttributes,
-      include: [{ model: User, as: 'actor', attributes: ['firstName', 'lastName'] }],
-      order: [['id', 'ASC']],
-    });
+  async serialize(
+    payment: Payment,
+    order: Order,
+    context: { branchName?: string | null; commission?: PlatformCommissionSummary; internal?: boolean } = {},
+  ) {
+    const [claim, events, branch, commission] = await Promise.all([
+      MobilePaymentClaim.findOne({ where: { paymentId: payment.id } }),
+      MobilePaymentEvent.findAll({
+        where: { paymentId: payment.id },
+        attributes: eventAttributes,
+        include: [{ model: User, as: 'actor', attributes: ['firstName', 'lastName'] }],
+        order: [['id', 'ASC']],
+      }),
+      context.internal && context.branchName === undefined
+        ? Branch.findByPk(order.branchId, { attributes: ['name'] })
+        : Promise.resolve(null),
+      context.internal && context.commission === undefined
+        ? commissionSummary(order.id)
+        : Promise.resolve(context.commission),
+    ]);
     const snapshot = snapshotOf(payment);
     const refunds = await Refund.findAll({
       where: { paymentId: payment.id },
@@ -380,6 +439,12 @@ export const directPaymentsService = {
       expiresAt: null,
       reviewAlertMinutes: legacySettings!.reviewAlertMinutes,
     };
+    const overdue =
+      holdsDirectReview(claim?.status) &&
+      Date.now() > (claim?.submittedAt.getTime() ?? 0) + recipient.reviewAlertMinutes * 60000;
+    const reviewAgeMinutes = claim?.submittedAt
+      ? Math.max(0, Math.floor((Date.now() - claim.submittedAt.getTime()) / 60000))
+      : 0;
     return {
       paymentId: payment.id,
       provider: payment.provider,
@@ -391,18 +456,20 @@ export const directPaymentsService = {
       orderNumber: order.orderNumber,
       orderStatus: order.status,
       branchId: order.branchId,
+      ...(context.internal ? { branchName: context.branchName ?? branch?.name ?? null } : {}),
       createdAt: payment.createdAt,
       contactName: order.contactName,
       contactPhone: order.contactPhone,
       refundedAmount: refunded,
       refundableAmount: payment.status === 'SUCCEEDED' ? remaining : 0,
+      ...(context.internal ? { platformCommission: commission } : {}),
       canReport:
         payment.status === 'PENDING' &&
         ['AWAITING_PAYMENT', 'OBSERVED'].includes(state) &&
         (state === 'OBSERVED' || !['CANCELLED', 'REFUNDED', 'DELIVERED'].includes(order.status)),
-      overdue:
-        holdsDirectReview(claim?.status) &&
-        Date.now() > (claim?.submittedAt.getTime() ?? 0) + recipient.reviewAlertMinutes * 60000,
+      overdue,
+      reviewAgeMinutes,
+      hasEvidence: events.some((event) => Boolean(event.evidenceMime)),
       claim: claim
         ? {
             status: claim.status,
@@ -442,32 +509,68 @@ export const directPaymentsService = {
   },
 
   async list(
-    branchId: number,
-    input: { state?: string; provider?: string; search?: string; page?: number } = {},
+    branchId: number | undefined,
+    input: {
+      state?: string;
+      provider?: string;
+      search?: string;
+      page?: number;
+      from?: string;
+      to?: string;
+    } = {},
   ) {
     const page = input.page ?? 1;
+    const platformCommissionRate = await getPlatformCommissionRate();
+    const orderWhere: Record<string, unknown> = {
+      ...(branchId === undefined ? {} : { branchId }),
+      ...(input.search
+        ? {
+            [Op.or]: [
+              { orderNumber: { [Op.like]: `%${input.search}%` } },
+              { contactName: { [Op.like]: `%${input.search}%` } },
+            ],
+          }
+        : {}),
+    };
     const matchingOrders = await Order.findAll({
-      where: {
-        branchId,
-        ...(input.search
-          ? {
-              [Op.or]: [
-                { orderNumber: { [Op.like]: `%${input.search}%` } },
-                { contactName: { [Op.like]: `%${input.search}%` } },
-              ],
-            }
-          : {}),
-      },
+      where: orderWhere,
+      attributes: ['id', 'orderNumber', 'status', 'branchId', 'contactName', 'contactPhone'],
     });
-    if (!matchingOrders.length) return { items: [], total: 0, page, pageSize: 30, counts: {} };
+    const emptySummary = {
+      totalAmount: 0,
+      amounts: {} as Record<string, number>,
+      overdueCount: 0,
+      overdueAmount: 0,
+      platformRate: platformCommissionRate,
+      platformAccrued: 0,
+      platformSettled: 0,
+      platformOutstanding: 0,
+    };
+    if (!matchingOrders.length)
+      return {
+        items: [],
+        total: 0,
+        page,
+        pageSize: 30,
+        counts: {},
+        amounts: {},
+        summary: emptySummary,
+      };
+    const paymentWhere: Record<string, unknown> = {
+      payableType: PAYABLE_TYPE.ORDER,
+      payableId: matchingOrders.map((order) => order.id),
+      provider:
+        input.provider && isDirectProvider(input.provider) ? input.provider : ['yape', 'plin'],
+    };
+    if (input.from || input.to) {
+      paymentWhere.createdAt = {
+        ...(input.from ? { [Op.gte]: new Date(`${input.from}T00:00:00-05:00`) } : {}),
+        ...(input.to ? { [Op.lte]: new Date(`${input.to}T23:59:59.999-05:00`) } : {}),
+      };
+    }
     const payments = await Payment.findAll({
-      where: {
-        payableType: PAYABLE_TYPE.ORDER,
-        payableId: matchingOrders.map((order) => order.id),
-        provider:
-          input.provider && isDirectProvider(input.provider) ? input.provider : ['yape', 'plin'],
-      },
-      order: [['createdAt', 'DESC']],
+      where: paymentWhere,
+      order: [['createdAt', 'DESC'], ['id', 'DESC']],
     });
     const byId = new Map(matchingOrders.map((order) => [order.id, order]));
     // Compute counts in batches; fetch protected evidence/history only for the visible page.
@@ -476,7 +579,7 @@ export const directPaymentsService = {
       ? await Promise.all([
           MobilePaymentClaim.findAll({
             where: { paymentId: ids },
-            attributes: ['paymentId', 'status'],
+            attributes: ['paymentId', 'status', 'submittedAt'],
           }),
           Refund.findAll({
             where: { paymentId: ids, status: 'SUCCEEDED' },
@@ -484,7 +587,9 @@ export const directPaymentsService = {
           }),
         ])
       : [[], []];
-    const claimById = new Map(claims.map((claim) => [claim.paymentId, claim.status]));
+    const claimById = new Map(
+      claims.map((claim) => [claim.paymentId, { status: claim.status, submittedAt: claim.submittedAt }]),
+    );
     const refundedById = new Map<number, number>();
     for (const refund of refunds)
       refundedById.set(
@@ -493,9 +598,10 @@ export const directPaymentsService = {
       );
     const all = payments.map((payment) => ({
       payment,
+      order: byId.get(payment.payableId)!,
       state: directState(
         payment.status,
-        claimById.get(payment.id) ?? null,
+        claimById.get(payment.id)?.status ?? null,
         byId.get(payment.payableId)!.status,
         Boolean(snapshotOf(payment) && Date.now() > Date.parse(snapshotOf(payment)!.expiresAt)),
         round2(Number(payment.amount) - (refundedById.get(payment.id) ?? 0)),
@@ -503,16 +609,108 @@ export const directPaymentsService = {
       ),
     }));
     const counts: Record<string, number> = {};
-    for (const row of all) counts[row.state] = (counts[row.state] ?? 0) + 1;
-    const filtered = input.state ? all.filter((row) => row.state === input.state) : all;
+    const amounts: Record<string, number> = {};
+    let overdueCount = 0;
+    let overdueAmount = 0;
+    for (const row of all) {
+      counts[row.state] = (counts[row.state] ?? 0) + 1;
+      amounts[row.state] = round2((amounts[row.state] ?? 0) + Number(row.payment.amount));
+      const claim = claimById.get(row.payment.id);
+      const snapshot = snapshotOf(row.payment);
+      const overdue =
+        holdsDirectReview(claim?.status ?? null) &&
+        Boolean(claim?.submittedAt) &&
+        Date.now() > claim!.submittedAt.getTime() + (snapshot?.reviewAlertMinutes ?? 0) * 60000;
+      if (overdue) {
+        overdueCount += 1;
+        overdueAmount = round2(overdueAmount + Number(row.payment.amount));
+      }
+    }
+    const priority = (row: (typeof all)[number]): number => {
+      const claim = claimById.get(row.payment.id);
+      const snapshot = snapshotOf(row.payment);
+      const overdue =
+        holdsDirectReview(claim?.status ?? null) &&
+        Boolean(claim?.submittedAt) &&
+        Date.now() > claim!.submittedAt.getTime() + (snapshot?.reviewAlertMinutes ?? 0) * 60000;
+      if (row.state === 'OBSERVED') return 0;
+      if (overdue) return 1;
+      if (row.state === 'REVIEW') return 2;
+      if (row.state === 'REFUND_PENDING') return 3;
+      return 4;
+    };
+    const submittedAt = (row: (typeof all)[number]): number =>
+      claimById.get(row.payment.id)?.submittedAt?.getTime() ?? row.payment.createdAt.getTime();
+    const filtered = (input.state ? all.filter((row) => row.state === input.state) : all).sort((a, b) => {
+      const priorityDiff = priority(a) - priority(b);
+      if (priorityDiff !== 0) return priorityDiff;
+      const aTime = submittedAt(a);
+      const bTime = submittedAt(b);
+      return priority(a) < 4 ? aTime - bTime : bTime - aTime;
+    });
+    const orderIds = [...new Set(filtered.map((row) => row.order.id))];
+    const [branches, commissions] = await Promise.all([
+      Branch.findAll({ where: { id: { [Op.in]: [...new Set(matchingOrders.map((order) => order.branchId))] } }, attributes: ['id', 'name'] }),
+      CakeCommission.findAll({ where: { orderId: orderIds }, attributes: ['id', 'orderId', 'baseAmount', 'rate', 'commissionAmount', 'status'] }),
+    ]);
+    const settlements = commissions.length
+      ? await CakeCommissionSettlement.findAll({ where: { commissionId: commissions.map((commission) => commission.id) }, attributes: ['commissionId', 'amount'] })
+      : [];
+    const settledByCommission = new Map<number, number>();
+    for (const settlement of settlements) settledByCommission.set(settlement.commissionId, round2((settledByCommission.get(settlement.commissionId) ?? 0) + Number(settlement.amount)));
+    const commissionByOrder = new Map<number, PlatformCommissionSummary>();
+    for (const commission of commissions) {
+      const settledAmount = settledByCommission.get(commission.id) ?? 0;
+      const amount = round2(Number(commission.commissionAmount));
+      commissionByOrder.set(commission.orderId, {
+        rate: Number(commission.rate),
+        baseAmount: round2(Number(commission.baseAmount)),
+        amount,
+        settledAmount,
+        outstandingAmount: round2(Math.max(0, amount - settledAmount)),
+        status: commission.status,
+      });
+    }
+    const branchNames = new Map(branches.map((branch) => [branch.id, branch.name]));
+    const totalAmount = round2(filtered.reduce((sum, row) => sum + Number(row.payment.amount), 0));
+    const platformAccrued = round2(commissions.reduce((sum, commission) => sum + Number(commission.commissionAmount), 0));
+    const platformSettled = round2(settlements.reduce((sum, settlement) => sum + Number(settlement.amount), 0));
     const items = await Promise.all(
       filtered
         .slice((page - 1) * 30, page * 30)
-        .map(({ payment }) =>
-          directPaymentsService.serialize(payment, byId.get(payment.payableId)!),
+        .map(({ payment, order }) =>
+          directPaymentsService.serialize(payment, order, {
+            branchName: branchNames.get(order.branchId) ?? null,
+            commission: commissionByOrder.get(order.id) ?? {
+              rate: platformCommissionRate,
+              baseAmount: null,
+              amount: null,
+              settledAmount: 0,
+              outstandingAmount: null,
+              status: null,
+            },
+            internal: true,
+          }),
         ),
     );
-    return { items, total: filtered.length, page, pageSize: 30, counts };
+    return {
+      items,
+      total: filtered.length,
+      page,
+      pageSize: 30,
+      counts,
+      amounts,
+      summary: {
+        totalAmount,
+        amounts,
+        overdueCount,
+        overdueAmount,
+        platformRate: platformCommissionRate,
+        platformAccrued,
+        platformSettled,
+        platformOutstanding: round2(Math.max(0, platformAccrued - platformSettled)),
+      },
+    };
   },
 
   async review(

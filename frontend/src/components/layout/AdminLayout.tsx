@@ -109,7 +109,10 @@ export const AdminLayout = () => {
   );
   // Las pantallas heredadas siguen resolviendo sus rutas y permisos, pero no
   // contaminan el menu nuevo de Misky Challay.
-  const links = accessibleLinks.filter((link) => !link.hidden);
+  // El superadmin necesita ver tambien los modulos heredados para poder
+  // mantenerlos, migrarlos o retirarlos de forma explicita. Los roles
+  // operativos siguen viendo solo el menu vigente.
+  const links = accessibleLinks.filter((link) => !link.hidden || isSuperAdmin);
 
   const fullName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email;
   const roleText = isSuperAdmin ? 'Superadmin' : (user?.roles.length ? rolesLabel(user.roles) : 'Sin rol');
@@ -167,7 +170,7 @@ export const AdminLayout = () => {
         </div>
       )}
 
-      <nav className={cn('admin-scrollbar min-h-0 flex-1 overflow-y-auto', compact ? 'px-1' : 'pr-1')} aria-label="Navegación administrativa">
+      <nav className={cn('admin-scrollbar min-w-0 min-h-0 flex-1 overflow-x-hidden overflow-y-auto', compact ? 'px-1' : 'pr-1')} aria-label="Navegación administrativa">
         {visibleGroups(links).map(({ id, label: sectionLabel, entries }, visibleIndex) => {
           return (
             /* El separador se cuenta sobre los bloques VISIBLES: al cocinero, que
@@ -266,7 +269,7 @@ export const AdminLayout = () => {
       {/* Barra lateral: desde 900 px (tablet horizontal), en iconos hasta 1024. */}
       <aside
         className={cn(
-          'sticky top-0 hidden h-screen shrink-0 border-r border-line/80 bg-surface transition-[width,padding] duration-300 min-[900px]:block',
+          'sticky top-0 hidden h-screen shrink-0 overflow-x-hidden border-r border-line/80 bg-surface transition-[width,padding] duration-300 min-[900px]:block',
           sidebarCompact ? 'w-[88px] px-3 py-5' : 'w-[280px] p-5',
         )}
       >

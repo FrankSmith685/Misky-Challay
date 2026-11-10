@@ -38,6 +38,14 @@ export class User extends Model<InferAttributes<User>, InferCreationAttributes<U
    * contrasena para invalidar los refresh tokens ya emitidos (ver jwt.ts).
    */
   declare tokenVersion: CreationOptional<number>;
+  declare mustChangePassword: CreationOptional<boolean>;
+  declare passwordChangedAt: CreationOptional<Date | null>;
+  declare version: CreationOptional<number>;
+  declare archivedAt: CreationOptional<Date | null>;
+  declare mfaEnabled: CreationOptional<boolean>;
+  /** Secreto TOTP cifrado con la clave de la aplicacion. */
+  declare mfaSecretEncrypted: CreationOptional<string | null>;
+  declare mfaRecoveryCodesJson: CreationOptional<string[] | null>;
   declare emailVerifiedAt: Date | null;
   /**
    * Cuando el cliente acepto los terminos y la politica de privacidad.
@@ -81,6 +89,13 @@ User.init(
     },
     isSuperAdmin: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     tokenVersion: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 0 },
+    mustChangePassword: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    passwordChangedAt: { type: DataTypes.DATE, allowNull: true },
+    version: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 1 },
+    archivedAt: { type: DataTypes.DATE, allowNull: true },
+    mfaEnabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    mfaSecretEncrypted: { type: DataTypes.STRING(500), allowNull: true },
+    mfaRecoveryCodesJson: { type: DataTypes.JSON, allowNull: true },
     emailVerifiedAt: { type: DataTypes.DATE, allowNull: true },
     termsAcceptedAt: { type: DataTypes.DATE, allowNull: true },
     passwordResetTokenHash: { type: DataTypes.STRING(64), allowNull: true },

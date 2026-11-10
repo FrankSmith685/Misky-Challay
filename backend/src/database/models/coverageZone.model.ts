@@ -30,6 +30,8 @@ export class CoverageZone extends Model<
   declare name: string;
   declare polygon: GeoPoint[] | null;
   declare deliveryFee: number;
+  /** Recargo logístico único cuando el pedido contiene tortas. */
+  declare cakeDeliveryFee: CreationOptional<number>;
   declare extraCoverageKm: CreationOptional<number>;
   declare extraFeePerKm: CreationOptional<number>;
   /** 0 = sin mínimo. Un monto positivo exige ese subtotal de productos solo en delivery. */
@@ -37,6 +39,12 @@ export class CoverageZone extends Model<
   declare estimatedMinutes: CreationOptional<number>;
   declare priority: CreationOptional<number>;
   declare isActive: CreationOptional<boolean>;
+  /** Version de concurrencia optimista: evita sobrescribir cambios de otro admin. */
+  declare version: CreationOptional<number>;
+  /** Fecha de entrada en vigor de la configuracion publicada. */
+  declare effectiveFrom: CreationOptional<Date | null>;
+  /** Apagado historico: la zona no se borra porque puede estar en pedidos antiguos. */
+  declare archivedAt: CreationOptional<Date | null>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
 }
@@ -48,12 +56,16 @@ CoverageZone.init(
     name: { type: DataTypes.STRING(80), allowNull: false },
     polygon: { type: DataTypes.JSON, allowNull: true },
     deliveryFee: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
+    cakeDeliveryFee: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
     extraCoverageKm: { type: DataTypes.DECIMAL(6, 2), allowNull: false, defaultValue: 0 },
     extraFeePerKm: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
     minimumOrder: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
     estimatedMinutes: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 45 },
     priority: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
     isActive: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    version: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 1 },
+    effectiveFrom: { type: DataTypes.DATE, allowNull: true },
+    archivedAt: { type: DataTypes.DATE, allowNull: true },
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,
   },

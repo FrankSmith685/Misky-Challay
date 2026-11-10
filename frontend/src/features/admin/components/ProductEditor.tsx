@@ -213,7 +213,7 @@ export const ProductEditor = ({ product, meta, onClose, onSaved, onToggleStatus,
       setCustomRule(normalized);
     }).catch((cause) => { if (active) toast.error(getApiErrorMessage(cause)); });
     return () => { active = false; };
-  }, [canEditProduct, product.id, product.cakeProfile?.saleMode]);
+  }, [canEditProduct, product.id, product.cakeProfile?.saleMode, product.variants]);
 
   useEffect(() => {
     const previous = serverVariantsRef.current;
@@ -338,7 +338,7 @@ export const ProductEditor = ({ product, meta, onClose, onSaved, onToggleStatus,
       tone: next ? 'default' : 'danger',
     });
     if (!confirmed) return;
-    await run(`availability-${variant.id}`, () => catalogAdminApi.updateVariant(variant.id, { isActive: next }), next ? 'Presentación activada' : 'Presentación desactivada');
+    await run(`availability-${variant.id}`, () => catalogAdminApi.updateVariant(variant.id, { isActive: next, expectedVersion: variant.version }), next ? 'Presentación activada' : 'Presentación desactivada');
   };
 
   const saveVariant = async (variant: AdminVariant, price: number) => {
@@ -359,8 +359,8 @@ export const ProductEditor = ({ product, meta, onClose, onSaved, onToggleStatus,
     }
     await run(`variant-${variant.id}`, async () => {
       const normalizedName = variant.name.trim();
-      await catalogAdminApi.updateVariant(variant.id, { name: normalizedName, basePrice: price, servingSize, servingUnit: variant.servingUnit ?? 'unidades' });
-      patchVariant(variant.id, { name: normalizedName, servingSize });
+      await catalogAdminApi.updateVariant(variant.id, { name: normalizedName, basePrice: price, servingSize, servingUnit: variant.servingUnit ?? 'unidades', expectedVersion: variant.version });
+      patchVariant(variant.id, { name: normalizedName, servingSize, version: variant.version + 1 });
     }, 'Presentación actualizada');
   };
 
@@ -553,6 +553,8 @@ export const ProductEditor = ({ product, meta, onClose, onSaved, onToggleStatus,
                         preparationMode,
                         isFeatured,
                         imageUrl: imageUrl || null,
+                        imageAlt: imageAlt.trim() || normalizedName,
+                        expectedVersion: product.version,
                       });
                       setName(normalizedName);
                       setDescription(normalizedDescription);

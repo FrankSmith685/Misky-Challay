@@ -29,15 +29,15 @@ export const CookieConsent = () => {
       /* z-40: por encima de la barra fija (z-30) y por debajo de los modales de MUI
        * (1300). El bottom-3 queda como red: si un navegador viejo no entiende el
        * calc de abajo, descarta esa declaracion y el banner vuelve a su sitio. */
-      className="fixed inset-x-3 bottom-3 z-40 mx-auto max-w-3xl rounded-card border border-line bg-white p-4 shadow-e5 sm:flex sm:items-center sm:justify-between sm:gap-5"
+      className="fixed inset-x-3 bottom-3 z-40 mx-auto max-w-3xl rounded-card border border-line bg-white p-3 shadow-e5 sm:flex sm:items-center sm:justify-between sm:gap-5 sm:p-4"
       style={{ bottom: bottomOffset }}
     >
-      <p className="text-sm leading-6 text-ink-muted">
+      <p className="text-xs leading-5 text-ink-muted sm:text-sm sm:leading-6">
         Usamos almacenamiento necesario para sesión y carrito. Con tu permiso, también medimos de
         forma propia cómo funciona la web, sin redes publicitarias.{' '}
         <Link className="font-bold text-brand-700 underline" to={ROUTES.cookies}>Ver detalles</Link>.
       </p>
-      <div className="mt-3 flex shrink-0 gap-2 sm:mt-0">
+      <div className="mt-2 flex shrink-0 gap-2 sm:mt-0">
         <Button size="sm" variant="outline" onClick={() => choose('rejected')}>Solo necesario</Button>
         <Button size="sm" onClick={() => choose('accepted')}>Aceptar medición</Button>
       </div>

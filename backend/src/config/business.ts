@@ -1,4 +1,5 @@
 import { env } from './env';
+import { CURRENCY } from './constants';
 
 /**
  * IDENTIDAD LEGAL DEL NEGOCIO
@@ -20,6 +21,10 @@ export const businessInfo = {
   email: env.BUSINESS_EMAIL,
   supportEmail: env.BUSINESS_SUPPORT_EMAIL,
   complaintResponseDays: env.COMPLAINT_RESPONSE_DAYS,
+  timeZone: env.TZ,
+  currency: CURRENCY,
+  taxRate: env.IGV_RATE,
+  platformCommissionRate: 0.15,
 } as const;
 
 export type BusinessInfo = typeof businessInfo;

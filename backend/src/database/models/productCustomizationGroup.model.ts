@@ -27,6 +27,7 @@ export class ProductCustomizationGroup extends Model<
   declare isActive: CreationOptional<boolean>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
+  declare version: CreationOptional<number>;
 }
 
 ProductCustomizationGroup.init(
@@ -42,6 +43,7 @@ ProductCustomizationGroup.init(
     isActive: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,
+    version: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 1 },
   },
   {
     sequelize,

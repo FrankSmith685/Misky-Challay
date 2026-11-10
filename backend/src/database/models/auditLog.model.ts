@@ -23,6 +23,14 @@ export class AuditLog extends Model<InferAttributes<AuditLog>, InferCreationAttr
   declare ip: CreationOptional<string | null>;
   declare userAgent: CreationOptional<string | null>;
   declare correlationId: CreationOptional<string | null>;
+  declare severity: CreationOptional<'INFO' | 'WARNING' | 'CRITICAL'>;
+  declare outcome: CreationOptional<'SUCCESS' | 'FAILURE'>;
+  declare method: CreationOptional<string | null>;
+  declare path: CreationOptional<string | null>;
+  declare sessionId: CreationOptional<string | null>;
+  declare eventVersion: CreationOptional<number>;
+  declare previousHash: CreationOptional<string | null>;
+  declare integrityHash: CreationOptional<string>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
 }
@@ -39,6 +47,14 @@ AuditLog.init(
     ip: { type: DataTypes.STRING(60), allowNull: true },
     userAgent: { type: DataTypes.STRING(255), allowNull: true },
     correlationId: { type: DataTypes.STRING(60), allowNull: true },
+    severity: { type: DataTypes.ENUM('INFO', 'WARNING', 'CRITICAL'), allowNull: false, defaultValue: 'INFO' },
+    outcome: { type: DataTypes.ENUM('SUCCESS', 'FAILURE'), allowNull: false, defaultValue: 'SUCCESS' },
+    method: { type: DataTypes.STRING(10), allowNull: true },
+    path: { type: DataTypes.STRING(255), allowNull: true },
+    sessionId: { field: 'session_id', type: DataTypes.STRING(100), allowNull: true },
+    eventVersion: { field: 'event_version', type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 1 },
+    previousHash: { field: 'previous_hash', type: DataTypes.STRING(64), allowNull: true },
+    integrityHash: { field: 'integrity_hash', type: DataTypes.STRING(64), allowNull: false },
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,
   },
@@ -49,6 +65,8 @@ AuditLog.init(
     indexes: [
       { name: 'idx_audit_entity', fields: ['entity', 'entity_id'] },
       { name: 'idx_audit_actor', fields: ['actor_id'] },
+      { name: 'idx_audit_filters', fields: ['created_at', 'severity', 'outcome', 'action'] },
+      { name: 'idx_audit_correlation', fields: ['correlation_id'] },
     ],
   },
 );

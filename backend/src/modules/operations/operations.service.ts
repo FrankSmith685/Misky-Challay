@@ -11,6 +11,7 @@ import {
   OrderItemCustomization,
   OrderItemReference,
   Payment,
+  User,
   sequelize,
 } from '@database/models';
 import {
@@ -74,6 +75,9 @@ const TERMINAL_TICKET_STATUSES: TicketStatus[] = [
   TICKET_STATUS.DISPATCHED,
   TICKET_STATUS.CANCELLED,
 ];
+
+export const KITCHEN_STATIONS = ['GENERAL', 'HORNO', 'DECORACION', 'FRIO', 'DESPACHO'] as const;
+export type KitchenStation = (typeof KITCHEN_STATIONS)[number];
 
 /**
  * Momento en que una comanda programada debe entrar al KDS. La hora elegida por
@@ -204,6 +208,7 @@ export const operationsService = {
                 TICKET_STATUS.ACCEPTED,
                 TICKET_STATUS.PREPARING,
                 TICKET_STATUS.READY,
+                TICKET_STATUS.ON_HOLD,
               ],
             },
       },
@@ -216,6 +221,18 @@ export const operationsService = {
     });
 
     const orderIds = tickets.map((ticket) => ticket.orderId);
+    const assignedIds = [...new Set(tickets.map((ticket) => ticket.assignedTo).filter((id): id is number => id !== null))];
+    const [assignedUsers, productionTasks] = await Promise.all([
+      assignedIds.length ? User.findAll({ where: { id: assignedIds }, attributes: ['id', 'firstName', 'lastName'] }) : [],
+      orderIds.length ? CakeProductionTask.findAll({ where: { orderId: { [Op.in]: orderIds } }, attributes: ['orderId', 'station', 'workDate', 'status', 'assignedTo', 'plannedMinutes'] }) : [],
+    ]);
+    const assignedNames = new Map(assignedUsers.map((user) => [user.id, [user.firstName, user.lastName].filter(Boolean).join(' ')]));
+    const tasksByOrder = new Map<number, CakeProductionTask[]>();
+    for (const task of productionTasks) {
+      const list = tasksByOrder.get(task.orderId) ?? [];
+      list.push(task);
+      tasksByOrder.set(task.orderId, list);
+    }
     const pendingCash = orderIds.length > 0
       ? await Payment.findAll({
           where: {
@@ -239,6 +256,18 @@ export const operationsService = {
         acceptedAt: ticket.acceptedAt,
         targetAt: ticket.targetAt,
         notes: ticket.notes,
+        station: ticket.station,
+        assignedTo: ticket.assignedTo,
+        assignedName: ticket.assignedTo ? assignedNames.get(ticket.assignedTo) ?? null : null,
+        pausedFromStatus: ticket.pausedFromStatus,
+        incidentReason: ticket.incidentReason,
+        productionTasks: (tasksByOrder.get(ticket.orderId) ?? []).map((task) => ({
+          station: task.station,
+          workDate: task.workDate,
+          status: task.status,
+          assigned: task.assignedTo != null,
+          plannedMinutes: task.plannedMinutes,
+        })),
         isLate: ticket.status !== TICKET_STATUS.READY && new Date() > ticket.targetAt,
         order: order
           ? {
@@ -429,31 +458,21 @@ export const operationsService = {
     comment?: string,
     scope?: BranchScopeCheck,
   ): Promise<KitchenTicket> {
-    const ticket = await KitchenTicket.findByPk(ticketId);
-    if (!ticket) throw ApiError.notFound('Ticket no encontrado');
-    scope?.(ticket.branchId);
-
-    const current: TicketStatus = ticket.status;
-    const allowed = TICKET_FLOW[current] ?? [];
-    if (!allowed.includes(next)) {
-      throw ApiError.unprocessable(`No se puede pasar el ticket de ${current} a ${next}`);
-    }
-
-    const order = await Order.findByPk(ticket.orderId);
-    if (!order) throw ApiError.notFound('El pedido del ticket no existe');
-
-    if (
-      next === TICKET_STATUS.DISPATCHED
-      && order.deliveryType !== DELIVERY_TYPE.PICKUP
-    ) {
-      throw ApiError.unprocessable(
-        order.deliveryType === DELIVERY_TYPE.DELIVERY
-          ? 'El retiro lo confirma Reparto cuando recibe el pedido'
-          : 'La salida de cocina se cierra desde Salon al servir y cobrar la mesa',
-      );
-    }
-
+    let result: KitchenTicket | null = null;
+    let orderNumber: string | undefined;
+    let branchId: number | undefined;
     await sequelize.transaction(async (transaction) => {
+      const ticket = await KitchenTicket.findByPk(ticketId, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!ticket) throw ApiError.notFound('Ticket no encontrado');
+      scope?.(ticket.branchId);
+      const current: TicketStatus = ticket.status;
+      const allowed = TICKET_FLOW[current] ?? [];
+      if (!allowed.includes(next)) throw ApiError.unprocessable(`No se puede pasar el ticket de ${current} a ${next}`);
+      const order = await Order.findByPk(ticket.orderId, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!order) throw ApiError.notFound('El pedido del ticket no existe');
+      if (next === TICKET_STATUS.DISPATCHED && order.deliveryType !== DELIVERY_TYPE.PICKUP) {
+        throw ApiError.unprocessable(order.deliveryType === DELIVERY_TYPE.DELIVERY ? 'El retiro lo confirma Reparto cuando recibe el pedido' : 'La salida de cocina se cierra desde Salon al servir y cobrar la mesa');
+      }
       const now = new Date();
 
       if (next === TICKET_STATUS.ACCEPTED) ticket.acceptedAt = now;
@@ -463,6 +482,12 @@ export const operationsService = {
         ticket.readyAt = now;
         const reference = ticket.startedAt ?? ticket.acceptedAt ?? ticket.createdAt;
         ticket.prepMinutesActual = Math.round((now.getTime() - reference.getTime()) / 60000);
+      }
+      if (next === TICKET_STATUS.ON_HOLD) {
+        ticket.pausedFromStatus = current;
+        ticket.incidentReason = (comment ?? 'Incidencia operativa').trim().slice(0, 500);
+        ticket.incidentAt = now;
+        ticket.incidentBy = actorId;
       }
       if (next === TICKET_STATUS.DISPATCHED) ticket.dispatchedAt = now;
 
@@ -517,17 +542,73 @@ export const operationsService = {
           transaction,
         });
       }
+      result = ticket;
+      orderNumber = order.orderNumber;
+      branchId = ticket.branchId;
     });
 
-    publishKitchenEvent({
-      type: 'TICKET_UPDATED',
-      branchId: ticket.branchId,
-      ticketId: ticket.id,
-      orderNumber: order.orderNumber,
-      status: ticket.status,
-    });
+    if (!result || !branchId) throw ApiError.internal('No se pudo actualizar el ticket');
+    const updated = result as KitchenTicket;
+    publishKitchenEvent({ type: 'TICKET_UPDATED', branchId, ticketId: updated.id, orderNumber, status: updated.status });
 
-    return ticket;
+    return updated;
+  },
+
+  async resume(ticketId: number, actorId: number, scope?: BranchScopeCheck): Promise<KitchenTicket> {
+    let result: KitchenTicket | null = null;
+    let branchId: number | undefined;
+    await sequelize.transaction(async (transaction) => {
+      const ticket = await KitchenTicket.findByPk(ticketId, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!ticket) throw ApiError.notFound('Ticket no encontrado');
+      scope?.(ticket.branchId);
+      if (ticket.status !== TICKET_STATUS.ON_HOLD || !ticket.pausedFromStatus) throw ApiError.conflict('El ticket no esta en incidencia');
+      const previous = ticket.pausedFromStatus;
+      const order = await Order.findByPk(ticket.orderId, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!order) throw ApiError.notFound('El pedido del ticket no existe');
+      ticket.status = previous;
+      ticket.pausedFromStatus = null;
+      ticket.incidentReason = null;
+      ticket.incidentAt = null;
+      ticket.incidentBy = null;
+      await ticket.save({ transaction });
+      await KitchenTicketEvent.create({ ticketId: ticket.id, fromStatus: TICKET_STATUS.ON_HOLD, toStatus: previous, actorId, comment: 'Incidencia resuelta y ticket reanudado' }, { transaction });
+      result = ticket;
+      branchId = ticket.branchId;
+    });
+    if (!result || !branchId) throw ApiError.internal('No se pudo reanudar el ticket');
+    const updated = result as KitchenTicket;
+    publishKitchenEvent({ type: 'TICKET_UPDATED', branchId, ticketId: updated.id, status: updated.status });
+    return updated;
+  },
+
+  async assign(ticketId: number, actorId: number, input: { station?: string | null; assignedTo?: number | null }, scope?: BranchScopeCheck) {
+    const result = await sequelize.transaction(async (transaction) => {
+      const ticket = await KitchenTicket.findByPk(ticketId, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!ticket) throw ApiError.notFound('Ticket no encontrado');
+      scope?.(ticket.branchId);
+      if (TERMINAL_TICKET_STATUSES.includes(ticket.status)) throw ApiError.conflict('El ticket ya esta cerrado');
+      if (input.assignedTo !== undefined && input.assignedTo !== null) {
+        const user = await User.findByPk(input.assignedTo, { transaction, attributes: ['id', 'status'] });
+        if (!user || user.status !== 'ACTIVE') throw ApiError.unprocessable('El responsable no esta activo');
+      }
+      if (input.station !== undefined) ticket.station = input.station?.trim().slice(0, 40) || null;
+      if (input.assignedTo !== undefined) ticket.assignedTo = input.assignedTo;
+      await ticket.save({ transaction });
+      await KitchenTicketEvent.create({ ticketId: ticket.id, fromStatus: ticket.status, toStatus: ticket.status, actorId, comment: `Asignacion actualizada${ticket.station ? ` · ${ticket.station}` : ''}` }, { transaction });
+      return ticket;
+    });
+    publishKitchenEvent({ type: 'TICKET_UPDATED', branchId: result.branchId, ticketId: result.id, status: result.status });
+    return result;
+  },
+
+  async recordPrint(ticketId: number, actorId: number, scope?: BranchScopeCheck) {
+    return sequelize.transaction(async (transaction) => {
+      const ticket = await KitchenTicket.findByPk(ticketId, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!ticket) throw ApiError.notFound('Ticket no encontrado');
+      scope?.(ticket.branchId);
+      await KitchenTicketEvent.create({ ticketId, fromStatus: ticket.status, toStatus: ticket.status, actorId, comment: 'Comanda impresa' }, { transaction });
+      return { id: ticket.id, status: ticket.status };
+    });
   },
 
   /**
@@ -641,7 +722,13 @@ export const operationsService = {
       }),
     ]);
 
-    return { queued, preparing, ready, late };
+    const metricsFrom = new Date(Date.now() - 30 * 24 * 60 * 60_000);
+    const rows = await KitchenTicket.findAll({ where: { branchId, createdAt: { [Op.gte]: metricsFrom } }, attributes: ['status', 'createdAt', 'acceptedAt', 'startedAt', 'readyAt', 'incidentAt', 'escalatedAt'], order: [['createdAt', 'DESC']], limit: 5_000 });
+    const completedRows = rows.filter((row) => row.status !== TICKET_STATUS.CANCELLED);
+    const average = (values: number[]) => values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : 0;
+    const acceptedMinutes = completedRows.filter((row) => row.acceptedAt).map((row) => (row.acceptedAt!.getTime() - row.createdAt.getTime()) / 60000);
+    const prepMinutes = completedRows.filter((row) => row.startedAt && row.readyAt).map((row) => (row.readyAt!.getTime() - row.startedAt!.getTime()) / 60000);
+    return { queued, preparing, ready, late, incidents: rows.filter((row) => row.status === TICKET_STATUS.ON_HOLD).length, escalated: rows.filter((row) => row.escalatedAt !== null).length, acceptedAvgMinutes: average(acceptedMinutes), prepAvgMinutes: average(prepMinutes) };
   },
 };
 

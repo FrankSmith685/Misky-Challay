@@ -5,6 +5,7 @@ import {
   Ban,
   CalendarClock,
   ClipboardList,
+  Download,
   ExternalLink,
   Mail,
   Package,
@@ -112,6 +113,7 @@ const daysUntil = (value?: string | null) =>
       )
     : null;
 const statusLabel: Record<string, string> = {
+  APPROVED: 'Aprobada',
   ORDERED: 'Pendiente',
   PARTIALLY_RECEIVED: 'Recepción parcial',
   RECEIVED: 'Recibida',
@@ -123,11 +125,11 @@ const statusLabel: Record<string, string> = {
   BLOCKED: 'Bloqueado',
 };
 const orderBadge = (status: PurchaseOrderRow['status']) =>
-  status === 'RECEIVED' ? 'success' : status === 'CANCELLED' ? 'neutral' : 'warning';
+  status === 'RECEIVED' ? 'success' : status === 'CANCELLED' ? 'neutral' : status === 'DRAFT' ? 'danger' : 'warning';
 const canReceive = (order: PurchaseOrderRow) =>
   order.status === 'ORDERED' || order.status === 'PARTIALLY_RECEIVED';
 const canEditOrder = (order: PurchaseOrderRow) =>
-  order.status === 'ORDERED' && order.items.every((line) => line.quantityReceived <= 0);
+  (order.status === 'ORDERED' || order.status === 'DRAFT') && order.items.every((line) => line.quantityReceived <= 0);
 const orderMailto = (order: PurchaseOrderRow) => {
   const lines = order.items.filter((line) => line.quantityOrdered > line.quantityReceived).map((line) =>
     `- ${line.item?.name ?? `Insumo ${line.inventoryItemId}`}: ${quantity(line.quantityOrdered - line.quantityReceived)} ${line.item?.unit ?? ''}`,
@@ -140,9 +142,9 @@ const ProcurementPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const confirm = useConfirm();
-  const { branchId, branches, setBranchId, isLoadingBranches, branchesError, reloadBranches } =
-    useActiveBranch();
-  const { can } = usePermissions();
+  const { can, isSuperAdmin } = usePermissions();
+  const { branchId, branches, setBranchId, setGlobalScope, isLoadingBranches, branchesError, reloadBranches } =
+    useActiveBranch({ allowAll: isSuperAdmin });
   const canManage = can(PERM.PROCUREMENT_MANAGE);
   const canViewInventory = can(PERM.INVENTORY_READ) || can(PERM.INVENTORY_MANAGE);
 
@@ -203,29 +205,15 @@ const ProcurementPage = () => {
       setOrderOpen(false);
       setResumeOrderAfterSupplier(false);
     }
-    if (!branchId) {
-      setTab('suppliers');
-      setLoading(true);
-      setError(null);
-      try {
-        const supplierRows = await procurementApi.suppliers(true);
-        if (requestId === loadRequestId.current) setSuppliers(supplierRows);
-      } catch (cause) {
-        if (requestId === loadRequestId.current) setError(getApiErrorMessage(cause));
-      } finally {
-        if (requestId === loadRequestId.current) setLoading(false);
-      }
-      return;
-    }
     setLoading(true);
     setError(null);
     try {
       const [supplierRows, orderRows, lotRows, costRows, itemRows] = await Promise.all([
         procurementApi.suppliers(true),
-        procurementApi.purchaseOrders(branchId),
-        procurementApi.lots(branchId),
-        procurementApi.costSummary(branchId),
-        procurementApi.inventory(branchId),
+        procurementApi.purchaseOrders(branchId ?? undefined),
+        procurementApi.lots(branchId ?? undefined),
+        procurementApi.costSummary(branchId ?? undefined),
+        branchId ? procurementApi.inventory(branchId) : Promise.resolve([]),
       ]);
       if (requestId !== loadRequestId.current) return;
       setSuppliers(supplierRows);
@@ -329,7 +317,11 @@ const ProcurementPage = () => {
                 expiring !== null &&
                 expiring >= 0 &&
                 expiring <= 7
-              : lot.status === lotFilter);
+              : lotFilter === 'expiring15'
+                ? lot.status === 'ACTIVE' && lot.quantityAvailable > 0 && expiring !== null && expiring >= 0 && expiring <= 15
+                : lotFilter === 'expiring30'
+                  ? lot.status === 'ACTIVE' && lot.quantityAvailable > 0 && expiring !== null && expiring >= 0 && expiring <= 30
+                  : lot.status === lotFilter);
         return (
           statusMatches &&
           [lot.lotCode, lot.item?.name, lot.supplier?.name].some((value) =>
@@ -555,6 +547,18 @@ const ProcurementPage = () => {
     if (tab === 'suppliers') setSupplierFilter('all');
     if (tab === 'lots') setLotFilter('all');
   };
+
+  const exportCurrent = () => {
+    const rows = tab === 'orders'
+      ? filteredOrders.map((order) => [order.orderNumber, order.branch?.name ?? '', order.supplier?.name ?? '', statusLabel[order.status], order.total, order.expectedAt ?? '', order.items.map((line) => line.item?.name ?? line.inventoryItemId).join(' | ')])
+      : tab === 'lots'
+        ? filteredLots.map((lot) => [lot.branch?.name ?? '', lot.lotCode, lot.item?.name ?? lot.inventoryItemId, lot.supplier?.name ?? '', lot.status, lot.quantityAvailable, lot.unitCost, lot.expiresAt ?? ''])
+        : filteredSuppliers.map((supplier) => [supplier.code, supplier.name, supplier.taxId ?? '', supplier.contactName ?? '', supplier.email ?? '', supplier.phone ?? '', supplier.isActive ? 'Activo' : 'Inactivo']);
+    const headers = tab === 'orders' ? ['Orden', 'Sucursal', 'Proveedor', 'Estado', 'Total', 'Entrega estimada', 'Insumos'] : tab === 'lots' ? ['Sucursal', 'Lote', 'Insumo', 'Proveedor', 'Estado', 'Disponible', 'Costo unitario', 'Vencimiento'] : ['Código', 'Proveedor', 'RUC/Dato fiscal', 'Contacto', 'Correo', 'Teléfono', 'Estado'];
+    const csv = [headers, ...rows].map((line) => line.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const url = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' }));
+    const anchor = document.createElement('a'); anchor.href = url; anchor.download = `compras-${tab}-${new Date().toISOString().slice(0, 10)}.csv`; anchor.click(); URL.revokeObjectURL(url);
+  };
   const showOrderForLot = (lot: LotRow) => {
     const order = orders.find((entry) => entry.id === lot.purchaseOrderId);
     if (!order) {
@@ -615,12 +619,15 @@ const ProcurementPage = () => {
           unitCost: Number(line.unitCost),
         })),
       };
-      if (editingOrder) await procurementApi.updatePurchaseOrder(editingOrder.id, payload);
-      else await procurementApi.createPurchaseOrder(payload);
+      const savedOrder = editingOrder
+        ? await procurementApi.updatePurchaseOrder(editingOrder.id, payload)
+        : await procurementApi.createPurchaseOrder({ ...payload, idempotencyKey: crypto.randomUUID() });
       toast.success(
         editingOrder
           ? 'Orden actualizada'
-          : 'Orden creada; recibirás los lotes cuando llegue la mercadería',
+          : savedOrder.status === 'DRAFT'
+            ? 'Orden creada; requiere aprobación por su importe'
+            : 'Orden creada; recibirás los lotes cuando llegue la mercadería',
       );
       setOrderOpen(false);
       setEditingOrder(null);
@@ -720,6 +727,7 @@ const ProcurementPage = () => {
     try {
       await procurementApi.receivePurchaseOrder(receiving.id, {
         branchId,
+        idempotencyKey: crypto.randomUUID(),
         lines: chosen.map((line) => ({
           purchaseOrderItemId: line.purchaseOrderItemId,
           quantity: Number(line.quantity),
@@ -757,6 +765,17 @@ const ProcurementPage = () => {
       setSaving(false);
     }
   };
+
+  const approveOrder = async (order: PurchaseOrderRow) => {
+    if (!branchId) return;
+    setSaving(true);
+    try {
+      await procurementApi.approvePurchaseOrder(order.id, branchId);
+      toast.success('Orden aprobada y lista para enviar al proveedor');
+      await load();
+    } catch (cause) { toast.error(getApiErrorMessage(cause)); }
+    finally { setSaving(false); }
+  };
   const closeCancel = async () => {
     if (saving) return;
     if (cancelReason.trim() && !(await confirmDiscard('la cancelación'))) return;
@@ -779,6 +798,8 @@ const ProcurementPage = () => {
       ? [
           ['all', 'Todas'],
           ['pending', 'Por recibir'],
+          ['DRAFT', 'Pendientes de aprobación'],
+          ['APPROVED', 'Aprobadas'],
           ['RECEIVED', 'Recibidas'],
           ['CANCELLED', 'Canceladas'],
         ]
@@ -791,6 +812,8 @@ const ProcurementPage = () => {
         : [
             ['available', 'Disponibles'],
             ['expiring', 'Vencen en 7 días'],
+            ['expiring15', 'Vencen en 15 días'],
+            ['expiring30', 'Vencen en 30 días'],
             ['EXPIRED', 'Vencidos'],
             ['DEPLETED', 'Agotados'],
             ['BLOCKED', 'Bloqueados'],
@@ -808,8 +831,11 @@ const ProcurementPage = () => {
               value={branchId}
               branches={branches}
               onChange={setBranchId}
+              allowAll={isSuperAdmin}
+              onSelectAll={setGlobalScope}
               hasError={Boolean(branchesError)}
             />
+            <Button variant="outline" size="sm" onClick={exportCurrent} leftIcon={<Download size={16} />}>Exportar CSV</Button>
             <Button
               variant="outline"
               size="sm"
@@ -822,7 +848,7 @@ const ProcurementPage = () => {
         }
       />
 
-      {!branchId && (
+      {!branchId && !isSuperAdmin && (
         <Card className="border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
           Puedes preparar el directorio de proveedores ahora. Para crear órdenes y recibir lotes, primero necesitas una cocina asignada.
         </Card>
@@ -903,6 +929,12 @@ const ProcurementPage = () => {
             value: money(summary?.purchasesTotal ?? 0),
             icon: Truck,
             tone: 'brand',
+          },
+          {
+            label: 'Variación vs previsto',
+            value: money(summary?.purchaseVariance ?? 0),
+            icon: WalletCards,
+            tone: (summary?.purchaseVariance ?? 0) > 0 ? 'danger' : 'neutral',
           },
           { label: 'Stock en lotes', value: money(summary?.stockValue ?? 0), icon: WalletCards },
         ]}
@@ -1051,6 +1083,7 @@ const ProcurementPage = () => {
                           {order.supplier?.name ?? 'Proveedor'} · {order.items.length}{' '}
                           {order.items.length === 1 ? 'insumo' : 'insumos'}
                         </p>
+                        {branchId === null && order.branch && <p className="mt-1 text-xs font-bold text-brand-700">Sucursal: {order.branch.name}</p>}
                         <p className="mt-1 text-xs text-ink-muted">
                           Solicitada {formatDate(order.orderedAt)} · Entrega{' '}
                           {formatBusinessDate(order.expectedAt)}
@@ -1084,7 +1117,10 @@ const ProcurementPage = () => {
                     <Button size="sm" variant="ghost" onClick={() => setSelectedOrder(order)}>
                       Ver detalle <ArrowRight className="ml-1 size-4" />
                     </Button>
-                    {canManage && canReceive(order) && (
+                    {canManage && branchId && order.status === 'DRAFT' && (
+                      <Button size="sm" onClick={() => void approveOrder(order)} isLoading={saving}>Aprobar y ordenar</Button>
+                    )}
+                    {canManage && branchId && canReceive(order) && (
                       <div className="flex flex-wrap gap-2">
                         {canEditOrder(order) && (
                           <Button
@@ -1767,7 +1803,12 @@ const ProcurementPage = () => {
             <Button variant="outline" onClick={() => setSelectedOrder(null)}>
               Cerrar
             </Button>
-            {canManage && selectedOrder && canEditOrder(selectedOrder) && (
+            {canManage && branchId && selectedOrder?.status === 'DRAFT' && (
+              <Button onClick={() => void approveOrder(selectedOrder)} isLoading={saving}>
+                Aprobar y ordenar
+              </Button>
+            )}
+            {canManage && branchId && selectedOrder && canEditOrder(selectedOrder) && (
               <Button
                 variant="outline"
                 onClick={() => openEditOrder(selectedOrder)}
@@ -1776,7 +1817,7 @@ const ProcurementPage = () => {
                 Editar orden
               </Button>
             )}
-            {canManage && selectedOrder && canReceive(selectedOrder) && (
+            {canManage && branchId && selectedOrder && canReceive(selectedOrder) && (
               <Button
                 onClick={() => openReceive(selectedOrder)}
                 leftIcon={<PackageCheck className="size-4" />}
@@ -1801,7 +1842,7 @@ const ProcurementPage = () => {
                 Entrega estimada: {formatBusinessDate(selectedOrder.expectedAt)}
               </span>
             </div>
-            {selectedOrder.supplier?.email && canManage && canReceive(selectedOrder) && (
+            {selectedOrder.supplier?.email && canManage && branchId && canReceive(selectedOrder) && (
               <div>
                 <a href={orderMailto(selectedOrder)} className="inline-flex w-fit items-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-sm font-bold text-brand-700 hover:border-brand-300 hover:underline">
                   <Mail className="size-4" /> Preparar correo al proveedor
@@ -1849,7 +1890,7 @@ const ProcurementPage = () => {
                 <p className="mt-1 whitespace-pre-wrap text-sm text-ink">{selectedOrder.notes}</p>
               </div>
             )}
-            {canManage && canReceive(selectedOrder) && (
+            {canManage && branchId && canReceive(selectedOrder) && (
               <Button
                 size="sm"
                 variant="ghost"

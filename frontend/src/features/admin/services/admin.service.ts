@@ -15,9 +15,13 @@ import type {
   PosProduct,
   PosSaleResult,
   Reports,
+  CashSummary,
+  CashSessionDetail,
   PendingMobilePayment,
   StockRow,
   StockMovementRow,
+  InventoryTransferRow,
+  InventoryCountRow,
   AuditLogRow,
   TicketStatus,
 } from '../types';
@@ -38,6 +42,8 @@ export interface AdminOrderFilters {
   status?: string;
   /** Numero de pedido, nombre o telefono del cliente (busqueda OR en el servidor). */
   search?: string;
+  source?: 'WEB' | 'POS';
+  deliveryType?: 'DELIVERY' | 'PICKUP' | 'DINE_IN';
   from?: string;
   to?: string;
   page?: number;
@@ -49,6 +55,14 @@ export interface AuditLogFilters {
   actorId?: number;
   page?: number;
   pageSize?: number;
+  action?: string;
+  entityId?: string;
+  severity?: 'INFO' | 'WARNING' | 'CRITICAL';
+  outcome?: 'SUCCESS' | 'FAILURE';
+  correlationId?: string;
+  search?: string;
+  from?: string;
+  to?: string;
 }
 
 /** Todas estas llamadas exigen permisos: el backend las valida (seccion 7.1). */
@@ -88,6 +102,21 @@ export const adminApi = {
     return { rows: data.data, meta: data.meta ?? singlePage(data.data.length) };
   },
 
+  async auditSummary(): Promise<{ today: number; critical: number; failures: number; generatedAt: string }> {
+    const { data } = await api.get<ApiSuccess<{ today: number; critical: number; failures: number; generatedAt: string }>>('/admin/audit-logs/summary');
+    return data.data;
+  },
+
+  async verifyAuditIntegrity(): Promise<{ valid: boolean; checked: number; violations: Array<{ id: number; reason: string }>; checkedAt: string }> {
+    const { data } = await api.get<ApiSuccess<{ valid: boolean; checked: number; violations: Array<{ id: number; reason: string }>; checkedAt: string }>>('/admin/audit-logs/integrity');
+    return data.data;
+  },
+
+  async exportAuditCsv(filters: AuditLogFilters & { from: string; to: string; reason: string }): Promise<Blob> {
+    const { data } = await api.get<Blob>('/admin/audit-logs/export', { params: filters, responseType: 'blob' });
+    return data;
+  },
+
   // --- Cocina ---
   async kitchenBoard(branchId: number, signal?: AbortSignal): Promise<KitchenBoard> {
     const { data } = await api.get<ApiSuccess<KitchenBoard>>('/operations/kitchen/board', {
@@ -99,6 +128,22 @@ export const adminApi = {
 
   async advanceTicket(ticketId: number, status: TicketStatus, comment?: string): Promise<void> {
     await api.post(`/operations/kitchen/tickets/${ticketId}/advance`, { status, comment });
+  },
+
+  async holdKitchenTicket(ticketId: number, reason: string): Promise<void> {
+    await api.post(`/operations/kitchen/tickets/${ticketId}/hold`, { reason });
+  },
+
+  async resumeKitchenTicket(ticketId: number): Promise<void> {
+    await api.post(`/operations/kitchen/tickets/${ticketId}/resume`);
+  },
+
+  async assignKitchenTicket(ticketId: number, input: { station?: string | null; assignedTo?: number | null }): Promise<void> {
+    await api.patch(`/operations/kitchen/tickets/${ticketId}/assignment`, input);
+  },
+
+  async recordKitchenPrint(ticketId: number): Promise<void> {
+    await api.post(`/operations/kitchen/tickets/${ticketId}/print`);
   },
 
   async kitchenPushConfig(): Promise<{ enabled: boolean; publicKey: string }> {
@@ -137,6 +182,15 @@ export const adminApi = {
     return data.data;
   },
 
+  async posQuote(input: {
+    branchId: number;
+    items: Array<{ productId: number; variantId: number; quantity: number }>;
+    couponCode?: string;
+  }, signal?: AbortSignal): Promise<{ subtotal: number; discountTotal: number; total: number; currency: string }> {
+    const { data } = await api.post<ApiSuccess<{ subtotal: number; discountTotal: number; total: number; currency: string }>>('/operations/pos/quote', input, { signal });
+    return data.data;
+  },
+
   async createPosSale(input: {
     branchId: number;
     items: Array<{
@@ -146,9 +200,22 @@ export const adminApi = {
       specialInstructions?: string;
       selections?: Array<{ optionId: number; quantity: number }>;
     }>;
-    paymentMethod: DiningPaymentMethod;
+    payments: Array<{
+      method: DiningPaymentMethod;
+      amount: number;
+      reference?: string;
+      operationCode?: string;
+      payerPhone?: string;
+    }>;
+    cashReceived?: number;
     customerName?: string;
     notes?: string;
+    couponCode?: string;
+    documentType?: 'BOLETA' | 'FACTURA';
+    billingDocType?: 'DNI' | 'RUC' | 'CE';
+    billingDocNumber?: string;
+    billingName?: string;
+    billingAddress?: string;
     idempotencyKey?: string;
   }): Promise<PosSaleResult> {
     const { data } = await api.post<ApiSuccess<PosSaleResult>>('/operations/pos/sales', input);
@@ -210,17 +277,17 @@ export const adminApi = {
   },
 
   // --- Inventario ---
-  async stock(branchId: number, signal?: AbortSignal): Promise<StockRow[]> {
+  async stock(branchId?: number, signal?: AbortSignal): Promise<StockRow[]> {
     const { data } = await api.get<ApiSuccess<StockRow[]>>('/operations/inventory', {
-      params: { branchId },
+      params: branchId ? { branchId } : {},
       signal,
     });
     return data.data;
   },
 
-  async stockMovements(branchId: number, inventoryItemId?: number): Promise<StockMovementRow[]> {
+  async stockMovements(branchId?: number, inventoryItemId?: number, filters: { type?: string; from?: string; to?: string; limit?: number } = {}): Promise<StockMovementRow[]> {
     const { data } = await api.get<ApiSuccess<StockMovementRow[]>>('/operations/inventory/movements', {
-      params: { branchId, inventoryItemId, limit: 50 },
+      params: { ...(branchId ? { branchId } : {}), inventoryItemId, limit: filters.limit ?? 50, type: filters.type, from: filters.from, to: filters.to },
     });
     return data.data;
   },
@@ -264,22 +331,58 @@ export const adminApi = {
     expectedOnHand?: number;
     expectedReserved?: number;
     reason: string;
+    idempotencyKey?: string;
   }): Promise<void> {
     await api.post('/operations/inventory/adjust', input);
   },
 
+  async inventoryTransfers(branchId?: number): Promise<InventoryTransferRow[]> {
+    const { data } = await api.get<ApiSuccess<InventoryTransferRow[]>>('/operations/inventory/transfers', { params: branchId ? { branchId } : {} });
+    return data.data;
+  },
+
+  async createInventoryTransfer(input: { sourceBranchId: number; destinationBranchId: number; notes?: string | null; items: Array<{ inventoryItemId: number; quantity: number }> }): Promise<InventoryTransferRow> {
+    const { data } = await api.post<ApiSuccess<InventoryTransferRow>>('/operations/inventory/transfers', input);
+    return data.data;
+  },
+
+  async transitionInventoryTransfer(id: number, action: 'approve' | 'ship' | 'receive' | 'cancel', reason?: string): Promise<InventoryTransferRow> {
+    const { data } = await api.post<ApiSuccess<InventoryTransferRow>>(`/operations/inventory/transfers/${id}/${action}`, action === 'cancel' ? { reason: reason ?? 'Cancelada por el administrador' } : undefined);
+    return data.data;
+  },
+
+  async inventoryCounts(branchId?: number): Promise<InventoryCountRow[]> {
+    const { data } = await api.get<ApiSuccess<InventoryCountRow[]>>('/operations/inventory/counts', { params: branchId ? { branchId } : {} });
+    return data.data;
+  },
+
+  async startInventoryCount(input: { branchId: number; name: string; notes?: string | null; inventoryItemIds?: number[] }): Promise<InventoryCountRow> {
+    const { data } = await api.post<ApiSuccess<InventoryCountRow>>('/operations/inventory/counts', input);
+    return data.data;
+  },
+
+  async updateInventoryCountItem(countId: number, itemId: number, countedOnHand: number): Promise<InventoryCountRow> {
+    const { data } = await api.patch<ApiSuccess<InventoryCountRow>>(`/operations/inventory/counts/${countId}/items/${itemId}`, { countedOnHand });
+    return data.data;
+  },
+
+  async transitionInventoryCount(id: number, action: 'submit' | 'approve' | 'cancel'): Promise<InventoryCountRow> {
+    const { data } = await api.post<ApiSuccess<InventoryCountRow>>(`/operations/inventory/counts/${id}/${action}`);
+    return data.data;
+  },
+
   // --- Delivery ---
-  async deliveryBoard(branchId: number, signal?: AbortSignal): Promise<DeliveryRow[]> {
+  async deliveryBoard(branchId?: number, signal?: AbortSignal, includeFailed = false): Promise<DeliveryRow[]> {
     const { data } = await api.get<ApiSuccess<DeliveryRow[]>>('/delivery/board', {
-      params: { branchId },
+      params: { ...(branchId ? { branchId } : {}), includeFailed },
       signal,
     });
     return data.data;
   },
 
-  async drivers(branchId: number, signal?: AbortSignal): Promise<Driver[]> {
+  async drivers(branchId?: number, signal?: AbortSignal): Promise<Driver[]> {
     const { data } = await api.get<ApiSuccess<Driver[]>>('/delivery/drivers', {
-      params: { branchId },
+      params: branchId ? { branchId } : undefined,
       signal,
     });
     return data.data;
@@ -301,6 +404,9 @@ export const adminApi = {
   ): Promise<void> {
     await api.post(`/delivery/${deliveryId}/advance`, { status, comment });
   },
+  async retryDelivery(deliveryId: number, comment?: string): Promise<void> {
+    await api.post(`/delivery/${deliveryId}/retry`, { comment });
+  },
 
   // --- Pedidos y reportes ---
   /**
@@ -310,12 +416,14 @@ export const adminApi = {
   async orders(
     filters: AdminOrderFilters,
     signal?: AbortSignal,
-  ): Promise<{ rows: AdminOrderRow[]; meta: PaginationMeta }> {
+  ): Promise<{ rows: AdminOrderRow[]; meta: PaginationMeta; summary?: { totalAmount: number; counts: Record<string, number>; paymentCounts: Record<string, number>; pendingPaymentAmount: number; pendingRefundAmount: number } }> {
     const { data } = await api.get<ApiSuccess<AdminOrderRow[]>>('/admin/orders', {
       params: filters,
       signal,
     });
-    return { rows: data.data, meta: data.meta ?? singlePage(data.data.length) };
+    const meta = data.meta ?? singlePage(data.data.length);
+    const summary = (meta as PaginationMeta & { summary?: { totalAmount: number; counts: Record<string, number>; paymentCounts: Record<string, number>; pendingPaymentAmount: number; pendingRefundAmount: number } }).summary;
+    return { rows: data.data, meta, summary };
   },
 
   /**
@@ -338,6 +446,7 @@ export const adminApi = {
       pdfUrl?: string;
       xmlUrl?: string;
     },
+
   ): Promise<void> {
     await api.post(`/admin/orders/${orderNumber}/invoice`, input);
   },
@@ -394,6 +503,30 @@ export const adminApi = {
 
   async captureCash(paymentId: number, reference: string): Promise<void> {
     await api.post(`/payments/${paymentId}/cash/capture`, { reference });
+  },
+
+  async cashSummary(filters: { branchId?: number; from?: string; to?: string }, signal?: AbortSignal): Promise<CashSummary> {
+    const { data } = await api.get<ApiSuccess<CashSummary>>('/admin/cash/summary', { params: filters, signal });
+    return data.data;
+  },
+
+  async cashSessionDetail(id: number, signal?: AbortSignal): Promise<CashSessionDetail> {
+    const { data } = await api.get<ApiSuccess<CashSessionDetail>>(`/admin/cash/sessions/${id}`, { signal });
+    return data.data;
+  },
+
+  async openCashSession(input: { branchId: number; businessDate?: string; openingFloat: number }): Promise<CashSessionDetail['session']> {
+    const { data } = await api.post<ApiSuccess<CashSessionDetail['session']>>('/admin/cash/sessions', input);
+    return data.data;
+  },
+
+  async recordCashMovement(sessionId: number, input: { type: 'EXPENSE' | 'CASH_IN' | 'CASH_OUT' | 'ADJUSTMENT'; amount: number; reason: string }): Promise<void> {
+    await api.post(`/admin/cash/sessions/${sessionId}/movements`, input);
+  },
+
+  async closeCashSession(id: number, input: { declaredCash: number; notes?: string }): Promise<CashSessionDetail['session']> {
+    const { data } = await api.post<ApiSuccess<CashSessionDetail['session']>>(`/admin/cash/sessions/${id}/close`, input);
+    return data.data;
   },
 
   async reports(

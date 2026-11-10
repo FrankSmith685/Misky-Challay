@@ -2,6 +2,7 @@ import { api } from '@services/api/client';
 import { ENDPOINTS } from '@services/api/endpoints';
 import type { ApiSuccess } from '@/types/api';
 import type { BusinessInfo } from '@services/businessInfo';
+import type { ThemeTokens } from '@/theme/tokens';
 
 export interface BusinessSettingsState {
   business: BusinessInfo;
@@ -9,6 +10,7 @@ export interface BusinessSettingsState {
   isConfigured: boolean;
   updatedAt: string | null;
   updatedBy?: number | null;
+  version: number;
 }
 
 export interface CommunicationSettings {
@@ -43,6 +45,7 @@ export interface CommunicationSettingsState {
   isConfigured: boolean;
   updatedAt: string | null;
   updatedBy?: number | null;
+  version: number;
 }
 
 export interface NotificationHistoryItem {
@@ -93,6 +96,7 @@ export interface LocalPaymentSettingsState {
   isConfigured: boolean;
   updatedAt: string | null;
   updatedBy?: number | null;
+  version: number;
 }
 
 export type ReceiptMode = 'INTERNAL_ONLY' | 'EXTERNAL_MANUAL' | 'INTEGRATED';
@@ -109,18 +113,74 @@ export interface ReceiptSettingsState {
   isConfigured: boolean;
   updatedAt: string | null;
   updatedBy?: number | null;
+  version: number;
+}
+
+export interface SettingRevision {
+  id: number;
+  scope: 'business' | 'local-payments' | 'receipts' | 'communication' | 'theme';
+  version: number;
+  actorId: number | null;
+  reason: string;
+  createdAt: string;
+}
+
+export interface ThemeAdminState {
+  draft: ThemeTokens;
+  published: ThemeTokens;
+  draftVersion: number;
+  publishedVersion: number;
+  updatedAt: string | null;
+  updatedBy?: number | null;
+  publishedBy?: number | null;
+  source: 'database' | 'default';
 }
 
 export const settingsAdminApi = {
+  async getTheme(): Promise<{ tokens: ThemeTokens }> {
+    const { data } = await api.get<ApiSuccess<{ tokens: ThemeTokens }>>(ENDPOINTS.settings.theme);
+    return data.data;
+  },
+
+  async getThemeAdmin(): Promise<ThemeAdminState> {
+    const { data } = await api.get<ApiSuccess<ThemeAdminState>>(ENDPOINTS.settings.themeAdmin);
+    return data.data;
+  },
+
+  async saveThemeDraft(tokens: ThemeTokens, expectedVersion?: number): Promise<ThemeAdminState> {
+    const { data } = await api.put<ApiSuccess<ThemeAdminState>>(ENDPOINTS.settings.themeDraft, { ...tokens, expectedVersion });
+    return data.data;
+  },
+
+  async publishTheme(expectedVersion?: number): Promise<ThemeAdminState> {
+    const { data } = await api.post<ApiSuccess<ThemeAdminState>>(ENDPOINTS.settings.themePublish, { expectedVersion });
+    return data.data;
+  },
+
+  async resetTheme(expectedVersion?: number): Promise<ThemeAdminState> {
+    const { data } = await api.post<ApiSuccess<ThemeAdminState>>(ENDPOINTS.settings.themeReset, { expectedVersion });
+    return data.data;
+  },
+
+  async themeRevisions(): Promise<SettingRevision[]> {
+    const { data } = await api.get<ApiSuccess<SettingRevision[]>>(ENDPOINTS.settings.themeRevisions);
+    return data.data;
+  },
+
+  async rollbackTheme(revisionId: number, expectedVersion?: number): Promise<ThemeAdminState> {
+    const { data } = await api.post<ApiSuccess<ThemeAdminState>>(ENDPOINTS.settings.themeRollback(revisionId), { expectedVersion });
+    return data.data;
+  },
+
   async getBusiness(): Promise<BusinessSettingsState> {
     const { data } = await api.get<ApiSuccess<BusinessSettingsState>>(ENDPOINTS.settings.business);
     return data.data;
   },
 
-  async updateBusiness(input: BusinessInfo): Promise<BusinessSettingsState> {
+  async updateBusiness(input: BusinessInfo, expectedVersion?: number): Promise<BusinessSettingsState> {
     const { data } = await api.put<ApiSuccess<BusinessSettingsState>>(
       ENDPOINTS.settings.business,
-      input,
+      { ...input, expectedVersion },
     );
     return data.data;
   },
@@ -130,8 +190,13 @@ export const settingsAdminApi = {
     return data.data;
   },
 
-  async updateLocalPayments(input: LocalPaymentSettings): Promise<LocalPaymentSettingsState> {
-    const { data } = await api.put<ApiSuccess<LocalPaymentSettingsState>>(ENDPOINTS.settings.localPayments, input);
+  async updateLocalPayments(input: LocalPaymentSettings, expectedVersion?: number): Promise<LocalPaymentSettingsState> {
+    const { data } = await api.put<ApiSuccess<LocalPaymentSettingsState>>(ENDPOINTS.settings.localPayments, { ...input, expectedVersion });
+    return data.data;
+  },
+
+  async checkLocalPayments(): Promise<{ providers: Array<{ provider: 'yape' | 'plin'; enabled: boolean; valid: boolean; qrConfigured: boolean }>; checkedAt: string }> {
+    const { data } = await api.post<ApiSuccess<{ providers: Array<{ provider: 'yape' | 'plin'; enabled: boolean; valid: boolean; qrConfigured: boolean }>; checkedAt: string }>>(ENDPOINTS.settings.localPaymentsCheck);
     return data.data;
   },
 
@@ -140,8 +205,8 @@ export const settingsAdminApi = {
     return data.data;
   },
 
-  async updateReceipts(input: ReceiptSettings): Promise<ReceiptSettingsState> {
-    const { data } = await api.put<ApiSuccess<ReceiptSettingsState>>(ENDPOINTS.settings.receipts, input);
+  async updateReceipts(input: ReceiptSettings, expectedVersion?: number): Promise<ReceiptSettingsState> {
+    const { data } = await api.put<ApiSuccess<ReceiptSettingsState>>(ENDPOINTS.settings.receipts, { ...input, expectedVersion });
     return data.data;
   },
 
@@ -150,10 +215,10 @@ export const settingsAdminApi = {
     return data.data;
   },
 
-  async updateCommunication(input: CommunicationSettingsInput): Promise<CommunicationSettingsState> {
+  async updateCommunication(input: CommunicationSettingsInput, expectedVersion?: number): Promise<CommunicationSettingsState> {
     const { data } = await api.put<ApiSuccess<CommunicationSettingsState>>(
       ENDPOINTS.settings.communication,
-      input,
+      { ...input, expectedVersion },
     );
     return data.data;
   },
@@ -174,5 +239,19 @@ export const settingsAdminApi = {
   async getIntegrations(): Promise<IntegrationStatus> {
     const { data } = await api.get<ApiSuccess<IntegrationStatus>>(ENDPOINTS.settings.integrations);
     return data.data;
+  },
+
+  async checkIntegrations(): Promise<IntegrationStatus> {
+    const { data } = await api.post<ApiSuccess<IntegrationStatus>>(ENDPOINTS.settings.integrationsCheck);
+    return data.data;
+  },
+
+  async revisions(scope: SettingRevision['scope']): Promise<SettingRevision[]> {
+    const { data } = await api.get<ApiSuccess<SettingRevision[]>>(`/settings/revisions/${scope}`);
+    return data.data;
+  },
+
+  async rollback(scope: SettingRevision['scope'], revisionId: number, expectedVersion?: number): Promise<void> {
+    await api.post(`/settings/revisions/${scope}/${revisionId}/rollback`, { expectedVersion });
   },
 };

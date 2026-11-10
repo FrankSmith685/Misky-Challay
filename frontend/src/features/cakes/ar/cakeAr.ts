@@ -3,7 +3,9 @@ import type { CakePreviewSnapshot } from '../cakePreview.service';
 
 export const CAKE_AR_TARGET = '/images/brand/patisserie-chocolate-v1.jpg';
 export const CAKE_AR_COMPILED_TARGET = '/ar/misky-card-v1.mind';
-export const cakeArPath = (token?: string) => token ? `${ROUTES.cakeAr}?vista=${encodeURIComponent(token)}` : ROUTES.cakeAr;
+export const cakeArPath = (token?: string) => token
+  ? `${ROUTES.cakeAr}?vista=${encodeURIComponent(token)}&camera=1`
+  : `${ROUTES.cakeAr}?camera=1`;
 
 /** This demo is illustrative, independent of the changing product catalog. */
 export const cakeArDemo: CakePreviewSnapshot = {

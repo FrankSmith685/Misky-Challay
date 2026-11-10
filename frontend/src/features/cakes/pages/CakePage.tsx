@@ -84,6 +84,7 @@ const CakePage = () => {
   const { slug } = useParams<{ slug: string }>();
   const [searchParams] = useSearchParams();
   const themeSlug = searchParams.get('diseno');
+  const specialRequest = searchParams.get('solicitud') === 'especial';
   const previewToken = searchParams.get('vista');
   const repeatRequestId = searchParams.get('repetirSolicitud');
   const actorId = useAppSelector((state) => state.auth.user?.id);
@@ -183,7 +184,7 @@ const CakePage = () => {
   const [summaryExpanded, setSummaryExpanded] = useState(false);
   const [threeDOpen, setThreeDOpen] = useState(false);
   const [activeGroupId, setActiveGroupId] = useState<number | null>(null);
-  const [manualQuoteOpen, setManualQuoteOpen] = useState(false);
+  const [manualQuoteOpen, setManualQuoteOpen] = useState(specialRequest);
   const [manualQuoteServings, setManualQuoteServings] = useState<number | undefined>();
   const [customSelected, setCustomSelected] = useState(Boolean(editing?.requestedServings));
   const [customServings, setCustomServings] = useState(
@@ -466,7 +467,7 @@ const CakePage = () => {
             'Este diseño pertenece a otra torta. Vuelve a elegirlo desde Para empresas.',
           );
         setTheme(selectedTheme);
-        setManualQuoteOpen(selectedTheme?.saleMode === 'QUOTE');
+        setManualQuoteOpen(specialRequest || selectedTheme?.saleMode === 'QUOTE');
         setProduct(
           selectedTheme?.saleMode === 'CONFIGURED'
             ? {
@@ -494,7 +495,7 @@ const CakePage = () => {
     return () => {
       active = false;
     };
-  }, [branchId, editing, slug, themeSlug]);
+  }, [branchId, editing, slug, themeSlug, specialRequest]);
 
   useEffect(() => {
     if (
@@ -573,7 +574,7 @@ const CakePage = () => {
   useEffect(() => {
     setSlots([]);
     setSlotsError('');
-    if (!branchId || !profile) {
+    if (!branchId || !profile || product?.preparationMode === 'READY_STOCK') {
       setSlotsLoading(false);
       return undefined;
     }
@@ -606,11 +607,14 @@ const CakePage = () => {
     return () => {
       active = false;
     };
-  }, [branchId, profile, editingSlotId]);
+  }, [branchId, product?.preparationMode, profile, editingSlotId]);
 
   useEffect(() => {
-    if (product) document.title = `${theme?.name ?? product.name} | Misky Challay`;
-  }, [product, theme]);
+    if (product)
+      document.title = specialRequest
+        ? 'Solicitar diseño especial | Misky Challay'
+        : `${theme?.name ?? product.name} | Misky Challay`;
+  }, [product, theme, specialRequest]);
 
   useEffect(() => {
     if (
@@ -676,9 +680,10 @@ const CakePage = () => {
           JSON.stringify(visualDesign) !== JSON.stringify(defaultCakeVisualDesign()))
           ? visualDesign
           : undefined,
-      requiresScheduledDelivery: true,
+      preparationMode: product.preparationMode,
+      requiresScheduledDelivery: product.preparationMode !== 'READY_STOCK',
       requiresCarDelivery: product.family === 'CAKE',
-      minLeadHours: Math.max(profile.minLeadHours, theme?.minLeadHours ?? 0),
+      minLeadHours: product.preparationMode === 'READY_STOCK' ? 0 : Math.max(profile.minLeadHours, theme?.minLeadHours ?? 0),
     };
     addingLock.current = true;
     setAdding(true);
@@ -990,12 +995,19 @@ const CakePage = () => {
     !quantityValid ||
     referenceBusy ||
     (isCustom && builder.isLoading);
-  const mobileContinueLabel = step === 0 ? 'Continuar' : continueLabel;
+  const mobileContinueLabel = continueLabel;
   const deliveryLabel = deliveryType === 'PICKUP' ? pickupBranch?.name : address?.line1;
   const servingUnit = singlePresentation?.servingUnit ?? 'porciones';
   const servingLabel = singlePresentation?.servingSize
     ? `${singlePresentation.servingSize} ${singlePresentation.servingSize === 1 ? ({ porciones: 'porción', unidades: 'unidad' }[servingUnit] ?? servingUnit) : servingUnit}`
     : 'Formato único';
+  const servingsHighlight = customSelected && requestedServings
+    ? `${requestedServings} porciones`
+    : selectedSizeGuide
+      ? `${selectedSizeGuide.minServings}–${selectedSizeGuide.maxServings} porciones`
+      : selectedVariant?.servingSize
+        ? `${selectedVariant.servingSize} ${selectedVariant.servingUnit ?? 'porciones'}`
+        : null;
   const quantityField = (
     <Input
       id="cake-quantity"
@@ -1048,13 +1060,14 @@ const CakePage = () => {
         className="mb-5 flex items-center gap-2 text-[11px] text-ink-muted"
       >
         <Link
-          to={businessEntry ? ROUTES.business : ROUTES.menu}
+          to={businessEntry ? ROUTES.business : specialRequest ? ROUTES.cake(product.slug) : ROUTES.menu}
+          state={specialRequest ? { customCakeEntry: true } : undefined}
           className="inline-flex items-center gap-1.5 hover:text-brand-700"
         >
-          <ArrowLeft className="size-3.5" /> {businessEntry ? 'Para empresas' : 'Catálogo'}
+          <ArrowLeft className="size-3.5" /> {businessEntry ? 'Para empresas' : specialRequest ? 'Crea tu torta' : 'Catálogo'}
         </Link>
         <ChevronRight className="size-3" />
-        <span className="font-medium text-ink">{theme?.name ?? product.name}</span>
+        <span className="font-medium text-ink">{specialRequest ? 'Diseño especial' : theme?.name ?? product.name}</span>
       </nav>
 
       <header className="cake-page-header mb-6 grid gap-5 sm:mb-7 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
@@ -1062,9 +1075,11 @@ const CakePage = () => {
           <p className="cake-eyebrow">
             {isCustom ? 'Pastelería a tu medida' : 'Pastelería Misky Challay'}
           </p>
-          <h1 className="cake-page-title mt-1 text-ink">{theme?.name ?? product.name}</h1>
+          <h1 className="cake-page-title mt-1 text-ink">{specialRequest ? 'Solicita un diseño especial' : theme?.name ?? product.name}</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-muted">
-            {theme?.saleMode === 'QUOTE'
+            {specialRequest
+              ? 'Cuéntanos una forma, tamaño o acabado diferente y prepararemos una propuesta para ti.'
+              : theme?.saleMode === 'QUOTE'
               ? 'Cuéntanos las porciones y los detalles que imaginas. Revisaremos tu solicitud antes de confirmar el precio y la fecha.'
               : isAdvanced
                 ? 'Comparte tu idea y diseñemos una torta para tu ocasión especial.'
@@ -1072,6 +1087,12 @@ const CakePage = () => {
                   ? 'Elige tus sabores, personaliza cada detalle y reserva tu entrega.'
                   : product.description || 'Elige una presentación y reserva tu entrega.'}
           </p>
+          {!isAdvanced && !specialRequest && (basePrice !== null || servingsHighlight) && (
+            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-ink-muted" aria-label="Información rápida de la torta">
+              {basePrice !== null && <span className="font-semibold text-brand-800">Desde {formatCurrency(basePrice)}</span>}
+              {servingsHighlight && <span>{servingsHighlight}</span>}
+            </div>
+          )}
         </div>
         <div className="flex min-w-0 items-center gap-3 sm:justify-end">
           <img
@@ -1085,10 +1106,12 @@ const CakePage = () => {
             </span>
             <p className="text-xs font-semibold text-ink">
               {product.preparationMode === 'READY_STOCK'
-                ? 'Producto preparado'
+                ? 'Entrega lo antes posible'
                 : 'Preparada por encargo'}
               <span className="mt-0.5 block text-[11px] font-normal text-ink-muted">
-                {profile.minLeadHours} horas de anticipación
+                {product.preparationMode === 'READY_STOCK'
+                  ? 'Sujeto a existencias del taller'
+                  : `${profile.minLeadHours} horas de anticipación`}
               </span>
             </p>
           </div>
@@ -1100,7 +1123,7 @@ const CakePage = () => {
           publicar? una nueva cotizaci?n; el precio anterior no se reutiliza.
         </p>
       )}
-      {!isAdvanced && (
+      {!isAdvanced && !specialRequest && (
         <CakeAvailabilityNotice
           item={
             selectedVariant
@@ -1154,8 +1177,8 @@ const CakePage = () => {
           className={`grid items-start gap-6 lg:gap-8 ${threeD && !manualQuoteOpen ? 'lg:grid-cols-[minmax(0,1fr)_380px] xl:grid-cols-[minmax(0,1fr)_420px]' : 'lg:grid-cols-[minmax(0,1fr)_340px]'}`}
         >
           <div className="min-w-0 space-y-5">
-            {theme && <CakeThemeBanner theme={theme} onAdapt={requestManualQuote} />}
-            {theme?.saleMode !== 'QUOTE' && (
+            {!specialRequest && theme && <CakeThemeBanner theme={theme} onAdapt={requestManualQuote} />}
+            {!specialRequest && theme?.saleMode !== 'QUOTE' && (
               <section
                 id="cake-configurator"
                 className="cake-surface scroll-mt-24 overflow-hidden"
@@ -1528,13 +1551,41 @@ const CakePage = () => {
               </section>
             )}
 
-            {isCake && profile.saleMode === 'SEMI_CUSTOM' && (
+            {isCake && profile.saleMode === 'SEMI_CUSTOM' && !specialRequest && !theme && !repeat.value && (
+              <section className="cake-surface flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-7" aria-labelledby="special-cake-request-title">
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-accent-50 text-accent-700">
+                    <MessageSquareText className="size-5" strokeWidth={1.6} aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0">
+                    <h2 id="special-cake-request-title" className="text-base font-semibold leading-6 text-ink">
+                      ¿Necesitas una torta fuera de estas opciones?
+                    </h2>
+                    <p className="mt-1 text-sm leading-6 text-ink-muted">
+                      Solicita un diseño especial para otra forma, tamaño o acabado.
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  component={Link}
+                  to={`${ROUTES.cake(product.slug)}?solicitud=especial`}
+                  variant="outline"
+                  className="w-full shrink-0 sm:w-auto"
+                  endIcon={<ArrowRight className="size-4" />}
+                >
+                  Solicitar diseño especial
+                </Button>
+              </section>
+            )}
+
+            {(specialRequest || manualQuoteOpen || Boolean(repeat.value) || (isCake && profile.saleMode === 'SEMI_CUSTOM' && theme?.saleMode === 'QUOTE')) && (
               <CakeFreeformRequest
                 key={repeat.value?.request.id ?? 'new'}
                 prefill={repeat.value}
                 theme={theme}
-                alwaysOpen={theme?.saleMode === 'QUOTE' || Boolean(repeat.value)}
+                alwaysOpen={specialRequest || theme?.saleMode === 'QUOTE' || Boolean(repeat.value)}
                 product={product}
+                dedicated={specialRequest}
                 slots={slots}
                 branchId={branchId}
                 deliveryType={deliveryType}
@@ -1566,7 +1617,9 @@ const CakePage = () => {
               productName={theme?.name ?? product.name}
               productImage={theme?.imageUrls[0] ?? product.imageUrl}
               onReturn={() => {
-                if (theme?.saleMode === 'QUOTE')
+                if (specialRequest)
+                  navigate(ROUTES.cake(product.slug), { replace: true, state: { customCakeEntry: true } });
+                else if (theme?.saleMode === 'QUOTE')
                   navigate(ROUTES.cake(product.slug), { state: { customCakeEntry: true } });
                 else {
                   setManualQuoteOpen(false);

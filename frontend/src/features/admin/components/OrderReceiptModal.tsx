@@ -38,7 +38,7 @@ export const OrderReceiptModal = ({ order, isOpen, onClose, onPrinted }: OrderRe
   useEffect(() => {
     if (!trackingUrl) return;
     let active = true;
-    void QRCode.toDataURL(trackingUrl, { width: 180, margin: 1, color: { dark: '#0050a6', light: '#ffffff' } })
+    void QRCode.toDataURL(trackingUrl, { width: 180, margin: 1, color: { dark: '#003a60', light: '#ffffff' } })
       .then((value) => { if (active) setQrDataUrl(value); })
       .catch(() => { if (active) setQrDataUrl(''); });
     return () => { active = false; };

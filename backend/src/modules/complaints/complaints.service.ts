@@ -1,5 +1,6 @@
-import { Op, type WhereOptions } from 'sequelize';
-import { Complaint, Order, sequelize } from '@database/models';
+import { Op, type WhereOptions, type Transaction } from 'sequelize';
+import { Complaint, ComplaintResponse, ComplaintNote, ComplaintEvidence, ComplaintHoliday, Order, User, Role, Permission, sequelize } from '@database/models';
+import { PERMISSIONS, USER_STATUS } from '@config/constants';
 import {
   COMPLAINT_STATUS,
   type ComplaintStatus,
@@ -10,6 +11,7 @@ import { settingsService } from '@modules/settings/settings.service';
 import { addDaysToIsoDate, zonedDateAt, zonedParts } from '@shared/utils/datetime';
 import { notificationsService } from '@modules/notifications/notifications.service';
 import { logger } from '@config/logger';
+import { computeComplaintDueDate, nationalComplaintHolidays } from './complaints.calendar';
 
 export interface CreateComplaintInput {
   type: 'RECLAMO' | 'QUEJA';
@@ -36,22 +38,17 @@ export interface CreateComplaintInput {
  * el plazo real siempre puede ser mayor, nunca menor, asi que quedarse corto aqui es
  * conservador para el consumidor.
  */
-const computeDueDate = (from: Date, businessDays: number): Date => {
-  let iso = zonedParts(from).isoDate;
-  let added = 0;
-  while (added < businessDays) {
-    iso = addDaysToIsoDate(iso, 1);
-    const weekday = zonedParts(zonedDateAt(iso, 12, 0)).weekday; // 0 domingo, 6 sabado
-    if (weekday !== 0 && weekday !== 6) added += 1;
-  }
-  return zonedDateAt(iso, 23, 59);
-};
-
 export interface ComplaintListFilters extends PaginationQuery {
   status?: string;
   search?: string;
   /** Llega por query string, asi que tambien vale "true"/"1". */
   overdue?: boolean | string;
+  dueSoon?: boolean | string;
+  unassigned?: boolean | string;
+  escalated?: boolean | string;
+  from?: string;
+  to?: string;
+  masked?: boolean | string;
 }
 
 /** Vencido = paso el plazo legal y todavia no se ha respondido. */
@@ -76,6 +73,11 @@ const buildWhere = (filters: ComplaintListFilters): WhereOptions => {
 
   if (filters.status) conditions.push({ status: filters.status });
   if (isTrue(filters.overdue)) conditions.push(overdueCondition());
+  if (isTrue(filters.dueSoon)) conditions.push({ status: { [Op.ne]: COMPLAINT_STATUS.RESOLVED }, dueAt: { [Op.between]: [new Date(), zonedDateAt(addDaysToIsoDate(zonedParts(new Date()).isoDate, 3), 23, 59)] } });
+  if (isTrue(filters.unassigned)) conditions.push({ status: { [Op.ne]: COMPLAINT_STATUS.RESOLVED }, assignedTo: null });
+  if (isTrue(filters.escalated)) conditions.push({ status: { [Op.ne]: COMPLAINT_STATUS.RESOLVED }, escalatedAt: { [Op.ne]: null } });
+  if (filters.from) conditions.push({ createdAt: { [Op.gte]: zonedDateAt(filters.from, 0, 0) } });
+  if (filters.to) conditions.push({ createdAt: { [Op.lt]: zonedDateAt(addDaysToIsoDate(filters.to, 1), 0, 0) } });
   if (filters.search) {
     conditions.push({
       [Op.or]: [
@@ -124,6 +126,29 @@ const CSV_COLUMNS: Array<{ header: string; value: (row: Complaint) => unknown }>
 /** Techo de la exportacion: un CSV se arma entero en memoria antes de enviarse. */
 const EXPORT_LIMIT = 5_000;
 
+const staffAttributes = ['id', 'firstName', 'lastName'];
+const requireCurrent = (complaint: Complaint, expectedUpdatedAt: string): void => {
+  if (complaint.updatedAt.getTime() !== new Date(expectedUpdatedAt).getTime()) {
+    throw ApiError.conflict('El expediente cambió. Vuelve a abrirlo antes de guardar para revisar los cambios.');
+  }
+};
+const lockedComplaint = async (id: number, transaction: Transaction): Promise<Complaint> => {
+  const complaint = await Complaint.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
+  if (!complaint) throw ApiError.notFound('Reclamo no encontrado');
+  return complaint;
+};
+const notifyResponse = async (complaint: Complaint, entry: ComplaintResponse): Promise<void> => {
+  try {
+    // Los reintentos usan el contenido y la clave de ESTA versión, nunca la última respuesta.
+    complaint.response = entry.response;
+    const result = await notificationsService.notifyComplaintResponded(complaint, entry.version);
+    await entry.update({ notificationStatus: result.status, notificationError: result.error, sentAt: result.status === 'SENT' ? new Date() : null });
+  } catch (error) {
+    logger.error('Fallo el aviso de respuesta al reclamo', error);
+    await entry.update({ notificationStatus: 'FAILED', notificationError: 'No se pudo enviar el correo. Revisa Comunicaciones y reintenta.' });
+  }
+};
+
 export const complaintsService = {
   /**
    * Registra una hoja del Libro de Reclamaciones.
@@ -144,7 +169,9 @@ export const complaintsService = {
     }
 
     const businessInfo = await settingsService.getBusinessInfo();
-    const dueAt = computeDueDate(new Date(), businessInfo.complaintResponseDays);
+    const year = Number(zonedParts(new Date()).isoDate.slice(0, 4));
+    const calendar = (await Promise.all([this.holidays(year), this.holidays(year + 1)])).flat();
+    const dueAt = computeComplaintDueDate(new Date(), Math.min(15, Math.max(1, businessInfo.complaintResponseDays)), new Set(calendar.filter((day) => day.isActive).map((day) => day.holidayDate)));
 
     const complaint = await sequelize.transaction(async (transaction) => {
       const created = await Complaint.create(
@@ -203,8 +230,13 @@ export const complaintsService = {
         'createdAt',
         'dueAt',
         'respondedAt',
+        'assignedTo',
+        'escalatedAt',
+        'reopenedAt',
+        'updatedAt',
       ],
-      order: [['id', 'DESC']],
+      include: [{ model: User, as: 'assignedUser', attributes: staffAttributes }],
+      order: [['dueAt', 'ASC'], ['id', 'DESC']],
       limit: pagination.limit,
       offset: pagination.offset,
     });
@@ -218,14 +250,19 @@ export const complaintsService = {
    * numero enganoso. Aqui se cuenta sobre TODA la tabla.
    */
   async summary() {
-    const [received, inProgress, resolved, overdue] = await Promise.all([
+    const [received, inProgress, resolved, overdue, dueSoon, unassigned, escalated, reopened, notificationFailures] = await Promise.all([
       Complaint.count({ where: { status: COMPLAINT_STATUS.RECEIVED } }),
       Complaint.count({ where: { status: COMPLAINT_STATUS.IN_PROGRESS } }),
       Complaint.count({ where: { status: COMPLAINT_STATUS.RESOLVED } }),
       Complaint.count({ where: overdueCondition() }),
+      Complaint.count({ where: buildWhere({ dueSoon: true }) }),
+      Complaint.count({ where: buildWhere({ unassigned: true }) }),
+      Complaint.count({ where: buildWhere({ escalated: true }) }),
+      Complaint.count({ where: { status: { [Op.ne]: COMPLAINT_STATUS.RESOLVED }, reopenedAt: { [Op.ne]: null } } }),
+      ComplaintResponse.count({ where: { notificationStatus: 'FAILED' } }),
     ]);
 
-    return { received, inProgress, resolved, overdue };
+    return { received, inProgress, resolved, overdue, dueSoon, unassigned, escalated, reopened, notificationFailures };
   },
 
   /**
@@ -236,6 +273,8 @@ export const complaintsService = {
    * justamente el permiso de leer esos datos uno por uno en pantalla.
    */
   async exportCsv(filters: ComplaintListFilters): Promise<string> {
+    const count = await Complaint.count({ where: buildWhere(filters) });
+    if (count > EXPORT_LIMIT) throw ApiError.badRequest('La exportación supera 5000 expedientes. Reduce el rango de fechas.');
     const rows = await Complaint.findAll({
       where: buildWhere(filters),
       order: [['id', 'DESC']],
@@ -244,7 +283,10 @@ export const complaintsService = {
 
     const lines = [
       CSV_COLUMNS.map((column) => csvCell(column.header)).join(';'),
-      ...rows.map((row) => CSV_COLUMNS.map((column) => csvCell(column.value(row))).join(';')),
+      ...rows.map((row) => CSV_COLUMNS.map((column) => {
+        if (isTrue(filters.masked) && ['Consumidor', 'Documento', 'Correo', 'Telefono', 'Detalle', 'Pedido del consumidor', 'Respuesta'].includes(column.header)) return csvCell('[PROTEGIDO]');
+        return csvCell(column.value(row));
+      }).join(';')),
     ];
 
     // Punto y coma y BOM: es lo que hace que Excel en es-PE abra el archivo en
@@ -253,7 +295,15 @@ export const complaintsService = {
   },
 
   async getById(id: number): Promise<Complaint> {
-    const complaint = await Complaint.findByPk(id);
+    const complaint = await Complaint.findByPk(id, {
+      include: [
+        { model: User, as: 'assignedUser', attributes: staffAttributes },
+        { model: Order, as: 'order', attributes: ['id', 'orderNumber', 'status'] },
+        { model: ComplaintResponse, as: 'responses', separate: true, order: [['version', 'DESC']], include: [{ model: User, as: 'actor', attributes: staffAttributes }] },
+        { model: ComplaintNote, as: 'notes', separate: true, order: [['id', 'DESC']], include: [{ model: User, as: 'author', attributes: staffAttributes }] },
+        { model: ComplaintEvidence, as: 'evidences', separate: true, order: [['id', 'DESC']], include: [{ model: User, as: 'uploader', attributes: staffAttributes }] },
+      ],
+    });
     if (!complaint) throw ApiError.notFound('Reclamo no encontrado');
     return complaint;
   },
@@ -274,22 +324,108 @@ export const complaintsService = {
     };
   },
 
-  async respond(id: number, response: string, status: ComplaintStatus, actorId: number) {
+  async respond(id: number, response: string, status: ComplaintStatus, actorId: number, expectedUpdatedAt: string, reason?: string) {
+    const { complaint, entry } = await sequelize.transaction(async (transaction) => {
+      const complaint = await lockedComplaint(id, transaction);
+      requireCurrent(complaint, expectedUpdatedAt);
+      if (complaint.status === COMPLAINT_STATUS.RESOLVED) throw ApiError.conflict('Reabre el reclamo con un motivo antes de corregir la respuesta.');
+      const latest = await ComplaintResponse.findOne({ where: { complaintId: id }, order: [['version', 'DESC']], transaction });
+      if (latest && !reason?.trim()) throw ApiError.badRequest('Indica el motivo de la nueva versión de respuesta.');
+      const entry = await ComplaintResponse.create({ complaintId: id, version: (latest?.version ?? 0) + 1, response,
+        status: status === COMPLAINT_STATUS.RESOLVED ? 'RESOLVED' : 'IN_PROGRESS', actorId, reason: reason ?? null }, { transaction });
+      await complaint.update({ response, status, respondedAt: status === COMPLAINT_STATUS.RESOLVED ? new Date() : complaint.respondedAt,
+        respondedBy: actorId, draftResponse: null, draftBy: null, draftUpdatedAt: null }, { transaction });
+      return { complaint, entry };
+    });
+    await notifyResponse(complaint, entry);
+    return { id: complaint.id, status: complaint.status, version: entry.version, notificationStatus: entry.notificationStatus };
+  },
+
+  async saveDraft(id: number, response: string, actorId: number, expectedUpdatedAt: string) {
+    return sequelize.transaction(async (transaction) => {
+      const complaint = await lockedComplaint(id, transaction);
+      requireCurrent(complaint, expectedUpdatedAt);
+      if (complaint.status === COMPLAINT_STATUS.RESOLVED) throw ApiError.conflict('Reabre el expediente antes de preparar otra respuesta.');
+      await complaint.update({ draftResponse: response, draftBy: actorId, draftUpdatedAt: new Date() }, { transaction });
+      return { id, updatedAt: complaint.updatedAt };
+    });
+  },
+
+  async reopen(id: number, actorId: number, reason: string, expectedUpdatedAt: string) {
+    return sequelize.transaction(async (transaction) => {
+      const complaint = await lockedComplaint(id, transaction);
+      requireCurrent(complaint, expectedUpdatedAt);
+      if (complaint.status !== COMPLAINT_STATUS.RESOLVED) throw ApiError.conflict('Solo se pueden reabrir expedientes atendidos.');
+      await complaint.update({ status: COMPLAINT_STATUS.IN_PROGRESS, reopenedAt: new Date(), reopenedBy: actorId, reopenReason: reason }, { transaction });
+      await ComplaintNote.create({ complaintId: id, authorId: actorId, note: `Reapertura: ${reason}` }, { transaction });
+      return { id, status: complaint.status };
+    });
+  },
+
+  async assignees() {
+    const users = await User.findAll({ where: { status: USER_STATUS.ACTIVE, archivedAt: null },
+      attributes: ['id', 'firstName', 'lastName', 'isSuperAdmin'],
+      include: [{ model: Role, as: 'roles', attributes: ['id'], where: { archivedAt: null }, required: false,
+        include: [{ model: Permission, as: 'permissions', attributes: ['code'], through: { attributes: [] } }], through: { attributes: [] } }],
+      order: [['firstName', 'ASC']],
+    });
+    return users.filter((user) => user.isSuperAdmin || user.roles?.some((role) => role.permissions?.some((permission) =>
+      [PERMISSIONS.COMPLAINT_MANAGE, PERMISSIONS.COMPLAINT_RESPOND].includes(permission.code as typeof PERMISSIONS.COMPLAINT_RESPOND))))
+      .map((user) => ({ id: user.id, firstName: user.firstName, lastName: user.lastName }));
+  },
+
+  async assign(id: number, userId: number | null, actorId: number, reason: string, expectedUpdatedAt: string) {
+    if (userId !== null && !(await this.assignees()).some((user) => Number(user.id) === userId)) throw ApiError.badRequest('El responsable debe estar activo y autorizado para responder reclamos.');
+    return sequelize.transaction(async (transaction) => {
+      const complaint = await lockedComplaint(id, transaction);
+      requireCurrent(complaint, expectedUpdatedAt);
+      await complaint.update({ assignedTo: userId, assignedAt: userId ? new Date() : null }, { transaction });
+      await ComplaintNote.create({ complaintId: id, authorId: actorId, note: `Responsable ${userId ? `asignado (#${userId})` : 'retirado'}: ${reason}` }, { transaction });
+      return { id, assignedTo: userId };
+    });
+  },
+
+  async escalate(id: number, actorId: number, reason: string, expectedUpdatedAt: string) {
+    return sequelize.transaction(async (transaction) => {
+      const complaint = await lockedComplaint(id, transaction);
+      requireCurrent(complaint, expectedUpdatedAt);
+      if (complaint.status === COMPLAINT_STATUS.RESOLVED) throw ApiError.conflict('El expediente ya está atendido.');
+      await complaint.update({ escalatedAt: new Date(), escalationReason: reason }, { transaction });
+      await ComplaintNote.create({ complaintId: id, authorId: actorId, note: `Escalamiento a administración general: ${reason}` }, { transaction });
+      return { id, escalatedAt: complaint.escalatedAt };
+    });
+  },
+
+  async addNote(id: number, actorId: number, note: string) {
+    await this.getById(id);
+    return ComplaintNote.create({ complaintId: id, authorId: actorId, note });
+  },
+
+  async addEvidence(id: number, actorId: number, input: { fileName: string; fileUrl: string; mimeType?: string }) {
+    await this.getById(id);
+    return ComplaintEvidence.create({ complaintId: id, uploadedBy: actorId, ...input });
+  },
+
+  async retryNotification(id: number, responseId: number) {
     const complaint = await this.getById(id);
+    const entry = await ComplaintResponse.findOne({ where: { id: responseId, complaintId: id } });
+    if (!entry) throw ApiError.notFound('Versión no encontrada');
+    if (entry.notificationStatus !== 'SENT') await notifyResponse(complaint, entry);
+    return { id: entry.id, notificationStatus: entry.notificationStatus };
+  },
 
-    complaint.response = response;
-    complaint.status = status;
-    if (status === COMPLAINT_STATUS.RESOLVED && !complaint.respondedAt) {
-      complaint.respondedAt = new Date();
-      complaint.respondedBy = actorId;
-    }
-    await complaint.save();
+  async holidays(year: number) {
+    const base = nationalComplaintHolidays(year);
+    const custom = await ComplaintHoliday.findAll({ where: { holidayDate: { [Op.between]: [`${year}-01-01`, `${year}-12-31`] } } });
+    const calendar = new Map(base.map((day) => [day.holidayDate, { ...day, source: 'NATIONAL' }]));
+    for (const day of custom) calendar.set(day.holidayDate, { holidayDate: day.holidayDate, label: day.label, isActive: day.isActive, source: 'CUSTOM' });
+    return [...calendar.values()].sort((left, right) => left.holidayDate.localeCompare(right.holidayDate));
+  },
 
-    await notificationsService
-      .notifyComplaintResponded(complaint)
-      .catch((error) => logger.error('Fallo el aviso de respuesta al reclamo', error));
-
-    return complaint;
+  async saveHoliday(input: { holidayDate: string; label: string; isActive: boolean }, actorId: number) {
+    const [day] = await ComplaintHoliday.findOrCreate({ where: { holidayDate: input.holidayDate }, defaults: { holidayDate: input.holidayDate, label: input.label, isActive: input.isActive, createdBy: actorId } });
+    await day.update({ holidayDate: input.holidayDate, label: input.label, isActive: input.isActive, createdBy: actorId });
+    return day;
   },
 };
 

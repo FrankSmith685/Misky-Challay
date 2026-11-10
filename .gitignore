@@ -41,3 +41,11 @@ playwright-report/
 test-results/
 /backups/
 .env.docker
+
+# SDK y cachés locales de Android usados para compilar la app móvil
+/mobile/.android-home/
+/mobile/.gradle-home/
+/mobile/.jdk17/
+
+# Archivos temporales de verificaciones locales
+/scripts/.tmp-*

@@ -3,6 +3,7 @@
   CakeProductProfile,
   BuilderPreset,
   BuilderPresetItem,
+  BuilderRelease,
   CustomizationGroup,
   CustomizationOption,
   InventoryItem,
@@ -65,6 +66,9 @@ export interface BuilderConfig {
     name: string;
     slug: string;
     type: string;
+    family: string;
+    preparationMode: 'MADE_TO_ORDER' | 'READY_STOCK';
+    minLeadHours: number;
     imageUrl: string | null;
     imageAlt: string | null;
     imagePosition: string;
@@ -124,7 +128,7 @@ export interface QuoteResult {
   theme?: CakeThemeSnapshot | null;
   productId: number;
   variantId: number;
-  /** Nombre corto de la presentaciÃ³n: Regular, Grande, etc. */
+  /** Nombre corto de la presentación: Regular, Grande, etc. */
   variantName: string;
   requestedServings?: number | null;
   quantity: number;
@@ -152,6 +156,108 @@ const effectiveRules = (group: CustomizationGroup, link?: ProductCustomizationGr
   sortOrder: link?.sortOrder ?? group.sortOrder,
 });
 
+type PublishedBuilderSnapshot = {
+  groups?: Array<{
+    id: number;
+    variantId: number | null;
+    code: string;
+    name: string;
+    description: string | null;
+    selectionType: string;
+    minSelection: number;
+    maxSelection: number;
+    freeQuantity: number;
+    sortOrder: number;
+    options: Array<{
+      id: number;
+      name: string;
+      description: string | null;
+      imageUrl: string | null;
+      imageAlt: string | null;
+      imagePosition: string;
+      dietaryTags: string[];
+      allergens: string[];
+      spiceLevel: number;
+      priceDelta: number;
+      chargeAlways: boolean;
+      cakeScaleWithServings: boolean;
+      maxPerItem: number;
+      sortOrder: number;
+      status: string;
+      branchAvailability: Array<{ branchId: number; isAvailable: boolean; priceOverride: number | null; availableFrom: string | null; availableUntil: string | null }>;
+      incompatibleWith: number[];
+    }>;
+  }>;
+  presets?: Array<{ id: number; code: string; name: string; description: string | null; imageUrl: string | null; badge: string | null; isFeatured: boolean; isActive?: boolean; selections: QuoteSelection[] }>;
+};
+
+const snapshotGroups = async (snapshot: PublishedBuilderSnapshot, branchId?: number, variantId?: number): Promise<GroupDto[]> => {
+  const now = new Date();
+  const snapshotOptionIds = (snapshot.groups ?? []).flatMap((group) => group.options ?? []).map((option) => option.id);
+  const liveOptions = snapshotOptionIds.length
+    ? await CustomizationOption.findAll({ where: { id: snapshotOptionIds }, attributes: ['id', 'status'] })
+    : [];
+  const liveStatus = new Map(liveOptions.map((option) => [option.id, option.status]));
+  const liveBranchRows = branchId && snapshotOptionIds.length
+    ? await BranchOptionAvailability.findAll({ where: { branchId, optionId: snapshotOptionIds }, attributes: ['optionId', 'isAvailable'] })
+    : [];
+  const liveBranchAvailability = new Map(liveBranchRows.map((row) => [row.optionId, row.isAvailable]));
+  return (snapshot.groups ?? [])
+    .filter((group) => variantId === undefined || group.variantId === null || group.variantId === variantId)
+    .map((group) => ({
+      id: group.id,
+      variantId: group.variantId,
+      code: group.code,
+      name: group.name,
+      description: group.description,
+      selectionType: group.selectionType,
+      minSelection: group.minSelection,
+      maxSelection: group.maxSelection,
+      freeQuantity: group.freeQuantity,
+      sortOrder: group.sortOrder,
+      options: (group.options ?? [])
+        .filter((option) => (liveStatus.get(option.id) ?? option.status) !== OPTION_STATUS.INACTIVE)
+        .map((option) => {
+          const branchRow = branchId === undefined ? undefined : option.branchAvailability?.find((row) => row.branchId === branchId);
+          const withinSchedule = (!branchRow?.availableFrom || new Date(branchRow.availableFrom) <= now)
+            && (!branchRow?.availableUntil || new Date(branchRow.availableUntil) >= now);
+          return {
+            id: option.id,
+            name: option.name,
+            isDefault: false,
+            description: option.description,
+            imageUrl: option.imageUrl,
+            imageAlt: option.imageAlt,
+            imagePosition: option.imagePosition,
+            dietaryTags: option.dietaryTags ?? [],
+            allergens: option.allergens ?? [],
+            spiceLevel: option.spiceLevel,
+            priceDelta: Number(branchRow?.priceOverride ?? option.priceDelta),
+            chargeAlways: option.chargeAlways,
+            cakeScaleWithServings: option.cakeScaleWithServings,
+            maxPerItem: option.maxPerItem,
+            sortOrder: option.sortOrder,
+            isAvailable: (liveStatus.get(option.id) ?? option.status) === OPTION_STATUS.ACTIVE
+              && (branchId === undefined
+                ? true
+                : branchRow
+                  ? (liveBranchAvailability.get(option.id) ?? branchRow.isAvailable) && withinSchedule
+                  : liveBranchAvailability.get(option.id) !== false),
+            incompatibleWith: option.incompatibleWith ?? [],
+            incompatibilities: (option.incompatibleWith ?? []).map((id) => ({ optionId: id, reason: null })),
+          };
+        })
+        .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
+        .map((option, index, options) => ({ ...option, isDefault: index === options.findIndex((entry) => entry.isAvailable) })),
+    }))
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+};
+
+const latestPublishedSnapshot = async (productId: number): Promise<PublishedBuilderSnapshot | null> => {
+  const release = await BuilderRelease.findOne({ where: { productId }, order: [['version', 'DESC']] });
+  return (release?.snapshotJson as PublishedBuilderSnapshot | undefined) ?? null;
+};
+
 const loadProductOrFail = async (productId: number): Promise<Product> => {
   const product = await Product.findByPk(productId, {
     include: [
@@ -174,7 +280,13 @@ const loadProductOrFail = async (productId: number): Promise<Product> => {
 };
 
 /** Grupos configurados del producto, con opciones, precios y disponibilidad de la sucursal. */
-const loadGroups = async (productId: number, branchId?: number, variantId?: number): Promise<GroupDto[]> => {
+const loadGroups = async (
+  productId: number,
+  branchId?: number,
+  variantId?: number,
+  publishedSnapshot?: PublishedBuilderSnapshot | null,
+): Promise<GroupDto[]> => {
+  if (publishedSnapshot) return snapshotGroups(publishedSnapshot, branchId, variantId);
   const links = await ProductCustomizationGroup.findAll({
     where: {
       productId,
@@ -301,13 +413,25 @@ export const customizationService = {
       throw ApiError.badRequest('Este producto no es personalizable');
     }
 
+    const profile = await CakeProductProfile.findByPk(product.id);
+    const publishedSnapshot = await latestPublishedSnapshot(product.id);
+    const presets = publishedSnapshot
+      ? (publishedSnapshot.presets ?? []).filter((preset) => preset.isActive !== false)
+      : await BuilderPreset.findAll({
+          where: { productId: product.id, isActive: true },
+          include: [{ model: BuilderPresetItem, as: 'items', required: false }],
+          order: [['sortOrder', 'ASC']],
+        });
     return {
-      customServings: (await CakeProductProfile.findByPk(product.id))?.customServingsJson ?? null,
+      customServings: profile?.customServingsJson ?? null,
       product: {
         id: product.id,
         name: product.name,
         slug: product.slug,
         type: product.type,
+        family: product.family,
+        preparationMode: product.preparationMode,
+        minLeadHours: profile?.minLeadHours ?? 0,
         imageUrl: product.imageUrl,
         imageAlt: product.imageAlt,
         imagePosition: product.imagePosition,
@@ -320,14 +444,8 @@ export const customizationService = {
         servingUnit: variant.servingUnit,
         isDefault: variant.isDefault,
       })),
-      groups: await loadGroups(product.id, branchId),
-      presets: (
-        await BuilderPreset.findAll({
-          where: { productId: product.id, isActive: true },
-          include: [{ model: BuilderPresetItem, as: 'items', required: false }],
-          order: [['sortOrder', 'ASC']],
-        })
-      ).map((preset) => ({
+      groups: await loadGroups(product.id, branchId, undefined, publishedSnapshot),
+      presets: presets.map((preset) => ({
         id: preset.id,
         code: preset.code,
         name: preset.name,
@@ -335,9 +453,9 @@ export const customizationService = {
         imageUrl: preset.imageUrl,
         badge: preset.badge,
         isFeatured: preset.isFeatured,
-        selections: (preset.items ?? [])
-          .sort((a, b) => a.sortOrder - b.sortOrder)
-          .map((item) => ({ optionId: item.optionId, quantity: item.quantity })),
+        selections: 'items' in preset
+          ? (preset.items ?? []).sort((a, b) => a.sortOrder - b.sortOrder).map((item) => ({ optionId: item.optionId, quantity: item.quantity }))
+          : (((preset as unknown as { selections?: Array<{ optionId: number; quantity: number }> }).selections) ?? []).map((item) => ({ optionId: item.optionId, quantity: item.quantity })),
       })),
     };
   },
@@ -349,6 +467,7 @@ export const customizationService = {
    */
   async quote(input: QuoteInput): Promise<QuoteResult> {
     const product = await loadProductOrFail(input.productId);
+    const publishedSnapshot = await latestPublishedSnapshot(product.id);
     const variant = (product.variants ?? []).find((entry) => entry.id === input.variantId);
     if (!variant) throw ApiError.badRequest('La presentacion elegida no existe o no esta activa');
 
@@ -380,7 +499,7 @@ export const customizationService = {
       };
     }
 
-    const allGroups = await loadGroups(product.id, input.branchId, input.variantId);
+    const allGroups = await loadGroups(product.id, input.branchId, input.variantId, publishedSnapshot);
     const hiddenGroupIds = new Set(theme?.rule.hiddenGroupIds ?? []);
     const groups = allGroups.filter((group) => !hiddenGroupIds.has(group.id));
     const optionIndex = new Map<number, { group: GroupDto; option: OptionDto }>();
@@ -493,7 +612,7 @@ export const customizationService = {
       displayVariantName,
       ...(theme ? [`Diseño: ${theme.theme.name}`] : []),
       ...[...byGroup.entries()].map(([group, names]) => `${group}: ${names.join(', ')}`),
-    ].join(' Â· ');
+    ].join(' · ');
 
     return {
       productId: product.id,

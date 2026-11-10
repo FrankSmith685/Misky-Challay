@@ -36,6 +36,8 @@ const publicOrigin = z.string().url().transform((value) => new URL(value).origin
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  /** Vista previa privada: solo lectura, sin pedidos ni cobros. */
+  PREVIEW_MODE: booleanFromString(false),
   PORT: z.coerce.number().int().positive().default(4000),
   API_PREFIX: z.string().default('/api/v1'),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
@@ -80,6 +82,8 @@ const envSchema = z.object({
   JWT_REFRESH_SECRET: z.string().min(10, 'JWT_REFRESH_SECRET es obligatorio'),
   JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
+  /** Firma HMAC de la cadena de integridad de la bitácora. Si falta, usa JWT_REFRESH_SECRET. */
+  AUDIT_SIGNING_SECRET: z.string().min(32).optional(),
   BCRYPT_SALT_ROUNDS: z.coerce.number().int().min(8).max(14).default(10),
 
   ADMIN_EMAIL: z.string().email().default('admin@ejemplo.com'),
@@ -175,6 +179,9 @@ const envSchema = z.object({
   // El tope acota el riesgo de pedidos falsos: por encima de ese monto, solo pago online.
   COD_ENABLED: booleanFromString(false),
   COD_MAX_AMOUNT: z.coerce.number().min(0).default(300),
+  // Permite abrir el catalogo mientras Superadmin completa la identidad fiscal.
+  // Los marcadores nunca deben hacerse pasar por un RUC o domicilio reales.
+  ALLOW_PENDING_BUSINESS_INFO: booleanFromString(false),
 
   // Boleta: a partir de este importe SUNAT exige identificar al comprador con DNI.
   BOLETA_DNI_THRESHOLD: z.coerce.number().min(0).default(700),
@@ -305,8 +312,8 @@ const productionGuard = (value: z.infer<typeof envSchema>, ctx: z.RefinementCtx)
   if (!value.VAPID_PUBLIC_KEY) fail('VAPID_PUBLIC_KEY', 'es obligatoria para alertas push del KDS');
   if (!value.VAPID_PRIVATE_KEY) fail('VAPID_PRIVATE_KEY', 'es obligatoria para alertas push del KDS');
 
-  if (!value.STRIPE_SECRET_KEY && !value.MERCADOPAGO_ACCESS_TOKEN)
-    fail('MERCADOPAGO_ACCESS_TOKEN', 'configura Mercado Pago o Stripe para evitar el simulador en produccion');
+  if (!value.PREVIEW_MODE && !value.COD_ENABLED && !value.STRIPE_SECRET_KEY && !value.MERCADOPAGO_ACCESS_TOKEN)
+    fail('COD_ENABLED', 'habilita pago contra entrega o configura Mercado Pago o Stripe');
   if (value.STRIPE_SECRET_KEY && !value.STRIPE_SECRET_KEY.startsWith('sk_live_'))
     fail('STRIPE_SECRET_KEY', 'producción requiere una clave sk_live_, no una clave de prueba');
   if (value.STRIPE_SECRET_KEY && !value.STRIPE_WEBHOOK_SECRET)
@@ -320,11 +327,11 @@ const productionGuard = (value: z.infer<typeof envSchema>, ctx: z.RefinementCtx)
 
   if (/example\.com|ejemplo\.com|verdebowl\.com/i.test(value.CORS_ORIGIN))
     fail('CORS_ORIGIN', 'reemplaza el dominio de ejemplo por el dominio real');
-  if (/pendientes|ejemplo/i.test(value.BUSINESS_LEGAL_NAME))
+  if (!value.PREVIEW_MODE && !value.ALLOW_PENDING_BUSINESS_INFO && /pendientes|ejemplo/i.test(value.BUSINESS_LEGAL_NAME))
     fail('BUSINESS_LEGAL_NAME', 'completa la razon social real antes de vender');
-  if (value.BUSINESS_RUC === '20600000000')
+  if (!value.PREVIEW_MODE && !value.ALLOW_PENDING_BUSINESS_INFO && (!value.BUSINESS_RUC || value.BUSINESS_RUC === '20600000000'))
     fail('BUSINESS_RUC', 'reemplaza el RUC de ejemplo por el RUC real');
-  if (/example\.com|ejemplo\.com/i.test(value.BUSINESS_EMAIL))
+  if (!value.PREVIEW_MODE && !value.ALLOW_PENDING_BUSINESS_INFO && /example\.com|ejemplo\.com/i.test(value.BUSINESS_EMAIL))
     fail('BUSINESS_EMAIL', 'reemplaza el correo comercial de ejemplo');
   if (value.STRIPE_SECRET_KEY === 'sk_live_')
     fail('STRIPE_SECRET_KEY', 'pega una clave live completa');

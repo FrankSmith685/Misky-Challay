@@ -14,11 +14,11 @@ export const exportBowlCard = async (
   if (!context) throw new Error('Tu navegador no permite crear la imagen');
 
   const gradient = context.createLinearGradient(0, 0, 1080, 1080);
-  gradient.addColorStop(0, '#ebf3fb');
-  gradient.addColorStop(1, '#fff6e5');
+  gradient.addColorStop(0, '#ebf3f9');
+  gradient.addColorStop(1, '#fffbf1');
   context.fillStyle = gradient;
   context.fillRect(0, 0, 1080, 1080);
-  context.fillStyle = '#0057a6';
+  context.fillStyle = '#006fb9';
   context.font = '700 34px Arial';
   context.fillText('MISKY CHALLAY', 70, 90);
   context.font = '900 68px Arial';
@@ -27,7 +27,7 @@ export const exportBowlCard = async (
   context.beginPath();
   context.arc(540, 540, 330, 0, Math.PI * 2);
   context.fill();
-  context.strokeStyle = '#b9e2ff';
+  context.strokeStyle = '#add1e9';
   context.lineWidth = 28;
   context.stroke();
 
@@ -68,7 +68,7 @@ export const exportBowlCard = async (
     70,
     950,
   );
-  context.fillStyle = '#0057a6';
+  context.fillStyle = '#006fb9';
   context.font = '900 42px Arial';
   context.fillText(formatCurrency(total), 70, 1010);
 

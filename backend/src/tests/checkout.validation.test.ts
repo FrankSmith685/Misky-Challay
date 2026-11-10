@@ -4,15 +4,15 @@ import { placeSchema, quoteSchema } from '../modules/checkout/checkout.validatio
 
 const item = { productId: 1, variantId: 1, quantity: 1, selections: [{ optionId: 1, quantity: 1 }] };
 
-test('checkout solo acepta pago en línea, Yape o Plin y rechaza efectivo heredado', () => {
+test('checkout acepta pago en línea, Yape, Plin y contra entrega', () => {
   const body = { items: [item], deliveryType: 'PICKUP', branchId: 1, termsAccepted: true, termsVersion: 1, idempotencyKey: 'checkout-payment-method' };
-  for (const paymentMethod of ['ONLINE', 'YAPE', 'PLIN']) {
+  for (const paymentMethod of ['ONLINE', 'YAPE', 'PLIN', 'CASH']) {
     assert.equal(placeSchema.safeParse({ body: { ...body, paymentMethod } }).success, true);
   }
   for (const schema of [quoteSchema, placeSchema]) {
-    const result = schema.safeParse({ body: { ...body, paymentMethod: 'CASH' } });
+    const result = schema.safeParse({ body: { ...body, paymentMethod: 'INVALID' } });
     assert.equal(result.success, false);
-    if (!result.success) assert.match(result.error.issues[0]?.message ?? '', /efectivo/i);
+    if (!result.success) assert.match(result.error.issues[0]?.message ?? '', /pago/i);
   }
 });
 

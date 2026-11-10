@@ -1,16 +1,19 @@
 import { Router, type Request, type Response } from 'express';
 import { authenticate, optionalAuth } from '@middlewares/auth.middleware';
-import { requirePermissions } from '@middlewares/rbac.middleware';
+import { requireAnyPermission, requireSuperAdmin } from '@middlewares/rbac.middleware';
 import { validate } from '@middlewares/validate.middleware';
 import { authLimiter } from '@middlewares/rateLimit.middleware';
 import { PERMISSIONS } from '@config/constants';
 import { asyncHandler } from '@shared/utils/asyncHandler';
 import { complaintsService } from './complaints.service';
 import { complaintsController } from './complaints.controller';
+import { audit } from '@shared/utils/audit';
 import {
   createComplaintSchema,
   respondComplaintSchema,
   trackComplaintSchema,
+  complaintActionSchema, assignComplaintSchema, complaintDraftSchema, complaintNoteSchema, complaintEvidenceSchema,
+  complaintResponseIdSchema, complaintEvidenceIdSchema, complaintCalendarSchema, complaintHolidaySchema, complaintListSchema, complaintExportSchema,
 } from './complaints.validation';
 
 /**
@@ -30,13 +33,14 @@ router.get('/track', authLimiter, validate(trackComplaintSchema), complaintsCont
 router.get(
   '/',
   authenticate,
-  requirePermissions(PERMISSIONS.COMPLAINT_MANAGE),
+  requireAnyPermission(PERMISSIONS.COMPLAINT_READ, PERMISSIONS.COMPLAINT_MANAGE),
+  validate(complaintListSchema),
   complaintsController.list,
 );
 router.get(
   '/summary',
   authenticate,
-  requirePermissions(PERMISSIONS.COMPLAINT_MANAGE),
+  requireAnyPermission(PERMISSIONS.COMPLAINT_READ, PERMISSIONS.COMPLAINT_MANAGE),
   complaintsController.summary,
 );
 /**
@@ -49,9 +53,14 @@ router.get(
 router.get(
   '/export',
   authenticate,
-  requirePermissions(PERMISSIONS.COMPLAINT_MANAGE),
+  requireAnyPermission(PERMISSIONS.COMPLAINT_EXPORT, PERMISSIONS.COMPLAINT_MANAGE),
+  validate(complaintExportSchema),
   asyncHandler(async (req: Request, res: Response) => {
     const csv = await complaintsService.exportCsv(req.query);
+    await audit(req, { action: 'complaint.export', entity: 'complaints', after: {
+      from: req.query.from, to: req.query.to, status: req.query.status, search: Boolean(req.query.search), masked: req.query.masked,
+      reason: req.query.reason,
+    } });
     const stamp = new Date().toISOString().slice(0, 10);
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -60,18 +69,33 @@ router.get(
   }),
 );
 
+// Las rutas fijas van antes de `/:id`: de lo contrario Express trataría
+// "assignees" o "holidays" como el identificador de un reclamo.
+router.get('/assignees', authenticate, requireAnyPermission(PERMISSIONS.COMPLAINT_READ, PERMISSIONS.COMPLAINT_MANAGE), complaintsController.assignees);
+router.get('/holidays', authenticate, requireAnyPermission(PERMISSIONS.COMPLAINT_READ, PERMISSIONS.COMPLAINT_MANAGE), validate(complaintCalendarSchema), complaintsController.holidays);
+router.post('/holidays', authenticate, requireSuperAdmin, validate(complaintHolidaySchema), complaintsController.saveHoliday);
+
 router.get(
   '/:id',
   authenticate,
-  requirePermissions(PERMISSIONS.COMPLAINT_MANAGE),
+  requireAnyPermission(PERMISSIONS.COMPLAINT_READ, PERMISSIONS.COMPLAINT_MANAGE),
   complaintsController.detail,
 );
 router.post(
   '/:id/respond',
   authenticate,
-  requirePermissions(PERMISSIONS.COMPLAINT_MANAGE),
+  requireAnyPermission(PERMISSIONS.COMPLAINT_RESPOND, PERMISSIONS.COMPLAINT_MANAGE),
   validate(respondComplaintSchema),
   complaintsController.respond,
 );
+
+router.post('/:id/reopen', authenticate, requireAnyPermission(PERMISSIONS.COMPLAINT_REOPEN, PERMISSIONS.COMPLAINT_MANAGE), validate(complaintActionSchema), complaintsController.reopen);
+router.post('/:id/assign', authenticate, requireAnyPermission(PERMISSIONS.COMPLAINT_RESPOND, PERMISSIONS.COMPLAINT_MANAGE), validate(assignComplaintSchema), complaintsController.assign);
+router.post('/:id/escalate', authenticate, requireAnyPermission(PERMISSIONS.COMPLAINT_RESPOND, PERMISSIONS.COMPLAINT_MANAGE), validate(complaintActionSchema), complaintsController.escalate);
+router.post('/:id/draft', authenticate, requireAnyPermission(PERMISSIONS.COMPLAINT_RESPOND, PERMISSIONS.COMPLAINT_MANAGE), validate(complaintDraftSchema), complaintsController.draft);
+router.post('/:id/notes', authenticate, requireAnyPermission(PERMISSIONS.COMPLAINT_RESPOND, PERMISSIONS.COMPLAINT_MANAGE), validate(complaintNoteSchema), complaintsController.note);
+router.post('/:id/evidence', authenticate, requireAnyPermission(PERMISSIONS.COMPLAINT_RESPOND, PERMISSIONS.COMPLAINT_MANAGE), validate(complaintEvidenceSchema), complaintsController.evidence);
+router.get('/:id/evidence/:evidenceId/file', authenticate, requireAnyPermission(PERMISSIONS.COMPLAINT_READ, PERMISSIONS.COMPLAINT_MANAGE), validate(complaintEvidenceIdSchema), complaintsController.evidenceFile);
+router.post('/:id/responses/:responseId/retry', authenticate, requireAnyPermission(PERMISSIONS.COMPLAINT_RESPOND, PERMISSIONS.COMPLAINT_MANAGE), validate(complaintResponseIdSchema), complaintsController.retryNotification);
 
 export default router;

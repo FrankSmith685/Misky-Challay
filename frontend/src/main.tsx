@@ -16,6 +16,11 @@ createRoot(container).render(
     <StyledEngineProvider enableCssLayer>
       <GlobalStyles styles="@layer theme, base, mui, components, utilities;" />
       <AppProviders>
+        {import.meta.env.VITE_PREVIEW_MODE === 'true' && (
+          <div role="status" className="bg-amber-100 px-4 py-3 text-center text-sm font-semibold text-amber-950">
+            Vista previa privada · Los pedidos y cambios están desactivados.
+          </div>
+        )}
         <RouterProvider router={router} />
       </AppProviders>
     </StyledEngineProvider>

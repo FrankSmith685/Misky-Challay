@@ -24,6 +24,7 @@ export class ReceiptSetting extends Model<
   declare autoPrintKitchenTicket: CreationOptional<boolean>;
   declare autoPrintCustomerTicket: CreationOptional<boolean>;
   declare paperWidth: CreationOptional<58 | 80>;
+  declare version: CreationOptional<number>;
   declare updatedBy: CreationOptional<number | null>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
@@ -40,6 +41,7 @@ ReceiptSetting.init(
     autoPrintKitchenTicket: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     autoPrintCustomerTicket: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     paperWidth: { type: DataTypes.TINYINT.UNSIGNED, allowNull: false, defaultValue: 80 },
+    version: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 1 },
     updatedBy: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,

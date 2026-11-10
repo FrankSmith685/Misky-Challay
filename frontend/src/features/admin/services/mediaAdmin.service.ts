@@ -11,6 +11,12 @@ export interface MediaAsset {
   category: string;
   createdAt: string;
   deletedAt: string | null;
+  sha256: string | null;
+  width: number | null;
+  height: number | null;
+  reviewStatus: 'APPROVED' | 'DRAFT' | 'ARCHIVED';
+  sourceType: 'UPLOAD' | 'URL' | 'AI' | 'PROFILE';
+  sourcePrompt: string | null;
   usage: {
     products: Array<{ id: number; name: string }>;
     options: Array<{ id: number; name: string }>;
@@ -28,6 +34,7 @@ export interface MediaListParams {
   limit?: number;
   /** Busca en el nombre original y en el texto alternativo (LIKE en el servidor). */
   search?: string;
+  reviewStatus?: 'APPROVED' | 'DRAFT' | 'ARCHIVED';
 }
 
 export interface SavedMediaImage {
@@ -42,9 +49,23 @@ export interface GeneratedMediaImage {
   mimeType: 'image/jpeg' | 'image/png' | 'image/webp';
 }
 
+export interface MediaHealth {
+  totals: { all: number; active: number; drafts: number; archived: number };
+  withoutAlt: { count: number; ids: number[] };
+  unused: { count: number; ids: number[] };
+  duplicateGroups: Array<{ sha256: string; ids: number[] }>;
+  missingFiles: Array<{ id: number; filename: string }>;
+  orphanFiles: string[];
+  checkedAt: string;
+}
+
 export const mediaAdminApi = {
   async generationStatus(): Promise<{ configured: boolean }> {
     const { data } = await api.get<ApiSuccess<{ configured: boolean }>>('/media/generation-status');
+    return data.data;
+  },
+  async health(): Promise<MediaHealth> {
+    const { data } = await api.get<ApiSuccess<MediaHealth>>('/media/health');
     return data.data;
   },
   async generateImage(prompt: string): Promise<GeneratedMediaImage> {
@@ -69,6 +90,8 @@ export const mediaAdminApi = {
     dataUrl: string;
     altText?: string | null;
     category?: string;
+    sourceType?: 'UPLOAD' | 'AI' | 'PROFILE';
+    sourcePrompt?: string | null;
   }): Promise<SavedMediaImage> {
     const { data } = await api.post<ApiSuccess<SavedMediaImage>>('/media', input);
     return data.data;
@@ -81,8 +104,11 @@ export const mediaAdminApi = {
     const { data } = await api.post<ApiSuccess<{ id: number; url: string; altText: string | null; category: string }>>('/media/import-url', input);
     return data.data;
   },
-  async update(id: number, input: { altText?: string | null; category?: string }): Promise<void> {
+  async update(id: number, input: { altText?: string | null; category?: string; reviewStatus?: MediaAsset['reviewStatus'] }): Promise<void> {
     await api.patch(`/media/${id}`, input);
+  },
+  async setStatus(id: number, reviewStatus: MediaAsset['reviewStatus']): Promise<void> {
+    await api.patch(`/media/${id}/status`, { reviewStatus });
   },
   async remove(id: number): Promise<void> {
     await api.delete(`/media/${id}`);

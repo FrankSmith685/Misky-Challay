@@ -28,6 +28,7 @@ export const KITCHEN_STATUS: StatusMap = {
   ACCEPTED: { label: 'Aceptado', variant: 'brand' },
   PREPARING: { label: 'Preparando', variant: 'success' },
   READY: { label: 'Listo', variant: 'strong' },
+  ON_HOLD: { label: 'En incidencia', variant: 'danger' },
   DISPATCHED: { label: 'Despachado', variant: 'solid' },
   CANCELLED: { label: 'Cancelado', variant: 'danger' },
 };

@@ -115,6 +115,10 @@ export const staffApi = {
         const products = await apiRequest<StaffRow[]>('/admin/catalog/products', { auth: true });
         return { rows: products.filter((product) => product.type === 'CUSTOMIZABLE') };
       }
+      case 'experiences': {
+        const items = await apiRequest<StaffRow[]>('/experiences/admin/projects', { auth: true });
+        return { rows: items, meta: singlePage(items) };
+      }
       case 'media': {
         const envelope = await apiCall<StaffRow[]>('/media', { auth: true, query: { page, limit: pageSize, search: options.search } });
         const items = envelope.data ?? [];
@@ -228,6 +232,8 @@ export const staffApi = {
   updateBuilderOption: (optionId: number, input: StaffRow) =>
     apiRequest(`/admin/builder/options/${optionId}`, { method: 'PATCH', auth: true, body: input }),
   builder: (productId: number) => apiRequest<StaffRow>(`/admin/builder/${productId}`, { auth: true }),
+  experienceAction: (projectId: number, input: { expectedVersion: number; action: 'REVIEW' | 'PUBLISH' | 'PAUSE'; startsAt?: string }) =>
+    apiRequest(`/experiences/admin/projects/${projectId}/action`, { method: 'POST', auth: true, body: input }),
 
   toggleCoupon: (couponId: number, isActive: boolean) =>
     apiRequest(`/admin/coupons/${couponId}`, { method: 'PATCH', auth: true, body: { isActive } }),

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { authenticate } from '@middlewares/auth.middleware';
-import { requirePermissions } from '@middlewares/rbac.middleware';
+import { requireAnyPermission, requirePermissions } from '@middlewares/rbac.middleware';
 import { validate } from '@middlewares/validate.middleware';
 import { PERMISSIONS } from '@config/constants';
 import { deliveryController } from './delivery.controller';
@@ -26,14 +26,14 @@ router.put('/transport', requirePermissions(PERMISSIONS.DELIVERY_ASSIGN), valida
 router.patch('/drivers/:driverId', requirePermissions(PERMISSIONS.DELIVERY_ASSIGN), validate(z.object({
   params: z.object({ driverId: z.coerce.number().int().positive() }), body: z.object({
     branchId: z.coerce.number().int().positive(), vehicleType: z.enum(['CAR', 'MOTORCYCLE', 'OTHER', 'UNSPECIFIED']),
-    vehicle: z.string().trim().max(50).nullable().optional(), status: z.enum(['AVAILABLE', 'BUSY', 'OFFLINE']).optional(),
+    vehicle: z.string().trim().max(50).nullable().optional(), status: z.enum(['AVAILABLE', 'BUSY', 'OFFLINE']).optional(), maxActiveDeliveries: z.coerce.number().int().min(1).max(20).optional(),
   }),
 })), deliveryController.updateDriver);
 
 router.get(
   '/board',
   requirePermissions(PERMISSIONS.DELIVERY_READ),
-  validate(z.object({ query: z.object({ branchId: z.coerce.number().int().positive() }) })),
+  validate(z.object({ query: z.object({ branchId: z.coerce.number().int().positive().optional(), includeFailed: z.coerce.boolean().optional() }) })),
   deliveryController.board,
 );
 
@@ -43,7 +43,7 @@ router.get(
 router.get(
   '/drivers',
   requirePermissions(PERMISSIONS.DELIVERY_ASSIGN),
-  validate(z.object({ query: z.object({ branchId: z.coerce.number().int().positive() }) })),
+  validate(z.object({ query: z.object({ branchId: z.coerce.number().int().positive().optional() }) })),
   deliveryController.drivers,
 );
 
@@ -91,6 +91,13 @@ router.post(
     }),
   ),
   deliveryController.advance,
+);
+
+router.post(
+  '/:deliveryId/retry',
+  requireAnyPermission(PERMISSIONS.DELIVERY_ASSIGN, PERMISSIONS.DELIVERY_OPERATE),
+  validate(z.object({ params: z.object({ deliveryId: z.coerce.number().int().positive() }), body: z.object({ comment: z.string().trim().max(255).optional() }).optional() })),
+  deliveryController.retry,
 );
 
 export default router;

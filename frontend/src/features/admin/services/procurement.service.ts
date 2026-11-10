@@ -17,20 +17,20 @@ export interface PurchaseOrderLine {
 }
 
 export interface PurchaseOrderRow {
-  id: number; orderNumber: string; branchId: number; supplierId: number; supplier?: SupplierRow | null;
-  status: 'DRAFT' | 'ORDERED' | 'PARTIALLY_RECEIVED' | 'RECEIVED' | 'CANCELLED'; orderedAt?: string | null;
+  id: number; orderNumber: string; branchId: number; branch?: { id: number; name: string } | null; supplierId: number; supplier?: SupplierRow | null;
+  status: 'DRAFT' | 'APPROVED' | 'ORDERED' | 'PARTIALLY_RECEIVED' | 'RECEIVED' | 'CANCELLED'; approvalRequired: boolean; approvedBy?: number | null; approvedAt?: string | null; orderedAt?: string | null;
   expectedAt?: string | null; receivedAt?: string | null; notes?: string | null; subtotal: number; tax: number; total: number;
   items: PurchaseOrderLine[];
 }
 
 export interface LotRow {
-  id: number; lotCode: string; inventoryItemId: number; item?: ProcurementItem | null; supplier?: SupplierRow | null;
+  id: number; lotCode: string; inventoryItemId: number; branch?: { id: number; name: string } | null; item?: ProcurementItem | null; supplier?: SupplierRow | null;
   purchaseOrderId?: number | null; status: string; receivedAt: string; expiresAt?: string | null;
   quantityReceived: number; quantityAvailable: number; unitCost: number; stockValue: number;
 }
 
 export interface CostSummary {
-  purchasesTotal: number; stockValue: number; consumedCost: number;
+  purchasesTotal: number; plannedTotal: number; purchaseVariance: number; stockValue: number; consumedCost: number;
   rows: Array<{ inventoryItemId: number; name: string; purchased: number; consumed: number; stockValue: number }>;
 }
 
@@ -51,19 +51,23 @@ export const procurementApi = {
     const { data } = await api.get<ApiSuccess<ProcurementItem[]>>('/operations/procurement/items', { params: { branchId } });
     return data.data;
   },
-  async purchaseOrders(branchId: number, status?: string): Promise<PurchaseOrderRow[]> {
-    const { data } = await api.get<ApiSuccess<PurchaseOrderRow[]>>('/operations/procurement/purchase-orders', { params: { branchId, status } });
+  async purchaseOrders(branchId?: number, status?: string): Promise<PurchaseOrderRow[]> {
+    const { data } = await api.get<ApiSuccess<PurchaseOrderRow[]>>('/operations/procurement/purchase-orders', { params: { ...(branchId ? { branchId } : {}), status } });
     return data.data;
   },
-  async createPurchaseOrder(input: { branchId: number; supplierId: number; expectedAt?: string; notes?: string; tax?: number; items: Array<{ inventoryItemId: number; quantity: number; unitCost: number; notes?: string }> }): Promise<PurchaseOrderRow> {
+  async createPurchaseOrder(input: { branchId: number; supplierId: number; idempotencyKey?: string; expectedAt?: string; notes?: string; tax?: number; items: Array<{ inventoryItemId: number; quantity: number; unitCost: number; notes?: string }> }): Promise<PurchaseOrderRow> {
     const { data } = await api.post<ApiSuccess<PurchaseOrderRow>>('/operations/procurement/purchase-orders', input);
+    return data.data;
+  },
+  async approvePurchaseOrder(orderId: number, branchId: number): Promise<PurchaseOrderRow> {
+    const { data } = await api.post<ApiSuccess<PurchaseOrderRow>>(`/operations/procurement/purchase-orders/${orderId}/approve`, { branchId });
     return data.data;
   },
   async updatePurchaseOrder(orderId: number, input: { branchId: number; supplierId: number; expectedAt?: string; notes?: string; tax?: number; items: Array<{ inventoryItemId: number; quantity: number; unitCost: number; notes?: string }> }): Promise<PurchaseOrderRow> {
     const { data } = await api.patch<ApiSuccess<PurchaseOrderRow>>(`/operations/procurement/purchase-orders/${orderId}`, input);
     return data.data;
   },
-  async receivePurchaseOrder(orderId: number, input: { branchId: number; lines: Array<{ purchaseOrderItemId: number; quantity: number; lotCode: string; expiresAt?: string; unitCost?: number }> }): Promise<PurchaseOrderRow> {
+  async receivePurchaseOrder(orderId: number, input: { branchId: number; idempotencyKey?: string; lines: Array<{ purchaseOrderItemId: number; quantity: number; lotCode: string; expiresAt?: string; unitCost?: number }> }): Promise<PurchaseOrderRow> {
     const { data } = await api.post<ApiSuccess<PurchaseOrderRow>>(`/operations/procurement/purchase-orders/${orderId}/receive`, input);
     return data.data;
   },
@@ -71,12 +75,12 @@ export const procurementApi = {
     const { data } = await api.post<ApiSuccess<PurchaseOrderRow>>(`/operations/procurement/purchase-orders/${orderId}/cancel`, { branchId, reason });
     return data.data;
   },
-  async lots(branchId: number, status?: string): Promise<LotRow[]> {
-    const { data } = await api.get<ApiSuccess<LotRow[]>>('/operations/procurement/lots', { params: { branchId, status } });
+  async lots(branchId?: number, status?: string): Promise<LotRow[]> {
+    const { data } = await api.get<ApiSuccess<LotRow[]>>('/operations/procurement/lots', { params: { ...(branchId ? { branchId } : {}), status } });
     return data.data;
   },
-  async costSummary(branchId: number): Promise<CostSummary> {
-    const { data } = await api.get<ApiSuccess<CostSummary>>('/operations/procurement/cost-summary', { params: { branchId } });
+  async costSummary(branchId?: number): Promise<CostSummary> {
+    const { data } = await api.get<ApiSuccess<CostSummary>>('/operations/procurement/cost-summary', { params: branchId ? { branchId } : {} });
     return data.data;
   },
 };

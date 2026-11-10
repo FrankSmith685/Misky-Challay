@@ -42,6 +42,7 @@ import {
   INVOICE_STATUS,
   ORDER_STATUS,
   PAYMENT_METHOD,
+  PAYMENT_PROVIDER,
   PAYMENT_STATUS,
   SERVICE_MODE,
   WALLET_TX_TYPE,
@@ -61,7 +62,7 @@ import {
 } from '@modules/pricing/pricing.service';
 import { getPaymentProvider } from '@integrations/payments';
 import { walletService } from '@modules/plans/wallet.service';
-import { confirmPaidOrder, openOrderCheckoutSession } from '@modules/payments/payments.service';
+import { confirmCashOrder, confirmPaidOrder, openOrderCheckoutSession } from '@modules/payments/payments.service';
 import { inventoryService } from '@modules/operations/inventory.service';
 import { cakeProductionService, dayInLima } from '@modules/cakes/cakeProduction.service';
 import { cakeDesignService } from '@modules/cakes/cakeDesign.service';
@@ -96,7 +97,7 @@ export interface CheckoutInput {
   couponCode?: string | null;
   /** El cliente decide si gasta el saldo de su plan en este pedido. */
   useWallet?: boolean;
-  /** ONLINE = pasarela; YAPE/PLIN = transferencia directa. Por defecto ONLINE. */
+  /** ONLINE = pasarela; YAPE/PLIN = transferencia directa; CASH = contra entrega. */
   paymentMethod?: PaymentMethod;
   mobilePayment?: { operationCode: string; payerPhone?: string } | null;
   /** Canal confiable validado por el controlador; selecciona el retorno web o móvil. */
@@ -133,6 +134,36 @@ interface ResolvedDestination {
   routeDistanceKm?: number;
   extraDeliveryFee?: number;
 }
+
+type CheckoutProductTiming = Pick<Product, 'id' | 'preparationMode'>;
+
+const loadProductTiming = async (productIds: number[]): Promise<Map<number, CheckoutProductTiming>> => {
+  const ids = [...new Set(productIds)];
+  if (!ids.length) return new Map();
+  const products = await Product.findAll({
+    where: { id: ids },
+    attributes: ['id', 'preparationMode'],
+  });
+  return new Map(products.map((product) => [product.id, product]));
+};
+
+/**
+ * La fecha se decide por la forma de preparacion del producto, no por la
+ * existencia de un perfil de torta. Los productos preparados se entregan ASAP
+ * si hay existencias; los demas necesitan una franja para reservar produccion.
+ */
+const productionLines = (
+  items: QuoteItemInput[],
+  products: Map<number, CheckoutProductTiming>,
+  profiles: Map<number, CakeProductProfile>,
+): QuoteItemInput[] => items.filter((item) => {
+  const product = products.get(item.productId);
+  const profile = profiles.get(item.productId);
+  if (!product) return Boolean(item.designQuoteId || item.themeId) || Boolean(profile && profile.saleMode !== 'STANDARD');
+  return product.preparationMode !== 'READY_STOCK'
+    || Boolean(item.designQuoteId || item.themeId)
+    || Boolean(profile && profile.saleMode !== 'STANDARD');
+});
 
 type CakePaymentPlan = {
   paymentPlan: 'FULL' | 'DEPOSIT_BALANCE';
@@ -302,19 +333,22 @@ const assertCakeSchedule = async (input: CheckoutInput, branchId: number): Promi
         'La franja ya no tiene cupo o no coincide con el horario de la sucursal.',
       );
   }
-  const cakeCount = await CakeProductProfile.count({
-    where: { productId: { [Op.in]: input.items.map((item) => item.productId) }, isActive: true },
+  const profiles = await CakeProductProfile.findAll({
+    where: { productId: [...new Set(input.items.map((item) => item.productId))], isActive: true },
   });
-  if (!cakeCount) return;
+  const products = await loadProductTiming(input.items.map((item) => item.productId));
+  const profileByProduct = new Map(profiles.map((profile) => [profile.productId, profile]));
+  const linesToProduce = productionLines(input.items, products, profileByProduct);
+  if (!linesToProduce.length) return;
   if (input.serviceMode !== SERVICE_MODE.SCHEDULED || !input.deliverySlotId) {
-    throw ApiError.unprocessable('Elige una fecha y franja para la torta');
+    throw ApiError.unprocessable('Elige una fecha y franja para los productos preparados bajo pedido');
   }
   const slot = await DeliverySlot.findOne({
     where: { id: input.deliverySlotId, branchId, isActive: true },
   });
   if (!slot || new Date() > slot.orderCutoffAt)
     throw ApiError.unprocessable('La franja elegida ya no esta disponible');
-  const capacity = await cakeProductionService.availability(branchId, input.items, slot.startsAt);
+  const capacity = await cakeProductionService.availability(branchId, linesToProduce, slot.startsAt);
   if (!capacity.available) {
     const missing = capacity.stations.find((entry) => !entry.available);
     throw ApiError.unprocessable(
@@ -349,6 +383,10 @@ export const checkoutService = {
     const profiles = await CakeProductProfile.findAll({
       where: { productId: input.items.map((item) => item.productId), isActive: true },
     });
+    const products = await loadProductTiming(input.items.map((item) => item.productId));
+    const profileByProduct = new Map(profiles.map((profile) => [profile.productId, profile]));
+    const linesToProduce = productionLines(input.items, products, profileByProduct);
+    const productionProductIds = new Set(linesToProduce.map((item) => item.productId));
     const themeIds = input.items.flatMap((item) => (item.themeId ? [item.themeId] : []));
     const themes = themeIds.length
       ? await CakeTheme.findAll({ where: { id: themeIds, isActive: true } })
@@ -356,8 +394,12 @@ export const checkoutService = {
     const digital = await experiencePricing.quote(input.experience);
     const leadHours = Math.max(
       digital?.minLeadHours ?? 0,
-      ...profiles.map((profile) => profile.minLeadHours),
-      ...themes.map((theme) => theme.minLeadHours),
+      ...profiles
+        .filter((profile) => productionProductIds.has(profile.productId))
+        .map((profile) => profile.minLeadHours),
+      ...themes
+        .filter((theme) => productionProductIds.has(theme.productId))
+        .map((theme) => theme.minLeadHours),
     );
     const days = Math.min(60, Math.max(45, Math.ceil(leadHours / 24) + 7));
     const reasons = new Map<string, string>();
@@ -446,14 +488,14 @@ export const checkoutService = {
           continue;
         }
       }
-      if (profiles.length) {
+      if (linesToProduce.length) {
         const date = input.items.some((item) => item.designQuoteId)
           ? slot.startsAt.toISOString()
           : dayInLima(slot.startsAt);
         let capacity = productionByDate.get(date);
         if (capacity === undefined) {
           try {
-            const needs = await cakeProductionService.estimateOrder(input.items, slot.startsAt);
+            const needs = await cakeProductionService.estimateOrder(linesToProduce, slot.startsAt);
             const result = await cakeProductionService.availabilityForNeeds(
               branch.id,
               needs,
@@ -522,6 +564,10 @@ export const checkoutService = {
     const profiles = await CakeProductProfile.findAll({
       where: { productId: [...new Set(input.items.map((item) => item.productId))], isActive: true },
     });
+    const products = await loadProductTiming(input.items.map((item) => item.productId));
+    const profileByProduct = new Map(profiles.map((profile) => [profile.productId, profile]));
+    const linesToProduce = productionLines(input.items, products, profileByProduct);
+    const productionProductIds = new Set(linesToProduce.map((item) => item.productId));
     const themeIds = input.items.flatMap((item) => (item.themeId ? [item.themeId] : []));
     const themes = themeIds.length
       ? await CakeTheme.findAll({
@@ -533,11 +579,15 @@ export const checkoutService = {
         })
       : [];
     const experienceQuote = await experiencePricing.quote(input.experience);
-    const requiresScheduledDelivery = profiles.length > 0 || Boolean(experienceQuote);
+    const requiresScheduledDelivery = linesToProduce.length > 0 || Boolean(experienceQuote);
     const minimumLeadHours = Math.max(
       experienceQuote?.minLeadHours ?? 0,
-      ...profiles.map((profile) => profile.minLeadHours),
-      ...themes.map((theme) => theme.minLeadHours),
+      ...profiles
+        .filter((profile) => productionProductIds.has(profile.productId))
+        .map((profile) => profile.minLeadHours),
+      ...themes
+        .filter((theme) => productionProductIds.has(theme.productId))
+        .map((theme) => theme.minLeadHours),
     );
     const needsSchedule =
       requiresScheduledDelivery ||
@@ -554,6 +604,7 @@ export const checkoutService = {
       coverageZoneId: destination.coverageZoneId,
       extraDeliveryFee: destination.extraDeliveryFee,
       deliveryType: input.deliveryType,
+      paymentMethod: input.paymentMethod,
       couponCode: input.couponCode,
       userId: input.userId,
       useWallet: input.useWallet,
@@ -608,11 +659,6 @@ export const checkoutService = {
     if (!input.userId) {
       throw ApiError.unauthorized('Inicia sesion para confirmar tu pedido');
     }
-    if (input.paymentMethod === PAYMENT_METHOD.CASH) {
-      throw ApiError.unprocessable(
-        'El efectivo no está disponible en el checkout. Elige pago en línea, Yape o Plin.',
-      );
-    }
     if (input.whatsappOptIn) {
       const user = await User.findByPk(input.userId);
       if (!whatsappRecipient(user?.phone))
@@ -653,6 +699,7 @@ export const checkoutService = {
       coverageZoneId: destination.coverageZoneId,
       extraDeliveryFee: destination.extraDeliveryFee,
       deliveryType: input.deliveryType,
+      paymentMethod: input.paymentMethod,
       couponCode: input.couponCode,
       userId: input.userId,
       useWallet: input.useWallet,
@@ -667,6 +714,16 @@ export const checkoutService = {
       throw ApiError.unprocessable(
         `El pedido minimo para tu zona es S/ ${quote.minimumOrder.toFixed(2)}`,
       );
+    }
+
+    if (input.paymentMethod === PAYMENT_METHOD.CASH && quote.grandTotal > 0) {
+      if (!env.COD_ENABLED) throw ApiError.unprocessable('El pago contra entrega no está disponible');
+      if (input.deliveryType !== DELIVERY_TYPE.DELIVERY)
+        throw ApiError.unprocessable('El pago contra entrega requiere delivery');
+      if (cakePlan.paymentPlan !== 'FULL')
+        throw ApiError.unprocessable('Esta torta requiere un anticipo. Elige Yape o Plin.');
+      if (quote.grandTotal > env.COD_MAX_AMOUNT)
+        throw ApiError.unprocessable(`El pago contra entrega admite hasta S/ ${env.COD_MAX_AMOUNT.toFixed(2)}`);
     }
 
     if (
@@ -784,6 +841,7 @@ export const checkoutService = {
           termsAcceptanceJson,
           subtotal: quote.subtotal,
           deliveryFee: quote.deliveryFee,
+          cakeDeliveryFee: quote.cakeDeliveryFee ?? 0,
           deliveryVehicleType: quote.deliveryVehicleType ?? null,
           deliveryHandlingInstructions: quote.deliveryHandlingInstructions ?? null,
           discountTotal: quote.discountTotal,
@@ -958,7 +1016,10 @@ export const checkoutService = {
             transaction,
             lock: transaction.LOCK.UPDATE,
           });
-          if (!coupon?.isActive) throw ApiError.unprocessable('El cupón dejó de estar disponible');
+          if (!coupon?.isActive || coupon.archivedAt) throw ApiError.unprocessable('El cupón dejó de estar disponible');
+          const now = new Date();
+          if (coupon.validFrom && now < coupon.validFrom) throw ApiError.unprocessable('El cupón todavía no está vigente');
+          if (coupon.validUntil && now > coupon.validUntil) throw ApiError.unprocessable('El cupón ya venció');
           const reservedUses = await CouponRedemption.count({
             where: {
               couponId: coupon.id,
@@ -980,6 +1041,15 @@ export const checkoutService = {
             });
             if (userUses >= coupon.usageLimitPerUser)
               throw ApiError.unprocessable('Ya usaste este cupón');
+          }
+          if (coupon.budgetAmount !== null) {
+            const reservedDiscount = Number(await CouponRedemption.sum('amount', {
+              where: { couponId: coupon.id, status: REDEMPTION_STATUS.RESERVED },
+              transaction,
+            }) ?? 0);
+            if (Number(coupon.budgetUsed) + reservedDiscount + discount.amount > Number(coupon.budgetAmount)) {
+              throw ApiError.unprocessable('El presupuesto de esta campaña ya se agotó');
+            }
           }
           await CouponRedemption.create(
             {
@@ -1039,6 +1109,22 @@ export const checkoutService = {
         );
       }
 
+      if (input.paymentMethod === PAYMENT_METHOD.CASH && quote.grandTotal > 0) {
+        await Payment.create({
+          payableType: PAYABLE_TYPE.ORDER,
+          payableId: created.id,
+          userId: input.userId ?? null,
+          provider: PAYMENT_PROVIDER.CASH,
+          method: PAYMENT_PROVIDER.CASH,
+          amount: round2(quote.grandTotal),
+          stage: PAYMENT_STAGE.FULL,
+          currency: quote.currency,
+          status: PAYMENT_STATUS.PENDING,
+          idempotencyKey,
+        }, { transaction });
+        await confirmCashOrder(created, transaction);
+      }
+
       return created;
     });
 
@@ -1076,6 +1162,11 @@ export const checkoutService = {
 
     // The order and pending direct payment already exist atomically. Transfer comes next.
     if (mobileProvider) {
+      const payment = await Payment.findOne({ where: { idempotencyKey } });
+      return { order, payment, checkoutUrl: null, reused: false };
+    }
+
+    if (input.paymentMethod === PAYMENT_METHOD.CASH) {
       const payment = await Payment.findOne({ where: { idempotencyKey } });
       return { order, payment, checkoutUrl: null, reused: false };
     }

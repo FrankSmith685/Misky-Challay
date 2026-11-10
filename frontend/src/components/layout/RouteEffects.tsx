@@ -16,6 +16,7 @@ const EXACT_TITLES: Record<string, string> = {
   [ROUTES.adminHomeContent]: 'Contenido del inicio',
   [ROUTES.menu]: 'Catálogo',
   [ROUTES.customCake]: 'Crea tu torta',
+  [ROUTES.specialCake]: 'Solicitar diseño especial',
   [ROUTES.builder]: 'Crea tu torta',
   [ROUTES.designRequests]: 'Mis diseños',
   [ROUTES.adminCakes]: 'Producción de tortas',
@@ -35,6 +36,7 @@ const EXACT_TITLES: Record<string, string> = {
   [ROUTES.cookies]: 'Política de cookies',
   [ROUTES.deleteAccount]: 'Eliminar mi cuenta',
   [ROUTES.account]: 'Mi cuenta',
+  [ROUTES.accountNotifications]: 'Notificaciones',
   [ROUTES.accountProfile]: 'Mi perfil',
   [ROUTES.accountOrders]: 'Mis pedidos',
   [ROUTES.accountWallet]: 'Mi saldo',
@@ -61,10 +63,13 @@ const PATTERN_TITLES: Array<[RegExp, (match: RegExpMatchArray) => string]> = [
   [/^\/admin(\/|$)/, () => 'Panel de gestión'],
 ];
 
-const resolveTitle = (pathname: string): string => {
+const resolveTitle = (pathname: string, search = ''): string => {
   // Sin la barra final, "/menu/" y "/menu" no son la misma clave.
   const path = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
   if (path === ROUTES.home) return HOME_TITLE;
+  if (new URLSearchParams(search).get('solicitud') === 'especial') {
+    return `Solicitar diseño especial | ${BRAND}`;
+  }
   const exact = EXACT_TITLES[path];
   if (exact) return `${exact} | ${BRAND}`;
 
@@ -113,8 +118,8 @@ export const RouteEffects = () => {
   }, [pathname, search]);
 
   useEffect(() => {
-    applyStorefrontSeo(pathname, seoContent, resolveTitle(pathname));
-  }, [pathname, seoContent]);
+    applyStorefrontSeo(pathname, seoContent, resolveTitle(pathname, search));
+  }, [pathname, search, seoContent]);
 
   return (
     <div aria-live="polite" aria-atomic="true" className="sr-only">

@@ -12,11 +12,48 @@ export interface AdminCoupon {
   value: number;
   minOrderAmount: number;
   maxDiscountAmount: number | null;
+  validFrom: string | null;
   validUntil: string | null;
   usageLimit: number | null;
   usageLimitPerUser: number;
   usedCount: number;
   isActive: boolean;
+  status: 'ACTIVE' | 'SCHEDULED' | 'PAUSED' | 'EXPIRED' | 'EXHAUSTED' | 'ARCHIVED';
+  reservedCount: number;
+  confirmedCount: number;
+  discountSpent: number;
+  version: number;
+  rules: {
+    branchIds?: number[];
+    productIds?: number[];
+    deliveryTypes?: string[];
+    paymentMethods?: string[];
+    firstOrderOnly?: boolean;
+  };
+  stackMode: 'EXCLUSIVE' | 'STACKABLE';
+  budgetAmount: number | null;
+  budgetUsed: number;
+  archivedAt: string | null;
+}
+
+export interface CouponPreview {
+  code: string;
+  description: string;
+  discountType: 'PERCENT' | 'FIXED' | 'FREE_DELIVERY';
+  amount: number;
+  freeDelivery: boolean;
+  budgetImpact: number;
+  stackMode: 'EXCLUSIVE' | 'STACKABLE';
+  rules: AdminCoupon['rules'];
+}
+
+export interface AdminCouponRedemption {
+  id: number;
+  status: 'RESERVED' | 'CONFIRMED' | 'RELEASED';
+  amount: number;
+  userId: number | null;
+  createdAt: string;
+  order: { id: number; orderNumber: string; status: string; grandTotal: number; placedAt: string } | null;
 }
 
 export interface AdminPlanBenefit {
@@ -52,6 +89,7 @@ export interface AdminPlan {
 export interface AdminSchedule {
   id: number;
   weekday: number | null;
+  exceptionDate?: string | null;
   opensAt: string;
   closesAt: string;
   isClosed: boolean;
@@ -70,6 +108,10 @@ export interface AdminBranch {
   acceptsPickup: boolean;
   acceptsDelivery: boolean;
   isActive: boolean;
+  version: number;
+  zoneIds: number[];
+  slotSummary: { upcoming: number; capacity: number; reserved: number; confirmed: number; available: number };
+  health: { status: 'READY' | 'ATTENTION'; issues: string[] };
   schedules: AdminSchedule[];
 }
 
@@ -78,12 +120,21 @@ export interface AdminZone {
   cityId: number;
   name: string;
   deliveryFee: number;
+  cakeDeliveryFee: number;
   extraCoverageKm: number;
   extraFeePerKm: number;
   minimumOrder: number;
   estimatedMinutes: number;
   priority: number;
   isActive: boolean;
+  status: 'ACTIVE' | 'PAUSED' | 'SCHEDULED' | 'ARCHIVED';
+  version: number;
+  effectiveFrom: string | null;
+  archivedAt: string | null;
+  hasOverlap: boolean;
+  districtCount: number;
+  last30DaysOrders: number;
+  last30DaysDeliveryRevenue: number;
   hasPolygon: boolean;
   polygon: Array<{ lat: number; lng: number }> | null;
   branchIds: number[];
@@ -103,10 +154,35 @@ export interface Coverage {
   districts: AdminDistrict[];
   zones: AdminZone[];
   branches: AdminBranch[];
+  stats: {
+    activeZones: number;
+    activeBranches: number;
+    coveredDistricts: number;
+    uncoveredDistricts: number;
+    overlappingZones: number;
+    branchesWithAttention: number;
+  };
+  drafts: Array<{ id: number; key: string; status: 'DRAFT' | 'SCHEDULED'; publishAt: string | null; updatedAt: string; payload: Record<string, unknown> }>;
+}
+
+export interface CoverageQuotePreview {
+  zone: { id: number; name: string };
+  subtotal: number;
+  deliveryFee: number;
+  cakeDeliveryFee: number;
+  extraDeliveryFee: number;
+  minimumOrder: number;
+  meetsMinimum: boolean;
+  estimatedMinutes: number;
+  taxableBase: number;
+  taxTotal: number;
+  total: number;
+  currency: string;
 }
 
 export interface BuilderOption {
   id: number;
+  version: number;
   name: string;
   description: string | null;
   imageUrl: string | null;
@@ -125,6 +201,7 @@ export interface BuilderOption {
   sortOrder: number;
   branchAvailability: Array<{
     branchId: number;
+    version: number;
     isAvailable: boolean;
     priceOverride: number | null;
     availableFrom: string | null;
@@ -135,6 +212,8 @@ export interface BuilderOption {
 
 export interface BuilderGroup {
   id: number;
+  version: number;
+  linkVersion?: number;
   variantId: number | null;
   code: string;
   name: string;
@@ -149,8 +228,8 @@ export interface BuilderGroup {
 
 export interface BuilderConfig {
   customServings?: { enabled: boolean; baseVariantId: number | null; minServings: number; maxServings: number; pricePerExtraServing: number } | null;
-  product: { id: number; name: string; type: string };
-  variants: Array<{ id: number; name: string; servingSize: number | null; servingUnit: string | null; isDefault: boolean; isActive: boolean }>;
+  product: { id: number; name: string; type: string; status?: string; version?: number };
+  variants: Array<{ id: number; name: string; basePrice?: number; servingSize: number | null; servingUnit: string | null; isDefault: boolean; isActive: boolean; version?: number }>;
   groups: BuilderGroup[];
   inventoryItems: Array<{ id: number; name: string; unit: string }>;
   branches: Array<{ id: number; name: string }>;
@@ -159,6 +238,7 @@ export interface BuilderConfig {
 
 export interface BuilderPreset {
   id: number;
+  version: number;
   code: string;
   name: string;
   description: string | null;
@@ -168,6 +248,50 @@ export interface BuilderPreset {
   isActive: boolean;
   sortOrder: number;
   selections: Array<{ optionId: number; quantity: number }>;
+}
+
+export interface BuilderHealth {
+  productId: number;
+  status: 'READY' | 'WARNINGS' | 'ERRORS';
+  errors: string[];
+  warnings: string[];
+  variantReadiness: Array<{ id: number; name: string; status: 'READY' | 'ERRORS'; issues: string[] }>;
+  branchReadiness: Array<{ id: number; name: string; status: 'READY' | 'WARNINGS'; unavailableOptions: number }>;
+  checkedAt: string;
+}
+
+export interface BuilderGovernance {
+  draft: { id: number; status: string; publishAt: string | null; updatedAt: string; baseVersion: number | null } | null;
+  published: { id: number; version: number; publishedAt: string; publishedBy: number | null } | null;
+}
+
+export interface BuilderRelease {
+  id: number;
+  version: number;
+  publishedAt: string;
+  publishedBy: number | null;
+}
+
+export interface BuilderOptionImpact {
+  optionId: number;
+  optionName: string;
+  status: BuilderOption['status'];
+  presetUses: number;
+  branchRules: number;
+  incompatibilities: number;
+  historicalOrders: number;
+  canDelete: boolean;
+}
+
+export interface BuilderCatalogHealthRow {
+  productId: number;
+  productName: string;
+  productStatus: string;
+  status: 'READY' | 'WARNINGS' | 'ERRORS';
+  errors: number;
+  warnings: number;
+  variants: number;
+  branches: number;
 }
 
 export interface BuilderHistoryEntry {
@@ -224,17 +348,21 @@ export const commercialApi = {
     value: number;
     minOrderAmount: number;
     maxDiscountAmount?: number | null;
+    validFrom?: string | null;
     validUntil?: string | null;
     usageLimit?: number | null;
     usageLimitPerUser: number;
+    rules?: AdminCoupon['rules'];
+    stackMode?: AdminCoupon['stackMode'];
+    budgetAmount?: number | null;
   }): Promise<void> {
     await api.post(`${BASE}/coupons`, input);
   },
 
   /**
    * Edicion del cupon. `value`, `minOrderAmount`, `maxDiscountAmount` y `usageLimit`
-   * necesitan que el paquete H los admita tambien en el esquema del PATCH; hoy el
-   * servidor solo acepta `isActive`, `description` y `validUntil`.
+   * El servidor verifica `expectedVersion` para no sobrescribir cambios de otro
+   * administrador y conserva el historial de la campaña.
    */
   async updateCoupon(
     couponId: number,
@@ -246,6 +374,11 @@ export const commercialApi = {
       minOrderAmount?: number;
       maxDiscountAmount?: number | null;
       usageLimit?: number | null;
+      validFrom?: string | null;
+      rules?: AdminCoupon['rules'];
+      stackMode?: AdminCoupon['stackMode'];
+      budgetAmount?: number | null;
+      expectedVersion?: number;
     },
   ): Promise<void> {
     await api.patch(`${BASE}/coupons/${couponId}`, input);
@@ -253,6 +386,25 @@ export const commercialApi = {
 
   async toggleCoupon(couponId: number, isActive: boolean): Promise<void> {
     await api.patch(`${BASE}/coupons/${couponId}`, { isActive });
+  },
+
+  async archiveCoupon(couponId: number, expectedVersion?: number): Promise<void> {
+    await api.post(`${BASE}/coupons/${couponId}/archive`, { expectedVersion });
+  },
+
+  async couponMetrics(couponId: number): Promise<{ reserved: number; confirmed: number; released: number; discountConfirmed: number; budgetAmount: number | null; budgetUsed: number; budgetRemaining: number | null; grossSales: number; averageOrderValue: number }> {
+    const { data } = await api.get<ApiSuccess<{ reserved: number; confirmed: number; released: number; discountConfirmed: number; budgetAmount: number | null; budgetUsed: number; budgetRemaining: number | null; grossSales: number; averageOrderValue: number }>>(`${BASE}/coupons/${couponId}/metrics`);
+    return data.data;
+  },
+
+  async couponRedemptions(couponId: number): Promise<AdminCouponRedemption[]> {
+    const { data } = await api.get<ApiSuccess<AdminCouponRedemption[]>>(`${BASE}/coupons/${couponId}/redemptions`);
+    return data.data;
+  },
+
+  async previewCoupon(input: { code: string; subtotal: number; userId?: number | null; branchId?: number | null; deliveryType?: 'DELIVERY' | 'PICKUP' | 'DINE_IN' | null; paymentMethod?: 'ONLINE' | 'YAPE' | 'PLIN' | 'CASH' | null; productIds?: number[] }): Promise<CouponPreview> {
+    const { data } = await api.post<ApiSuccess<CouponPreview>>(`${BASE}/coupons/preview`, input);
+    return data.data;
   },
 
   // --- Planes ---
@@ -308,6 +460,17 @@ export const commercialApi = {
     return data.data;
   },
 
+  async previewCoverageQuote(input: {
+    zoneId: number;
+    subtotal: number;
+    containsCake: boolean;
+    extraDeliveryFee?: number;
+    deliveryType: 'DELIVERY' | 'PICKUP' | 'DINE_IN';
+  }): Promise<CoverageQuotePreview> {
+    const { data } = await api.post<ApiSuccess<CoverageQuotePreview>>(`${BASE}/coverage/quote`, input);
+    return data.data;
+  },
+
   async createBranch(input: {
     cityId: number;
     name: string;
@@ -328,12 +491,14 @@ export const commercialApi = {
     cityId: number;
     name: string;
     deliveryFee: number;
+    cakeDeliveryFee: number;
     extraCoverageKm: number;
     extraFeePerKm: number;
     minimumOrder?: number;
     estimatedMinutes: number;
     priority: number;
     polygon?: Array<{ lat: number; lng: number }>;
+    effectiveFrom?: string | null;
   }): Promise<{ id: number }> {
     const { data } = await api.post<ApiSuccess<{ id: number }>>(`${BASE}/coverage/zones`, input);
     return data.data;
@@ -345,7 +510,7 @@ export const commercialApi = {
 
   async updateBranch(
     branchId: number,
-    input: { prepMinutes?: number; isActive?: boolean; acceptsPickup?: boolean },
+    input: { prepMinutes?: number; isActive?: boolean; acceptsPickup?: boolean; expectedVersion?: number },
   ): Promise<void> {
     await api.patch(`${BASE}/coverage/branches/${branchId}`, input);
   },
@@ -357,10 +522,18 @@ export const commercialApi = {
     await api.put(`${BASE}/coverage/branches/${branchId}/schedule`, input);
   },
 
+  async setScheduleException(
+    branchId: number,
+    input: { exceptionDate: string; opensAt: string; closesAt: string; isClosed: boolean },
+  ): Promise<void> {
+    await api.post(`${BASE}/coverage/branches/${branchId}/schedule-exceptions`, input);
+  },
+
   async updateZone(
     zoneId: number,
     input: {
       deliveryFee?: number;
+      cakeDeliveryFee?: number;
       extraCoverageKm?: number;
       extraFeePerKm?: number;
       minimumOrder?: number;
@@ -369,9 +542,16 @@ export const commercialApi = {
       name?: string;
       priority?: number;
       polygon?: Array<{ lat: number; lng: number }> | null;
+      expectedVersion?: number;
+      effectiveFrom?: string | null;
+      archivedAt?: string | null;
     },
   ): Promise<void> {
     await api.patch(`${BASE}/coverage/zones/${zoneId}`, input);
+  },
+
+  async archiveZone(zoneId: number, expectedVersion?: number): Promise<void> {
+    await api.post(`${BASE}/coverage/zones/${zoneId}/archive`, { expectedVersion });
   },
 
   /** Abrir o cerrar un distrito: sin zona = sin cobertura (RN-001). */
@@ -409,6 +589,46 @@ export const commercialApi = {
     return data.data;
   },
 
+  async builderHealth(productId: number): Promise<BuilderHealth> {
+    const { data } = await api.get<ApiSuccess<BuilderHealth>>(`${BASE}/builder/${productId}/health`);
+    return data.data;
+  },
+
+  async builderCatalogHealth(): Promise<BuilderCatalogHealthRow[]> {
+    const { data } = await api.get<ApiSuccess<BuilderCatalogHealthRow[]>>(`${BASE}/builder/catalog-health`);
+    return data.data;
+  },
+
+  async builderGovernance(productId: number): Promise<BuilderGovernance> {
+    const { data } = await api.get<ApiSuccess<BuilderGovernance>>(`${BASE}/builder/${productId}/governance`);
+    return data.data;
+  },
+
+  async builderOptionImpact(optionId: number): Promise<BuilderOptionImpact> {
+    const { data } = await api.get<ApiSuccess<BuilderOptionImpact>>(`${BASE}/builder/options/${optionId}/impact`);
+    return data.data;
+  },
+
+  async saveBuilderDraft(productId: number, publishAt?: string | null): Promise<{ id: number; status: string; publishAt: string | null; health: BuilderHealth }> {
+    const { data } = await api.put<ApiSuccess<{ id: number; status: string; publishAt: string | null; health: BuilderHealth }>>(`${BASE}/builder/${productId}/draft`, { publishAt: publishAt ?? null });
+    return data.data;
+  },
+
+  async publishBuilder(productId: number, idempotencyKey = crypto.randomUUID()): Promise<{ id: number; version: number; publishedAt: string; idempotent: boolean }> {
+    const { data } = await api.post<ApiSuccess<{ id: number; version: number; publishedAt: string; idempotent: boolean }>>(`${BASE}/builder/${productId}/publish`, { idempotencyKey });
+    return data.data;
+  },
+
+  async builderReleases(productId: number): Promise<BuilderRelease[]> {
+    const { data } = await api.get<ApiSuccess<BuilderRelease[]>>(`${BASE}/builder/${productId}/releases`);
+    return data.data;
+  },
+
+  async rollbackBuilder(productId: number, releaseId: number, idempotencyKey = crypto.randomUUID()): Promise<{ id: number; version: number; publishedAt: string; restoredFrom: number }> {
+    const { data } = await api.post<ApiSuccess<{ id: number; version: number; publishedAt: string; restoredFrom: number }>>(`${BASE}/builder/${productId}/releases/${releaseId}/rollback`, { idempotencyKey });
+    return data.data;
+  },
+
   async updateGroup(
     groupId: number,
     input: {
@@ -418,6 +638,7 @@ export const commercialApi = {
       freeQuantity?: number;
       selectionType?: 'SINGLE' | 'MULTIPLE';
       sortOrder?: number;
+      expectedVersion?: number;
     },
   ): Promise<void> {
     await api.patch(`${BASE}/builder/groups/${groupId}`, input);
@@ -436,6 +657,7 @@ export const commercialApi = {
       maxSelection: number;
       freeQuantity: number;
       sortOrder: number;
+      expectedVersion?: number;
     },
   ): Promise<{ id: number }> {
     const { data } = await api.post<ApiSuccess<{ id: number }>>(`${BASE}/builder/${productId}/groups`, input);
@@ -460,6 +682,7 @@ export const commercialApi = {
       maxPerItem: number;
       inventoryItemId?: number | null;
       consumptionQuantity?: number;
+      expectedVersion?: number;
     },
   ): Promise<void> {
     await api.post(`${BASE}/builder/groups/${groupId}/options`, input);
@@ -484,6 +707,7 @@ export const commercialApi = {
       status?: 'ACTIVE' | 'OUT_OF_STOCK' | 'INACTIVE';
       inventoryItemId?: number | null;
       consumptionQuantity?: number;
+      expectedVersion?: number;
     },
   ): Promise<void> {
     await api.patch(`${BASE}/builder/options/${optionId}`, input);
@@ -518,15 +742,16 @@ export const commercialApi = {
     priceOverride?: number | null;
     availableFrom?: string | null;
     availableUntil?: string | null;
+    expectedVersion?: number;
   }): Promise<void> {
     await api.put(`${BASE}/builder/options/${optionId}/availability`, input);
   },
 
-  async createPreset(productId: number, input: Omit<BuilderPreset, 'id'>): Promise<void> {
+  async createPreset(productId: number, input: Omit<BuilderPreset, 'id' | 'version'>): Promise<void> {
     await api.post(`${BASE}/builder/${productId}/presets`, input);
   },
 
-  async updatePreset(presetId: number, input: Partial<Omit<BuilderPreset, 'id' | 'code'>>): Promise<void> {
+  async updatePreset(presetId: number, input: Partial<Omit<BuilderPreset, 'id' | 'code'>> & { expectedVersion?: number }): Promise<void> {
     await api.patch(`${BASE}/builder/presets/${presetId}`, input);
   },
 

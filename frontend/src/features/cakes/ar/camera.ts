@@ -12,6 +12,7 @@ let stream: MediaStream | undefined;
 let renderer: THREE.WebGLRenderer | undefined;
 let controller: Controller | undefined;
 let model: THREE.Group | undefined;
+let adjustPlacement: ((action: string, value?: number) => void) | undefined;
 let stopped = false;
 let started = false;
 const alive = () => { if (stopped) throw new DOMException('Closed', 'AbortError'); };
@@ -24,6 +25,7 @@ const stop = () => {
   controller?.stopProcessVideo();
   controller?.worker.terminate();
   if (model) disposeCakeModel(model);
+  adjustPlacement = undefined;
   renderer?.dispose();
   renderer?.forceContextLoss();
 };
@@ -46,13 +48,24 @@ const start = async ({ snapshot, expiresAt }: CakeArInput) => {
   video.width = video.videoWidth; video.height = video.videoHeight;
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera();
-  renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+  renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, premultipliedAlpha: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.08;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   container.append(renderer.domElement);
-  scene.add(new THREE.HemisphereLight(0xfff8ee, 0xa39487, 2.5));
+  scene.add(new THREE.HemisphereLight(0xfff8ee, 0xa39487, 2.1));
   const light = new THREE.DirectionalLight(0xffffff, 2.5);
-  light.position.set(1, 2, 3); scene.add(light);
+  light.position.set(1, 2, 3);
+  light.castShadow = true;
+  light.shadow.mapSize.set(1024, 1024);
+  light.shadow.camera.near = 0.01;
+  light.shadow.camera.far = 5;
+  light.shadow.bias = -0.0002;
+  scene.add(light);
+  scene.add(new THREE.DirectionalLight(0xffe9d2, 0.55));
   const anchor = new THREE.Group();
   anchor.matrixAutoUpdate = false; anchor.visible = false; scene.add(anchor);
   let lastFound = false;
@@ -93,9 +106,25 @@ const start = async ({ snapshot, expiresAt }: CakeArInput) => {
   const placement = new THREE.Group();
   model.position.sub(new THREE.Vector3(center.x, bounds.min.y, center.z));
   // Cake is Y-up; the recognized image lies in XY with +Z toward the camera.
-  placement.rotation.x = Math.PI / 2;
-  placement.scale.setScalar(.60 / Math.max(size.x, size.z));
+  // Keep the cake upright in the target's XY plane. The old quarter-turn
+  // made the camera see only a large circular top surface.
+  const baseScale = .28 / Math.max(size.x, size.z, .001);
+  placement.rotation.set(Math.PI * .42, 0, 0);
+  placement.scale.setScalar(baseScale);
+  placement.position.set(0, 0, Math.max(size.z * baseScale * .5, .08));
   placement.add(model); anchor.add(placement);
+  let userScale = 1;
+  let userRotation = 0;
+  const applyPlacement = () => {
+    placement.scale.setScalar(baseScale * userScale);
+    placement.rotation.y = THREE.MathUtils.degToRad(userRotation);
+  };
+  adjustPlacement = (action, value) => {
+    if (action === 'scale') userScale = THREE.MathUtils.clamp(userScale + (value ?? 0), .65, 1.55);
+    if (action === 'rotate') userRotation = (userRotation + (value ?? 0) + 540) % 360 - 180;
+    if (action === 'reset') { userScale = 1; userRotation = 0; }
+    applyPlacement();
+  };
   const resize = () => {
     if (!renderer || !controller) return;
     video.width = video.videoWidth; video.height = video.videoHeight;
@@ -138,9 +167,12 @@ function fail(error: unknown) {
 }
 window.addEventListener('unhandledrejection', (event) => { event.preventDefault(); fail(event.reason); });
 window.addEventListener('message', (event) => {
-  if (event.source !== parent || event.origin !== location.origin || event.data?.channel !== CAKE_AR_CHANNEL || started) return;
-  if (event.data.action !== 'start' || !event.data.input?.snapshot) return;
-  started = true;
-  void start(event.data.input as CakeArInput).catch(fail);
+  if (event.source !== parent || event.origin !== location.origin || event.data?.channel !== CAKE_AR_CHANNEL) return;
+  if (event.data.action === 'start' && !started && event.data.input?.snapshot) {
+    started = true;
+    void start(event.data.input as CakeArInput).catch(fail);
+    return;
+  }
+  if (started) adjustPlacement?.(event.data.action, Number(event.data.value));
 });
 parent.postMessage({ channel: CAKE_AR_CHANNEL, ready: true }, location.origin);

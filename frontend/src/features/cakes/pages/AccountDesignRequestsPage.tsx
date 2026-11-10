@@ -106,6 +106,10 @@ const AccountDesignRequestsPage = () => {
           return { groupId: 0, groupName: chosen?.group ?? 'Diseño', optionId: selection.optionId, optionName: chosen?.option ?? 'Elección aprobada', quantity: selection.quantity, priceDelta: 0 };
         }),
         designQuoteId: quote.id, approvedDesignSummary: quote.terms, preferredSlotId: slot.id,
+        preparationMode: product.preparationMode,
+        requiresScheduledDelivery: true,
+        requiresCarDelivery: product.family === 'CAKE',
+        minLeadHours: product.minLeadHours ?? 0,
       }));
       navigate(ROUTES.cart);
     } catch (cause) { setError(getApiErrorMessage(cause)); }

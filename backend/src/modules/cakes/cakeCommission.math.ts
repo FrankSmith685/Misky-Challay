@@ -1,5 +1,21 @@
 import { round2 } from '@shared/utils/money';
 
+/**
+ * Base de comision de la plataforma: todos los conceptos vendidos del pedido,
+ * despues de descuentos y sin incluir delivery. Los pedidos antiguos pueden no
+ * tener el descuento repartido en cada linea; en ese caso se resta el remanente
+ * global una sola vez.
+ */
+export const orderProductBase = (
+  lines: Array<{ productId: number | null; lineTotal: number; discountTotal: number }>,
+  orderDiscountTotal = 0,
+): number => {
+  const productGross = lines.reduce((sum, line) => sum + Number(line.lineTotal), 0);
+  const allocatedDiscount = lines.reduce((sum, line) => sum + Number(line.discountTotal), 0);
+  const legacyRemainder = Math.max(0, Number(orderDiscountTotal) - allocatedDiscount);
+  return round2(Math.max(0, productGross - allocatedDiscount - legacyRemainder));
+};
+
 export const cakeLineBase = (
   lines: Array<{ productId: number | null; lineTotal: number; discountTotal: number }>,
   cakeProductIds: ReadonlySet<number>,

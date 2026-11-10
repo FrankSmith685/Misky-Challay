@@ -202,7 +202,11 @@ export const geoService = {
       const zones = await CoverageZone.findAll({
         // El pin puede estar fuera de la ciudad administrativa de la tienda.
         // Se necesita comparar con todas las zonas para calcular el recargo.
-        where: { isActive: true },
+        where: {
+          isActive: true,
+          archivedAt: null,
+          [Op.or]: [{ effectiveFrom: null }, { effectiveFrom: { [Op.lte]: new Date() } }],
+        },
         order: [['priority', 'ASC']],
       });
       coordinateZones = zones;
@@ -219,7 +223,12 @@ export const geoService = {
       const district = await District.findByPk(query.districtId);
       if (district?.coverageZoneId) {
         const districtZone = await CoverageZone.findOne({
-          where: { id: district.coverageZoneId, isActive: true },
+          where: {
+            id: district.coverageZoneId,
+            isActive: true,
+            archivedAt: null,
+            [Op.or]: [{ effectiveFrom: null }, { effectiveFrom: { [Op.lte]: new Date() } }],
+          },
         });
         const districtHasExactPolygon = Array.isArray(districtZone?.polygon) && districtZone.polygon.length >= 3;
         // Las coordenadas exactas prevalecen sobre la cobertura general del distrito.

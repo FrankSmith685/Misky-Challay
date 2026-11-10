@@ -46,6 +46,7 @@ export class Product extends Model<InferAttributes<Product>, InferCreationAttrib
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
   declare deletedAt: CreationOptional<Date | null>;
+  declare version: CreationOptional<number>;
 
   declare variants?: NonAttribute<ProductVariant[]>;
 }
@@ -78,6 +79,7 @@ Product.init(
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,
     deletedAt: DataTypes.DATE,
+    version: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 1 },
   },
   {
     sequelize,

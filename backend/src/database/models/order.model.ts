@@ -70,6 +70,8 @@ export class Order extends Model<InferAttributes<Order>, InferCreationAttributes
 
   declare subtotal: number;
   declare deliveryFee: CreationOptional<number>;
+  /** Parte del delivery correspondiente al manejo especial de tortas. */
+  declare cakeDeliveryFee: CreationOptional<number>;
   declare deliveryVehicleType: CreationOptional<'CAR' | null>;
   declare deliveryHandlingInstructions: CreationOptional<string | null>;
   declare discountTotal: CreationOptional<number>;
@@ -175,6 +177,7 @@ Order.init(
 
     subtotal: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
     deliveryFee: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
+    cakeDeliveryFee: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },
     deliveryVehicleType: { type: DataTypes.STRING(16), allowNull: true },
     deliveryHandlingInstructions: { type: DataTypes.STRING(1000), allowNull: true },
     discountTotal: { type: DataTypes.DECIMAL(12, 2), allowNull: false, defaultValue: 0 },

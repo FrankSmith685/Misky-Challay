@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { createExperienceObject, type SceneMedia } from './scene';
 import type { ExperienceScene } from './experiences.service';
 import { Move, ZoomIn } from 'lucide-react';
@@ -28,16 +29,40 @@ export default function ExperienceCanvas({
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
       renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
       renderer.outputColorSpace = THREE.SRGBColorSpace;
+      const appearance = Object.assign({
+        exposure: 1,
+        ambientIntensity: 1.8,
+        keyIntensity: 2.3,
+        environment: 'ROOM' as const,
+        toneMapping: 'ACES' as const,
+      } as ExperienceScene['appearance'], config.appearance ?? {});
+      renderer.toneMapping = appearance.toneMapping === 'NONE' ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = appearance.exposure;
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       node.append(renderer.domElement);
       const scene = new THREE.Scene();
-      const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 100);
-      camera.position.set(0, 0.7, 4.3);
-      scene.add(new THREE.HemisphereLight('#fff7ec', '#827a8f', 3));
-      const light = new THREE.DirectionalLight('#ffffff', 3);
+      const environment = new RoomEnvironment();
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      if (appearance.environment === 'ROOM') scene.environment = pmrem.fromScene(environment, 0.04).texture;
+      environment.dispose();
+      pmrem.dispose();
+      const cameraSettings = Object.assign({ autoRotate: true, autoRotateSpeed: 0.65, fov: 38, distance: 2.4 } as ExperienceScene['camera'], config.camera ?? {});
+      const camera = new THREE.PerspectiveCamera(cameraSettings.fov, 1, 0.01, 100);
+      camera.position.set(0, 0.7, cameraSettings.distance + 1.9);
+      scene.add(new THREE.HemisphereLight('#fff7ec', '#827a8f', appearance.ambientIntensity));
+      const light = new THREE.DirectionalLight('#ffffff', appearance.keyIntensity);
       light.position.set(2, 3, 4);
+      light.castShadow = true;
+      light.shadow.mapSize.set(1024, 1024);
+      light.shadow.camera.near = 0.01;
+      light.shadow.camera.far = 8;
+      light.shadow.bias = -0.0002;
       scene.add(light);
       controls = new OrbitControls(camera, renderer.domElement);
       controls.target.set(0, 0.25, 0);
+      controls.autoRotate = cameraSettings.autoRotate;
+      controls.autoRotateSpeed = cameraSettings.autoRotateSpeed;
       controls.enablePan = false;
       controls.minDistance = 2;
       controls.maxDistance = 7;

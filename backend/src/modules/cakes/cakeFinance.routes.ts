@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { authenticate } from '@middlewares/auth.middleware';
-import { isPlatformOwner, requirePermissions, requirePlatformOwner } from '@middlewares/rbac.middleware';
+import { requirePermissions, requireSuperAdmin } from '@middlewares/rbac.middleware';
 import { validate } from '@middlewares/validate.middleware';
 import { PERMISSIONS } from '@config/constants';
 import { ok, created } from '@shared/http/ApiResponse';
@@ -22,7 +22,7 @@ router.get('/report', requirePermissions(PERMISSIONS.CAKE_FINANCE_READ), validat
   branchId: id, from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 }) })), asyncHandler(async (req: Request, res: Response) => ok(res, { ...await cakeFinanceService.report({
   branchId: resolveBranchId(req, req.query.branchId as string), from: req.query.from as string | undefined,
-  to: req.query.to as string | undefined, isOwner: await isPlatformOwner(req.user!.sub),
+  to: req.query.to as string | undefined, isSuperAdmin: Boolean(req.user!.isSuperAdmin),
 }), canManageFinance: Boolean(req.user!.isSuperAdmin || req.user!.permissions.includes(PERMISSIONS.CAKE_FINANCE_MANAGE)) })));
 
 router.post('/expenses', requirePermissions(PERMISSIONS.CAKE_FINANCE_MANAGE), validate(z.object({ body: z.object({
@@ -50,7 +50,7 @@ router.post('/payment-fees', requirePermissions(PERMISSIONS.CAKE_FINANCE_MANAGE)
   return created(res, entry, 'Pago conciliado');
 }));
 
-router.post('/platform-expenses', requirePlatformOwner, validate(z.object({ body: z.object({
+router.post('/platform-expenses', requireSuperAdmin, validate(z.object({ body: z.object({
   category: z.enum(['HOSTING', 'SOFTWARE', 'MARKETING', 'LABOR', 'OTHER']), amount: money, reference, occurredAt: date, notes,
 }) })), asyncHandler(async (req: Request, res: Response) => {
   const entry = await cakeFinanceService.createExpense({ ...req.body, kind: 'PLATFORM_EXPENSE', actorId: req.user!.sub });

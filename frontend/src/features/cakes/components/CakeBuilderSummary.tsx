@@ -85,7 +85,7 @@ export const CakeBuilderSummary = ({ isCake = true, quantity = 1, servingUnit = 
     finally { setModelBusy(false); }
   };
 
-  return <><aside id="cake-summary" aria-label={isCake ? 'Resumen de tu torta' : 'Resumen de tu pedido'} className="order-first min-w-0 scroll-mt-24 self-start lg:order-last lg:sticky lg:top-24">
+  return <><aside id="cake-summary" aria-label={isCake ? 'Resumen de tu torta' : 'Resumen de tu pedido'} className="order-last min-w-0 scroll-mt-24 self-start lg:sticky lg:top-24">
     <div className="cake-surface overflow-hidden">
       <div className="p-4 sm:p-5">
         <div className="flex items-start justify-between gap-3">
@@ -106,6 +106,10 @@ export const CakeBuilderSummary = ({ isCake = true, quantity = 1, servingUnit = 
         </div>
         {total !== null && <button type="button" onClick={onToggleMobile} aria-haspopup="dialog" className="mt-2 flex min-h-8 items-center gap-1 text-[11px] font-medium text-brand-700">Ver desglose del precio<ChevronRight className="size-3" /></button>}
 
+        {possibleAllergens.length > 0 && <p className="mt-3 rounded-card border border-amber-100 bg-amber-50/70 p-3 text-[11px] leading-5 text-amber-950">
+          <span className="font-semibold">Alérgenos según tus opciones:</span> {possibleAllergens.join(', ')}. Puede existir contacto cruzado.
+        </p>}
+
         {validationMessage && <p role="alert" className="mt-3 rounded-card bg-red-50 p-3 text-xs leading-5 text-red-800">{validationMessage}</p>}
         {personalizing && groups.length > 0 && <section aria-label="Progreso de tu personalización" className="mt-3 border-t border-line pt-3">
           <div className="mb-1 flex flex-wrap items-center justify-between gap-1 text-[11px]"><h3 className="font-semibold text-ink">Tu combinación</h3><p role="status" className="text-brand-700">{completed} de {requiredGroups.length} obligatorios</p></div>
@@ -125,7 +129,7 @@ export const CakeBuilderSummary = ({ isCake = true, quantity = 1, servingUnit = 
         <button type="button" disabled={modelBusy} onClick={() => void openThreeD()} className="flex min-h-10 w-full items-center justify-between gap-2 rounded-card border border-line bg-white px-3 text-xs font-semibold text-ink transition-colors hover:bg-brand-50 disabled:opacity-60"><span className="flex items-center gap-2">{modelBusy ? <Loader2 className="size-4 animate-spin text-brand-700" /> : <Box className="size-4 text-brand-700" />}{modelBusy ? 'Preparando vista…' : 'Explorar en 3D'}</span><span className="text-[10px] font-medium text-ink-muted">Opcional</span></button>
         {modelError && <p role="alert" className="mt-2 text-xs text-red-700">{modelError}</p>}
         {threeDRequested && <Suspense fallback={<p role="status" className="mt-2 text-xs text-ink-muted">Abriendo visor 3D…</p>}>
-          <Cake3dExperience key={`${threeD.config.productId}:${modelSource?.generated ? modelSource.candidate?.slice(-80) : 'reference'}`} modalOnly compact config={threeD.config} shareInput={threeD.shareInput} visualDesign={modelSource?.generated ? modelDesign : threeD.visualDesign} onDesignChange={modelSource?.generated ? setModelDesign : threeD.onDesignChange} referenceDataUrl={modelSource?.source ?? null} viewerOpen={modelOpen} onViewerOpenChange={changeModelOpen} />
+          <Cake3dExperience key={`${threeD.config.productId}:${modelSource?.generated ? modelSource.candidate?.slice(-80) : 'reference'}`} modalOnly compact config={threeD.config} shareInput={threeD.shareInput} visualDesign={modelSource?.generated ? modelDesign : threeD.visualDesign} onDesignChange={modelSource?.generated ? setModelDesign : threeD.onDesignChange} referenceDataUrl={modelSource?.source ?? null} viewerOpen={modelOpen} onViewerOpenChange={changeModelOpen} allowShare={false} />
         </Suspense>}
       </section>}
 

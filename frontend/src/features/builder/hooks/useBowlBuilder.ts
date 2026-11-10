@@ -67,7 +67,7 @@ export const useBowlBuilder = (branchId: number | null) => {
                 : [];
             });
             if (restoredSelections.length < (saved.selections ?? []).length) {
-              setRestoredNotice('Actualizamos tu bowl guardado porque uno o mÃ¡s ingredientes ya no estÃ¡n disponibles. Revisa las alternativas sugeridas.');
+              setRestoredNotice('Actualizamos tu bowl guardado porque uno o más ingredientes ya no están disponibles. Revisa las alternativas sugeridas.');
             }
           }
         } catch {
@@ -118,7 +118,7 @@ export const useBowlBuilder = (branchId: number | null) => {
     if (!isOnline) {
       setQuote(null);
       setIsQuoting(false);
-      setValidationMessage('Sin conexiÃ³n. Conservamos tu bowl y actualizaremos el precio cuando vuelvas.');
+      setValidationMessage('Sin conexión. Conservamos tu bowl y actualizaremos el precio cuando vuelvas.');
       return;
     }
 

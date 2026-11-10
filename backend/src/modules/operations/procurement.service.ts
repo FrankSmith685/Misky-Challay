@@ -7,6 +7,7 @@ import {
   PurchaseOrder,
   PurchaseOrderItem,
   Supplier,
+  Branch,
   sequelize,
 } from '@database/models';
 import { MOVEMENT_TYPE } from '@database/models/inventoryMovement.model';
@@ -19,6 +20,8 @@ import { zonedParts } from '@shared/utils/datetime';
 
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 const numberValue = (value: unknown): number => Number(value ?? 0);
+/** Las órdenes iguales o superiores a este importe requieren aprobación. */
+export const PURCHASE_APPROVAL_THRESHOLD = 1_000;
 
 const supplierShape = (supplier: Supplier) => ({
   id: supplier.id,
@@ -39,8 +42,12 @@ const orderShape = (order: PurchaseOrder) => ({
   orderNumber: order.orderNumber,
   branchId: order.branchId,
   supplierId: order.supplierId,
+  branch: order.branch ? { id: order.branch.id, name: order.branch.name } : null,
   supplier: order.supplier ? supplierShape(order.supplier) : null,
   status: order.status,
+  approvalRequired: Boolean(order.approvalRequired),
+  approvedBy: order.approvedBy,
+  approvedAt: order.approvedAt,
   orderedAt: order.orderedAt,
   expectedAt: order.expectedAt,
   receivedAt: order.receivedAt,
@@ -112,11 +119,12 @@ export const procurementService = {
     return supplierShape(supplier);
   },
 
-  async listPurchaseOrders(branchId: number, status?: string) {
+  async listPurchaseOrders(branchId?: number, status?: string) {
     const rows = await PurchaseOrder.findAll({
-      where: { branchId, ...(status ? { status } : {}) },
+      where: { ...(branchId ? { branchId } : {}), ...(status ? { status } : {}) },
       include: [
         { model: Supplier, as: 'supplier' },
+        { model: Branch, as: 'branch', attributes: ['id', 'name'] },
         { model: PurchaseOrderItem, as: 'items', include: [{ model: InventoryItem, as: 'item' }] },
       ],
       order: [['createdAt', 'DESC']],
@@ -124,11 +132,12 @@ export const procurementService = {
     return rows.map(orderShape);
   },
 
-  async getPurchaseOrder(id: number, branchId: number) {
+  async getPurchaseOrder(id: number, branchId?: number) {
     const order = await PurchaseOrder.findOne({
-      where: { id, branchId },
+      where: { id, ...(branchId ? { branchId } : {}) },
       include: [
         { model: Supplier, as: 'supplier' },
+        { model: Branch, as: 'branch', attributes: ['id', 'name'] },
         { model: PurchaseOrderItem, as: 'items', include: [{ model: InventoryItem, as: 'item' }] },
       ],
     });
@@ -141,7 +150,7 @@ export const procurementService = {
     await sequelize.transaction(async (transaction) => {
       const order = await PurchaseOrder.findOne({ where: { id: input.orderId, branchId: input.branchId }, transaction, lock: transaction.LOCK.UPDATE });
       if (!order) throw ApiError.notFound('Orden de compra no encontrada');
-      if (order.status !== PURCHASE_ORDER_STATUS.ORDERED && order.status !== PURCHASE_ORDER_STATUS.PARTIALLY_RECEIVED) {
+      if (![PURCHASE_ORDER_STATUS.DRAFT, PURCHASE_ORDER_STATUS.APPROVED, PURCHASE_ORDER_STATUS.ORDERED, PURCHASE_ORDER_STATUS.PARTIALLY_RECEIVED].includes(order.status as 'DRAFT' | 'APPROVED' | 'ORDERED' | 'PARTIALLY_RECEIVED')) {
         throw ApiError.conflict('Esta orden ya no tiene entregas pendientes para cancelar');
       }
       order.status = PURCHASE_ORDER_STATUS.CANCELLED;
@@ -153,8 +162,15 @@ export const procurementService = {
 
   async createPurchaseOrder(input: {
     branchId: number; supplierId: number; actorId: number; expectedAt?: string | null;
-    notes?: string | null; tax?: number; items: Array<{ inventoryItemId: number; quantity: number; unitCost: number; notes?: string | null }>;
+    notes?: string | null; tax?: number; idempotencyKey?: string; items: Array<{ inventoryItemId: number; quantity: number; unitCost: number; notes?: string | null }>;
   }) {
+    if (input.idempotencyKey) {
+      const previous = await PurchaseOrder.findOne({ where: { idempotencyKey: input.idempotencyKey } });
+      if (previous) {
+        if (previous.branchId !== input.branchId) throw ApiError.conflict('La clave de reintento ya fue usada en otra sucursal');
+        return this.getPurchaseOrder(previous.id, input.branchId);
+      }
+    }
     if (!input.items.length) throw ApiError.badRequest('Agrega al menos un insumo a la compra');
     const distinct = new Set(input.items.map((line) => line.inventoryItemId));
     if (distinct.size !== input.items.length) throw ApiError.badRequest('No repitas un insumo en la misma orden');
@@ -168,12 +184,18 @@ export const procurementService = {
     const subtotal = round2(input.items.reduce((sum, line) => sum + line.quantity * line.unitCost, 0));
     const tax = round2(Math.max(0, input.tax ?? 0));
     const total = round2(subtotal + tax);
+    const approvalRequired = total >= PURCHASE_APPROVAL_THRESHOLD;
     const date = new Date();
     const orderNumber = `OC-${zonedParts(date).isoDate.replace(/-/g, '')}-${randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()}`;
     const order = await sequelize.transaction(async (transaction) => {
       const created = await PurchaseOrder.create({
         orderNumber, branchId: input.branchId, supplierId: input.supplierId,
-        status: PURCHASE_ORDER_STATUS.ORDERED, orderedAt: date,
+        status: approvalRequired ? PURCHASE_ORDER_STATUS.DRAFT : PURCHASE_ORDER_STATUS.ORDERED,
+        approvalRequired,
+        approvedBy: approvalRequired ? null : input.actorId,
+        approvedAt: approvalRequired ? null : date,
+        idempotencyKey: input.idempotencyKey ?? null,
+        orderedAt: approvalRequired ? null : date,
         // Mediodía UTC conserva la fecha elegida al mostrarse en hora de Perú.
         expectedAt: input.expectedAt ? new Date(`${input.expectedAt}T12:00:00Z`) : null,
         notes: input.notes?.trim() || null, subtotal, tax, total, createdBy: input.actorId,
@@ -190,7 +212,7 @@ export const procurementService = {
 
   /** Una orden se corrige mientras todavía no se haya recibido ningún lote. */
   async updatePurchaseOrder(input: {
-    orderId: number; branchId: number; supplierId: number; expectedAt?: string | null;
+    orderId: number; branchId: number; supplierId: number; actorId: number; expectedAt?: string | null;
     notes?: string | null; tax?: number; items: Array<{ inventoryItemId: number; quantity: number; unitCost: number; notes?: string | null }>;
   }) {
     if (!input.items.length) throw ApiError.badRequest('Agrega al menos un insumo a la compra');
@@ -204,7 +226,7 @@ export const procurementService = {
     await sequelize.transaction(async (transaction) => {
       const order = await PurchaseOrder.findOne({ where: { id: input.orderId, branchId: input.branchId }, transaction, lock: transaction.LOCK.UPDATE });
       if (!order) throw ApiError.notFound('Orden de compra no encontrada');
-      if (order.status !== PURCHASE_ORDER_STATUS.ORDERED) throw ApiError.conflict('Solo se puede editar una orden sin recepciones');
+      if (order.status !== PURCHASE_ORDER_STATUS.ORDERED && order.status !== PURCHASE_ORDER_STATUS.DRAFT) throw ApiError.conflict('Solo se puede editar una orden sin recepciones');
       if (!supplier.isActive && supplier.id !== order.supplierId) throw ApiError.conflict('Selecciona un proveedor activo');
       const [received, lots] = await Promise.all([
         PurchaseOrderItem.count({ where: { purchaseOrderId: order.id, quantityReceived: { [Op.gt]: 0 } }, transaction }),
@@ -213,9 +235,15 @@ export const procurementService = {
       if (received || lots) throw ApiError.conflict('La orden ya tiene lotes recibidos. Conserva ese historial y crea una nueva orden para cambios posteriores.');
       const subtotal = round2(input.items.reduce((sum, line) => sum + line.quantity * line.unitCost, 0));
       const tax = round2(input.tax ?? 0);
+      const approvalRequired = round2(subtotal + tax) >= PURCHASE_APPROVAL_THRESHOLD;
       await order.update({
         supplierId: input.supplierId, expectedAt: input.expectedAt ? new Date(`${input.expectedAt}T12:00:00Z`) : null,
         notes: input.notes?.trim() || null, subtotal, tax, total: round2(subtotal + tax),
+        approvalRequired,
+        status: approvalRequired ? PURCHASE_ORDER_STATUS.DRAFT : PURCHASE_ORDER_STATUS.ORDERED,
+        orderedAt: approvalRequired ? null : order.orderedAt ?? new Date(),
+        approvedBy: approvalRequired ? null : order.approvedBy ?? input.actorId,
+        approvedAt: approvalRequired ? null : order.approvedAt ?? new Date(),
       }, { transaction });
       await PurchaseOrderItem.destroy({ where: { purchaseOrderId: order.id }, transaction });
       await PurchaseOrderItem.bulkCreate(input.items.map((line) => ({
@@ -227,11 +255,27 @@ export const procurementService = {
     return this.getPurchaseOrder(input.orderId, input.branchId);
   },
 
+  async approvePurchaseOrder(input: { orderId: number; branchId: number; actorId: number }) {
+    await sequelize.transaction(async (transaction) => {
+      const order = await PurchaseOrder.findOne({ where: { id: input.orderId, branchId: input.branchId }, transaction, lock: transaction.LOCK.UPDATE });
+      if (!order) throw ApiError.notFound('Orden de compra no encontrada');
+      if (order.status !== PURCHASE_ORDER_STATUS.DRAFT || !order.approvalRequired) throw ApiError.conflict('Esta orden no está pendiente de aprobación');
+      order.status = PURCHASE_ORDER_STATUS.ORDERED;
+      order.orderedAt = new Date();
+      order.approvedBy = input.actorId;
+      order.approvedAt = new Date();
+      await order.save({ transaction });
+    });
+    return this.getPurchaseOrder(input.orderId, input.branchId);
+  },
+
   async receivePurchaseOrder(input: {
     branchId: number; orderId: number; actorId: number;
     lines: Array<{ purchaseOrderItemId: number; quantity: number; lotCode: string; expiresAt?: string | null; unitCost?: number }>;
+    idempotencyKey?: string;
   }) {
     if (!input.lines.length) throw ApiError.badRequest('Agrega al menos un lote recibido');
+    if (input.idempotencyKey && await InventoryMovement.findOne({ where: { branchId: input.branchId, idempotencyKey: input.idempotencyKey } })) return this.getPurchaseOrder(input.orderId, input.branchId);
     const received = await sequelize.transaction(async (transaction) => {
       const order = await PurchaseOrder.findOne({
         where: { id: input.orderId, branchId: input.branchId },
@@ -242,6 +286,7 @@ export const procurementService = {
       if ([PURCHASE_ORDER_STATUS.CANCELLED, PURCHASE_ORDER_STATUS.RECEIVED].includes(order.status as 'CANCELLED' | 'RECEIVED')) throw ApiError.conflict('La orden ya no admite recepción');
       const items = (order.get('items') as PurchaseOrderItem[] | undefined) ?? [];
       const byId = new Map(items.map((line) => [line.id, line]));
+      let movementKey = input.idempotencyKey;
       for (const line of input.lines) {
         if (!(line.quantity > 0) || !line.lotCode.trim()) throw ApiError.badRequest('Cada recepción requiere cantidad y código de lote');
         if (line.expiresAt && line.expiresAt < zonedParts(new Date()).isoDate) throw ApiError.badRequest('No se puede recibir un lote vencido');
@@ -261,7 +306,8 @@ export const procurementService = {
           quantityReceived: line.quantity, quantityAvailable: line.quantity, unitCost,
           status: INVENTORY_LOT_STATUS.ACTIVE,
         }, { transaction });
-        await inventoryService.receiveLot({ branchId: input.branchId, inventoryItemId: item.inventoryItemId, lotId: lot.id, quantity: line.quantity, unitCost, purchaseOrderId: order.id, actorId: input.actorId, reason: `Recepción ${order.orderNumber} · lote ${lotCode}` }, transaction);
+        await inventoryService.receiveLot({ branchId: input.branchId, inventoryItemId: item.inventoryItemId, lotId: lot.id, quantity: line.quantity, unitCost, purchaseOrderId: order.id, actorId: input.actorId, reason: `Recepción ${order.orderNumber} · lote ${lotCode}`, idempotencyKey: movementKey }, transaction);
+        movementKey = undefined;
         item.quantityReceived = round2(numberValue(item.quantityReceived) + line.quantity);
         item.lotCode = lotCode;
         item.expiresAt = line.expiresAt ? new Date(line.expiresAt) : null;
@@ -287,15 +333,20 @@ export const procurementService = {
     return received;
   },
 
-  async listLots(branchId: number, status?: string) {
-    await inventoryService.expireLots(branchId);
+  async listLots(branchId?: number, status?: string) {
+    if (branchId) await inventoryService.expireLots(branchId);
+    else {
+      const branches = await Branch.findAll({ where: { isActive: true }, attributes: ['id'] });
+      await Promise.all(branches.map((branch) => inventoryService.expireLots(branch.id)));
+    }
     const rows = await InventoryLot.findAll({
-      where: { branchId, ...(status ? { status } : {}) },
-      include: [{ model: InventoryItem, as: 'item' }, { model: Supplier, as: 'supplier' }, { model: PurchaseOrder, as: 'purchaseOrder' }],
+      where: { ...(branchId ? { branchId } : {}), ...(status ? { status } : {}) },
+      include: [{ model: InventoryItem, as: 'item' }, { model: Supplier, as: 'supplier' }, { model: PurchaseOrder, as: 'purchaseOrder' }, { model: Branch, as: 'branch', attributes: ['id', 'name'] }],
       order: [['expiresAt', 'ASC'], ['receivedAt', 'ASC']],
     });
     return rows.map((lot) => ({
       id: lot.id, lotCode: lot.lotCode, inventoryItemId: lot.inventoryItemId,
+      branch: lot.branch ? { id: lot.branch.id, name: lot.branch.name } : null,
       item: lot.item ? { id: lot.item.id, code: lot.item.code, name: lot.item.name, unit: lot.item.unit } : null,
       supplier: lot.supplier ? supplierShape(lot.supplier) : null,
       purchaseOrderId: lot.purchaseOrderId, status: lot.status,
@@ -305,16 +356,18 @@ export const procurementService = {
     }));
   },
 
-  async costSummary(branchId: number, from?: string, to?: string) {
+  async costSummary(branchId?: number, from?: string, to?: string) {
     const dateWhere = from || to ? { createdAt: { ...(from ? { [Op.gte]: new Date(from) } : {}), ...(to ? { [Op.lte]: new Date(`${to}T23:59:59`) } : {}) } } : undefined;
-    const [lots, movements] = await Promise.all([
-      InventoryLot.findAll({ where: { branchId }, include: [{ model: InventoryItem, as: 'item' }] }),
-      InventoryMovement.findAll({ where: { branchId, type: [MOVEMENT_TYPE.CONSUME, MOVEMENT_TYPE.WASTE], ...(dateWhere ?? {}) }, include: [{ model: InventoryItem, as: 'item' }] }),
+    const [lots, movements, plannedLines] = await Promise.all([
+      InventoryLot.findAll({ where: { ...(branchId ? { branchId } : {}) }, include: [{ model: InventoryItem, as: 'item' }] }),
+      InventoryMovement.findAll({ where: { ...(branchId ? { branchId } : {}), type: [MOVEMENT_TYPE.CONSUME, MOVEMENT_TYPE.WASTE], ...(dateWhere ?? {}) }, include: [{ model: InventoryItem, as: 'item' }] }),
+      PurchaseOrderItem.findAll({ include: [{ model: PurchaseOrder, as: 'purchaseOrder', required: true, where: { ...(branchId ? { branchId } : {}), status: { [Op.ne]: PURCHASE_ORDER_STATUS.CANCELLED } } }] }),
     ]);
     const fromDate = from ? new Date(from).getTime() : -Infinity;
     const toDate = to ? new Date(`${to}T23:59:59`).getTime() : Infinity;
     const purchasedLots = lots.filter((lot) => { const received = new Date(lot.receivedAt).getTime(); return received >= fromDate && received <= toDate; });
     const purchasesTotal = round2(purchasedLots.reduce((sum, lot) => sum + numberValue(lot.quantityReceived) * numberValue(lot.unitCost), 0));
+    const plannedTotal = round2(plannedLines.reduce((sum, line) => sum + numberValue(line.quantityOrdered) * numberValue(line.unitCost), 0));
     const stockValue = round2(lots.filter((lot) => lot.status === INVENTORY_LOT_STATUS.ACTIVE).reduce((sum, lot) => sum + numberValue(lot.quantityAvailable) * numberValue(lot.unitCost), 0));
     const consumedCost = round2(movements.reduce((sum, movement) => sum + numberValue(movement.totalCost), 0));
     const byItem = new Map<number, { inventoryItemId: number; name: string; purchased: number; consumed: number; stockValue: number }>();
@@ -330,7 +383,7 @@ export const procurementService = {
       row.consumed += numberValue(movement.totalCost);
       byItem.set(movement.inventoryItemId, row);
     }
-    return { purchasesTotal, stockValue, consumedCost, rows: [...byItem.values()].map((row) => ({ ...row, purchased: round2(row.purchased), consumed: round2(row.consumed), stockValue: round2(row.stockValue) })) };
+    return { purchasesTotal, plannedTotal, purchaseVariance: round2(purchasesTotal - plannedTotal), stockValue, consumedCost, rows: [...byItem.values()].map((row) => ({ ...row, purchased: round2(row.purchased), consumed: round2(row.consumed), stockValue: round2(row.stockValue) })) };
   },
 };
 

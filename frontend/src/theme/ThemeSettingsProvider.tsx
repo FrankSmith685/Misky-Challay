@@ -6,6 +6,7 @@ import {
   useLayoutEffect,
   useMemo,
   useState,
+  useEffect,
   type ReactNode,
 } from 'react';
 import { ThemeProvider } from '@mui/material/styles';
@@ -13,6 +14,9 @@ import CssBaseline from '@mui/material/CssBaseline';
 import { buildTheme } from './buildTheme';
 import { applyCssVars } from './applyCssVars';
 import { DEFAULT_TOKENS, loadTokens, saveTokens, type ThemeTokens } from './tokens';
+import api from '@services/api/client';
+import { ENDPOINTS } from '@services/api/endpoints';
+import type { ApiSuccess } from '@/types/api';
 
 type ThemeSettingsContextValue = {
   tokens: ThemeTokens;
@@ -20,6 +24,10 @@ type ThemeSettingsContextValue = {
   setToken: <K extends keyof ThemeTokens>(key: K, value: ThemeTokens[K]) => void;
   /** Restablece TODO el tema a los valores por defecto de la marca. */
   reset: () => void;
+  /** Sustituye el tema en memoria para previsualizar un borrador. */
+  replaceTokens: (next: ThemeTokens) => void;
+  /** Recarga el tema publicado después de salir del editor. */
+  loadPublishedTheme: () => Promise<ThemeTokens | null>;
   /** True si el tema difiere de los valores por defecto. */
   isCustomized: boolean;
 };
@@ -38,6 +46,18 @@ const ThemeSettingsContext = createContext<ThemeSettingsContextValue | null>(nul
  */
 export const ThemeSettingsProvider = ({ children }: { children: ReactNode }) => {
   const [tokens, setTokens] = useState<ThemeTokens>(loadTokens);
+  const loadPublishedTheme = useCallback(async (): Promise<ThemeTokens | null> => {
+    try {
+      const response = await api.get<ApiSuccess<{ tokens: ThemeTokens }>>(ENDPOINTS.settings.theme);
+      const published = { ...DEFAULT_TOKENS, ...response.data.data.tokens };
+      setTokens(published);
+      return published;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  useEffect(() => { void loadPublishedTheme(); }, [loadPublishedTheme]);
 
   // Antes de pintar: aplica las variables CSS de marca (evita parpadeo).
   useLayoutEffect(() => {
@@ -50,6 +70,7 @@ export const ThemeSettingsProvider = ({ children }: { children: ReactNode }) => 
   }, []);
 
   const reset = useCallback(() => setTokens(DEFAULT_TOKENS), []);
+  const replaceTokens = useCallback((next: ThemeTokens) => setTokens({ ...DEFAULT_TOKENS, ...next }), []);
 
   const theme = useMemo(() => buildTheme(tokens), [tokens]);
 
@@ -58,11 +79,13 @@ export const ThemeSettingsProvider = ({ children }: { children: ReactNode }) => 
       tokens,
       setToken,
       reset,
+      replaceTokens,
+      loadPublishedTheme,
       isCustomized: (Object.keys(DEFAULT_TOKENS) as Array<keyof ThemeTokens>).some(
         (key) => tokens[key] !== DEFAULT_TOKENS[key],
       ),
     }),
-    [tokens, setToken, reset],
+    [tokens, setToken, reset, replaceTokens, loadPublishedTheme],
   );
 
   return (

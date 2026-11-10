@@ -36,6 +36,7 @@ export const PERM = {
 
   DINING_READ: 'dining.read',
   DINING_OPERATE: 'dining.operate',
+  POS_SELL: 'pos.sell',
 
   INVENTORY_READ: 'inventory.read',
   INVENTORY_MANAGE: 'inventory.manage',
@@ -56,6 +57,9 @@ export const PERM = {
   PLAN_MANAGE: 'plan.manage',
   PROMOTION_MANAGE: 'promotion.manage',
 
+  CUSTOMER_READ: 'customer.read',
+  CUSTOMER_MANAGE: 'customer.manage',
+
   REPORT_SALES_READ: 'report.sales.read',
   REPORT_OPERATIONS_READ: 'report.operations.read',
   CAKE_FINANCE_READ: 'cake.finance.read',
@@ -66,8 +70,18 @@ export const PERM = {
   ROLE_READ: 'role.read',
   ROLE_MANAGE: 'role.manage',
   AUDIT_READ: 'audit.read',
+  AUDIT_EXPORT: 'audit.export',
+  AUDIT_VERIFY: 'audit.verify',
+  AUDIT_RETENTION: 'audit.retention',
   SETTINGS_MANAGE: 'settings.manage',
+  SETTINGS_DESIGN_READ: 'settings.design.read',
+  SETTINGS_DESIGN_MANAGE: 'settings.design.manage',
+  SETTINGS_DESIGN_PUBLISH: 'settings.design.publish',
   COMMUNICATION_READ: 'communication.read',
   COMMUNICATION_REPLY: 'communication.reply',
   COMPLAINT_MANAGE: 'complaint.manage',
+  COMPLAINT_READ: 'complaint.read',
+  COMPLAINT_RESPOND: 'complaint.respond',
+  COMPLAINT_EXPORT: 'complaint.export',
+  COMPLAINT_REOPEN: 'complaint.reopen',
 } as const;

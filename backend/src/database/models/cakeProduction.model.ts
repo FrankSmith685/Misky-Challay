@@ -113,6 +113,9 @@ export class CakeProductionTask extends Model<InferAttributes<CakeProductionTask
   declare workDate: string;
   declare status: CreationOptional<'PENDING' | 'IN_PROGRESS' | 'DONE' | 'BLOCKED'>;
   declare assignedTo: CreationOptional<number | null>;
+  declare incidentReason: CreationOptional<string | null>;
+  declare incidentAt: CreationOptional<Date | null>;
+  declare incidentBy: CreationOptional<number | null>;
   declare checklistJson: CreationOptional<Record<string, boolean> | null>;
   declare materialPlanJson: CreationOptional<Record<string, number> | null>;
   declare materialConsumedJson: CreationOptional<Record<string, number> | null>;
@@ -135,6 +138,9 @@ CakeProductionTask.init({
   workDate: { type: DataTypes.DATEONLY, allowNull: false },
   status: { type: DataTypes.ENUM('PENDING', 'IN_PROGRESS', 'DONE', 'BLOCKED'), allowNull: false, defaultValue: 'PENDING' },
   assignedTo: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
+  incidentReason: { type: DataTypes.STRING(500), allowNull: true },
+  incidentAt: { type: DataTypes.DATE, allowNull: true },
+  incidentBy: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
   checklistJson: { type: DataTypes.JSON, allowNull: true },
   materialPlanJson: { type: DataTypes.JSON, allowNull: true },
   materialConsumedJson: { type: DataTypes.JSON, allowNull: true },

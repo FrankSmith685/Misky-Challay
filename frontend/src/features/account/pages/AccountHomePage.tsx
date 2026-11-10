@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ChevronRight,
+  Bell,
   ClipboardList,
   Heart,
   Home,
@@ -67,12 +68,14 @@ const AccountHomePage = () => {
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [addressesError, setAddressesError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
   useLiveRefresh(["orders","wallet","subscriptions","account"], () => setRetryNonce((value) => value + 1));
 
   useEffect(() => {
     let cancelled = false;
-    setIsLoading(true);
+    if (retryNonce > 0) setRefreshing(true);
+    else setIsLoading(true);
 
     // allSettled y no all: que el saldo falle no puede borrar el pedido en curso.
     void Promise.allSettled([ordersApi.summary(), plansApi.wallet(), accountApi.listAddresses()]).then(
@@ -96,6 +99,7 @@ const AccountHomePage = () => {
         );
 
         setIsLoading(false);
+        setRefreshing(false);
       },
     );
 
@@ -124,9 +128,12 @@ const AccountHomePage = () => {
       icon={Home}
       crumbs={[{ label: 'Inicio', to: '/' }, { label: 'Mi cuenta' }]}
       action={
-        <Button component={Link} to={ROUTES.menu} leftIcon={<ShoppingBag className="size-4" />}>
-          Hacer un pedido
-        </Button>
+        <>
+          <Button component={Link} to={ROUTES.menu} leftIcon={<ShoppingBag className="size-4" />}>
+            Hacer un pedido
+          </Button>
+          {refreshing && <span className="text-xs font-semibold text-brand-700" role="status">Actualizando…</span>}
+        </>
       }
       className="mb-6"
     />
@@ -351,6 +358,12 @@ const AccountHomePage = () => {
               icon={ClipboardList}
               label="Mis pedidos"
               detail={ordersError ? 'Consulta el historial' : `${ordersTotal} en tu historial`}
+            />
+            <QuickLink
+              to={ROUTES.accountNotifications}
+              icon={Bell}
+              label="Notificaciones"
+              detail="Pedidos, pagos y avisos importantes"
             />
             <QuickLink
               to={ROUTES.accountFavorites}

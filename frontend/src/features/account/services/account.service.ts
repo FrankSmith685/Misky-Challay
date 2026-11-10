@@ -137,8 +137,8 @@ export const accountApi = {
     return data.data;
   },
 
-  async notificationFeed(audience: 'CUSTOMER' | 'STAFF' | 'ALL' = 'CUSTOMER', page = 1): Promise<{ items: AccountNotification[]; unreadCount: number; newestId: number; totalPages: number }> {
-    const { data } = await api.get('/account/notifications/feed', { params: { audience, page, pageSize: 15 } });
+  async notificationFeed(audience: 'CUSTOMER' | 'STAFF' | 'ALL' = 'CUSTOMER', page = 1, pageSize = 15): Promise<{ items: AccountNotification[]; unreadCount: number; newestId: number; totalPages: number }> {
+    const { data } = await api.get('/account/notifications/feed', { params: { audience, page, pageSize } });
     if (!Array.isArray(data.data?.items) || !Number.isFinite(data.data?.unreadCount)) throw new Error('La respuesta de avisos no es válida. Vuelve a intentarlo.');
     return data.data;
   },

@@ -3,6 +3,7 @@ export type TicketStatus =
   | 'ACCEPTED'
   | 'PREPARING'
   | 'READY'
+  | 'ON_HOLD'
   | 'DISPATCHED'
   | 'CANCELLED';
 
@@ -64,6 +65,12 @@ export interface KitchenTicket {
     priority: number;
     createdAt: string;
     acceptedAt: string | null;
+    station: string | null;
+    assignedTo: number | null;
+    assignedName: string | null;
+    pausedFromStatus: TicketStatus | null;
+    incidentReason: string | null;
+    productionTasks?: Array<{ station: string; workDate: string; status: string; assigned: boolean; plannedMinutes: number }>;
     targetAt: string;
   notes: string | null;
   isLate: boolean;
@@ -100,7 +107,7 @@ export interface ScheduledKitchenOrder {
 export interface KitchenBoard {
   tickets: KitchenTicket[];
   scheduled: ScheduledKitchenOrder[];
-  stats: { queued: number; preparing: number; ready: number; late: number; scheduled: number };
+  stats: { queued: number; preparing: number; ready: number; late: number; scheduled: number; incidents: number; escalated: number; acceptedAvgMinutes: number; prepAvgMinutes: number };
 }
 
 export interface DiningTableRow {
@@ -185,6 +192,8 @@ export interface PosProduct {
   variantId: number;
   variantName: string | null;
   price: number;
+  categoryId: number | null;
+  categoryName?: string | null;
   cakeSaleMode: 'STANDARD' | 'SEMI_CUSTOM' | 'ADVANCED';
 }
 
@@ -193,21 +202,30 @@ export interface PosSaleResult {
   status: string;
   total: number;
   reused: boolean;
+  paymentPending: boolean;
+  paymentId: number | null;
+  change: number;
 }
 
 export interface Driver {
   vehicleType?: 'CAR' | 'MOTORCYCLE' | 'OTHER' | 'UNSPECIFIED';
   id: number;
+  branchId: number;
   fullName: string;
   phone: string | null;
   vehicle: string | null;
   status: 'AVAILABLE' | 'BUSY' | 'OFFLINE';
+  maxActiveDeliveries: number;
+  activeDeliveries?: number;
 }
 
 export interface DeliveryRow {
   evidence?: string[];
+  cashDue?: number | null;
+  failureReason?: string | null;
   proofJson?: Record<string, unknown> | null;
   id: number;
+  branchId: number;
   status: DeliveryStatus;
   carrier: 'OWN' | 'EXTERNAL';
   cost: number;
@@ -220,6 +238,7 @@ export interface DeliveryRow {
     contactName: string | null;
     contactPhone: string | null;
     grandTotal: number;
+    scheduledAt?: string | null;
     /** Nota del cliente ("timbre malogrado, tocar la puerta"). El include debe pedirla. */
     notes?: string | null;
     addressSnapshotJson: OrderAddressSnapshot | null;
@@ -252,6 +271,9 @@ export interface StockRow {
   suggestedPurchase: number;
   impactedOptions: string[];
   suggestedSubstitutes: string[];
+  /** Presente solo en el consolidado del superadmin. */
+  branchCount?: number;
+  branches?: string[];
 }
 
 export interface StockMovementRow {
@@ -259,7 +281,7 @@ export interface StockMovementRow {
   inventoryItemId: number;
   itemName: string;
   unit: string;
-  type: 'PURCHASE' | 'RESERVE' | 'RELEASE' | 'CONSUME' | 'WASTE' | 'ADJUSTMENT';
+  type: 'PURCHASE' | 'RESERVE' | 'RELEASE' | 'CONSUME' | 'WASTE' | 'ADJUSTMENT' | 'TRANSFER_OUT' | 'TRANSFER_IN';
   quantity: number;
   onHandAfter: number;
   reservedAfter: number;
@@ -270,6 +292,36 @@ export interface StockMovementRow {
   lotId: number | null;
   actorName: string | null;
   createdAt: string;
+  branchId?: number;
+  branchName?: string | null;
+}
+
+export type InventoryTransferStatus = 'REQUESTED' | 'APPROVED' | 'IN_TRANSIT' | 'RECEIVED' | 'CANCELLED';
+export interface InventoryTransferRow {
+  id: number;
+  transferNumber: string;
+  sourceBranch: { id: number; name: string } | null;
+  destinationBranch: { id: number; name: string } | null;
+  status: InventoryTransferStatus;
+  notes: string | null;
+  requestedAt: string;
+  approvedAt: string | null;
+  shippedAt: string | null;
+  receivedAt: string | null;
+  items: Array<{ id: number; inventoryItemId: number; item: { id: number; code: string; name: string; unit: string } | null; quantityRequested: number; quantityShipped: number; quantityReceived: number; unitCost: number }>;
+}
+
+export type InventoryCountStatus = 'OPEN' | 'SUBMITTED' | 'APPROVED' | 'CANCELLED';
+export interface InventoryCountRow {
+  id: number;
+  branch: { id: number; name: string } | null;
+  name: string;
+  status: InventoryCountStatus;
+  startedAt: string;
+  submittedAt: string | null;
+  approvedAt: string | null;
+  notes: string | null;
+  items: Array<{ id: number; inventoryItemId: number; item: { id: number; code: string; name: string; unit: string } | null; expectedOnHand: number; countedOnHand: number | null; variance: number | null }>;
 }
 
 export interface AuditLogRow {
@@ -284,6 +336,16 @@ export interface AuditLogRow {
   actorId?: number | null;
   /** Nombre del responsable, si el endpoint lo resuelve; si no, se muestra el id. */
   actor?: { id: number; firstName: string | null; lastName: string | null; email: string | null } | null;
+  severity: 'INFO' | 'WARNING' | 'CRITICAL';
+  outcome: 'SUCCESS' | 'FAILURE';
+  method: string | null;
+  path: string | null;
+  sessionId: string | null;
+  correlationId?: string | null;
+  ip?: string | null;
+  previousHash: string | null;
+  integrityHash: string;
+  eventVersion: number;
 }
 
 export interface AdminOrderRow {
@@ -312,6 +374,12 @@ export interface AdminOrderRow {
   kitchenReleaseAt?: string | null;
   cakeTasks?: Array<{ id: number; station: string; workDate: string; status: 'PENDING' | 'IN_PROGRESS' | 'BLOCKED' | 'DONE'; assigned: boolean }>;
   items: Array<{ id: number; productNameSnapshot: string; quantity: number }>;
+  paymentSummary?: {
+    state: 'NO_PAYMENT' | 'PENDING_PAYMENT' | 'REVIEW' | 'OBSERVED' | 'PAID' | 'FAILED' | 'REFUND_PENDING' | string;
+    amount: number;
+    provider: string | null;
+    refundPending: boolean;
+  };
 }
 
 /** Linea de la ficha del pedido, con lo que Soporte necesita por telefono. */
@@ -341,6 +409,13 @@ export interface AdminOrderPayment {
   providerReference: string | null;
   failureReason: string | null;
   createdAt: string;
+  posSale: {
+    capturedBy: number;
+    reference: string | null;
+    operationCode: string | null;
+    cashReceived: number;
+    change: number;
+  } | null;
   mobileClaim: {
     status: 'PENDING' | 'OBSERVED' | 'APPROVED' | 'REJECTED';
     operationCode: string;
@@ -376,6 +451,7 @@ export interface AdminOrderDetail extends AdminOrderRow {
   cancelReason: string | null;
   subtotal: number;
   deliveryFee: number;
+  cakeDeliveryFee?: number;
   discountTotal: number;
   walletAmount: number;
   taxRate: number;
@@ -435,11 +511,29 @@ export interface Reports {
   };
   quality: { cancelled: number; cancellationRate: number };
   operations: { avgPrepMinutes: number; ticketsMeasured: number };
-  experience: Partial<Record<'COVERAGE_SUCCESS' | 'COVERAGE_FAIL' | 'COVERAGE_ERROR' | 'CHECKOUT_START' | 'CHECKOUT_ERROR' | 'PAYMENT_REDIRECT' | 'APP_OPEN' | 'MENU_VIEW' | 'PRODUCT_VIEW' | 'FAVORITE_ADD' | 'FAVORITE_REMOVE' | 'CART_ADD' | 'CHECKOUT_STEP' | 'ORDER_COMPLETED' | 'REVIEW_SUBMITTED' | 'RECOMMENDATION_OPEN', number>>;
+  experience: Partial<Record<'COVERAGE_SUCCESS' | 'COVERAGE_FAIL' | 'COVERAGE_ERROR' | 'CHECKOUT_START' | 'CHECKOUT_ERROR' | 'PAYMENT_REDIRECT' | 'APP_OPEN' | 'MENU_VIEW' | 'PRODUCT_VIEW' | 'FAVORITE_ADD' | 'FAVORITE_REMOVE' | 'CART_ADD' | 'CHECKOUT_STEP' | 'ORDER_COMPLETED' | 'REVIEW_SUBMITTED' | 'RECOMMENDATION_OPEN' | 'AR_QR_OPEN' | 'AR_CAMERA_REQUEST' | 'AR_CAMERA_READY' | 'AR_TARGET_FOUND' | 'AR_TARGET_LOST' | 'AR_CAMERA_ERROR' | 'AR_FALLBACK_3D', number>>;
+  pendingPayments: { count: number; amount: number };
+  platform?: { rate: number; accrued: number; settled: number; outstanding: number };
   topProducts: Array<{ name: string; units: number; revenue: number }>;
   channelBreakdown: Array<{ channel: string; orders: number; revenue: number }>;
   hourlySales: Array<{ hour: number; orders: number; revenue: number }>;
   paymentBreakdown?: Array<{ method: string; transactions: number; amount: number }>;
+}
+
+export interface CashSummary {
+  range: { from: string; to: string };
+  cash: { sales: number; refunds: number; manualIn: number; manualOut: number; adjustments: number; net: number };
+  pending: { count: number; amount: number };
+  platform: { rate: number };
+  sessions: { open: number; closed: number; variance: number };
+  openSessions: Array<{ id: number; branchId: number; branchName: string | null; businessDate: string; openingFloat: number; openedAt: string }>;
+  recentSessions: Array<{ id: number; branchId: number; branchName: string | null; businessDate: string; status: 'OPEN' | 'CLOSED'; openingFloat: number; expectedCash: number | null; declaredCash: number | null; variance: number | null; openedAt: string; closedAt: string | null }>;
+}
+
+export interface CashSessionDetail {
+  session: { id: number; branchId: number; branchName: string | null; businessDate: string; status: 'OPEN' | 'CLOSED'; openingFloat: number; openedAt: string; closedAt: string | null; closingNotes: string | null };
+  reconciliation: { cashSales: number; cashRefunds: number; manualIn: number; manualOut: number; adjustments: number; expectedCash: number; declaredCash: number | null; variance: number | null };
+  movements: Array<{ id: number; type: string; amount: number; reason: string; orderId: number | null; paymentId: number | null; actorId: number | null; createdAt: string }>;
 }
 
 export interface PendingMobilePayment {

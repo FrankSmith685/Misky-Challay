@@ -35,6 +35,7 @@ export class Driver extends Model<InferAttributes<Driver>, InferCreationAttribut
   declare phone: CreationOptional<string | null>;
   declare vehicle: CreationOptional<string | null>;
   declare vehicleType: CreationOptional<VehicleType>;
+  declare maxActiveDeliveries: CreationOptional<number>;
   declare status: CreationOptional<DriverStatus>;
   declare isActive: CreationOptional<boolean>;
   declare createdAt: CreationOptional<Date>;
@@ -52,6 +53,7 @@ Driver.init(
     phone: { type: DataTypes.STRING(30), allowNull: true },
     vehicle: { type: DataTypes.STRING(50), allowNull: true },
     vehicleType: { type: DataTypes.STRING(16), allowNull: false, defaultValue: 'UNSPECIFIED' },
+    maxActiveDeliveries: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 3 },
     status: {
       type: DataTypes.ENUM(...Object.values(DRIVER_STATUS)),
       allowNull: false,

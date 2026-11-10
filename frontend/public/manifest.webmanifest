@@ -6,13 +6,13 @@
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#faf6f1",
-  "theme_color": "#8b3d59",
+  "background_color": "#f5faff",
+  "theme_color": "#006fb9",
   "icons": [
     {
-      "src": "/brand/misky-app-icon.png",
-      "sizes": "1254x1254",
-      "type": "image/png",
+      "src": "/brand/misky-app-icon.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
       "purpose": "any"
     }
   ],
@@ -23,9 +23,9 @@
       "url": "/admin/tortas",
       "icons": [
         {
-          "src": "/brand/misky-app-icon.png",
-          "sizes": "1254x1254",
-          "type": "image/png"
+          "src": "/brand/misky-app-icon.jpg",
+          "sizes": "512x512",
+          "type": "image/jpeg"
         }
       ]
     }

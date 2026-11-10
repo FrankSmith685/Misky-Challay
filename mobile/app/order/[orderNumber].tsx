@@ -1,5 +1,6 @@
 import { OrderDirectPayment } from '../../src/components/OrderDirectPayment';
 import { OrderCustomerExtras } from '../../src/components/OrderCustomerExtras';
+import { OrderExperienceCard } from '../../src/components/OrderExperienceCard';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -385,6 +386,7 @@ export default function OrderDetailScreen() {
 
           <OrderDirectPayment payment={payment?.directPayment} onChanged={() => void resource.refetch()} />
           {resource.data && <OrderCustomerExtras data={resource.data} onChanged={() => void resource.refetch()} />}
+          <OrderExperienceCard orderNumber={order.orderNumber} />
           {tracking ? (
             stale ? (
               <View style={styles.staleRow}>

@@ -25,16 +25,18 @@ const time = (date: string) => new Intl.DateTimeFormat('es-PE', { timeZone: 'Ame
 function DriverVehicle({ driver, branchId, onSaved }: { driver: Driver; branchId: number; onSaved: () => void }) {
   const [vehicleType, setType] = useState(driver.vehicleType ?? 'UNSPECIFIED');
   const [vehicle, setVehicle] = useState(driver.vehicle ?? '');
+  const [maxActiveDeliveries, setMaxActiveDeliveries] = useState(driver.maxActiveDeliveries ?? 3);
   const [busy, setBusy] = useState(false);
-  return <div className="grid gap-3 rounded-field border border-line p-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-    <div className="sm:col-span-3"><p className="text-sm font-semibold">{driver.fullName}</p><p className="mt-1 text-xs text-ink-muted">{driver.status === 'OFFLINE' ? 'Fuera de turno' : driver.status === 'BUSY' ? 'Con una entrega' : 'Disponible'}</p></div>
+  return <div className="grid gap-3 rounded-field border border-line p-4 sm:grid-cols-[1fr_1fr_150px_auto] sm:items-end">
+    <div className="sm:col-span-4"><p className="text-sm font-semibold">{driver.fullName}</p><p className="mt-1 text-xs text-ink-muted">{driver.status === 'OFFLINE' ? 'Fuera de turno' : driver.status === 'BUSY' ? `${driver.activeDeliveries ?? 1} entrega${(driver.activeDeliveries ?? 1) === 1 ? '' : 's'} activa${(driver.activeDeliveries ?? 1) === 1 ? '' : 's'}` : 'Disponible'} · carga máxima: {driver.maxActiveDeliveries ?? 3}</p></div>
     <Select label={`Vehículo de ${driver.fullName}`} value={vehicleType} onChange={(event) => setType(event.target.value as NonNullable<Driver['vehicleType']>)}>
       <SelectOption value="UNSPECIFIED">Sin clasificar</SelectOption><SelectOption value="CAR">Auto</SelectOption><SelectOption value="MOTORCYCLE">Moto</SelectOption><SelectOption value="OTHER">Otro</SelectOption>
     </Select>
     <Input label={`Placa o descripción de ${driver.fullName}`} value={vehicle} maxLength={50} onChange={(event) => setVehicle(event.target.value)} />
-    <Button variant="outline" isLoading={busy} disabled={busy || (vehicleType === (driver.vehicleType ?? 'UNSPECIFIED') && vehicle === (driver.vehicle ?? ''))} onClick={async () => {
+    <Input label="Límite de entregas activas" type="number" min={1} max={20} value={maxActiveDeliveries} onChange={(event) => setMaxActiveDeliveries(Number(event.target.value))} />
+    <Button variant="outline" isLoading={busy} disabled={busy || (vehicleType === (driver.vehicleType ?? 'UNSPECIFIED') && vehicle === (driver.vehicle ?? '') && maxActiveDeliveries === (driver.maxActiveDeliveries ?? 3))} onClick={async () => {
       setBusy(true);
-      try { await api.patch(`/delivery/drivers/${driver.id}`, { branchId, vehicleType, vehicle: vehicle || null }); toast.success('Vehículo actualizado'); onSaved(); }
+      try { await api.patch(`/delivery/drivers/${driver.id}`, { branchId, vehicleType, vehicle: vehicle || null, maxActiveDeliveries }); toast.success('Vehículo actualizado'); onSaved(); }
       catch (error) { toast.error(getApiErrorMessage(error)); } finally { setBusy(false); }
     }}>Guardar vehículo</Button>
   </div>;

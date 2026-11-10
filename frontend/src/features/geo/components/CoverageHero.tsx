@@ -7,8 +7,8 @@ interface CoverageHeroProps {
 
 const signals = [
   { icon: MapPinCheck, label: 'Validación por ubicación exacta' },
-  { icon: Clock3, label: 'Tiempo estimado antes de pedir' },
-  { icon: ShieldCheck, label: 'Costo de delivery transparente' },
+  { icon: Clock3, label: 'Tiempo estimado antes de pagar' },
+  { icon: ShieldCheck, label: 'Tarifa visible antes de comprar' },
 ];
 
 /** Encabezado comercial de cobertura con una explicación breve del flujo. */
@@ -24,15 +24,22 @@ export const CoverageHero = ({ branchCount }: CoverageHeroProps) => (
         </div>
         <span className="inline-flex items-center gap-2 rounded-pill border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold text-brand-50">
           <Bike className="size-3.5 text-brand-200" />
-          Zonas y tiempos de entrega
+          Cobertura de delivery
         </span>
 
         <h1 id="coverage-hero-title" className="max-w-3xl text-4xl font-black leading-[1.02] tracking-[-.04em] sm:text-5xl lg:text-[3.45rem]">
-          Tus momentos dulces, <span className="text-brand-200">hasta tu puerta.</span>
+          ¿Llegamos con tus dulces? <span className="text-brand-200">Compruébalo en un minuto.</span>
         </h1>
         <p className="max-w-2xl text-sm leading-6 text-brand-50/80 sm:text-base sm:leading-7">
           Confirma tu dirección antes de elegir tus tortas y postres. Te mostraremos qué local
-          puede atenderte, cuánto cuesta el envío y el tiempo estimado de llegada.
+          puede atenderte, cuánto cuesta el delivery y el tiempo estimado de llegada.
+        </p>
+        <p className="max-w-2xl text-xs leading-5 text-brand-50/70">
+          Esta página valida entregas a domicilio. Si prefieres recoger tu pedido, puedes{' '}
+          <a href="#locales" className="font-semibold text-white underline underline-offset-2">
+            revisar nuestros locales
+          </a>{' '}
+          al final de la página.
         </p>
 
         <ul className="flex flex-col gap-3 text-xs font-semibold text-brand-50/85 sm:flex-row sm:flex-wrap sm:gap-x-5">
@@ -72,9 +79,9 @@ export const CoverageHero = ({ branchCount }: CoverageHeroProps) => (
 
           <ol className="mt-5 space-y-3">
             {[
-              ['01', 'Elige tu zona', 'Departamento, provincia y distrito de todo el Perú.'],
+              ['01', 'Elige tu zona', 'Selecciona el distrito donde recibiremos tu pedido.'],
               ['02', 'Marca la entrada', 'Ajusta el pin en la puerta correcta.'],
-              ['03', 'Confirma el resultado', 'Guarda la dirección y empieza a pedir.'],
+              ['03', 'Confirma el resultado', 'Revisa tarifa, tiempo y local antes de comprar.'],
             ].map(([number, title, description]) => (
               <li key={number} className="flex items-center gap-3 rounded-card bg-surface-muted px-3.5 py-3">
                 <span className="grid size-8 shrink-0 place-items-center rounded-card bg-brand-700 text-xs font-black text-white">
@@ -90,7 +97,7 @@ export const CoverageHero = ({ branchCount }: CoverageHeroProps) => (
 
           <p className="mt-4 text-center text-xs text-ink-muted">
             {branchCount > 0
-              ? `${branchCount} ${branchCount === 1 ? 'local disponible' : 'locales disponibles'} para atenderte`
+              ? `${branchCount} ${branchCount === 1 ? 'local listo' : 'locales listos'} para atenderte`
               : 'Estamos consultando nuestros locales'}
           </p>
         </div>

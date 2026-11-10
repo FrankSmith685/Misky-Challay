@@ -129,6 +129,9 @@ export class ExperienceProject extends Model<
   declare previewExpiresAt: Date | null;
   declare startsAt: Date | null;
   declare expiresAt: Date | null;
+  declare draftSceneJson: CreationOptional<ExperienceScene | null>;
+  declare draftAssignedTo: CreationOptional<number | null>;
+  declare draftUpdatedAt: CreationOptional<Date | null>;
   declare assignedTo: number | null;
   declare revisionsUsed: CreationOptional<number>;
   declare customerFeedback: string | null;
@@ -151,6 +154,9 @@ ExperienceProject.init(
     previewExpiresAt: { type: DataTypes.DATE, allowNull: true },
     startsAt: { type: DataTypes.DATE, allowNull: true },
     expiresAt: { type: DataTypes.DATE, allowNull: true },
+    draftSceneJson: { type: DataTypes.JSON, allowNull: true },
+    draftAssignedTo: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
+    draftUpdatedAt: { type: DataTypes.DATE, allowNull: true },
     assignedTo: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
     revisionsUsed: { type: DataTypes.INTEGER.UNSIGNED, defaultValue: 0 },
     customerFeedback: { type: DataTypes.STRING(1000), allowNull: true },
@@ -170,6 +176,9 @@ export class ExperienceEvent extends Model<
   declare action: string;
   declare version: number;
   declare note: string;
+  declare snapshotJson: CreationOptional<ExperienceScene | null>;
+  declare assignedToSnapshot: CreationOptional<number | null>;
+  declare requestKey: CreationOptional<string | null>;
   declare createdAt: CreationOptional<Date>;
 }
 ExperienceEvent.init(
@@ -180,6 +189,9 @@ ExperienceEvent.init(
     action: { type: DataTypes.STRING(40), allowNull: false },
     version: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
     note: { type: DataTypes.STRING(1000), allowNull: false },
+    snapshotJson: { type: DataTypes.JSON, allowNull: true },
+    assignedToSnapshot: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
+    requestKey: { type: DataTypes.STRING(160), allowNull: true },
     createdAt: DataTypes.DATE,
   },
   { sequelize, tableName: 'experience_events', modelName: 'ExperienceEvent', updatedAt: false },

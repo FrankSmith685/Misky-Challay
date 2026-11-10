@@ -28,6 +28,7 @@ export const loginSchema = z.object({
   body: z.object({
     email: z.string().trim().toLowerCase().email('Email invalido'),
     password: z.string().min(1, 'La contrasena es obligatoria'),
+    mfaCode: z.string().trim().regex(/^(\d{6}|[A-Fa-f0-9]{10})$/, 'Código MFA inválido').optional(),
   }),
 });
 

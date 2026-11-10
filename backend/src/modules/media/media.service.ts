@@ -1,6 +1,6 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, unlink, writeFile } from 'node:fs/promises';
 import { isIP } from 'node:net';
 import path from 'node:path';
 import { Op, type Order } from 'sequelize';
@@ -9,6 +9,9 @@ import { ApiError } from '@shared/errors/ApiError';
 
 const MEDIA_DIR = path.resolve(process.cwd(), 'uploads', 'media');
 const MAX_BYTES = 5 * 1024 * 1024;
+const MAX_PIXELS = 40_000_000;
+export const MEDIA_CATEGORIES = ['ingredients', 'products', 'categories', 'builder-presets', 'marketing', 'profile'] as const;
+export type MediaCategory = (typeof MEDIA_CATEGORIES)[number];
 const ALLOWED: Record<string, string> = {
   'image/webp': 'webp',
   'image/jpeg': 'jpg',
@@ -123,6 +126,38 @@ const hasImageSignature = (bytes: Buffer, mimeType: string): boolean => {
   return false;
 };
 
+const imageDimensions = (bytes: Buffer, mimeType: string): { width: number; height: number } | null => {
+  if (mimeType === 'image/png' && bytes.length >= 24) {
+    return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+  }
+  if (mimeType === 'image/webp' && bytes.length >= 30 && bytes.subarray(12, 16).toString('ascii') === 'VP8X') {
+    return {
+      width: 1 + bytes.readUIntLE(24, 3),
+      height: 1 + bytes.readUIntLE(27, 3),
+    };
+  }
+  if (mimeType === 'image/jpeg') {
+    let offset = 2;
+    while (offset + 9 < bytes.length) {
+      if (bytes[offset] !== 0xff) { offset += 1; continue; }
+      const marker = bytes[offset + 1];
+      const length = bytes.readUInt16BE(offset + 2);
+      if (length < 2 || offset + length + 2 > bytes.length) break;
+      if ((marker >= 0xc0 && marker <= 0xc3) || (marker >= 0xc5 && marker <= 0xc7) || (marker >= 0xc9 && marker <= 0xcb) || (marker >= 0xcd && marker <= 0xcf)) {
+        return { height: bytes.readUInt16BE(offset + 5), width: bytes.readUInt16BE(offset + 7) };
+      }
+      offset += length + 2;
+    }
+  }
+  return null;
+};
+
+const assertCategory = (value: string | undefined | null): MediaCategory => {
+  const category = value?.trim() || 'ingredients';
+  if (!(MEDIA_CATEGORIES as readonly string[]).includes(category)) throw ApiError.badRequest('La categoría de medios no es válida');
+  return category as MediaCategory;
+};
+
 export const resolveMediaFile = (filename: string): string => {
   if (!/^[a-f0-9-]+\.(webp|jpg|png)$/.test(filename)) {
     throw ApiError.notFound('Imagen no encontrada');
@@ -146,6 +181,7 @@ export interface MediaListOptions {
   /** Busca en el nombre original y en el texto alternativo. */
   search?: string;
   sort?: MediaSort;
+  reviewStatus?: 'APPROVED' | 'DRAFT' | 'ARCHIVED';
 }
 
 const DEFAULT_LIMIT = 40;
@@ -175,6 +211,7 @@ const listAssets = async (options: MediaListOptions = {}) => {
   const { rows, count } = await MediaAsset.findAndCountAll({
     where: {
       ...(options.category ? { category: options.category } : {}),
+      ...(options.reviewStatus ? { reviewStatus: options.reviewStatus } : {}),
       ...(search
         ? {
             [Op.or]: [
@@ -209,6 +246,12 @@ const listAssets = async (options: MediaListOptions = {}) => {
     url: row.url,
     altText: row.altText,
     category: row.category,
+    sha256: row.sha256,
+    width: row.width,
+    height: row.height,
+    reviewStatus: row.reviewStatus,
+    sourceType: row.sourceType,
+    sourcePrompt: row.sourcePrompt,
     createdAt: row.createdAt,
     deletedAt: row.deletedAt,
     usage: {
@@ -245,6 +288,8 @@ export const mediaService = {
     altText?: string | null;
     category?: string;
     createdBy?: number | null;
+    sourceType?: 'UPLOAD' | 'AI' | 'PROFILE';
+    sourcePrompt?: string | null;
   }) {
     const extension = ALLOWED[input.mimeType];
     if (!extension) throw ApiError.badRequest('Usa una imagen WebP, JPG o PNG');
@@ -266,6 +311,8 @@ export const mediaService = {
       altText: input.altText,
       category: input.category,
       createdBy: input.createdBy,
+      sourceType: input.sourceType ?? 'UPLOAD',
+      sourcePrompt: input.sourcePrompt ?? null,
     });
   },
 
@@ -274,9 +321,10 @@ export const mediaService = {
     altText?: string | null;
     category?: string;
     createdBy?: number | null;
+    sourcePrompt?: string | null;
   }) {
     const remote = await downloadRemoteImage(input.sourceUrl);
-    return mediaService.store({ ...remote, altText: input.altText, category: input.category, createdBy: input.createdBy });
+    return mediaService.store({ ...remote, altText: input.altText, category: input.category, createdBy: input.createdBy, sourceType: 'URL', sourcePrompt: input.sourcePrompt ?? null });
   },
 
   async store(input: {
@@ -286,24 +334,51 @@ export const mediaService = {
     altText?: string | null;
     category?: string;
     createdBy?: number | null;
+    reviewStatus?: 'APPROVED' | 'DRAFT' | 'ARCHIVED';
+    sourceType?: 'UPLOAD' | 'URL' | 'AI' | 'PROFILE';
+    sourcePrompt?: string | null;
   }) {
     const extension = ALLOWED[input.mimeType];
     if (!extension) throw ApiError.badRequest('Usa una imagen WebP, JPG o PNG');
+    const category = assertCategory(input.category);
+    const dimensions = imageDimensions(input.bytes, input.mimeType);
+    if (dimensions && dimensions.width * dimensions.height > MAX_PIXELS) {
+      throw ApiError.badRequest('La imagen tiene demasiados píxeles para procesarla con seguridad');
+    }
+    const sha256 = createHash('sha256').update(input.bytes).digest('hex');
+    const duplicate = await MediaAsset.findOne({ where: { sha256 }, paranoid: false });
+    if (duplicate) {
+      if (duplicate.deletedAt) await duplicate.restore();
+      if (!duplicate.altText && input.altText?.trim()) await duplicate.update({ altText: input.altText.trim() });
+      return { id: duplicate.id, url: duplicate.url, altText: duplicate.altText, category: duplicate.category, duplicate: true };
+    }
     await mkdir(MEDIA_DIR, { recursive: true });
     const filename = `${randomUUID()}.${extension}`;
-    await writeFile(path.join(MEDIA_DIR, filename), input.bytes, { flag: 'wx' });
+    const filePath = path.join(MEDIA_DIR, filename);
+    await writeFile(filePath, input.bytes, { flag: 'wx' });
     const url = `/api/v1/media/files/${filename}`;
-
-    const asset = await MediaAsset.create({
-      originalName: input.fileName.slice(0, 180),
-      filename,
-      mimeType: input.mimeType,
-      sizeBytes: input.bytes.length,
-      url,
-      altText: input.altText?.trim() || null,
-      category: input.category?.trim() || 'ingredients',
-      createdBy: input.createdBy ?? null,
-    });
+    let asset: MediaAsset;
+    try {
+      asset = await MediaAsset.create({
+        originalName: input.fileName.slice(0, 180),
+        filename,
+        mimeType: input.mimeType,
+        sizeBytes: input.bytes.length,
+        url,
+        altText: input.altText?.trim() || null,
+        category,
+        createdBy: input.createdBy ?? null,
+        sha256,
+        width: dimensions?.width ?? null,
+        height: dimensions?.height ?? null,
+        reviewStatus: input.reviewStatus ?? (input.sourceType === 'AI' ? 'DRAFT' : 'APPROVED'),
+        sourceType: input.sourceType ?? 'UPLOAD',
+        sourcePrompt: input.sourcePrompt?.trim() || null,
+      });
+    } catch (error) {
+      await unlink(filePath).catch(() => undefined);
+      throw error;
+    }
     return { id: asset.id, url: asset.url, altText: asset.altText, category: asset.category };
   },
 
@@ -321,13 +396,60 @@ export const mediaService = {
     await unlink(path.join(MEDIA_DIR, asset.filename)).catch(() => undefined);
   },
 
-  async update(id: number, input: { altText?: string | null; category?: string }) {
+  async update(id: number, input: { altText?: string | null; category?: string; reviewStatus?: 'APPROVED' | 'DRAFT' | 'ARCHIVED' }) {
     const asset = await MediaAsset.findByPk(id);
     if (!asset) throw ApiError.notFound('Imagen no encontrada');
     if (input.altText !== undefined) asset.altText = input.altText?.trim() || null;
-    if (input.category !== undefined) asset.category = input.category.trim();
+    if (input.category !== undefined) asset.category = assertCategory(input.category);
+    if (input.reviewStatus !== undefined) asset.reviewStatus = input.reviewStatus;
     await asset.save();
-    return { id: asset.id, url: asset.url, altText: asset.altText, category: asset.category };
+    return { id: asset.id, url: asset.url, altText: asset.altText, category: asset.category, reviewStatus: asset.reviewStatus };
+  },
+
+  async setReviewStatus(id: number, reviewStatus: 'APPROVED' | 'DRAFT' | 'ARCHIVED') {
+    const asset = await MediaAsset.findByPk(id);
+    if (!asset) throw ApiError.notFound('Imagen no encontrada');
+    await asset.update({ reviewStatus });
+    return { id: asset.id, reviewStatus: asset.reviewStatus };
+  },
+
+  async health() {
+    const assets = await MediaAsset.findAll({ paranoid: false, order: [['createdAt', 'DESC']] });
+    const urls = assets.map((asset) => asset.url);
+    const [products, options, presets, inventoryItems, categories, themes, files] = await Promise.all([
+      urls.length ? Product.findAll({ where: { imageUrl: { [Op.in]: urls } }, attributes: ['imageUrl'] }) : [],
+      urls.length ? CustomizationOption.findAll({ where: { imageUrl: { [Op.in]: urls } }, attributes: ['imageUrl'] }) : [],
+      urls.length ? BuilderPreset.findAll({ where: { imageUrl: { [Op.in]: urls } }, attributes: ['imageUrl'] }) : [],
+      urls.length ? InventoryItem.findAll({ where: { imageUrl: { [Op.in]: urls } }, attributes: ['imageUrl'] }) : [],
+      urls.length ? Category.findAll({ where: { imageUrl: { [Op.in]: urls } }, attributes: ['imageUrl'] }) : [],
+      urls.length ? CakeTheme.findAll({ attributes: ['imageUrlsJson'] }) : [],
+      readdir(MEDIA_DIR).catch(() => [] as string[]),
+    ]);
+    const referenced = new Set<string>([
+      ...products.map((row) => row.imageUrl).filter((url): url is string => Boolean(url)),
+      ...options.map((row) => row.imageUrl).filter((url): url is string => Boolean(url)),
+      ...presets.map((row) => row.imageUrl).filter((url): url is string => Boolean(url)),
+      ...inventoryItems.map((row) => row.imageUrl).filter((url): url is string => Boolean(url)),
+      ...categories.map((row) => row.imageUrl).filter((url): url is string => Boolean(url)),
+      ...themes.flatMap((row) => row.imageUrlsJson),
+    ]);
+    const byHash = new Map<string, number[]>();
+    for (const asset of assets) if (asset.sha256) byHash.set(asset.sha256, [...(byHash.get(asset.sha256) ?? []), asset.id]);
+    const duplicateGroups = [...byHash.entries()].filter(([, ids]) => ids.length > 1).map(([sha256, ids]) => ({ sha256, ids }));
+    const knownFiles = new Set(assets.map((asset) => asset.filename));
+    const missingFiles = assets.filter((asset) => !files.includes(asset.filename)).map((asset) => ({ id: asset.id, filename: asset.filename }));
+    const orphanFiles = files.filter((filename) => !knownFiles.has(filename));
+    const withoutAlt = assets.filter((asset) => !asset.deletedAt && asset.category !== 'profile' && !asset.altText?.trim()).map((asset) => asset.id);
+    const unused = assets.filter((asset) => !asset.deletedAt && !referenced.has(asset.url)).map((asset) => asset.id);
+    return {
+      totals: { all: assets.length, active: assets.filter((asset) => !asset.deletedAt).length, drafts: assets.filter((asset) => asset.reviewStatus === 'DRAFT').length, archived: assets.filter((asset) => asset.reviewStatus === 'ARCHIVED').length },
+      withoutAlt: { count: withoutAlt.length, ids: withoutAlt.slice(0, 50) },
+      unused: { count: unused.length, ids: unused.slice(0, 50) },
+      duplicateGroups: duplicateGroups.slice(0, 50),
+      missingFiles: missingFiles.slice(0, 50),
+      orphanFiles: orphanFiles.slice(0, 50),
+      checkedAt: new Date().toISOString(),
+    };
   },
 
   async remove(id: number) {

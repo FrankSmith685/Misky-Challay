@@ -112,7 +112,7 @@ async function main() {
     const preparationMode = definition.stockCode ? 'READY_STOCK' : 'MADE_TO_ORDER';
     const product = previous || await api('POST', '/admin/catalog/products', {
       name: definition.name, description: definition.description, categoryId: category.id,
-      family: definition.family, type: 'FIXED', preparationMode, minLeadHours: definition.lead,
+      family: definition.family, type: 'FIXED', preparationMode, minLeadHours: definition.stockCode ? 0 : definition.lead,
       imageUrl: image(definition.asset), variantName: definition.variantName,
       servingSize: definition.servingSize, servingUnit: definition.servingUnit, basePrice: definition.price,
     });
@@ -128,7 +128,7 @@ async function main() {
       return { inventoryItemId: inventory.get(code), quantity, wastePercent: 0 };
     });
     await api('PUT', `/cakes/recipes/${stored.variants[0].id}`, { yieldQuantity: 1, items });
-    await api('PUT', `/cakes/products/${product.id}/profile`, { saleMode: 'STANDARD', minLeadHours: definition.lead, baseEffortJson: definition.effort || {}, stationOffsetsJson: {}, isActive: true });
+    await api('PUT', `/cakes/products/${product.id}/profile`, { saleMode: 'STANDARD', minLeadHours: definition.stockCode ? 0 : definition.lead, baseEffortJson: definition.effort || {}, stationOffsetsJson: {}, isActive: true });
     if (definition.featured) await api('PATCH', `/admin/catalog/products/${product.id}`, { isFeatured: true });
     if (definition.sugarFree) {
       const tag = meta.dietaryTags.find((entry) => entry.code === 'sin-azucar');

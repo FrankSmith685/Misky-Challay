@@ -18,6 +18,7 @@ interface Props {
   pickupBranch: SelectedPickupBranch | null;
   branchId: number | null;
   deliveryFee?: number | null;
+  cakeDeliveryFee?: number;
   deliveryFeeLoading?: boolean;
   extraDeliveryFee?: number;
   onReferenceChange: (value: string) => void;
@@ -35,6 +36,7 @@ export const CheckoutDestinationPicker = ({
   pickupBranch,
   branchId,
   deliveryFee,
+  cakeDeliveryFee = 0,
   deliveryFeeLoading = false,
   extraDeliveryFee,
   onReferenceChange,
@@ -241,10 +243,11 @@ export const CheckoutDestinationPicker = ({
         </div>
       )}
       {address && branchId && deliveryFee != null && (
-        <p className="text-sm font-bold text-brand-800">
-          {deliveryLabel}: {formatCurrency(deliveryFee)}
+        <div className="text-sm font-bold text-brand-800">
+          <p>{deliveryLabel}: {formatCurrency(deliveryFee)}</p>
           {extraDeliveryFee ? <span className="ml-1 text-xs font-normal text-ink-muted">(incluye {formatCurrency(extraDeliveryFee)} por distancia adicional)</span> : null}
-        </p>
+          {cakeDeliveryFee > 0 && <p className="mt-1 text-xs font-normal text-ink-muted">Incluye {formatCurrency(cakeDeliveryFee)} por manejo especial de torta.</p>}
+        </div>
       )}
       {address && branchId && deliveryFee == null && deliveryFeeLoading && (
         <p role="status" className="text-sm text-ink-muted">Calculando delivery…</p>

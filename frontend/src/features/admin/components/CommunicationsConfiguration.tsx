@@ -289,7 +289,7 @@ export function CommunicationsConfiguration({
     );
   const emailReady = Boolean(settings.smtpConfigured && settings.emailNotificationsEnabled);
   const whatsappReady = Boolean(
-    settings.connectionReady && settings.webhookReady && settings.whatsappUpdatesEnabled,
+    settings.connectionReady && settings.webhookReady && settings.templatesReady && settings.whatsappUpdatesEnabled,
   );
   const modeLabel = !settings.config.enabled
     ? 'Envíos pausados'
@@ -306,6 +306,10 @@ export function CommunicationsConfiguration({
   ).toString();
   const save = async () => {
     if (!dirty || saving) return;
+    if (config.enabled && !config.testMode && settings.config.testMode && settings.whatsappUpdatesEnabled !== false && !settings.readyToSend) {
+      toast.error('Completa la conexión con Meta, el webhook y las plantillas antes de activar envíos reales.');
+      return;
+    }
     if (settings.config.testMode && !config.testMode && config.enabled) {
       const result = await confirm({
         title: 'Activar envíos reales',
@@ -406,6 +410,13 @@ export function CommunicationsConfiguration({
               : 'Completa la conexión de Meta y habilita este canal para enviar avisos.'}
           </ChannelCard>
         </div>
+        {!settings.config.testMode && settings.whatsappUpdatesEnabled !== false && !settings.readyToSend && (
+          <Alert variant="warning">
+            Los envíos reales están activos, pero WhatsApp todavía no está listo. Revisa la conexión,
+            el webhook y las plantillas antes de mantener este canal habilitado.
+            {settings.missingWhatsappTemplates.length > 0 && ` Faltan: ${settings.missingWhatsappTemplates.join(', ')}.`}
+          </Alert>
+        )}
 
         <FormSection
           title="Envíos y atención"

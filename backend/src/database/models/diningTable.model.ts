@@ -33,10 +33,10 @@ DiningTable.init(
     code: { type: DataTypes.STRING(30), allowNull: false },
     area: { type: DataTypes.STRING(60), allowNull: false, defaultValue: 'Salón principal' },
     capacity: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 2 },
-    // Nullable durante `sync({ alter: true })`: MySQL rellena con cadena vacÃ­a
-    // una columna UUID NOT NULL agregada a mesas antiguas y el Ã­ndice UNIQUE
+    // Nullable durante `sync({ alter: true })`: MySQL rellena con cadena vacía
+    // una columna UUID NOT NULL agregada a mesas antiguas y el índice UNIQUE
     // falla antes de que podamos asignar tokens. El bootstrap completa los
-    // valores antes y despuÃ©s del sync; la migraciÃ³n 0018 lo deja NOT NULL.
+    // valores antes y después del sync; la migración 0018 lo deja NOT NULL.
     qrToken: { type: DataTypes.UUID, allowNull: true, defaultValue: DataTypes.UUIDV4 },
     qrEnabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     sortOrder: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },

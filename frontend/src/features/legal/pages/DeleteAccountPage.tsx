@@ -99,7 +99,7 @@ const DeleteAccountPage = () => {
 
   if (receipt) {
     return (
-      <Container maxWidth="sm" sx={{ py: { xs: 6, md: 9 } }}>
+      <Container className="legal-process-page" maxWidth="sm" sx={{ py: { xs: 6, md: 9 } }}>
         <Paper
           variant="outlined"
           sx={{ p: { xs: 3, md: 5 }, textAlign: 'center', borderRadius: 'var(--radius-card)' }}
@@ -137,16 +137,16 @@ const DeleteAccountPage = () => {
   }
 
   return (
-    <Container maxWidth="md" sx={{ py: { xs: 5, md: 8 } }}>
+    <Container className="legal-process-page" maxWidth="md" sx={{ py: { xs: 5, md: 8 } }}>
       <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', mb: 1 }}>
         <Trash2 size={26} className="text-brand-600" />
-        <Typography variant="h4" sx={{ fontWeight: 800 }}>
+        <Typography component="h1" variant="h4" sx={{ fontWeight: 800 }}>
           Eliminar mi cuenta
         </Typography>
       </Stack>
       <Typography color="text.secondary" sx={{ mb: 4 }}>
-        {business.legalName} · RUC {business.ruc}. Aqui puedes pedir la baja de tu cuenta de Verde
-        Bowl, desde la web o desde la aplicacion movil, y ver exactamente que pasa con tu
+        {business.legalName}{business.ruc ? ` · RUC ${business.ruc}` : ''}. Aqui puedes pedir la baja de tu cuenta de
+        {business.commercialName}, desde la web o desde la aplicacion movil, y ver exactamente que pasa con tu
         informacion.
       </Typography>
 

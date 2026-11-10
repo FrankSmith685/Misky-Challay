@@ -51,10 +51,12 @@ export const CakeFreeformRequest = ({
   initialServings,
   theme,
   alwaysOpen = false,
+  dedicated = false,
 }: {
   prefill?: DesignRepeat;
   theme?: CakeTheme | null;
   alwaysOpen?: boolean;
+  dedicated?: boolean;
   product: ProductDetail;
   slots: DeliverySlot[];
   branchId: number | null;
@@ -99,6 +101,12 @@ export const CakeFreeformRequest = ({
   const [dateError, setDateError] = useState('');
   const [show3d, setShow3d] = useState(false);
   const selectedSlot = slots.find((slot) => slot.id === slotId) ?? null;
+  const jumpTo = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      block: 'start',
+    });
+  };
   const previewServings = Number(servings);
   const validPreviewServings =
     Number.isInteger(previewServings) && previewServings >= 1 && previewServings <= 500
@@ -310,7 +318,7 @@ export const CakeFreeformRequest = ({
       onToggle={(event) => {
         if (!alwaysOpen) onOpenChange(event.currentTarget.open);
       }}
-      className="cake-surface group scroll-mt-28"
+      className={`cake-surface group scroll-mt-28 ${dedicated ? 'border-brand-200 shadow-e2' : ''}`}
     >
       <summary
         onClick={alwaysOpen ? (event) => event.preventDefault() : undefined}
@@ -322,16 +330,18 @@ export const CakeFreeformRequest = ({
         </span>
         <span className="min-w-0 flex-1">
           <strong className="block text-base font-semibold leading-6 text-ink">
-            {theme ? `Solicitar ${theme.name}` : '¿Tienes un diseño especial en mente?'}
+            {theme ? `Solicitar ${theme.name}` : dedicated ? 'Cuéntanos tu idea' : '¿Necesitas una torta fuera de estas opciones?'}
           </strong>
           <span className="mt-1 block text-sm leading-6 text-ink-muted">
             {theme
               ? 'El modelo seleccionado acompañará tu solicitud. Cuéntanos cómo te gustaría adaptarlo.'
-              : 'Otros tamaños, formas o acabados. Cuéntanos tu idea y preparemos una propuesta.'}
+              : dedicated
+                ? 'Completa los detalles esenciales y te enviaremos una propuesta de precio y fecha.'
+                : 'Otros tamaños, formas o acabados. Cuéntanos tu idea y recibe una cotización personalizada.'}
           </span>
         </span>
         <span className="hidden shrink-0 rounded-full border border-line bg-surface-muted px-3 py-1.5 text-[11px] font-medium text-ink-muted xl:block">
-          Por cotización
+          {dedicated ? 'Solicitud sin compromiso' : 'Por cotización'}
         </span>
         {!alwaysOpen && (
           <ChevronDown
@@ -340,10 +350,26 @@ export const CakeFreeformRequest = ({
           />
         )}
       </summary>
+      {dedicated && (
+        <ol className="grid gap-2 border-t border-line bg-surface-muted/45 p-4 sm:grid-cols-3 sm:px-7" aria-label="Pasos para solicitar tu diseño">
+          {[
+            ['Cuéntanos tu idea', 'freeform-idea-title'],
+            ['Coordina entrega', 'freeform-delivery-title'],
+            ['Recibe la propuesta', 'freeform-submit'],
+          ].map(([label, target], index) => (
+            <li key={label}>
+              <button type="button" onClick={() => jumpTo(target)} className="flex min-h-11 w-full items-center gap-2 rounded-xl border border-line bg-white/80 px-3 py-2.5 text-left text-xs font-semibold text-ink transition hover:border-brand-300 hover:bg-white">
+              <span className="grid size-6 shrink-0 place-items-center rounded-full bg-brand-50 text-[10px] font-bold text-brand-700">{index + 1}</span>
+              {label}
+              </button>
+            </li>
+          ))}
+        </ol>
+      )}
       <form
         aria-label="Solicitud de torta a medida"
         onSubmit={(event) => void submit(event)}
-        className="min-w-0 border-t border-line p-5 sm:p-7"
+        className={`min-w-0 border-t border-line p-5 sm:p-7 ${dedicated ? 'bg-surface-muted/15' : ''}`}
       >
         <section aria-labelledby="freeform-idea-title">
           <div className="mb-5 flex items-start gap-3">
@@ -355,7 +381,7 @@ export const CakeFreeformRequest = ({
                 Tu idea
               </h3>
               <p className="mt-1 text-xs leading-5 text-ink-muted">
-                Define las porciones y los detalles que te gustaría incluir.
+                {dedicated ? 'Cuéntanos lo esencial; podrás adjuntar una imagen si quieres.' : 'Define las porciones y los detalles que te gustaría incluir.'}
               </p>
             </div>
           </div>
@@ -470,7 +496,7 @@ export const CakeFreeformRequest = ({
               />
             </FormGrid>
           </FormStack>
-          {previewConfig && (
+          {!dedicated && previewConfig && (
             <div className="mt-5 rounded-xl border border-brand-200 bg-white p-3">
               <button
                 type="button"
@@ -479,7 +505,7 @@ export const CakeFreeformRequest = ({
                 className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-brand-50 px-3 text-xs font-semibold text-brand-800"
               >
                 <Box className="size-4" />
-                {show3d ? 'Ocultar vista 3D' : 'Ver idea en 3D y compartir por QR'}
+                {show3d ? 'Ocultar vista 3D' : 'Ver idea en 3D'}
               </button>
               {show3d && (
                 <div className="mt-3">
@@ -502,9 +528,8 @@ export const CakeFreeformRequest = ({
                 </div>
               )}
               <p className="mt-2 text-[11px] leading-4 text-ink-muted">
-                Al compartir, el enlace incluye porciones, sabor y relleno. Tu descripción y notas
-                permanecen privadas; la imagen solo se comparte si lo eliges en el visor. Completa
-                esos tres datos para generar el QR.
+                La vista 3D es una referencia visual opcional. El diseño final, el precio y la fecha
+                se confirman después de revisar tu solicitud.
               </p>
             </div>
           )}
@@ -569,7 +594,7 @@ export const CakeFreeformRequest = ({
               />
               {referenceBusy && (
                 <p role="status" className="mt-2 text-xs text-ink-muted">
-                  Preparando imagen para 3D…
+                  {dedicated ? 'Preparando imagen…' : 'Preparando imagen para 3D…'}
                 </p>
               )}
               {referenceError && (
@@ -581,7 +606,7 @@ export const CakeFreeformRequest = ({
           </FormGrid>
         </div>
 
-        <div className="mt-7 border-t border-line pt-5">
+        <div id="freeform-submit" className="mt-7 border-t border-line pt-5 scroll-mt-28">
           <label className="mb-4 flex cursor-pointer items-start gap-3 rounded-xl border border-brand-100 bg-brand-50/40 p-3 text-sm text-ink">
             <input
               type="checkbox"
@@ -591,7 +616,7 @@ export const CakeFreeformRequest = ({
               className="mt-1"
             />
             <span>
-              Acepto recibir por WhatsApp de Misky Challay la cotización de esta solicitud. Es
+              Acepto recibir por WhatsApp de Misky Challay la {dedicated ? 'propuesta' : 'cotización'} de esta solicitud. Es
               opcional y se enviará al celular de mi cuenta.
             </span>
           </label>
@@ -614,9 +639,9 @@ export const CakeFreeformRequest = ({
           )}
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div className="min-w-0 max-w-md">
-              <p className="text-sm font-semibold text-ink">Cotización sin costo</p>
+              <p className="text-sm font-semibold text-ink">{dedicated ? 'Solicitud sin compromiso' : 'Cotización sin costo'}</p>
               <p className="mt-1 text-xs leading-5 text-ink-muted">
-                Recibirás una propuesta con precio y fecha. Tú decides si la aceptas.
+                {dedicated ? 'Revisaremos tu idea y te enviaremos precio, fecha y condiciones antes de cualquier pago.' : 'Recibirás una propuesta con precio y fecha. Tú decides si la aceptas.'}
               </p>
             </div>
             {authenticated ? (
@@ -626,7 +651,7 @@ export const CakeFreeformRequest = ({
                 disabled={busy || slotsLoading}
                 className="w-full shrink-0 sm:w-auto"
               >
-                Solicitar cotización
+                {dedicated ? 'Enviar solicitud' : 'Solicitar cotización'}
               </Button>
             ) : (
               <Button type="button" onClick={onLogin} className="w-full shrink-0 sm:w-auto">

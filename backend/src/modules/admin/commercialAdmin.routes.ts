@@ -49,6 +49,14 @@ const INVENTORY_QUANTITY_ISSUE = {
   path: ['consumptionQuantity'],
 };
 
+const couponRules = z.object({
+  branchIds: z.array(z.coerce.number().int().positive()).max(100).optional(),
+  productIds: z.array(z.coerce.number().int().positive()).max(500).optional(),
+  deliveryTypes: z.array(z.enum(['DELIVERY', 'PICKUP', 'DINE_IN'])).max(3).optional(),
+  paymentMethods: z.array(z.enum(['ONLINE', 'YAPE', 'PLIN', 'CASH'])).max(4).optional(),
+  firstOrderOnly: z.boolean().optional(),
+}).default({});
+
 router.use(authenticate);
 
 router.get('/drafts/:key', requirePermissions(PERMISSIONS.GEO_WRITE), validate(z.object({ params: z.object({ key: z.string().min(2).max(120) }) })), commercialAdminController.getDraft);
@@ -74,9 +82,13 @@ router.post(
         value: z.coerce.number().min(0),
         minOrderAmount: z.coerce.number().min(0).default(0),
         maxDiscountAmount: z.coerce.number().positive().nullable().optional(),
+        validFrom: z.string().datetime().nullable().optional(),
         validUntil: z.string().nullable().optional(),
         usageLimit: z.coerce.number().int().positive().nullable().optional(),
         usageLimitPerUser: z.coerce.number().int().min(1).default(1),
+        rules: couponRules,
+        stackMode: z.enum(['EXCLUSIVE', 'STACKABLE']).default('STACKABLE'),
+        budgetAmount: z.coerce.number().positive().nullable().optional(),
       }),
     }),
   ),
@@ -97,14 +109,60 @@ router.patch(
         isActive: z.boolean().optional(),
         description: z.string().min(3).max(150).optional(),
         validUntil: z.string().nullable().optional(),
+        validFrom: z.string().datetime().nullable().optional(),
         value: z.coerce.number().min(0).optional(),
         minOrderAmount: z.coerce.number().min(0).optional(),
         maxDiscountAmount: z.coerce.number().positive().nullable().optional(),
         usageLimit: z.coerce.number().int().positive().nullable().optional(),
+        rules: couponRules.optional(),
+        stackMode: z.enum(['EXCLUSIVE', 'STACKABLE']).optional(),
+        budgetAmount: z.coerce.number().positive().nullable().optional(),
+        expectedVersion: z.coerce.number().int().positive().optional(),
       }),
     }),
   ),
   commercialAdminController.updateCoupon,
+);
+
+router.post(
+  '/coupons/preview',
+  requirePermissions(PERMISSIONS.PROMOTION_MANAGE),
+  validate(z.object({
+    body: z.object({
+      code: z.string().min(3).max(40),
+      subtotal: z.coerce.number().min(0),
+      userId: z.coerce.number().int().positive().nullable().optional(),
+      branchId: z.coerce.number().int().positive().nullable().optional(),
+      deliveryType: z.enum(['DELIVERY', 'PICKUP', 'DINE_IN']).nullable().optional(),
+      paymentMethod: z.enum(['ONLINE', 'YAPE', 'PLIN', 'CASH']).nullable().optional(),
+      productIds: z.array(z.coerce.number().int().positive()).max(500).default([]),
+    }),
+  })),
+  commercialAdminController.previewCoupon,
+);
+
+router.get(
+  '/coupons/:couponId/redemptions',
+  requirePermissions(PERMISSIONS.PROMOTION_MANAGE),
+  validate(z.object({ params: z.object({ couponId: z.coerce.number().int().positive() }) })),
+  commercialAdminController.couponRedemptions,
+);
+
+router.get(
+  '/coupons/:couponId/metrics',
+  requirePermissions(PERMISSIONS.PROMOTION_MANAGE),
+  validate(z.object({ params: z.object({ couponId: z.coerce.number().int().positive() }) })),
+  commercialAdminController.couponMetrics,
+);
+
+router.post(
+  '/coupons/:couponId/archive',
+  requirePermissions(PERMISSIONS.PROMOTION_MANAGE),
+  validate(z.object({
+    params: z.object({ couponId: z.coerce.number().int().positive() }),
+    body: z.object({ expectedVersion: z.coerce.number().int().positive().optional() }),
+  })),
+  commercialAdminController.archiveCoupon,
 );
 
 // ============================ PLANES ============================
@@ -192,6 +250,21 @@ router.get(
 );
 
 router.post(
+  '/coverage/quote',
+  requireAnyPermission(PERMISSIONS.GEO_READ, PERMISSIONS.GEO_WRITE),
+  validate(z.object({
+    body: z.object({
+      zoneId: z.coerce.number().int().positive(),
+      subtotal: z.coerce.number().min(0),
+      containsCake: z.boolean().default(false),
+      extraDeliveryFee: z.coerce.number().min(0).max(500).default(0),
+      deliveryType: z.enum(['DELIVERY', 'PICKUP', 'DINE_IN']).default('DELIVERY'),
+    }),
+  })),
+  commercialAdminController.previewCoverageQuote,
+);
+
+router.post(
   '/coverage/branches',
   requirePermissions(PERMISSIONS.GEO_WRITE),
   validate(
@@ -230,6 +303,7 @@ router.patch(
         acceptsPickup: z.boolean().optional(),
         acceptsDelivery: z.boolean().optional(),
         isActive: z.boolean().optional(),
+        expectedVersion: z.coerce.number().int().positive().optional(),
       }),
     }),
   ),
@@ -263,6 +337,24 @@ router.put(
 );
 
 router.post(
+  '/coverage/branches/:branchId/schedule-exceptions',
+  requirePermissions(PERMISSIONS.GEO_WRITE),
+  validate(z.object({
+    params: z.object({ branchId: z.coerce.number().int().positive() }),
+    body: z.object({
+      exceptionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Usa una fecha valida'),
+      opensAt: clockTime,
+      closesAt: clockTime,
+      isClosed: z.boolean().default(false),
+    }).refine((value) => value.isClosed || value.opensAt !== value.closesAt, {
+      message: 'La hora de cierre no puede ser igual a la apertura',
+      path: ['closesAt'],
+    }),
+  })),
+  commercialAdminController.setScheduleException,
+);
+
+router.post(
   '/coverage/zones',
   requirePermissions(PERMISSIONS.GEO_WRITE),
   validate(
@@ -271,6 +363,7 @@ router.post(
         cityId: z.coerce.number().int().positive(),
         name: z.string().min(3).max(80),
         deliveryFee: z.coerce.number().min(0),
+        cakeDeliveryFee: z.coerce.number().min(0).default(0),
         extraCoverageKm: z.coerce.number().min(0).max(50).default(0),
         extraFeePerKm: z.coerce.number().min(0).default(0),
         minimumOrder: z.coerce.number().min(0).default(0),
@@ -280,6 +373,7 @@ router.post(
           .array(z.object({ lat: z.coerce.number(), lng: z.coerce.number() }))
           .min(3)
           .optional(),
+        effectiveFrom: z.string().datetime().nullable().optional(),
       }),
     }),
   ),
@@ -295,17 +389,31 @@ router.patch(
       body: z.object({
         name: z.string().min(3).max(80).optional(),
         deliveryFee: z.coerce.number().min(0).optional(),
+        cakeDeliveryFee: z.coerce.number().min(0).optional(),
         extraCoverageKm: z.coerce.number().min(0).max(50).optional(),
         extraFeePerKm: z.coerce.number().min(0).optional(),
         minimumOrder: z.coerce.number().min(0).optional(),
         estimatedMinutes: z.coerce.number().int().min(5).max(240).optional(),
         priority: z.coerce.number().int().min(1).optional(),
         isActive: z.boolean().optional(),
+        expectedVersion: z.coerce.number().int().positive().optional(),
+        effectiveFrom: z.string().datetime().nullable().optional(),
+        archivedAt: z.string().datetime().nullable().optional(),
         polygon: z.array(z.object({ lat: z.coerce.number(), lng: z.coerce.number() })).min(3).nullable().optional(),
       }),
     }),
   ),
   commercialAdminController.updateZone,
+);
+
+router.post(
+  '/coverage/zones/:zoneId/archive',
+  requirePermissions(PERMISSIONS.GEO_WRITE),
+  validate(z.object({
+    params: z.object({ zoneId: z.coerce.number().int().positive() }),
+    body: z.object({ expectedVersion: z.coerce.number().int().positive().optional() }),
+  })),
+  commercialAdminController.archiveZone,
 );
 
 router.post(
@@ -453,6 +561,73 @@ router.get(
   commercialAdminController.builderAnalytics,
 );
 
+router.get(
+  '/builder/:productId/health',
+  requirePermissions(PERMISSIONS.CATALOG_CUSTOMIZATION_WRITE),
+  validate(z.object({ params: z.object({ productId: z.coerce.number().int().positive() }) })),
+  commercialAdminController.builderHealth,
+);
+
+router.get(
+  '/builder/catalog-health',
+  requirePermissions(PERMISSIONS.CATALOG_CUSTOMIZATION_WRITE),
+  commercialAdminController.builderCatalogHealth,
+);
+
+router.get(
+  '/builder/:productId/governance',
+  requirePermissions(PERMISSIONS.CATALOG_CUSTOMIZATION_WRITE),
+  validate(z.object({ params: z.object({ productId: z.coerce.number().int().positive() }) })),
+  commercialAdminController.builderGovernance,
+);
+
+router.get(
+  '/builder/options/:optionId/impact',
+  requirePermissions(PERMISSIONS.CATALOG_CUSTOMIZATION_WRITE),
+  validate(z.object({ params: optionId })),
+  commercialAdminController.builderOptionImpact,
+);
+
+router.put(
+  '/builder/:productId/draft',
+  requirePermissions(PERMISSIONS.CATALOG_CUSTOMIZATION_WRITE),
+  validate(z.object({
+    params: z.object({ productId: z.coerce.number().int().positive() }),
+    body: z.object({ publishAt: z.string().datetime().nullable().optional() }),
+  })),
+  commercialAdminController.saveBuilderDraft,
+);
+
+router.post(
+  '/builder/:productId/publish',
+  requirePermissions(PERMISSIONS.CATALOG_CUSTOMIZATION_WRITE),
+  validate(z.object({
+    params: z.object({ productId: z.coerce.number().int().positive() }),
+    body: z.object({ idempotencyKey: z.string().min(8).max(100).optional() }),
+  })),
+  commercialAdminController.publishBuilderDraft,
+);
+
+router.get(
+  '/builder/:productId/releases',
+  requirePermissions(PERMISSIONS.CATALOG_CUSTOMIZATION_WRITE),
+  validate(z.object({
+    params: z.object({ productId: z.coerce.number().int().positive() }),
+    query: z.object({ limit: z.coerce.number().int().min(1).max(100).optional() }),
+  })),
+  commercialAdminController.builderReleases,
+);
+
+router.post(
+  '/builder/:productId/releases/:releaseId/rollback',
+  requirePermissions(PERMISSIONS.CATALOG_CUSTOMIZATION_WRITE),
+  validate(z.object({
+    params: z.object({ productId: z.coerce.number().int().positive(), releaseId: z.coerce.number().int().positive() }),
+    body: z.object({ idempotencyKey: z.string().min(8).max(100).optional() }),
+  })),
+  commercialAdminController.rollbackBuilder,
+);
+
 router.post(
   '/builder/:productId/groups',
   requirePermissions(PERMISSIONS.CATALOG_CUSTOMIZATION_WRITE),
@@ -493,6 +668,7 @@ router.patch(
         maxSelection: z.coerce.number().int().min(1).max(20).optional(),
         freeQuantity: z.coerce.number().int().min(0).max(20).optional(),
         sortOrder: z.coerce.number().int().min(0).optional(),
+        expectedVersion: z.coerce.number().int().positive().optional(),
       }),
     }),
   ),
@@ -529,6 +705,7 @@ router.post(
           maxPerItem: z.coerce.number().int().min(1).max(10).default(1),
           inventoryItemId: z.coerce.number().int().positive().nullable().optional(),
           consumptionQuantity: z.coerce.number().min(0).optional(),
+          expectedVersion: z.coerce.number().int().positive().optional(),
         })
         .refine(linkedInventoryNeedsQuantity, INVENTORY_QUANTITY_ISSUE),
     }),
@@ -564,6 +741,7 @@ router.patch(
           status: z.enum(['ACTIVE', 'OUT_OF_STOCK', 'INACTIVE']).optional(),
           inventoryItemId: z.coerce.number().int().positive().nullable().optional(),
           consumptionQuantity: z.coerce.number().min(0).optional(),
+          expectedVersion: z.coerce.number().int().positive().optional(),
         })
         .refine(linkedInventoryNeedsQuantity, INVENTORY_QUANTITY_ISSUE),
     }),
@@ -636,6 +814,7 @@ router.put(
       priceOverride: z.coerce.number().min(0).nullable().optional(),
       availableFrom: z.coerce.date().nullable().optional(),
       availableUntil: z.coerce.date().nullable().optional(),
+      expectedVersion: z.coerce.number().int().positive().optional(),
     }),
   })),
   commercialAdminController.setOptionSchedule,
@@ -649,6 +828,7 @@ const presetBody = z.object({
   isFeatured: z.boolean().optional(),
   isActive: z.boolean().optional(),
   sortOrder: z.coerce.number().int().min(0).optional(),
+  expectedVersion: z.coerce.number().int().positive().optional(),
   selections: z.array(z.object({
     optionId: z.coerce.number().int().positive(),
     quantity: z.coerce.number().int().min(1).max(10),

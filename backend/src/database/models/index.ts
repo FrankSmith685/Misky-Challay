@@ -12,6 +12,9 @@ import { RolePermission } from './rolePermission.model';
 import { Address } from './address.model';
 import { UserPreference } from './userPreference.model';
 import { UserPurchaseContext } from './userPurchaseContext.model';
+import { UserSession } from './userSession.model';
+import { Team } from './team.model';
+import { TeamAssignment } from './teamAssignment.model';
 
 // Geografia, cobertura y sucursales
 import { City } from './city.model';
@@ -48,6 +51,7 @@ import { OptionIncompatibility } from './optionIncompatibility.model';
 import { BranchOptionAvailability } from './branchOptionAvailability.model';
 import { BuilderPreset } from './builderPreset.model';
 import { BuilderPresetItem } from './builderPresetItem.model';
+import { BuilderRelease } from './builderRelease.model';
 import { SavedBowl } from './savedBowl.model';
 import { MediaAsset } from './mediaAsset.model';
 import { BuilderEvent } from './builderEvent.model';
@@ -81,6 +85,8 @@ import { KitchenTicketEvent } from './kitchenTicketEvent.model';
 import { InventoryItem } from './inventoryItem.model';
 import { BranchInventory } from './branchInventory.model';
 import { InventoryMovement } from './inventoryMovement.model';
+import { InventoryTransfer, InventoryTransferItem } from './inventoryTransfer.model';
+import { InventoryCountSession, InventoryCountItem } from './inventoryCount.model';
 import { Supplier, PurchaseOrder, PurchaseOrderItem, InventoryLot } from './procurement.model';
 import { Recipe } from './recipe.model';
 import { RecipeItem } from './recipeItem.model';
@@ -91,6 +97,10 @@ import { DeliveryEvent } from './deliveryEvent.model';
 import { AuditLog } from './auditLog.model';
 import { AdminDraft } from './adminDraft.model';
 import { Complaint } from './complaint.model';
+import { ComplaintResponse } from './complaintResponse.model';
+import { ComplaintNote } from './complaintNote.model';
+import { ComplaintEvidence } from './complaintEvidence.model';
+import { ComplaintHoliday } from './complaintHoliday.model';
 
 // Notificaciones
 import { Notification } from './notification.model';
@@ -108,11 +118,15 @@ import { WalletTransaction } from './walletTransaction.model';
 import { WalletCreditLot } from './walletCreditLot.model';
 import { WalletLotAllocation } from './walletLotAllocation.model';
 import { BusinessSetting } from './businessSetting.model';
+import { SettingRevision } from './settingRevision.model';
+import { ThemeSetting } from './themeSetting.model';
 import { StorefrontSetting } from './storefrontSetting.model';
 import { CheckoutTerms } from './checkoutTerms.model';
 import { CommunicationSetting } from './communicationSetting.model';
 import { LocalPaymentSetting } from './localPaymentSetting.model';
 import { ReceiptSetting } from './receiptSetting.model';
+import { CashSession } from './cashSession.model';
+import { CashMovement } from './cashMovement.model';
 import { AppEvent } from './appEvent.model';
 import { PushDelivery } from './pushDelivery.model';
 export { AppEvent, PushDelivery };
@@ -143,6 +157,9 @@ export const models = {
   Address,
   UserPreference,
   UserPurchaseContext,
+  UserSession,
+  Team,
+  TeamAssignment,
   City,
   District,
   CoverageZone,
@@ -177,6 +194,7 @@ export const models = {
   BranchOptionAvailability,
   BuilderPreset,
   BuilderPresetItem,
+  BuilderRelease,
   SavedBowl,
   MediaAsset,
   BuilderEvent,
@@ -206,6 +224,10 @@ export const models = {
   InventoryItem,
   BranchInventory,
   InventoryMovement,
+  InventoryTransfer,
+  InventoryTransferItem,
+  InventoryCountSession,
+  InventoryCountItem,
   Supplier,
   PurchaseOrder,
   PurchaseOrderItem,
@@ -218,6 +240,10 @@ export const models = {
   AuditLog,
   AdminDraft,
   Complaint,
+  ComplaintResponse,
+  ComplaintNote,
+  ComplaintEvidence,
+  ComplaintHoliday,
   Plan,
   PlanBenefit,
   UserPlan,
@@ -229,11 +255,15 @@ export const models = {
   WalletCreditLot,
   WalletLotAllocation,
   BusinessSetting,
+  SettingRevision,
+  ThemeSetting,
   StorefrontSetting,
   CheckoutTerms,
   CommunicationSetting,
   LocalPaymentSetting,
   ReceiptSetting,
+  CashSession,
+  CashMovement,
   Notification,
   ProductAvailabilitySubscription,
   KitchenPushSubscription,
@@ -299,6 +329,10 @@ export const registerModels = (): Models => {
   });
   User.hasOne(UserPreference, { foreignKey: 'userId', as: 'foodPreferences', ...OWNED });
   UserPreference.belongsTo(User, { foreignKey: 'userId', as: 'user', ...OWNED });
+  User.hasMany(UserSession, { foreignKey: 'userId', as: 'sessions', ...OWNED });
+  UserSession.belongsTo(User, { foreignKey: 'userId', as: 'user', ...OWNED });
+  User.hasMany(TeamAssignment, { foreignKey: 'userId', as: 'teamAssignments', ...OWNED });
+  TeamAssignment.belongsTo(User, { foreignKey: 'userId', as: 'user', ...CONTEXT });
   // owner_user_id es obligatorio: un borrador sin dueno no tiene a quien mostrarse.
   User.hasMany(AdminDraft, { foreignKey: 'ownerUserId', as: 'adminDrafts', ...OWNED });
   AdminDraft.belongsTo(User, { foreignKey: 'ownerUserId', as: 'owner', ...OWNED });
@@ -321,6 +355,10 @@ export const registerModels = (): Models => {
   // La asignacion directa permite mostrar y auditar el alcance por cocina.
   UserRole.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch', ...CONTEXT });
   Branch.hasMany(UserRole, { foreignKey: 'branchId', as: 'staffAssignments', ...CONTEXT });
+  Team.hasMany(TeamAssignment, { foreignKey: 'teamId', as: 'assignments', ...OWNED });
+  TeamAssignment.belongsTo(Team, { foreignKey: 'teamId', as: 'team', ...OWNED });
+  TeamAssignment.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch', ...CONTEXT });
+  Branch.hasMany(TeamAssignment, { foreignKey: 'branchId', as: 'teamAssignments', ...CONTEXT });
 
   Role.belongsToMany(Permission, {
     through: RolePermission,
@@ -518,6 +556,9 @@ export const registerModels = (): Models => {
     as: 'presetItems',
     ...OWNED,
   });
+  Product.hasMany(BuilderRelease, { foreignKey: 'productId', as: 'builderReleases', ...CONTEXT });
+  BuilderRelease.belongsTo(Product, { foreignKey: 'productId', as: 'product', ...CONTEXT });
+  BuilderRelease.belongsTo(User, { foreignKey: 'publishedBy', as: 'publisher', ...CONTEXT });
 
   // Bowls guardados: contenido del cliente, se va con el cliente.
   User.hasMany(SavedBowl, { foreignKey: 'userId', as: 'savedBowls', ...OWNED });
@@ -634,9 +675,12 @@ export const registerModels = (): Models => {
   Order.hasOne(KitchenTicket, { foreignKey: 'orderId', as: 'kitchenTicket', ...PROTECTED });
   KitchenTicket.belongsTo(Order, { foreignKey: 'orderId', as: 'order', ...PROTECTED });
   KitchenTicket.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch', ...PROTECTED });
+  KitchenTicket.belongsTo(User, { foreignKey: 'assignedTo', as: 'assignee', ...CONTEXT });
+  KitchenTicket.belongsTo(User, { foreignKey: 'incidentBy', as: 'incidentActor', ...CONTEXT });
 
   KitchenTicket.hasMany(KitchenTicketEvent, { foreignKey: 'ticketId', as: 'events', ...PROTECTED });
   KitchenTicketEvent.belongsTo(KitchenTicket, { foreignKey: 'ticketId', as: 'ticket', ...PROTECTED });
+  KitchenTicketEvent.belongsTo(User, { foreignKey: 'actorId', as: 'actor', ...CONTEXT });
 
   // --- Inventario (M10) ---
   InventoryItem.hasMany(BranchInventory, { foreignKey: 'inventoryItemId', as: 'stocks', ...OWNED });
@@ -659,10 +703,29 @@ export const registerModels = (): Models => {
   InventoryMovement.belongsTo(InventoryLot, { foreignKey: 'lotId', as: 'lot', ...CONTEXT });
   InventoryMovement.belongsTo(PurchaseOrder, { foreignKey: 'purchaseOrderId', as: 'purchaseOrder', ...CONTEXT });
 
+  InventoryTransfer.belongsTo(Branch, { foreignKey: 'sourceBranchId', as: 'sourceBranch', ...PROTECTED });
+  InventoryTransfer.belongsTo(Branch, { foreignKey: 'destinationBranchId', as: 'destinationBranch', ...PROTECTED });
+  InventoryTransfer.belongsTo(User, { foreignKey: 'requestedBy', as: 'requester', ...CONTEXT });
+  InventoryTransfer.belongsTo(User, { foreignKey: 'approvedBy', as: 'approver', ...CONTEXT });
+  InventoryTransfer.belongsTo(User, { foreignKey: 'shippedBy', as: 'shipper', ...CONTEXT });
+  InventoryTransfer.belongsTo(User, { foreignKey: 'receivedBy', as: 'receiver', ...CONTEXT });
+  InventoryTransfer.hasMany(InventoryTransferItem, { foreignKey: 'transferId', as: 'items', ...PROTECTED });
+  InventoryTransferItem.belongsTo(InventoryTransfer, { foreignKey: 'transferId', as: 'transfer', ...PROTECTED });
+  InventoryTransferItem.belongsTo(InventoryItem, { foreignKey: 'inventoryItemId', as: 'item', ...PROTECTED });
+
+  InventoryCountSession.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch', ...PROTECTED });
+  InventoryCountSession.belongsTo(User, { foreignKey: 'startedBy', as: 'starter', ...CONTEXT });
+  InventoryCountSession.belongsTo(User, { foreignKey: 'submittedBy', as: 'submitter', ...CONTEXT });
+  InventoryCountSession.belongsTo(User, { foreignKey: 'approvedBy', as: 'approver', ...CONTEXT });
+  InventoryCountSession.hasMany(InventoryCountItem, { foreignKey: 'sessionId', as: 'items', ...PROTECTED });
+  InventoryCountItem.belongsTo(InventoryCountSession, { foreignKey: 'sessionId', as: 'session', ...PROTECTED });
+  InventoryCountItem.belongsTo(InventoryItem, { foreignKey: 'inventoryItemId', as: 'item', ...PROTECTED });
+
   Supplier.hasMany(PurchaseOrder, { foreignKey: 'supplierId', as: 'purchaseOrders', ...PROTECTED });
   PurchaseOrder.belongsTo(Supplier, { foreignKey: 'supplierId', as: 'supplier', ...PROTECTED });
   PurchaseOrder.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch', ...PROTECTED });
   PurchaseOrder.belongsTo(User, { foreignKey: 'createdBy', as: 'creator', ...CONTEXT });
+  PurchaseOrder.belongsTo(User, { foreignKey: 'approvedBy', as: 'approver', ...CONTEXT });
   PurchaseOrder.belongsTo(User, { foreignKey: 'receivedBy', as: 'receiver', ...CONTEXT });
   PurchaseOrder.hasMany(PurchaseOrderItem, { foreignKey: 'purchaseOrderId', as: 'items', ...PROTECTED });
   PurchaseOrderItem.belongsTo(PurchaseOrder, { foreignKey: 'purchaseOrderId', as: 'purchaseOrder', ...PROTECTED });
@@ -717,6 +780,14 @@ export const registerModels = (): Models => {
   // vinculo. Un reclamo puede llegar de un invitado, asi que ambas FK son opcionales.
   Complaint.belongsTo(User, { foreignKey: 'userId', as: 'user', ...CONTEXT });
   Complaint.belongsTo(Order, { foreignKey: 'orderId', as: 'order', ...CONTEXT });
+  Complaint.belongsTo(User, { foreignKey: 'assignedTo', as: 'assignedUser', ...CONTEXT });
+  Complaint.hasMany(ComplaintResponse, { foreignKey: 'complaintId', as: 'responses', ...PROTECTED });
+  ComplaintResponse.belongsTo(Complaint, { foreignKey: 'complaintId', as: 'complaint', ...PROTECTED });
+  ComplaintResponse.belongsTo(User, { foreignKey: 'actorId', as: 'actor', ...CONTEXT });
+  Complaint.hasMany(ComplaintNote, { foreignKey: 'complaintId', as: 'notes', ...PROTECTED });
+  ComplaintNote.belongsTo(User, { foreignKey: 'authorId', as: 'author', ...CONTEXT });
+  Complaint.hasMany(ComplaintEvidence, { foreignKey: 'complaintId', as: 'evidences', ...PROTECTED });
+  ComplaintEvidence.belongsTo(User, { foreignKey: 'uploadedBy', as: 'uploader', ...CONTEXT });
   User.hasMany(Complaint, { foreignKey: 'userId', as: 'complaints', ...CONTEXT });
 
   // --- Notificaciones (M12) ---
@@ -806,6 +877,18 @@ export const registerModels = (): Models => {
   CommunicationSetting.belongsTo(User, { foreignKey: 'updatedBy', as: 'updater', ...CONTEXT });
   ReceiptSetting.belongsTo(User, { foreignKey: 'updatedBy', as: 'updater', ...CONTEXT });
 
+  // Libro de caja: se conserva el historial y cada movimiento queda ligado a su jornada.
+  CashSession.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch', ...PROTECTED });
+  Branch.hasMany(CashSession, { foreignKey: 'branchId', as: 'cashSessions', ...PROTECTED });
+  CashSession.belongsTo(User, { foreignKey: 'openedBy', as: 'opener', ...PROTECTED });
+  CashSession.belongsTo(User, { foreignKey: 'closedBy', as: 'closer', ...CONTEXT });
+  CashSession.hasMany(CashMovement, { foreignKey: 'sessionId', as: 'movements', ...PROTECTED });
+  CashMovement.belongsTo(CashSession, { foreignKey: 'sessionId', as: 'session', ...PROTECTED });
+  CashMovement.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch', ...PROTECTED });
+  CashMovement.belongsTo(User, { foreignKey: 'actorId', as: 'actor', ...CONTEXT });
+  CashMovement.belongsTo(Payment, { foreignKey: 'paymentId', as: 'payment', ...CONTEXT });
+  CashMovement.belongsTo(Order, { foreignKey: 'orderId', as: 'order', ...CONTEXT });
+
   registered = true;
   return models;
 };
@@ -857,6 +940,7 @@ export {
   BranchOptionAvailability,
   BuilderPreset,
   BuilderPresetItem,
+  BuilderRelease,
   SavedBowl,
   MediaAsset,
   BuilderEvent,
@@ -882,6 +966,10 @@ export {
   InventoryItem,
   BranchInventory,
   InventoryMovement,
+  InventoryTransfer,
+  InventoryTransferItem,
+  InventoryCountSession,
+  InventoryCountItem,
   Recipe,
   RecipeItem,
   Driver,
@@ -899,23 +987,35 @@ export {
   WalletCreditLot,
   WalletLotAllocation,
   BusinessSetting,
+  SettingRevision,
+  ThemeSetting,
   CommunicationSetting,
   LocalPaymentSetting,
   ReceiptSetting,
+  CashSession,
+  CashMovement,
   Notification,
   ProductAvailabilitySubscription,
   KitchenPushSubscription,
   MobileDevice,
   UserPreference,
   UserPurchaseContext,
+  UserSession,
+  Team,
+  TeamAssignment,
   AdminDraft,
   UxEvent,
   ProductFavorite,
   ProductReview,
   NewsletterSubscription,
   Complaint,
+  ComplaintResponse,
+  ComplaintNote,
+  ComplaintEvidence,
+  ComplaintHoliday,
   Supplier,
   PurchaseOrder,
   PurchaseOrderItem,
   InventoryLot,
+  StorefrontSetting,
 };

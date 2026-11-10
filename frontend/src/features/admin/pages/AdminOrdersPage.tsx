@@ -39,7 +39,26 @@ const STATUS_FILTERS = [
   { value: 'OUT_FOR_DELIVERY', label: 'En camino' },
   { value: 'DELIVERED', label: 'Entregados' },
   { value: 'CANCELLED', label: 'Cancelados' },
+  { value: 'REFUNDED', label: 'Devueltos' },
 ];
+
+const PAYMENT_SUMMARY_LABELS: Record<string, string> = {
+  NO_PAYMENT: 'Sin cobro',
+  PENDING_PAYMENT: 'Pago pendiente',
+  REVIEW: 'Yape/Plin por verificar',
+  OBSERVED: 'Pago observado',
+  PAID: 'Pagado',
+  FAILED: 'Cobro fallido',
+  REFUND_PENDING: 'Devolución pendiente',
+};
+
+type OrderPeriod = 'all' | '7' | '30' | 'custom';
+const limaToday = (): string => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+const shiftDate = (iso: string, days: number): string => {
+  const date = new Date(`${iso}T12:00:00-05:00`);
+  date.setDate(date.getDate() + days);
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+};
 
 const STATUS_HELP = [
   ['Esperando pago', 'Revisa el cobro en Detalles. Cocina aún no debe prepararlo.'],
@@ -113,7 +132,7 @@ const attentionFor = (order: AdminOrderRow): { late: boolean; label: string } =>
 
 /** Tablero de pedidos en tiempo real (seccion 9.7). */
 const AdminOrdersPage = () => {
-  const { can } = usePermissions();
+  const { can, isSuperAdmin } = usePermissions();
   const navigate = useNavigate();
   const confirm = useConfirm();
   const canCancel = can(PERM.ORDER_CANCEL);
@@ -129,6 +148,23 @@ const AdminOrdersPage = () => {
   const status = params.get('estado') ?? '';
   const page = Math.max(1, Number(params.get('pagina')) || 1);
   const urlSearch = params.get('q') ?? '';
+  const sourceParam = params.get('origen');
+  const source = sourceParam === 'WEB' || sourceParam === 'POS' ? sourceParam : undefined;
+  const deliveryTypeParam = params.get('modalidad');
+  const deliveryType = deliveryTypeParam === 'DELIVERY' || deliveryTypeParam === 'PICKUP' || deliveryTypeParam === 'DINE_IN'
+    ? deliveryTypeParam
+    : undefined;
+  const today = limaToday();
+  const periodParam = params.get('periodo');
+  const period: OrderPeriod = periodParam === '7' || periodParam === '30' || periodParam === 'custom' ? periodParam : 'all';
+  const customFrom = params.get('desde') ?? shiftDate(today, -29);
+  const customTo = params.get('hasta') ?? today;
+  const dateRange = useMemo(() => {
+    if (period === '7') return { from: shiftDate(today, -6), to: today };
+    if (period === '30') return { from: shiftDate(today, -29), to: today };
+    if (period === 'custom') return { from: customFrom, to: customTo };
+    return { from: undefined, to: undefined };
+  }, [customFrom, customTo, period, today]);
 
   // El input necesita estado local para responder a cada tecla; la URL solo se
   // reescribe cuando el usuario deja de escribir.
@@ -172,8 +208,8 @@ const AdminOrdersPage = () => {
     }
   }, [debouncedSearch, urlSearch, updateParams]);
 
-  const { branchId, branches, setBranchId, isLoadingBranches, branchesError, reloadBranches } =
-    useActiveBranch();
+  const { branchId, branches, setBranchId, setGlobalScope, isLoadingBranches, branchesError, reloadBranches } =
+    useActiveBranch({ allowAll: isSuperAdmin });
 
   const fetcher = useCallback(
     (signal: AbortSignal) =>
@@ -182,16 +218,21 @@ const AdminOrdersPage = () => {
           branchId: branchId ?? undefined,
           status: status || undefined,
           search: urlSearch || undefined,
+          source: source || undefined,
+          deliveryType: deliveryType || undefined,
+          from: dateRange.from,
+          to: dateRange.to,
           page,
         },
         signal,
       ),
-    [branchId, status, urlSearch, page],
+    [branchId, dateRange.from, dateRange.to, deliveryType, page, source, status, urlSearch],
   );
 
   const { data, error, isLoading, lastSuccessAt, isStale, refresh } = usePolling<{
     rows: AdminOrderRow[];
     meta: PaginationMeta;
+    summary?: { totalAmount: number; counts: Record<string, number>; paymentCounts: Record<string, number>; pendingPaymentAmount: number; pendingRefundAmount: number };
   }>(fetcher, 8000);
 
   // `usePolling` limpia `data` al cambiar de filtro, y sin esto la pantalla entera
@@ -203,17 +244,22 @@ const AdminOrdersPage = () => {
 
   const orders = useMemo(() => data?.rows ?? [], [data]);
   const meta = data?.meta ?? null;
+  const summary = data?.summary;
   const activeBranchName = branches.find((branch) => branch.id === branchId)?.name ?? null;
   /** Filtro o pagina nuevos: hay peticion en vuelo y todavia no hay respuesta. */
   const isRefetching = data === null && hasLoadedOnce && error === null;
   const delayedOrders = orders.filter((order) => attentionFor(order).late)
     .sort((a, b) => new Date(a.placedAt).getTime() - new Date(b.placedAt).getTime());
   const metrics = [
-    { label: 'Por atender', value: orders.filter((order) => order.status === 'CONFIRMED').length, icon: Clock3, tone: 'accent' as const },
-    { label: 'En cocina', value: orders.filter((order) => order.status === 'PREPARING').length, icon: ChefHat, tone: 'brand' as const },
-    { label: 'Listos', value: orders.filter((order) => order.status === 'READY').length, icon: CircleCheck, tone: 'brand' as const },
-    { label: 'En reparto', value: orders.filter((order) => order.status === 'OUT_FOR_DELIVERY').length, icon: Truck, tone: 'neutral' as const },
-    { label: 'Requieren atención', value: delayedOrders.length, icon: AlertTriangle, tone: delayedOrders.length ? 'danger' as const : 'neutral' as const },
+    { label: 'Por atender', value: summary?.counts.CONFIRMED ?? orders.filter((order) => order.status === 'CONFIRMED').length, icon: Clock3, tone: 'accent' as const },
+    { label: 'En cocina', value: summary?.counts.PREPARING ?? orders.filter((order) => order.status === 'PREPARING').length, icon: ChefHat, tone: 'brand' as const },
+    { label: 'Listos', value: summary?.counts.READY ?? orders.filter((order) => order.status === 'READY').length, icon: CircleCheck, tone: 'brand' as const },
+    { label: 'En reparto', value: summary?.counts.OUT_FOR_DELIVERY ?? orders.filter((order) => order.status === 'OUT_FOR_DELIVERY').length, icon: Truck, tone: 'neutral' as const },
+    { label: 'Alertas visibles', value: delayedOrders.length, icon: AlertTriangle, tone: delayedOrders.length ? 'danger' as const : 'neutral' as const },
+    { label: 'Pagos pendientes', value: (summary?.paymentCounts.REVIEW ?? 0) + (summary?.paymentCounts.OBSERVED ?? 0), icon: ReceiptText, tone: 'accent' as const },
+    { label: 'Devoluciones', value: summary?.paymentCounts.REFUND_PENDING ?? 0, icon: XCircle, tone: 'danger' as const },
+    { label: 'Cancelados', value: summary?.counts.CANCELLED ?? 0, icon: XCircle, tone: 'neutral' as const },
+    { label: 'Devueltos', value: summary?.counts.REFUNDED ?? 0, icon: CircleCheck, tone: 'brand' as const },
   ];
 
   // --- Seleccion para acciones masivas ---
@@ -254,16 +300,18 @@ const AdminOrdersPage = () => {
     return next;
   }, { replace: true });
   const [refundAttention, setRefundAttention] = useState<string[]>([]);
-  const filtersActive = Boolean(status || urlSearch);
+  const filtersActive = Boolean(status || urlSearch || source || deliveryType || period !== 'all');
   const clearFilters = () => {
     setSearch('');
-    updateParams({ estado: '', q: '' });
+    updateParams({ estado: '', q: '', origen: '', modalidad: '', periodo: '', desde: '', hasta: '' });
   };
 
-  const cancelCopy = (count: number) => ({
+  const cancelCopy = (count: number, selectedOrders: AdminOrderRow[] = []) => {
+    const paymentWarning = selectedOrders.length ? 'Revisa los pagos de los pedidos seleccionados antes de cancelar. ' : '';
+    return ({
     title: count === 1 ? 'Cancelar el pedido' : `Cancelar ${count} pedidos`,
     message:
-      `Se libera el cupo de la franja, se restaura el stock que corresponda y se cierran las tareas de Cocina y Reparto. ${can(PERM.PAYMENT_REFUND) ? 'Se intentarán devolver los cobros online. Efectivo, Yape y Plin requieren entregar el dinero antes de registrar la devolución en Detalles.' : 'Los cobros confirmados quedarán pendientes para alguien con permiso de reembolsos.'} ${count > 1 ? 'El mismo motivo se aplicará a todos los pedidos seleccionados. ' : ''}La cancelación no se puede deshacer.`,
+      `Se libera el cupo de la franja, se restaura el stock que corresponda y se cierran las tareas de Cocina y Reparto. ${can(PERM.PAYMENT_REFUND) ? 'Se intentarán devolver los cobros online. Efectivo, Yape y Plin requieren entregar el dinero antes de registrar la devolución en Detalles.' : 'Los cobros confirmados quedarán pendientes para alguien con permiso de reembolsos.'} ${paymentWarning}${count > 1 ? 'El mismo motivo se aplicará a todos los pedidos seleccionados. ' : ''}La cancelación no se puede deshacer.`,
     confirmLabel: count === 1 ? 'Cancelar el pedido' : `Cancelar ${count} pedidos`,
     cancelLabel: 'Volver',
     tone: 'danger' as const,
@@ -272,7 +320,8 @@ const AdminOrdersPage = () => {
     reasonRequired: true,
     reasonMinLength: 4,
     reasonMaxLength: 255,
-  });
+    });
+  };
 
   const changeStatus = async (order: AdminOrderRow, next: 'CANCELLED') => {
     let reason = '';
@@ -280,7 +329,7 @@ const AdminOrdersPage = () => {
     if (next === 'CANCELLED') {
       // El motivo estaba HARDCODEADO ("Cancelado desde el panel") y no habia ni una
       // confirmacion: un toque cancelaba un pedido pagado.
-      const answer = await confirm(cancelCopy(1));
+      const answer = await confirm(cancelCopy(1, [order]));
       if (!answer.confirmed) return;
       reason = answer.reason;
     }
@@ -311,7 +360,7 @@ const AdminOrdersPage = () => {
   };
 
   const cancelSelected = async () => {
-    const answer = await confirm(cancelCopy(selected.length));
+    const answer = await confirm(cancelCopy(selected.length, orders.filter((order) => selected.includes(order.orderNumber))));
     if (!answer.confirmed) return;
 
     setIsBulkRunning(true);
@@ -350,6 +399,8 @@ const AdminOrdersPage = () => {
             value={branchId}
             branches={branches}
             onChange={setBranchId}
+            allowAll={isSuperAdmin}
+            onSelectAll={setGlobalScope}
             hasError={Boolean(branchesError)}
           />
           <Button
@@ -397,6 +448,12 @@ const AdminOrdersPage = () => {
             onClick={() => navigate(`${ROUTES.adminKitchen}?pedido=${encodeURIComponent(order.orderNumber)}&branchId=${order.branch?.id ?? ''}`)}
           >
             Ver en Cocina
+          </Button>
+        )}
+
+        {order.paymentSummary && ['REVIEW', 'OBSERVED', 'REFUND_PENDING'].includes(order.paymentSummary.state) && (
+          <Button size="sm" variant="outline" onClick={() => navigate(`${ROUTES.adminDirectPayments}?pedido=${encodeURIComponent(order.orderNumber)}`)}>
+            Revisar pago
           </Button>
         )}
 
@@ -456,10 +513,11 @@ const AdminOrdersPage = () => {
 
       <Card className="mb-4 p-4" shadow="e1">
         <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
-          <div><p className="font-extrabold text-ink">Pulso de la operación</p><p className="text-xs text-ink-muted">Conteos de la página actual · actualización automática cada 8 segundos</p></div>
-          {meta && <p className="text-xs font-semibold text-ink-muted">{meta.total} pedidos en el filtro</p>}
+          <div><p className="font-extrabold text-ink">Pulso de la operación</p><p className="text-xs text-ink-muted">Conteos del filtro actual · actualización automática cada 8 segundos</p></div>
+          {meta && <p className="text-xs font-semibold text-ink-muted">{meta.total} pedidos en el filtro{summary ? ` · ${formatCurrency(summary.totalAmount)}` : ''}</p>}
         </div>
         <OperationsMetricStrip metrics={metrics} ariaLabel="Estado operativo de pedidos" />
+        {summary && <p className="mt-3 text-xs text-ink-muted">Pagos por atender: {formatCurrency(summary.pendingPaymentAmount)} · Devoluciones pendientes: {formatCurrency(summary.pendingRefundAmount)}</p>}
       </Card>
 
       {delayedOrders.length > 0 && (
@@ -494,6 +552,17 @@ const AdminOrdersPage = () => {
           onChange={(value) => updateParams({ estado: value })}
           ariaLabel="Filtrar pedidos por estado"
         />
+
+        <select aria-label="Filtrar pedidos por origen" className="min-h-10 rounded-field border border-line bg-surface-muted px-2 text-xs" value={source ?? ''} onChange={(event) => updateParams({ origen: event.target.value })}>
+          <option value="">Todos los orígenes</option><option value="WEB">Web</option><option value="POS">POS / Salón</option>
+        </select>
+        <select aria-label="Filtrar pedidos por modalidad" className="min-h-10 rounded-field border border-line bg-surface-muted px-2 text-xs" value={deliveryType ?? ''} onChange={(event) => updateParams({ modalidad: event.target.value })}>
+          <option value="">Todas las modalidades</option><option value="DELIVERY">Delivery</option><option value="PICKUP">Recojo</option><option value="DINE_IN">Salón</option>
+        </select>
+        <select aria-label="Filtrar pedidos por periodo" className="min-h-10 rounded-field border border-line bg-surface-muted px-2 text-xs" value={period} onChange={(event) => { const value = event.target.value as OrderPeriod; updateParams({ periodo: value === 'all' ? '' : value, desde: value === 'custom' ? customFrom : '', hasta: value === 'custom' ? customTo : '' }); }}>
+          <option value="all">Todo el historial</option><option value="7">Últimos 7 días</option><option value="30">Últimos 30 días</option><option value="custom">Periodo personalizado</option>
+        </select>
+        {period === 'custom' && <div className="flex flex-wrap gap-2"><input aria-label="Desde pedidos" type="date" value={customFrom} max={customTo} onChange={(event) => updateParams({ desde: event.target.value })} className="min-h-10 rounded-field border border-line bg-surface-muted px-2 text-xs" /><input aria-label="Hasta pedidos" type="date" value={customTo} min={customFrom} max={today} onChange={(event) => updateParams({ hasta: event.target.value })} className="min-h-10 rounded-field border border-line bg-surface-muted px-2 text-xs" /></div>}
 
         <div className="relative sm:ml-auto">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-muted" />
@@ -599,7 +668,7 @@ const AdminOrdersPage = () => {
                       <p className="font-bold text-ink">{order.items.reduce((total, item) => total + item.quantity, 0)} platos</p>
                       <p className="mt-1 line-clamp-2 max-w-56">{order.items.map((item) => `${item.quantity}× ${item.productNameSnapshot}`).join(', ')}</p>
                     </td>
-                    <td className="p-3 font-medium">{formatCurrency(order.grandTotal)}</td>
+                    <td className="p-3 font-medium"><p>{formatCurrency(order.grandTotal)}</p>{order.paymentSummary && <span className={`mt-1 inline-block rounded-pill px-1.5 py-0.5 text-[10px] font-bold ${['REVIEW', 'OBSERVED', 'REFUND_PENDING'].includes(order.paymentSummary.state) ? 'bg-amber-100 text-amber-800' : 'bg-surface-muted text-ink-muted'}`}>{PAYMENT_SUMMARY_LABELS[order.paymentSummary.state] ?? order.paymentSummary.state}</span>}</td>
                     <td className="p-3 text-xs"><p className={attentionFor(order).late ? 'font-bold text-red-700' : 'font-semibold text-ink'}>{attentionFor(order).label}</p><p className="mt-1 text-[10px] text-ink-muted">{formatDate(order.placedAt)}</p></td>
                     <td className="p-3 text-right">{rowActions(order)}</td>
                   </tr>
@@ -661,6 +730,7 @@ const AdminOrdersPage = () => {
                   <div>
                     <p className={attentionFor(order).late ? 'text-xs font-bold text-red-700' : 'text-xs text-ink-muted'}>{attentionFor(order).label}</p>
                     <p className="mt-0.5 text-lg font-bold text-ink">{formatCurrency(order.grandTotal)}</p>
+                    {order.paymentSummary && <span className="mt-1 inline-block rounded-pill bg-surface-muted px-1.5 py-0.5 text-[10px] font-bold text-ink-muted">{PAYMENT_SUMMARY_LABELS[order.paymentSummary.state] ?? order.paymentSummary.state}</span>}
                   </div>
                   {rowActions(order)}
                 </div>

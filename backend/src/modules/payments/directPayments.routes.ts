@@ -7,7 +7,7 @@ import { PERMISSIONS } from '@config/constants';
 import { asyncHandler } from '@shared/utils/asyncHandler';
 import { ok } from '@shared/http/ApiResponse';
 import { audit } from '@shared/utils/audit';
-import { branchScopeCheck, resolveBranchId } from '@shared/utils/scope';
+import { branchScopeCheck, resolveOptionalBranchId } from '@shared/utils/scope';
 import { directPaymentsService } from './directPayments.service';
 
 const router = Router();
@@ -59,7 +59,12 @@ router.get(
           .optional(),
         provider: z.enum(['yape', 'plin']).optional(),
         search: z.string().trim().max(80).optional(),
+        from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inicial inválida').optional(),
+        to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha final inválida').optional(),
         page: z.coerce.number().int().min(1).default(1),
+      }).refine((value) => !value.from || !value.to || value.from <= value.to, {
+        path: ['to'],
+        message: 'El periodo de fechas no es válido',
       }),
     }),
   ),
@@ -67,7 +72,7 @@ router.get(
     return ok(
       res,
       await directPaymentsService.list(
-        resolveBranchId(req, req.query.branchId as string),
+        resolveOptionalBranchId(req, req.query.branchId as string),
         req.query as never,
       ),
     );

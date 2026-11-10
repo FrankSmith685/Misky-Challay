@@ -37,7 +37,7 @@ const products = [
     type: 'FIXED',
     saleMode: 'STANDARD',
     description: 'Bizcocho de vainilla, relleno de manjar y cobertura de crema. Lista para pedir con 48 horas de anticipación.',
-    imageUrl: '/images/cakes/vanilla.png',
+    imageUrl: '/images/cakes/vanilla.svg',
     imageAlt: 'Torta clásica de vainilla con cobertura de crema',
     featured: 1,
     leadHours: 48,
@@ -102,7 +102,7 @@ const groups = [
   {
     code: 'mc_bizcocho', name: 'Bizcocho', description: 'Elige el sabor de la masa para tu torta.', order: 1,
     options: [
-      ['Vainilla', 'Bizcocho suave de vainilla.', '/images/cakes/vanilla.png', 0, 'MC-VAINILLA', 20, {}],
+      ['Vainilla', 'Bizcocho suave de vainilla.', '/images/cakes/vanilla.svg', 0, 'MC-VAINILLA', 20, {}],
       ['Chocolate', 'Bizcocho intenso de chocolate.', '/images/cakes/custom.png', 15, 'MC-CACAO', 160, { BAKING: 10 }],
     ],
   },
@@ -206,8 +206,8 @@ async function seed(db, context) {
     for (const [productIndex, definition] of products.entries()) {
       const productResult = await query(db,
         `INSERT INTO products
-          (category_id, type, name, slug, description, image_url, image_alt, status, is_featured, sort_order, allergens_reviewed_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, NOW(), NOW(), NOW())`,
+          (category_id, type, family, preparation_mode, name, slug, description, image_url, image_alt, status, is_featured, sort_order, allergens_reviewed_at, created_at, updated_at)
+         VALUES (?, ?, 'CAKE', 'MADE_TO_ORDER', ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, NOW(), NOW(), NOW())`,
         [categoryId, definition.type, definition.name, definition.slug, definition.description, definition.imageUrl, definition.imageAlt, definition.featured, productIndex + 1]);
       const productId = productResult.insertId;
       created.products.push({ id: productId, slug: definition.slug });

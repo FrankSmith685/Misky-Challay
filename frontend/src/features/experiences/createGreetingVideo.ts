@@ -60,8 +60,8 @@ export async function createGreetingVideo(
       recorder.onstop = () => {
         signal?.removeEventListener('abort', abort);
         if (!aborted)
-          resolve(
-            new File(chunks, `saludo-alien.${mimeType.startsWith('video/mp4') ? 'mp4' : 'webm'}`, {
+            resolve(
+            new File(chunks, `saludo-misky.${mimeType.startsWith('video/mp4') ? 'mp4' : 'webm'}`, {
               type: mimeType.split(';')[0],
             }),
           );
@@ -76,8 +76,8 @@ export async function createGreetingVideo(
       const draw = () => {
         const t = (performance.now() - start) / 1000;
         const gradient = ctx.createLinearGradient(0, 0, 960, 540);
-        gradient.addColorStop(0, '#302337');
-        gradient.addColorStop(1, '#642e49');
+        gradient.addColorStop(0, '#003a60');
+        gradient.addColorStop(1, '#006fb9');
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, 960, 540);
         for (let i = 0; i < 30; i++)
@@ -88,25 +88,42 @@ export async function createGreetingVideo(
             1.6 + Math.sin(t + i),
             '#d7b27c',
           );
-        const y = 240 + Math.sin(t * 2) * 9;
-        ellipse(225, 430, 100, 12, '#201b28');
-        ellipse(225, y + 75, 62, 83, scene.color);
-        ellipse(225, y - 20, 85, 65, scene.color);
-        for (const x of [193, 257]) {
-          ellipse(x, y - 20, 17, 27, '#25232b');
-          ellipse(x - 6, y - 30, 5, 7, '#ffffff');
+        if (scene.content === 'CAKE') {
+          const bounce = Math.sin(t * 2) * 4;
+          ellipse(225, 430, 105, 12, '#201b28');
+          ctx.fillStyle = scene.color;
+          ctx.fillRect(145, 340 + bounce, 160, 76);
+          ellipse(225, 340 + bounce, 80, 18, '#f9e8dd');
+          ellipse(225, 416 + bounce, 80, 18, scene.color);
+          ctx.fillStyle = '#d8a06d';
+          ctx.fillRect(170, 285 + bounce, 110, 58);
+          ellipse(225, 285 + bounce, 55, 15, '#fffaf2');
+          ellipse(225, 343 + bounce, 55, 15, '#d8a06d');
+          ctx.fillStyle = '#c89551';
+          ctx.fillRect(220, 245 + bounce, 10, 38);
+          ellipse(225, 241 + bounce + Math.sin(t * 8) * 2, 10, 14, '#f4b84b');
+          for (const x of [181, 212, 245, 275]) ellipse(x, 330 + bounce, 5, 5, '#f4b84b');
+        } else {
+          const y = 240 + Math.sin(t * 2) * 9;
+          ellipse(225, 430, 100, 12, '#201b28');
+          ellipse(225, y + 75, 62, 83, scene.color);
+          ellipse(225, y - 20, 85, 65, scene.color);
+          for (const x of [193, 257]) {
+            ellipse(x, y - 20, 17, 27, '#25232b');
+            ellipse(x - 6, y - 30, 5, 7, '#ffffff');
+          }
+          ctx.strokeStyle = scene.color;
+          ctx.lineWidth = 21;
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(280, y + 55);
+          ctx.lineTo(328, y + 10 + Math.sin(t * 5) * 22);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(170, y + 55);
+          ctx.lineTo(130, y + 100);
+          ctx.stroke();
         }
-        ctx.strokeStyle = scene.color;
-        ctx.lineWidth = 21;
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.moveTo(280, y + 55);
-        ctx.lineTo(328, y + 10 + Math.sin(t * 5) * 22);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(170, y + 55);
-        ctx.lineTo(130, y + 100);
-        ctx.stroke();
         ctx.fillStyle = '#fff5e8';
         ctx.font = 'bold 33px Arial';
         lines(scene.title, 3).forEach((line, index) => ctx.fillText(line, 395, 105 + index * 39));

@@ -12,7 +12,7 @@ export const builderApi = {
     return data.data;
   },
   async quote(input: QuoteInput, signal?: AbortSignal): Promise<QuoteResult> {
-    // `null` no representa una sucursal: si no hay direcciÃ³n, se omite el campo.
+    // `null` no representa una sucursal: si no hay dirección, se omite el campo.
     const { branchId, ...baseInput } = input;
     const payload = branchId ? { ...baseInput, branchId } : baseInput;
     const { data } = await api.post<ApiSuccess<QuoteResult>>(

@@ -21,6 +21,12 @@ export class MediaAsset extends Model<InferAttributes<MediaAsset>, InferCreation
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
   declare deletedAt: CreationOptional<Date | null>;
+  declare sha256: CreationOptional<string | null>;
+  declare width: CreationOptional<number | null>;
+  declare height: CreationOptional<number | null>;
+  declare reviewStatus: CreationOptional<'APPROVED' | 'DRAFT' | 'ARCHIVED'>;
+  declare sourceType: CreationOptional<'UPLOAD' | 'URL' | 'AI' | 'PROFILE'>;
+  declare sourcePrompt: CreationOptional<string | null>;
 }
 
 MediaAsset.init(
@@ -37,6 +43,12 @@ MediaAsset.init(
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,
     deletedAt: DataTypes.DATE,
+    sha256: { type: DataTypes.STRING(64), allowNull: true },
+    width: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true },
+    height: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true },
+    reviewStatus: { type: DataTypes.ENUM('APPROVED', 'DRAFT', 'ARCHIVED'), allowNull: false, defaultValue: 'APPROVED' },
+    sourceType: { type: DataTypes.ENUM('UPLOAD', 'URL', 'AI', 'PROFILE'), allowNull: false, defaultValue: 'UPLOAD' },
+    sourcePrompt: { type: DataTypes.TEXT, allowNull: true },
   },
   {
     sequelize,
@@ -45,7 +57,9 @@ MediaAsset.init(
     paranoid: true,
     indexes: [
       { name: 'uq_media_assets_filename', unique: true, fields: ['filename'] },
+      { name: 'uq_media_assets_sha256', unique: true, fields: ['sha256'] },
       { fields: ['category'] },
+      { fields: ['review_status'] },
       { fields: ['created_at'] },
     ],
   },

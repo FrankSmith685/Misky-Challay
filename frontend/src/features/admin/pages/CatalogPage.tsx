@@ -138,6 +138,7 @@ const CatalogPage = () => {
   const [deletingProductId, setDeletingProductId] = useState<number | null>(null);
   const [changingArchiveId, setChangingArchiveId] = useState<number | null>(null);
   const [purgingProductId, setPurgingProductId] = useState<number | null>(null);
+  const [duplicatingProductId, setDuplicatingProductId] = useState<number | null>(null);
 
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   const [isManagingCategories, setIsManagingCategories] = useState(false);
@@ -264,6 +265,7 @@ const CatalogPage = () => {
           productCount: 0,
           sortOrder: 0,
           isActive: true,
+          version: 1,
         }],
       } : current);
       patchForm({ categoryId: category.id });
@@ -297,6 +299,7 @@ const CatalogPage = () => {
         servingUnit: form.servingUnit,
         description: form.description.trim() || undefined,
         imageUrl: form.imageUrl || null,
+        imageAlt: form.imageAlt.trim() || form.name.trim(),
         variantName: form.variantName.trim(),
         basePrice: Number(form.basePrice),
       });
@@ -345,6 +348,7 @@ const CatalogPage = () => {
           imageUrl: categoryImageUrl || null,
           sortOrder,
           isActive: categoryIsActive,
+          expectedVersion: meta?.categories.find((row) => row.id === editingCategoryId)?.version,
         });
         toast.success('Categoría actualizada');
       } else {
@@ -472,7 +476,7 @@ const CatalogPage = () => {
     if (!confirmed) return;
     setTogglingId(product.id);
     try {
-      await catalogAdminApi.changeStatus(product.id, next);
+      await catalogAdminApi.changeStatus(product.id, next, product.version);
       toast.success(publishing
         ? product.cakeProfile?.isActive ? 'Producto publicado. Comprueba su disponibilidad por cocina.' : 'Producto activado. Sin reglas de preparación activas no aparece en el catálogo público.'
         : 'Producto retirado de la venta');
@@ -481,6 +485,18 @@ const CatalogPage = () => {
       toast.error(getApiErrorMessage(error));
     } finally {
       setTogglingId(null);
+    }
+  };
+  const handleDuplicateProduct = async (product: AdminProduct) => {
+    setDuplicatingProductId(product.id);
+    try {
+      const created = await catalogAdminApi.duplicateProduct(product.id);
+      toast.success('Producto duplicado como borrador');
+      await load(created.id);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error));
+    } finally {
+      setDuplicatingProductId(null);
     }
   };
 
@@ -608,6 +624,29 @@ const CatalogPage = () => {
     }),
     [products],
   );
+  const exportCatalog = () => {
+    const quote = (value: unknown) => `"${String(value ?? '').replaceAll('"', '""')}"`;
+    const rows = [
+      ['Producto', 'SKU', 'Categoría', 'Estado', 'Precio desde', 'Variantes activas', 'Imagen', 'Alérgenos revisados'],
+      ...filtered.map((product) => [
+        product.name,
+        product.variants.map((variant) => variant.sku).join(' | '),
+        product.category?.name ?? '',
+        PRODUCT_STATUS[product.status]?.label ?? product.status,
+        product.variants.filter((variant) => variant.isActive).map((variant) => variant.basePrice).sort((a, b) => a - b)[0] ?? '',
+        product.variants.filter((variant) => variant.isActive).length,
+        product.imageUrl ? 'Sí' : 'No',
+        product.allergensReviewedAt ? 'Sí' : 'No',
+      ]),
+    ];
+    const blob = new Blob([rows.map((row) => row.map(quote).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `catalogo-${new Date().toISOString().slice(0, 10)}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
 
   if (isLoading) return <PageLoader />;
 
@@ -662,6 +701,7 @@ const CatalogPage = () => {
                 Gestionar categorías
               </Button>
             )}
+            <Button variant="outline" disabled={!filtered.length} onClick={exportCatalog}>Exportar CSV</Button>
             {canWrite && (
               <Button
                 leftIcon={<Plus className="size-4" />}
@@ -723,6 +763,15 @@ const CatalogPage = () => {
           active={statusFilter === 'ARCHIVED'}
         />
       </section>
+      {meta.health && (meta.health.withoutActiveVariant > 0 || meta.health.pendingAllergenReview > 0) && (
+        <div className="mb-5 rounded-card border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="font-bold">Salud del catálogo</p>
+          <p className="mt-1 text-xs leading-5">
+            {meta.health.withoutActiveVariant > 0 && `${meta.health.withoutActiveVariant} producto(s) sin presentación activa. `}
+            {meta.health.pendingAllergenReview > 0 && `${meta.health.pendingAllergenReview} producto(s) con revisión de alérgenos pendiente.`}
+          </p>
+        </div>
+      )}
 
       <Card className="mb-5 p-4">
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_200px_220px] lg:items-center">
@@ -858,6 +907,19 @@ const CatalogPage = () => {
                     >
                       {canEditSomething ? 'Abrir ficha' : 'Ver ficha'}
                     </Button>}
+
+                    {canWrite && !product.archivedAt && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        isLoading={duplicatingProductId === product.id}
+                        disabled={duplicatingProductId !== null}
+                        onClick={() => void handleDuplicateProduct(product)}
+                        aria-label={`Duplicar ${product.name}`}
+                      >
+                        Copiar
+                      </Button>
+                    )}
 
                     {canWrite && product.status === 'DRAFT' && (
                       <Button

@@ -7,6 +7,8 @@ interface BranchSelectorProps {
   value: number | null;
   branches: Branch[];
   onChange: (branchId: number) => void;
+  allowAll?: boolean;
+  onSelectAll?: () => void;
   /**
    * true cuando la carga de cocinas fallo (`branchesError` de useActiveBranch).
    * Sin esto la lista vacia decia "Sin cocinas disponibles", que es una mentira
@@ -16,14 +18,17 @@ interface BranchSelectorProps {
   disabled?: boolean;
 }
 
-export const BranchSelector = ({ value, branches, onChange, hasError, disabled }: BranchSelectorProps) => (
+export const BranchSelector = ({ value, branches, onChange, allowAll = false, onSelectAll, hasError, disabled }: BranchSelectorProps) => (
   <Select
-    aria-label="Cocina activa"
-    label="Sucursal operativa"
+    aria-label={allowAll ? 'Alcance del resumen' : 'Cocina activa'}
+    label={allowAll ? 'Alcance' : 'Sucursal operativa'}
     disabled={disabled}
-    value={value ?? ''}
+    value={allowAll && value === null ? '__all__' : value ?? ''}
     fullWidth={false}
-    onChange={(event) => onChange(Number(event.target.value))}
+    onChange={(event) => {
+      if (event.target.value === '__all__') { onSelectAll?.(); return; }
+      onChange(Number(event.target.value));
+    }}
     sx={{ width: { xs: '100%', sm: 230 }, minWidth: 0, maxWidth: '100%', flexShrink: 1, bgcolor: 'background.paper' }}
     slotProps={{
       input: {
@@ -31,6 +36,7 @@ export const BranchSelector = ({ value, branches, onChange, hasError, disabled }
       },
     }}
   >
+      {allowAll && <SelectOption value="__all__">Todas las sucursales</SelectOption>}
       {branches.length === 0 && (
         <SelectOption value="" disabled>
           {hasError ? 'No se pudieron cargar las cocinas' : 'Sin cocinas disponibles'}

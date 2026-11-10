@@ -286,6 +286,7 @@ router.put('/recipes/:variantId', requirePermissions(PERMISSIONS.CATALOG_CUSTOMI
     await refreshCakeAllergens(variant.productId, transaction);
     return recipe;
   });
+  await audit(req, { action: 'cake.recipe.update', entity: 'recipes', entityId: saved.id, after: { variantId: variant.id, productId: variant.productId, yieldQuantity: saved.yieldQuantity, items: req.body.items } });
   return ok(res, saved, 'Receta actualizada');
 }));
 
@@ -301,6 +302,7 @@ router.delete('/recipes/:variantId', requirePermissions(PERMISSIONS.CATALOG_CUST
     await Product.update({ allergensReviewedAt: null }, { where: { id: variant.productId }, transaction });
     await ProductDietaryTag.destroy({ where: { productId: variant.productId }, transaction });
   });
+  await audit(req, { action: 'cake.recipe.archive', entity: 'recipes', entityId: variant.id, after: { variantId: variant.id, productId: variant.productId, active: false } });
   return ok(res, { variantId: variant.id }, 'Receta retirada; completa una nueva para volver a ofrecer la torta');
 }));
 
@@ -379,7 +381,11 @@ router.get('/design-requests/:requestId/references/:referenceId', validate(z.obj
   res.setHeader('X-Content-Type-Options', 'nosniff');
   return res.send(reference.bytes);
 }));
-router.post('/quotes/:quoteId/accept', validate(z.object({ params: z.object({ quoteId: id }) })), asyncHandler(async (req: Request, res: Response) => ok(res, await cakeDesignService.accept(Number(req.params.quoteId), req.user!.sub), 'Diseño aceptado')));
+router.post('/quotes/:quoteId/accept', validate(z.object({ params: z.object({ quoteId: id }) })), asyncHandler(async (req: Request, res: Response) => {
+  const result = await cakeDesignService.accept(Number(req.params.quoteId), req.user!.sub);
+  await audit(req, { action: 'cake.design.quote.accept', entity: 'cake_design_quotes', entityId: Number(req.params.quoteId), after: { requestId: result.quote.requestId, version: result.quote.version, price: result.quote.price } });
+  return ok(res, result, 'Diseño aceptado');
+}));
 
 router.get('/design-requests', requirePermissions(PERMISSIONS.CATALOG_CUSTOMIZATION_WRITE), validate(z.object({ query: z.object({ branchId: id }) })), asyncHandler(async (req: Request, res: Response) => {
   return ok(res, await cakeDesignService.board(resolveBranchId(req, req.query.branchId as string)));
@@ -396,13 +402,21 @@ router.post('/design-requests/:requestId/quotes', requirePermissions(PERMISSIONS
     materialExtras: z.array(z.object({ inventoryItemId: id, quantity: z.coerce.number().positive().max(100000) })).max(100).default([]),
     estimatedLaborCost: z.coerce.number().min(0).max(100000).default(0), estimatedPackagingCost: z.coerce.number().min(0).max(100000).default(0),
   }),
-})), asyncHandler(async (req: Request, res: Response) => created(res, await cakeDesignService.propose({
-  ...req.body, requestId: Number(req.params.requestId), branchId: resolveBranchId(req, req.body.branchId), actorId: req.user!.sub,
-  proposedAt: new Date(req.body.proposedAt), expiresAt: new Date(req.body.expiresAt),
-}), 'Cotización enviada')));
+})), asyncHandler(async (req: Request, res: Response) => {
+  const quote = await cakeDesignService.propose({
+    ...req.body, requestId: Number(req.params.requestId), branchId: resolveBranchId(req, req.body.branchId), actorId: req.user!.sub,
+    proposedAt: new Date(req.body.proposedAt), expiresAt: new Date(req.body.expiresAt),
+  });
+  await audit(req, { action: 'cake.design.quote.propose', entity: 'cake_design_quotes', entityId: quote.id, after: { requestId: quote.requestId, version: quote.version, price: quote.price, proposedAt: quote.proposedAt, expiresAt: quote.expiresAt } });
+  return created(res, quote, 'Cotización enviada');
+}));
 router.post('/design-requests/:requestId/reject', requirePermissions(PERMISSIONS.CATALOG_CUSTOMIZATION_WRITE), validate(z.object({
   params: z.object({ requestId: id }), body: z.object({ branchId: id }),
-})), asyncHandler(async (req: Request, res: Response) => ok(res, await cakeDesignService.reject(Number(req.params.requestId), resolveBranchId(req, req.body.branchId)), 'Solicitud rechazada')));
+})), asyncHandler(async (req: Request, res: Response) => {
+  const request = await cakeDesignService.reject(Number(req.params.requestId), resolveBranchId(req, req.body.branchId));
+  await audit(req, { action: 'cake.design.request.reject', entity: 'cake_design_requests', entityId: request.id, after: { status: request.status } });
+  return ok(res, request, 'Solicitud rechazada');
+}));
 
 router.get('/capacity', requireAnyPermission(PERMISSIONS.KITCHEN_READ, PERMISSIONS.GEO_READ), validate(z.object({ query: z.object({ branchId: id, from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }) })), asyncHandler(async (req: Request, res: Response) => {
   const branchId = resolveBranchId(req, req.query.branchId as string);
@@ -412,10 +426,14 @@ router.get('/capacity', requireAnyPermission(PERMISSIONS.KITCHEN_READ, PERMISSIO
   return ok(res, rows);
 }));
 router.put('/capacity', requirePermissions(PERMISSIONS.GEO_WRITE), validate(z.object({ body: z.object({ branchId: id, workDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), station: z.enum(CAKE_STATIONS), capacityMinutes: z.coerce.number().int().min(0).max(1440) }) })), asyncHandler(async (req: Request, res: Response) => {
-  return ok(res, await cakeProductionService.setCapacity(resolveBranchId(req, req.body.branchId), req.body.workDate, req.body.station, req.body.capacityMinutes), 'Capacidad actualizada');
+  const row = await cakeProductionService.setCapacity(resolveBranchId(req, req.body.branchId), req.body.workDate, req.body.station, req.body.capacityMinutes);
+  await audit(req, { action: 'cake.capacity.update', entity: 'cake_station_capacities', entityId: row.id, after: { branchId: row.branchId, workDate: row.workDate, station: row.station, capacityMinutes: row.capacityMinutes, reservedMinutes: row.reservedMinutes, confirmedMinutes: row.confirmedMinutes } });
+  return ok(res, row, 'Capacidad actualizada');
 }));
 router.delete('/capacity', requirePermissions(PERMISSIONS.GEO_WRITE), validate(z.object({ body: z.object({ branchId: id, workDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), station: z.enum(CAKE_STATIONS) }) })), asyncHandler(async (req: Request, res: Response) => {
-  return ok(res, await cakeProductionService.restoreCapacity(resolveBranchId(req, req.body.branchId), req.body.workDate, req.body.station), 'Capacidad automática restaurada');
+  const row = await cakeProductionService.restoreCapacity(resolveBranchId(req, req.body.branchId), req.body.workDate, req.body.station);
+  await audit(req, { action: 'cake.capacity.restore', entity: 'cake_station_capacities', entityId: row.id, after: { branchId: row.branchId, workDate: row.workDate, station: row.station, capacityMinutes: row.capacityMinutes } });
+  return ok(res, row, 'Capacidad automática restaurada');
 }));
 
 router.put('/products/:productId/custom-servings', requirePermissions(PERMISSIONS.CATALOG_PRODUCT_WRITE), validate(z.object({
@@ -463,6 +481,7 @@ router.put('/products/:productId/profile', requirePermissions(PERMISSIONS.CATALO
   product.type = req.body.saleMode === 'STANDARD' ? 'FIXED' : 'CUSTOMIZABLE';
   await product.save();
   await refreshCakeAllergens(productId);
+  await audit(req, { action: 'cake.profile.update', entity: 'cake_product_profiles', entityId: productId, after: req.body });
   return ok(res, await CakeProductProfile.findByPk(productId), 'Perfil de torta actualizado');
 }));
 router.put('/options/:optionId/effort', requirePermissions(PERMISSIONS.CATALOG_CUSTOMIZATION_WRITE), validate(z.object({ params: z.object({ optionId: id }), body: z.object({ productionMinutesJson: effort }) })), asyncHandler(async (req: Request, res: Response) => {
@@ -470,6 +489,7 @@ router.put('/options/:optionId/effort', requirePermissions(PERMISSIONS.CATALOG_C
   if (!option) throw ApiError.notFound('Opción no encontrada');
   option.productionMinutesJson = req.body.productionMinutesJson;
   await option.save();
+  await audit(req, { action: 'cake.option.effort.update', entity: 'customization_options', entityId: option.id, after: { productionMinutesJson: option.productionMinutesJson } });
   return ok(res, option, 'Tiempos actualizados');
 }));
 router.put('/variants/:variantId/effort', requirePermissions(PERMISSIONS.CATALOG_CUSTOMIZATION_WRITE), validate(z.object({ params: z.object({ variantId: id }), body: z.object({ productionMinutesJson: effort }) })), asyncHandler(async (req: Request, res: Response) => {
@@ -477,6 +497,7 @@ router.put('/variants/:variantId/effort', requirePermissions(PERMISSIONS.CATALOG
   if (!variant) throw ApiError.notFound('Presentación no encontrada');
   variant.productionMinutesJson = req.body.productionMinutesJson;
   await variant.save();
+  await audit(req, { action: 'cake.variant.effort.update', entity: 'product_variants', entityId: variant.id, after: { productionMinutesJson: variant.productionMinutesJson } });
   return ok(res, variant, 'Tiempos actualizados');
 }));
 
@@ -489,10 +510,12 @@ router.get('/staff', requirePermissions(PERMISSIONS.KITCHEN_READ), validate(z.ob
 }));
 router.patch('/tasks/:taskId', requirePermissions(PERMISSIONS.KITCHEN_OPERATE), validate(z.object({ params: z.object({ taskId: id }), body: z.object({
   branchId: id, status: z.enum(['IN_PROGRESS', 'DONE', 'BLOCKED']).optional(), assignedTo: id.nullable().optional(),
-  checklistJson: z.record(z.string(), z.boolean()).optional(), evidenceUrl: z.string().url().max(500).nullable().optional(),
-}).refine((body) => body.status !== undefined || body.assignedTo !== undefined || body.checklistJson !== undefined || body.evidenceUrl !== undefined) })), asyncHandler(async (req: Request, res: Response) => {
+  checklistJson: z.record(z.string(), z.boolean()).optional(), evidenceUrl: z.string().url().max(500).nullable().optional(), incidentReason: z.string().trim().min(5).max(500).nullable().optional(),
+}).refine((body) => body.status !== undefined || body.assignedTo !== undefined || body.checklistJson !== undefined || body.evidenceUrl !== undefined || body.incidentReason !== undefined) })), asyncHandler(async (req: Request, res: Response) => {
   const { branchId, ...input } = req.body;
-  return ok(res, await cakeProductionService.updateTask(Number(req.params.taskId), assertBranchScope(req, branchId), input), 'Tarea actualizada');
+  const task = await cakeProductionService.updateTask(Number(req.params.taskId), assertBranchScope(req, branchId), req.user!.sub, input);
+  await audit(req, { action: 'cake.production.task.update', entity: 'cake_production_tasks', entityId: task!.id, after: { status: task!.status, assignedTo: task!.assignedTo, incidentReason: task!.incidentReason, checklistJson: task!.checklistJson } });
+  return ok(res, task, 'Tarea actualizada');
 }));
 
 router.patch('/tasks/:taskId/materials', requirePermissions(PERMISSIONS.KITCHEN_OPERATE), validate(z.object({

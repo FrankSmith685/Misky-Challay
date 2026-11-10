@@ -29,6 +29,7 @@ export class ProductVariant extends Model<
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
   declare deletedAt: CreationOptional<Date | null>;
+  declare version: CreationOptional<number>;
 
   declare nutrition?: NonAttribute<ProductNutrition | null>;
 }
@@ -49,6 +50,7 @@ ProductVariant.init(
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,
     deletedAt: DataTypes.DATE,
+    version: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 1 },
   },
   {
     sequelize,

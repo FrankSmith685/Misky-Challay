@@ -29,15 +29,14 @@ La capacidad inicial por sucursal y dÃ­a es de 120 minutos en diseÃ±o, 180 en ho
 
 La app mÃ³vil muestra el catÃ¡logo y el configurador bÃ¡sico. Para diseÃ±os especiales abre la solicitud web de DulceFlow, que usa la misma cuenta y API.
 
-## Continuación: etapas 6 a 10
+## Continuaci?n: etapas 6 a 10
 
-6. **Inventario.** Cada pedido conserva el plan de materiales calculado por presentación y opciones. La cocina registra consumo real y merma desde la tarea; la merma adicional genera un movimiento WASTE ligado al pedido y responsable.
-7. **Anticipo y saldo.** Un diseño especial aprobado usa el plan DEPOSIT_BALANCE: 50 % al confirmar y saldo antes de la entrega. El saldo tiene pago separado y no abre una segunda producción. Los cambios se solicitan como una nueva cotización antes de las 48 horas previas; la cancelación confirmada fuera de ese plazo queda bloqueada.
-8. **Comisión y reportes.** Cada pedido de torta confirmado crea una liquidación con base, tasa fija de 15 %, ajustes, reembolsos y total. El panel muestra el resumen por sucursal, permite ajustar antes de liquidar y registra quién cerró la liquidación.
-9. **Panel y Android.** El panel de producción contiene solicitudes, agenda de capacidad, tareas todas/mías, materiales y comisiones. Android incorpora el módulo operativo “Mis tareas de tortas” y el pago de saldo; el diseño especial mantiene el flujo web compartido hasta completar la experiencia móvil.
-10. **Funciones heredadas.** Planes, billetera, mesas y menús diarios quedan fuera de la navegación comercial de DulceFlow. Se conservan las rutas y datos para compatibilidad histórica y soporte; la operación nueva usa catálogo de tortas, pedidos, producción, inventario, reparto y liquidaciones.
-
-La migración de estos puntos es `0027-liquidacion-tortas.ts`, que debe aplicarse después de `0026-produccion-tortas.ts`.
+6. **Inventario.** Cada pedido conserva el plan de materiales calculado por presentaci?n y opciones. La cocina registra consumo real y merma desde la tarea; la merma adicional genera un movimiento WASTE ligado al pedido y responsable.
+7. **Anticipo y saldo.** Un dise?o especial aprobado usa el plan DEPOSIT_BALANCE: 50 % al confirmar y saldo antes de la entrega. El saldo tiene pago separado y no abre una segunda producci?n. Los cambios se solicitan como una nueva cotizaci?n antes de las 48 horas previas; la cancelaci?n confirmada fuera de ese plazo queda bloqueada.
+8. **Comisi?n y reportes.** Cada pedido de torta confirmado crea una liquidaci?n con base, tasa configurada (15 % por defecto), ajustes, reembolsos y total. El panel muestra el resumen por sucursal, permite ajustar antes de liquidar y registra qui?n cerr? la liquidaci?n.
+9. **Panel y Android.** El panel de producci?n contiene solicitudes, agenda de capacidad, tareas todas/m?as, materiales y comisiones. Android incorpora el m?dulo operativo ?Mis tareas de tortas? y el pago de saldo; el dise?o especial mantiene el flujo web compartido hasta completar la experiencia m?vil.
+10. **Funciones heredadas.** Planes, billetera, mesas y men?s diarios quedan fuera de la navegaci?n comercial de DulceFlow. Se conservan las rutas y datos para compatibilidad hist?rica y soporte; la operaci?n nueva usa cat?logo de tortas, pedidos, producci?n, inventario, reparto y liquidaciones.
+La migraci?n de estos puntos es `0027-liquidacion-tortas.ts`, que debe aplicarse despu?s de `0026-produccion-tortas.ts`.
 
 ## Experiencia web ampliada (fases 1 y 2)
 

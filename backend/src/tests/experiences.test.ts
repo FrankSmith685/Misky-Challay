@@ -75,7 +75,7 @@ test('las condiciones de pago y vigencia se comprueban también al abrir un QR p
       publicExperienceAvailable(p, { ...order, status, balancePaidAt: now }, 'FULL', now),
       false,
     );
-  for (const status of ['DRAFT', 'PAUSED', 'APPROVED'])
+  for (const status of ['DRAFT', 'PAUSED', 'APPROVED', 'EXPIRED'])
     assert.equal(
       publicExperienceAvailable({ ...p, status }, { ...order, balancePaidAt: now }, 'FULL', now),
       false,
@@ -110,6 +110,27 @@ test('no ofrece servicios gratuitos inventados y valida límites de escena', () 
   );
   assert.equal(sceneSchema.safeParse({ scale: 8 }).success, false);
   assert.equal(sceneSchema.safeParse({ color: 'javascript:alert(1)' }).success, false);
+  assert.equal(
+    sceneSchema.safeParse({
+      content: 'CAKE',
+      layers: [
+        {
+          id: 'greeting',
+          kind: 'BUTTON',
+          name: 'Ver saludo',
+          text: 'Reproducir saludo',
+          action: 'PLAY_VIDEO',
+        },
+      ],
+    }).success,
+    true,
+  );
+  assert.equal(
+    sceneSchema.safeParse({
+      layers: [{ id: 'bad id', kind: 'TEXT', name: 'Texto', text: 'Hola' }],
+    }).success,
+    false,
+  );
 });
 test('el checkout cotiza al elegir el adicional, exige la idea al confirmar y descarta precios del cliente', () => {
   const body = {

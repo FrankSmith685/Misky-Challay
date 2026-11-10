@@ -47,6 +47,7 @@ import {
   type ReceiptSettings,
   type ReceiptSettingsState,
   type IntegrationStatus,
+  type SettingRevision,
 } from '../services/settingsAdmin.service';
 
 type TabId = 'business' | 'payments' | 'receipts' | 'communication' | 'integrations' | 'history' | 'terms';
@@ -64,9 +65,13 @@ const validateBusiness = (business: BusinessInfo): BusinessErrors => {
   if (business.phone.trim().length < 6) errors.phone = 'Ingresa un teléfono válido';
   if (!EMAIL_PATTERN.test(business.email)) errors.email = 'Ingresa un correo válido';
   if (!EMAIL_PATTERN.test(business.supportEmail)) errors.supportEmail = 'Ingresa un correo válido';
-  if (business.complaintResponseDays < 1 || business.complaintResponseDays > 30) {
-    errors.complaintResponseDays = 'Debe estar entre 1 y 30 días hábiles';
+  if (business.complaintResponseDays < 1 || business.complaintResponseDays > 15) {
+    errors.complaintResponseDays = 'Debe estar entre 1 y 15 días hábiles';
   }
+  if (!business.timeZone.trim()) errors.timeZone = 'Selecciona una zona horaria';
+  if (business.currency !== 'PEN') errors.currency = 'La operación actual solo admite PEN';
+  if (business.taxRate < 0 || business.taxRate > 1) errors.taxRate = 'Usa un porcentaje entre 0% y 100%';
+  if (business.platformCommissionRate < 0 || business.platformCommissionRate > 1) errors.platformCommissionRate = 'Usa una comisión entre 0% y 100%';
   return errors;
 };
 
@@ -119,6 +124,7 @@ const BusinessSettingsPage = () => {
   const [history, setHistory] = useState<NotificationOverview | null>(null);
   const [integrations, setIntegrations] = useState<IntegrationStatus | null>(null);
   const [integrationsError, setIntegrationsError] = useState('');
+  const [settingRevisions, setSettingRevisions] = useState<SettingRevision[]>([]);
   const [businessErrors, setBusinessErrors] = useState<BusinessErrors>({});
   const [communicationErrors, setCommunicationErrors] = useState<CommunicationErrors>({});
   const [testRecipient, setTestRecipient] = useState('');
@@ -132,6 +138,7 @@ const BusinessSettingsPage = () => {
   const loadHistory = useCallback(async () => {
     try {
       setHistory(await settingsAdminApi.getNotificationHistory());
+      setSettingRevisions(await settingsAdminApi.revisions('business'));
       setHistoryError('');
     } catch (error) {
       // Sin esto, un historial caido se leia como "todavia no existen envios".
@@ -251,7 +258,7 @@ const BusinessSettingsPage = () => {
   const saveReceipts = async () => {
     setIsSaving(true);
     try {
-      const updated = await settingsAdminApi.updateReceipts(receiptForm);
+      const updated = await settingsAdminApi.updateReceipts(receiptForm, receiptState.isConfigured ? receiptState.version : undefined);
       setReceiptState(updated);
       setReceiptForm(updated.receipts);
       toast.success('Modo de tickets actualizado');
@@ -274,7 +281,7 @@ const BusinessSettingsPage = () => {
     }
     setIsSaving(true);
     try {
-      const updated = await settingsAdminApi.updateLocalPayments(localPaymentForm);
+      const updated = await settingsAdminApi.updateLocalPayments(localPaymentForm, localPaymentState.isConfigured ? localPaymentState.version : undefined);
       setLocalPaymentState(updated);
       setLocalPaymentForm(updated.localPayments);
       await refreshBusinessInfo();
@@ -293,7 +300,7 @@ const BusinessSettingsPage = () => {
 
     setIsSaving(true);
     try {
-      const updated = await settingsAdminApi.updateBusiness(businessForm);
+      const updated = await settingsAdminApi.updateBusiness(businessForm, businessState.isConfigured ? businessState.version : undefined);
       setBusinessState(updated);
       setBusinessForm(updated.business);
       await refreshBusinessInfo();
@@ -315,7 +322,7 @@ const BusinessSettingsPage = () => {
 
     setIsSaving(true);
     try {
-      const updated = await settingsAdminApi.updateCommunication(communicationForm);
+      const updated = await settingsAdminApi.updateCommunication(communicationForm, communicationState.isConfigured ? communicationState.version : undefined);
       setCommunicationState(updated);
       setCommunicationForm(toCommunicationForm(updated));
       if (showSuccess) toast.success('Correo y notificaciones actualizados');
@@ -346,6 +353,21 @@ const BusinessSettingsPage = () => {
     setIsRefreshing(true);
     await loadHistory();
     setIsRefreshing(false);
+  };
+
+  const rollbackBusiness = async (revision: SettingRevision) => {
+    if (!businessState || !window.confirm(`¿Restaurar la versión ${revision.version} de los datos del negocio?`)) return;
+    setIsRefreshing(true);
+    try { await settingsAdminApi.rollback('business', revision.id, businessState.version); await load(); toast.success('Versión restaurada'); }
+    catch (error) { toast.error(getApiErrorMessage(error)); }
+    finally { setIsRefreshing(false); }
+  };
+
+  const refreshIntegrations = async () => {
+    setIsRefreshing(true);
+    try { setIntegrations(await settingsAdminApi.checkIntegrations()); toast.success('Integraciones comprobadas'); }
+    catch (error) { setIntegrationsError(getApiErrorMessage(error)); }
+    finally { setIsRefreshing(false); }
   };
 
   const tabs: Array<{ id: TabId; label: string; icon: typeof Building2 }> = [
@@ -438,8 +460,36 @@ const BusinessSettingsPage = () => {
               <Input label="Teléfono" value={businessForm.phone} error={businessErrors.phone} onChange={(event) => changeBusiness('phone', event.target.value)} />
               <Input label="Correo general" type="email" value={businessForm.email} error={businessErrors.email} onChange={(event) => changeBusiness('email', event.target.value)} />
               <Input label="Correo de soporte, privacidad y reclamos" type="email" value={businessForm.supportEmail} error={businessErrors.supportEmail} onChange={(event) => changeBusiness('supportEmail', event.target.value)} />
-              <Input label="Respuesta de reclamos (días hábiles)" type="number" min={1} max={30} value={businessForm.complaintResponseDays} error={businessErrors.complaintResponseDays} onChange={(event) => changeBusiness('complaintResponseDays', Number(event.target.value))} />
+              <Input label="Respuesta de reclamos (días hábiles)" type="number" min={1} max={15} value={businessForm.complaintResponseDays} error={businessErrors.complaintResponseDays} onChange={(event) => changeBusiness('complaintResponseDays', Number(event.target.value))} />
             </FormGrid>
+          </FormSection>
+
+          <FormSection icon={SlidersHorizontal} title="Política operativa" description="Estos valores se congelan en cada pedido para que el desglose tributario sea trazable. Los horarios de atención se gestionan por sucursal en Cobertura.">
+            <FormGrid>
+              <label className="grid gap-1.5 text-sm font-semibold text-ink">
+                Zona horaria predeterminada
+                <select className="h-11 rounded-field border border-line bg-white px-3 text-sm font-normal text-ink outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100" value={businessForm.timeZone} onChange={(event) => changeBusiness('timeZone', event.target.value)}>
+                  <option value="America/Lima">America/Lima (Perú)</option>
+                  <option value="America/Bogota">America/Bogota (Colombia)</option>
+                  <option value="America/Santiago">America/Santiago (Chile)</option>
+                  <option value="America/Mexico_City">America/Mexico_City (México)</option>
+                  <option value="America/New_York">America/New_York (Este de EE. UU.)</option>
+                  <option value="UTC">UTC</option>
+                </select>
+                {businessErrors.timeZone && <span className="text-xs font-medium text-red-700">{businessErrors.timeZone}</span>}
+              </label>
+                <Input label="IGV / impuesto incluido (%)" type="number" min={0} max={100} step={0.01} value={Number((businessForm.taxRate * 100).toFixed(2))} error={businessErrors.taxRate} onChange={(event) => changeBusiness('taxRate', Number(event.target.value) / 100)} />
+                <Input label="Comisión de plataforma (%)" type="number" min={0} max={100} step={0.01} value={Number((businessForm.platformCommissionRate * 100).toFixed(2))} error={businessErrors.platformCommissionRate} hint="Se aplica a nuevos cobros; las liquidaciones existentes conservan su tasa." onChange={(event) => changeBusiness('platformCommissionRate', Number(event.target.value) / 100)} />
+              <label className="grid gap-1.5 text-sm font-semibold text-ink">
+                Moneda operativa
+                <select disabled className="h-11 rounded-field border border-line bg-surface-muted px-3 text-sm font-normal text-ink" value={businessForm.currency} onChange={(event) => changeBusiness('currency', event.target.value)}>
+                  <option value="PEN">PEN · Sol peruano</option>
+                </select>
+                {businessErrors.currency && <span className="text-xs font-medium text-red-700">{businessErrors.currency}</span>}
+              </label>
+            </FormGrid>
+            <p className="mt-3 text-xs leading-5 text-ink-muted">La moneda permanece en PEN porque Yape, Plin, Mercado Pago y los saldos actuales operan en soles. La zona horaria de cada sucursal puede sobrescribir este valor desde Cobertura.</p>
+            <div className="mt-3"><Link to="/admin/cobertura" className="text-sm font-bold text-brand-700 underline">Gestionar horarios, feriados y excepciones por sucursal</Link></div>
           </FormSection>
 
           <SaveBar dirty={businessDirty || !businessState.isConfigured} loading={isSaving} onSave={() => void saveBusiness()} />
@@ -451,6 +501,8 @@ const BusinessSettingsPage = () => {
           <Alert variant={localPaymentState.isConfigured ? 'success' : 'warning'} className="rounded-card" title={localPaymentState.isConfigured ? 'Configuración publicada' : 'Configura tus cuentas reales'}>
             Una cuenta por método para todo el taller. El cliente verá sus datos después de crear el pedido. Caja verificará el movimiento antes de confirmar el pago.
           </Alert>
+
+          <div className="flex justify-end"><Button size="sm" variant="outline" leftIcon={<ShieldCheck className="size-4" />} isLoading={isRefreshing} onClick={async () => { setIsRefreshing(true); try { const result = await settingsAdminApi.checkLocalPayments(); const invalid = result.providers.filter((item) => item.enabled && !item.valid); toast[invalid.length ? 'warning' : 'success'](invalid.length ? 'Hay métodos de pago incompletos' : 'Yape y Plin están correctamente configurados'); } catch (error) { toast.error(getApiErrorMessage(error)); } finally { setIsRefreshing(false); } }}>Comprobar cuentas</Button></div>
 
           {(['yape', 'plin'] as const).map((provider) => {
             const name = provider === 'yape' ? 'Yape' : 'Plin';
@@ -631,6 +683,7 @@ const BusinessSettingsPage = () => {
           <Alert variant={integrations?.integrations.every((item) => item.status === 'READY') ? 'success' : 'warning'} className="rounded-card" title="Salud de las conexiones">
             Revisa aquí si correo, pagos, avisos de cocina y la aplicación móvil están listos para operar.
           </Alert>
+          <div className="flex justify-end"><Button size="sm" variant="outline" leftIcon={<RefreshCw className="size-4" />} isLoading={isRefreshing} onClick={() => void refreshIntegrations()}>Comprobar conexiones</Button></div>
           {integrationsError && <LoadError title="No pudimos consultar integraciones" message={integrationsError} onRetry={() => void loadIntegrations()} />}
           <div className="grid gap-3 md:grid-cols-2">
             {integrations?.integrations.map((item) => (
@@ -661,6 +714,7 @@ const BusinessSettingsPage = () => {
 
       {activeTab === 'history' && !historyError && (
         <div className="grid gap-4">
+          <section className="rounded-card border border-line bg-white p-4"><div className="flex items-center justify-between"><div><h2 className="font-extrabold text-ink">Versiones de configuración legal</h2><p className="mt-0.5 text-xs text-ink-muted">Cada guardado conserva una copia cifrada para restaurar si el cambio fue incorrecto.</p></div></div><div className="mt-3 grid gap-2">{settingRevisions.length === 0 ? <p className="text-sm text-ink-muted">Aún no hay versiones registradas.</p> : settingRevisions.map((revision) => <div key={revision.id} className="flex flex-wrap items-center justify-between gap-2 rounded-card bg-surface-muted p-3 text-sm"><span><strong>Versión {revision.version}</strong> · {formatStamp(revision.createdAt)}<span className="ml-2 text-xs text-ink-muted">{revision.reason}</span></span><Button size="sm" variant="outline" onClick={() => void rollbackBusiness(revision)}>Restaurar</Button></div>)}</div></section>
           <div className="grid gap-3 sm:grid-cols-2">
             <MetricCard icon={CheckCircle2} label="Entregas registradas" value={history?.totals.sent ?? 0} tone="success" />
             <MetricCard icon={TriangleAlert} label="Envíos fallidos" value={history?.totals.failed ?? 0} tone="danger" />

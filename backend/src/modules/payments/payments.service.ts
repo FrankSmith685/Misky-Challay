@@ -43,17 +43,16 @@ export interface WebhookResult {
 }
 
 /**
- * Todo lo que ocurre cuando un pedido queda PAGADO, venga el dinero de donde venga
- * (Stripe o saldo del plan). Una sola definicion evita que los dos caminos se
- * desincronicen.
+ * Confirmacion compartida para pedidos pagados y contra entrega. El efectivo
+ * queda pendiente hasta que el equipo registre el cobro o entregue el pedido.
  */
-export const confirmPaidOrder = async (
+const confirmOrder = async (
   order: Order,
   transaction: Transaction,
   source: string,
   comment: string,
   payment?: Payment,
-  options: { skipCakeProduction?: boolean } = {},
+  options: { skipCakeProduction?: boolean; markPaid?: boolean } = {},
 ): Promise<void> => {
   if (order.status !== ORDER_STATUS.PENDING_PAYMENT) {
     logger.warn(`El pedido ${order.orderNumber} ya no estaba pendiente (${order.status})`);
@@ -66,10 +65,12 @@ export const confirmPaidOrder = async (
     transaction,
   });
 
-  const paidAt = new Date();
-  order.depositPaidAt = paidAt;
-  if (!payment || payment.stage === PAYMENT_STAGE.FULL) order.balancePaidAt = paidAt;
-  await order.save({ transaction });
+  if (options.markPaid !== false) {
+    const paidAt = new Date();
+    order.depositPaidAt = paidAt;
+    if (!payment || payment.stage === PAYMENT_STAGE.FULL) order.balancePaidAt = paidAt;
+    await order.save({ transaction });
+  }
 
   await ordersService.confirmCouponRedemptions(order.id, transaction);
   await ordersService.confirmSlot(order, transaction);
@@ -100,12 +101,26 @@ export const confirmPaidOrder = async (
       });
     }
   }
-  await cakeCommissionService.ensureForOrder(order, transaction);
+  if (options.markPaid !== false) await cakeCommissionService.ensureForOrder(order, transaction);
 
   // Entra a cocina, se reservan los insumos (RN-016) y, si es delivery, se abre el reparto.
   await operationsService.openTicketForOrder(order, transaction);
   await deliveryService.openForOrder(order, transaction);
 };
+
+export const confirmPaidOrder = (
+  order: Order,
+  transaction: Transaction,
+  source: string,
+  comment: string,
+  payment?: Payment,
+  options: { skipCakeProduction?: boolean } = {},
+): Promise<void> => confirmOrder(order, transaction, source, comment, payment, options);
+
+export const confirmCashOrder = (
+  order: Order,
+  transaction: Transaction,
+): Promise<void> => confirmOrder(order, transaction, 'CUSTOMER', 'Pedido confirmado; pago en efectivo al entregar', undefined, { markPaid: false });
 
 /**
  * Canal desde el que se paga. Decide UNICAMENTE a donde devuelve la pasarela: la
@@ -578,8 +593,8 @@ export const paymentsService = {
       }
       // El efectivo se devuelve en mano: no hay proveedor que llamar ni referencia.
       // Solo se exige referencia a los pagos online (tarjeta).
-      const isManualProvider = [PAYMENT_PROVIDER.CASH, PAYMENT_PROVIDER.YAPE, PAYMENT_PROVIDER.PLIN]
-        .includes(locked.provider as 'cash' | 'yape' | 'plin');
+      const isManualProvider = [PAYMENT_PROVIDER.CASH, PAYMENT_PROVIDER.POS, PAYMENT_PROVIDER.YAPE, PAYMENT_PROVIDER.PLIN]
+        .includes(locked.provider as 'cash' | 'pos' | 'yape' | 'plin');
       if (!isManualProvider && !locked.providerReference) {
         throw ApiError.unprocessable('El pago no tiene referencia del proveedor');
       }
@@ -616,8 +631,8 @@ export const paymentsService = {
     });
 
     let result: { succeeded: boolean; providerReference?: string | null };
-    if ([PAYMENT_PROVIDER.CASH, PAYMENT_PROVIDER.YAPE, PAYMENT_PROVIDER.PLIN]
-      .includes(payment.provider as 'cash' | 'yape' | 'plin')) {
+    if ([PAYMENT_PROVIDER.CASH, PAYMENT_PROVIDER.POS, PAYMENT_PROVIDER.YAPE, PAYMENT_PROVIDER.PLIN]
+      .includes(payment.provider as 'cash' | 'pos' | 'yape' | 'plin')) {
       // Efectivo/Yape/Plin no exponen una API de devolucion: la fila Refund es el
       // asiento de la devolucion manual realizada por Caja.
       result = { succeeded: true, providerReference: null };

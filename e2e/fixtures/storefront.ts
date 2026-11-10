@@ -35,7 +35,7 @@ const product = {
   minLeadHours: 2,
   categoryId: 1,
   type: 'FIXED',
-  imageUrl: '/images/cakes/vanilla.png',
+  imageUrl: '/images/cakes/vanilla.svg',
   isAvailable: true,
   priceFrom: 75,
   defaultVariantPrice: 75,

@@ -95,6 +95,40 @@ export const engagementService = {
     });
   },
 
+  async myReviews(userId: number) {
+    const rows = await ProductReview.findAll({
+      where: { userId },
+      order: [['createdAt', 'DESC']],
+      include: [
+        { model: Product, as: 'product', attributes: ['id', 'name', 'slug', 'imageUrl'] },
+        {
+          model: OrderItem,
+          as: 'orderItem',
+          attributes: ['id', 'productNameSnapshot'],
+          include: [{ model: Order, as: 'order', attributes: ['orderNumber', 'deliveredAt'] }],
+        },
+      ],
+    });
+    return rows.map((review) => {
+      const product = review.get('product') as { id: number; name: string; slug: string; imageUrl: string | null } | null;
+      const orderItem = review.get('orderItem') as { productNameSnapshot: string; order?: { orderNumber: string; deliveredAt: Date | null } | null } | null;
+      return {
+        id: review.id,
+        productId: review.productId,
+        productName: product?.name ?? orderItem?.productNameSnapshot ?? 'Producto Misky Challay',
+        productSlug: product?.slug ?? null,
+        imageUrl: product?.imageUrl ?? null,
+        orderNumber: orderItem?.order?.orderNumber ?? null,
+        rating: review.rating,
+        comment: review.comment,
+        status: review.status,
+        verifiedPurchase: review.verifiedPurchase,
+        createdAt: review.createdAt,
+        deliveredAt: orderItem?.order?.deliveredAt ?? null,
+      };
+    });
+  },
+
   async createReview(userId: number, input: CreateReviewInput) {
     const item = await OrderItem.findByPk(input.orderItemId);
     if (!item) throw ApiError.notFound('Producto del pedido no encontrado');

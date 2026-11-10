@@ -9,12 +9,13 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
-import { AlertTriangle, Plus, Sparkles, Star } from 'lucide-react';
+import { AlertTriangle, Clock3, Flame, Plus, Sparkles, Star } from 'lucide-react';
 import { ProductMedia } from '@components/ui/ProductMedia';
 import { TagList } from '@components/ui/DietaryTag';
 import { formatCurrency } from '@lib/format';
 import { FavoriteButton } from '@features/favorites/components/FavoriteButton';
 import { AvailabilityAlertButton } from './AvailabilityAlertButton';
+import { productImage } from '../productImage';
 import type { Allergen, Product } from '../types';
 import { preparationLabel, productHref, PRODUCT_FAMILIES } from '../pastry';
 
@@ -26,7 +27,7 @@ interface ProductCardProps {
 
 export const ProductCard = ({ product, allergenAlerts }: ProductCardProps) => {
   const isBuilder = product.cakeSaleMode === 'SEMI_CUSTOM' || product.cakeSaleMode === 'ADVANCED';
-  const displayImage = product.imageUrl ?? product.categoryImageUrl ?? null;
+  const displayImage = productImage(product);
   // El aviso solo aparece si el plato choca con lo que el cliente declaró; si no, nada cambia.
   const allergenWarnings = (allergenAlerts ?? []).filter((allergen) =>
     product.allergens.includes(allergen.code),
@@ -109,6 +110,15 @@ export const ProductCard = ({ product, allergenAlerts }: ProductCardProps) => {
                 label="Recomendado"
                 size="small"
                 sx={{ borderRadius: 'var(--radius-pill)', bgcolor: 'rgba(255,255,255,.94)', fontWeight: 800 }}
+              />
+            )}
+            {(product.salesCount ?? 0) > 0 && (
+              <Chip
+                icon={<Flame size={13} />}
+                label="Más vendido"
+                size="small"
+                color="secondary"
+                sx={{ borderRadius: 'var(--radius-pill)', fontWeight: 850 }}
               />
             )}
             {isBuilder && (
@@ -229,6 +239,18 @@ export const ProductCard = ({ product, allergenAlerts }: ProductCardProps) => {
             sx={{ minHeight: 44 }}
           >
             {product.cakeSaleMode === 'ADVANCED' ? 'Solicitar diseño' : 'Personalizar'}
+          </Button>
+        ) : product.preparationMode === 'READY_STOCK' ? (
+          <Button
+            component={Link}
+            to={to}
+            fullWidth
+            variant="contained"
+            startIcon={<Clock3 size={16} />}
+            disabled={!product.isAvailable}
+            sx={{ minHeight: 44 }}
+          >
+            Ver disponibilidad
           </Button>
         ) : (
           <Button

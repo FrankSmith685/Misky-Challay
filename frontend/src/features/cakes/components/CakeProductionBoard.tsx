@@ -33,7 +33,7 @@ export const CakeProductionBoard = ({ tasks, branchId, initialOrderNumber = '', 
   initialOrderNumber?: string;
   initialTaskId?: number;
   onRefresh: () => Promise<void>;
-  onStatus: (task: ProductionTask, status: 'IN_PROGRESS' | 'BLOCKED' | 'DONE') => Promise<void>;
+  onStatus: (task: ProductionTask, status: 'IN_PROGRESS' | 'BLOCKED' | 'DONE', incidentReason?: string) => Promise<void>;
 }) => {
   const appliedTask = useRef<number>();
   const confirm = useConfirm();
@@ -82,6 +82,13 @@ export const CakeProductionBoard = ({ tasks, branchId, initialOrderNumber = '', 
     finally { setBusy(null); }
   };
   const changeStatus = async (task: ProductionTask, status: 'IN_PROGRESS' | 'BLOCKED' | 'DONE') => {
+    let incidentReason: string | undefined;
+    if (status === 'BLOCKED') {
+      const reason = window.prompt('Describe el motivo del bloqueo (mínimo 5 caracteres):', task.incidentReason ?? '');
+      if (reason === null) return;
+      incidentReason = reason.trim();
+      if (incidentReason.length < 5) { setError('El motivo del bloqueo debe tener al menos 5 caracteres.'); return; }
+    }
     if (status !== 'IN_PROGRESS') {
       const { confirmed } = await confirm({
         title: status === 'DONE' ? 'Terminar etapa de producción' : 'Bloquear etapa de producción',
@@ -94,7 +101,7 @@ export const CakeProductionBoard = ({ tasks, branchId, initialOrderNumber = '', 
     }
     if (!canOperate || busy !== null) return;
     setBusy(task.id);
-    try { await onStatus(task, status); } finally { setBusy(null); }
+    try { await onStatus(task, status, incidentReason); } finally { setBusy(null); }
   };
 
   useEffect(() => { setQuery(initialOrderNumber); }, [initialOrderNumber]);
@@ -151,7 +158,7 @@ export const CakeProductionBoard = ({ tasks, branchId, initialOrderNumber = '', 
     {tasks.length > 0 && filteredTasks.length === 0 && <Card className="p-5 text-sm text-ink-muted">No hay tareas que coincidan con los filtros actuales.</Card>}
     <div className="grid gap-4 md:grid-cols-2">{pageTasks.map((task) => <Card id={`task-${task.id}`} key={task.id} className={`min-w-0 p-4 sm:p-5 ${task.status !== 'DONE' && (task.status === 'BLOCKED' || task.workDate < today) ? 'border-red-300' : task.status !== 'DONE' && task.workDate === today ? 'border-amber-300' : ''}`}>
       <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold text-ink-muted">{task.workDate} · {STATION_LABELS[task.station]} · etapa {task.sequence}</p><h3 className="mt-1 font-black">Pedido {task.order?.orderNumber ?? `#${task.orderId}`}</h3><p className="text-xs text-ink-muted">{task.plannedMinutes} minutos planificados · Entrega {task.order?.scheduledAt ? new Date(task.order.scheduledAt).toLocaleString('es-PE', { timeZone: 'America/Lima', dateStyle: 'medium', timeStyle: 'short' }) : 'por confirmar'}</p></div><Badge variant={task.status === 'DONE' ? 'success' : task.status === 'BLOCKED' ? 'danger' : 'warning'}>{STATUS_LABELS[task.status]}</Badge></div>
-      {task.status !== 'DONE' && (task.workDate <= today || !task.assignedTo) && <p className={`mt-3 rounded-lg px-3 py-2 text-xs font-bold ${task.workDate < today || task.status === 'BLOCKED' ? 'bg-red-50 text-red-800' : 'bg-amber-50 text-amber-900'}`}>{task.status === 'BLOCKED' ? 'Etapa bloqueada: requiere resolución' : task.workDate < today ? 'Etapa atrasada' : task.workDate === today ? 'Programada para hoy' : 'Pendiente de asignar'}{!task.assignedTo ? ' · Sin responsable' : ''}</p>}
+      {task.status !== 'DONE' && (task.workDate <= today || !task.assignedTo) && <p className={`mt-3 rounded-lg px-3 py-2 text-xs font-bold ${task.workDate < today || task.status === 'BLOCKED' ? 'bg-red-50 text-red-800' : 'bg-amber-50 text-amber-900'}`}>{task.status === 'BLOCKED' ? 'Etapa bloqueada: requiere resolución' : task.workDate < today ? 'Etapa atrasada' : task.workDate === today ? 'Programada para hoy' : 'Pendiente de asignar'}{!task.assignedTo ? ' · Sin responsable' : ''}{task.status === 'BLOCKED' && task.incidentReason ? <span className="mt-1 block font-normal">Motivo: {task.incidentReason}</span> : null}</p>}
       <div className="mt-3 rounded-xl bg-surface-muted p-3 text-xs text-ink-muted"><p><strong className="text-ink">Cliente:</strong> {task.order?.contactName || 'Sin nombre'} · <strong className="text-ink">Entrega:</strong> {task.order?.deliveryType === 'DELIVERY' ? 'Delivery' : 'Recojo'}</p>{task.order?.notes && <p className="mt-2 whitespace-pre-wrap"><strong className="text-ink">Nota del pedido:</strong> {task.order.notes}</p>}</div>
       {Boolean(task.order?.items.length) && <details className="mt-4 rounded-xl border border-line p-3"><summary className="cursor-pointer text-sm font-semibold">Ficha de producción · {task.order?.items.length} producto{task.order?.items.length === 1 ? '' : 's'}{task.order?.items.some((item) => item.reference || item.designImages?.length) ? ' · imagen adjunta' : ''}</summary>{task.order!.items.map((item) => <div key={item.id} className="mt-3 border-t border-line pt-3 first:border-t-0 first:pt-0"><p className="text-sm font-bold text-ink">{item.quantity} × {item.productNameSnapshot}{item.variantNameSnapshot ? ` · ${item.variantNameSnapshot}` : ''}{item.requestedServings ? ` · ${item.requestedServings} porciones` : ''}</p>{item.themeSnapshotJson && <CakeThemeReference theme={item.themeSnapshotJson} />}{item.customizations.length > 0 && <ul className="mt-2 grid gap-1 text-sm text-ink">{item.customizations.map((choice) => <li key={choice.id}><strong>{choice.groupNameSnapshot}:</strong> {choice.optionNameSnapshot}{choice.quantity > 1 ? ` × ${choice.quantity}` : ''}</li>)}</ul>}{item.descriptionSnapshot && <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-ink-muted">{item.descriptionSnapshot}</p>}{item.specialInstructions && <p className="mt-2 whitespace-pre-wrap text-sm"><strong>Indicaciones:</strong> {item.specialInstructions}</p>}{Boolean(item.allergenSnapshotJson?.length) && <p className="mt-2 rounded-lg bg-red-50 p-2 text-xs font-bold text-red-800">Alérgenos: {item.allergenSnapshotJson?.join(', ')}</p>}<OrderCakeReference orderNumber={task.order!.orderNumber} itemId={item.id} images={item.designImages} hasReference={Boolean(item.reference)} /></div>)}</details>}
       <label className="mt-4 block text-xs font-semibold">1. Responsable<select className="mt-1 w-full rounded-lg border border-line bg-white p-2" value={task.assignedTo ?? ''} disabled={!canOperate || task.status === 'DONE' || busy === task.id} onChange={(event) => void assign(task, event.target.value ? Number(event.target.value) : null)}><option value="">Selecciona personal</option>{staff.map((row) => <option key={row.id} value={row.id}>{`${row.firstName ?? ''} ${row.lastName ?? ''}`.trim() || `#${row.id}`}</option>)}</select></label>

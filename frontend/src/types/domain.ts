@@ -86,6 +86,7 @@ export interface CartItem {
   theme?: import('@features/cakes/cakeThemes.service').ThemeSnapshot;
   requestedServings?: number;
   preferredSlotId?: number;
+  preparationMode?: 'MADE_TO_ORDER' | 'READY_STOCK';
   requiresScheduledDelivery?: boolean;
   requiresCarDelivery?: boolean;
   minLeadHours?: number;
@@ -111,4 +112,6 @@ export interface User {
   isSuperAdmin: boolean;
   /** Sucursales asignadas. Vacio = alcance global. */
   branchIds: number[];
+  mustChangePassword?: boolean;
+  mfaEnabled?: boolean;
 }

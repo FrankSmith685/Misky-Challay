@@ -4,7 +4,7 @@
   border: 1px solid var(--color-line);
   border-radius: calc(var(--radius-card, 5px) + 5px);
   background: white;
-  box-shadow: 0 3px 15px rgb(57 27 40 / 0.025);
+  box-shadow: 0 3px 15px rgb(23 50 77 / 0.025);
 }
 .exp-panel__header {
   display: flex;
@@ -52,7 +52,7 @@
   gap: 5px;
   flex-shrink: 0;
   padding-top: 3px;
-  color: #527363;
+  color: var(--color-tertiary-600);
   font-size: 10px;
 }
 .exp-live > span {
@@ -109,12 +109,12 @@
   color: var(--color-brand-700);
 }
 .exp-status--success {
-  background: #edf4ef;
-  color: #365d47;
+  background: #edf8f1;
+  color: #237a4b;
 }
 .exp-status--warning {
-  background: #fcf3e4;
-  color: #855316;
+  background: var(--color-accent-50);
+  color: var(--color-accent-700);
 }
 .exp-empty {
   padding: 42px 22px;
@@ -191,7 +191,7 @@
   z-index: 1;
 }
 .exp-hero .exp-kicker {
-  color: #e5caa5;
+  color: var(--color-accent-200);
 }
 .exp-hero h1,
 .exp-hero h2 {
@@ -210,11 +210,11 @@
   width: 240px;
   height: 240px;
   transform: translate(-50%, -50%);
-  border: 1px solid rgb(194 138 71 / 0.15);
+  border: 1px solid color-mix(in srgb, var(--color-accent-500) 18%, transparent);
   border-radius: 50%;
   box-shadow:
-    0 0 0 48px rgb(194 138 71 / 0.035),
-    0 0 0 96px rgb(194 138 71 / 0.025);
+    0 0 0 48px color-mix(in srgb, var(--color-accent-500) 5%, transparent),
+    0 0 0 96px color-mix(in srgb, var(--color-accent-500) 3%, transparent);
   pointer-events: none;
   content: '';
 }
@@ -238,9 +238,9 @@
   flex-wrap: wrap;
   gap: 8px;
   padding: 12px 16px;
-  border-top: 1px solid rgb(194 138 71 / 0.12);
+  border-top: 1px solid color-mix(in srgb, var(--color-accent-500) 14%, transparent);
   font-size: 11px;
-  color: #76695c;
+  color: var(--color-ink-muted);
 }
 .exp-qr-preview {
   display: grid;
@@ -314,7 +314,7 @@
   gap: 14px;
   padding: 18px 22px;
   border-top: 1px solid var(--color-line);
-  background: #fffcfa;
+  background: var(--color-surface-muted);
 }
 .exp-timeline {
   display: grid;
@@ -350,7 +350,7 @@
   padding: 16px;
   border: 1px solid var(--color-line);
   border-radius: var(--radius-field, 5px);
-  background: #fffcfa;
+  background: var(--color-surface-muted);
 }
 .exp-settings > summary {
   display: flex;

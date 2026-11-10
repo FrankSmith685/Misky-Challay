@@ -95,8 +95,15 @@ const luminance = (hex: string): number => {
   return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
 };
 
+/** Contraste WCAG entre dos colores hexadecimales. */
+export const contrastRatio = (foreground: string, background: string): number => {
+  const foregroundLum = luminance(foreground);
+  const backgroundLum = luminance(background);
+  return (Math.max(foregroundLum, backgroundLum) + 0.05) / (Math.min(foregroundLum, backgroundLum) + 0.05);
+};
+
 /** Elige la tinta con mayor contraste real: el dorado necesita texto oscuro. */
-export const readableText = (hex: string, dark = '#352721', light = '#ffffff'): string => {
+export const readableText = (hex: string, dark = '#17324d', light = '#ffffff'): string => {
   const background = luminance(hex);
   const darkLuminance = luminance(dark);
   const lightLuminance = luminance(light);

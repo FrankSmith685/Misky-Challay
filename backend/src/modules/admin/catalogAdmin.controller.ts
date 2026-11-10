@@ -24,13 +24,14 @@ export const catalogAdminController = {
 
   /** Catalogos auxiliares para los formularios (categorias, alergenos, etiquetas). */
   meta: asyncHandler(async (_req: Request, res: Response) => {
-    const [categories, allergens, tags] = await Promise.all([
+    const [categories, allergens, tags, health] = await Promise.all([
       catalogAdminService.listCategories(),
       Allergen.findAll({ order: [['name', 'ASC']] }),
       DietaryTag.findAll({ order: [['name', 'ASC']] }),
+      catalogAdminService.health(),
     ]);
 
-    return ok(res, { categories, allergens, dietaryTags: tags });
+    return ok(res, { categories, allergens, dietaryTags: tags, health });
   }),
 
   categories: asyncHandler(async (_req: Request, res: Response) => {
@@ -49,6 +50,17 @@ export const catalogAdminController = {
     });
 
     return created(res, { id: product.id, slug: product.slug }, 'Producto creado como borrador');
+  }),
+
+  duplicateProduct: asyncHandler(async (req: Request, res: Response) => {
+    const product = await catalogAdminService.duplicateProduct(Number(req.params.productId));
+    await audit(req, {
+      action: 'catalog.product.duplicate',
+      entity: 'products',
+      entityId: product.id,
+      after: { sourceProductId: Number(req.params.productId), status: product.status },
+    });
+    return created(res, { id: product.id, slug: product.slug }, 'Producto duplicado como borrador');
   }),
 
   updateProduct: asyncHandler(async (req: Request, res: Response) => {
@@ -73,6 +85,7 @@ export const catalogAdminController = {
     const { product, before } = await catalogAdminService.changeStatus(
       Number(req.params.productId),
       req.body.status as ProductStatus,
+      req.body.expectedVersion,
     );
 
     await audit(req, {

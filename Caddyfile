@@ -1,0 +1,7 @@
+miskychallay.pe {
+  reverse_proxy web:80
+}
+
+www.miskychallay.pe {
+  redir https://miskychallay.pe{uri} permanent
+}

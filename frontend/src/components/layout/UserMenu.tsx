@@ -12,7 +12,7 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
-import { CakeSlice, ClipboardList, Heart, Home, LayoutDashboard, LogOut, MapPin, User2 } from 'lucide-react';
+import { Bell, CakeSlice, ClipboardList, Heart, Home, LayoutDashboard, LogOut, MapPin, User2 } from 'lucide-react';
 import { ROUTES } from '@constants/routes';
 import { rolesLabel } from '@constants/roles';
 import { useAppSelector } from '@app/hooks';
@@ -85,6 +85,12 @@ export const UserMenu = () => {
         anchorEl={anchor}
         open={Boolean(anchor)}
         onClose={close}
+        // Mantiene la posición de la página al abrir/cerrar el menú sobre un
+        // contenido largo, especialmente cerca del final de una vista legal.
+        disableScrollLock
+        disableAutoFocus
+        disableRestoreFocus
+        disableAutoFocusItem
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
         slotProps={{ paper: { sx: { width: 260 } } }}
@@ -102,6 +108,7 @@ export const UserMenu = () => {
           * primero, datos despues. Favoritos, bowls y direcciones dejan de existir
           * solo dentro de /cuenta. */}
         {item(ROUTES.account, 'Inicio de mi cuenta', Home)}
+        {item(ROUTES.accountNotifications, 'Notificaciones', Bell)}
         {item(ROUTES.accountOrders, 'Mis pedidos', ClipboardList)}
         {item(ROUTES.accountFavorites, 'Mis favoritos', Heart)}
         {item(ROUTES.designRequests, 'Mis diseños', CakeSlice)}

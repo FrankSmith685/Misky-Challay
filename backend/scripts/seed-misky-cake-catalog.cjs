@@ -129,10 +129,10 @@ async function ensureCategory(db) {
 async function ensureProduct(db, definition, categoryId) {
   const found = await query(db, 'SELECT id FROM products WHERE slug=? LIMIT 1', [definition.slug]);
   if (found.length) {
-    await query(db, `UPDATE products SET category_id=?, type=?, name=?, description=?, image_url=?, image_alt=?, status='ACTIVE', is_featured=?, sort_order=?, allergens_reviewed_at=NULL, deleted_at=NULL, updated_at=NOW() WHERE id=?`, [categoryId, definition.type, definition.name, definition.description, definition.imageUrl, definition.imageAlt, definition.featured ? 1 : 0, definition.sortOrder, found[0].id]);
+    await query(db, `UPDATE products SET category_id=?, type=?, family='CAKE', preparation_mode='MADE_TO_ORDER', name=?, description=?, image_url=?, image_alt=?, status='ACTIVE', is_featured=?, sort_order=?, allergens_reviewed_at=COALESCE(allergens_reviewed_at, NOW()), deleted_at=NULL, updated_at=NOW() WHERE id=?`, [categoryId, definition.type, definition.name, definition.description, definition.imageUrl, definition.imageAlt, definition.featured ? 1 : 0, definition.sortOrder, found[0].id]);
     return found[0].id;
   }
-  const result = await query(db, `INSERT INTO products (category_id, type, name, slug, description, image_url, image_alt, status, is_featured, sort_order, allergens_reviewed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, NULL, NOW(), NOW())`, [categoryId, definition.type, definition.name, definition.slug, definition.description, definition.imageUrl, definition.imageAlt, definition.featured ? 1 : 0, definition.sortOrder]);
+  const result = await query(db, `INSERT INTO products (category_id, type, family, preparation_mode, name, slug, description, image_url, image_alt, status, is_featured, sort_order, allergens_reviewed_at, created_at, updated_at) VALUES (?, ?, 'CAKE', 'MADE_TO_ORDER', ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, NOW(), NOW(), NOW())`, [categoryId, definition.type, definition.name, definition.slug, definition.description, definition.imageUrl, definition.imageAlt, definition.featured ? 1 : 0, definition.sortOrder]);
   return result.insertId;
 }
 
@@ -263,7 +263,7 @@ async function seed(db) {
   if (!branches.length) throw new Error('No hay sedes activas');
   const categoryId = await ensureCategory(db);
   const targets = [
-    ...classicFlavors.map((flavor, index) => ({ slug: flavor.slug, type: 'FIXED', name: flavor.key.startsWith('keke-') ? flavor.name : `Torta de ${flavor.name.toLowerCase()}`, description: flavor.description, imageUrl: index === 0 ? '/images/cakes/vanilla.png' : '/images/cakes/custom.png', imageAlt: flavor.name, featured: index < 3, sortOrder: index + 1, mode: 'STANDARD' })),
+    ...classicFlavors.map((flavor, index) => ({ slug: flavor.slug, type: 'FIXED', name: flavor.key.startsWith('keke-') ? flavor.name : `Torta de ${flavor.name.toLowerCase()}`, description: flavor.description, imageUrl: index === 0 ? '/images/cakes/vanilla.svg' : '/images/cakes/custom.png', imageAlt: flavor.name, featured: index < 3, sortOrder: index + 1, mode: 'STANDARD' })),
     { slug: 'torta-a-tu-gusto', type: 'CUSTOMIZABLE', name: 'Crea tu torta', description: 'Elige tamaño, sabor y relleno; si quieres, agrega dulces para acompañarla. El precio se actualiza mientras personalizas.', imageUrl: '/images/cakes/custom.png', imageAlt: 'Torta personalizable', featured: true, sortOrder: 20, mode: 'SEMI_CUSTOM' },
     { slug: 'torta-diseno-especial', type: 'CUSTOMIZABLE', name: 'Diseño especial', description: 'Comparte tu referencia y recibe una propuesta personalizada de precio y fecha.', imageUrl: '/images/cakes/special.png', imageAlt: 'Torta de diseño especial', featured: false, sortOrder: 21, mode: 'ADVANCED' },
   ];

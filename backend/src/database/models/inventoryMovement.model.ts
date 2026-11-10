@@ -14,6 +14,8 @@ export const MOVEMENT_TYPE = {
   CONSUME: 'CONSUME', // salida definitiva al preparar
   WASTE: 'WASTE', // merma
   ADJUSTMENT: 'ADJUSTMENT', // ajuste de inventario
+  TRANSFER_OUT: 'TRANSFER_OUT', // salida hacia otra sucursal
+  TRANSFER_IN: 'TRANSFER_IN', // entrada recibida desde otra sucursal
 } as const;
 export type MovementType = (typeof MOVEMENT_TYPE)[keyof typeof MOVEMENT_TYPE];
 
@@ -29,7 +31,7 @@ export class InventoryMovement extends Model<
   declare branchId: number;
   declare inventoryItemId: number;
   declare type: MovementType;
-  /** Siempre positivo: el tipo define el sentido. */
+  /** Positivo para salidas/entradas; ADJUSTMENT conserva el signo del conteo. */
   declare quantity: number;
   declare onHandAfter: CreationOptional<number>;
   declare reservedAfter: CreationOptional<number>;
@@ -40,6 +42,8 @@ export class InventoryMovement extends Model<
   declare orderId: CreationOptional<number | null>;
   declare actorId: CreationOptional<number | null>;
   declare reason: CreationOptional<string | null>;
+  /** Clave de reintento para movimientos manuales o recepciones. */
+  declare idempotencyKey: CreationOptional<string | null>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
 }
@@ -60,6 +64,7 @@ InventoryMovement.init(
     orderId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
     actorId: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
     reason: { type: DataTypes.STRING(255), allowNull: true },
+    idempotencyKey: { type: DataTypes.STRING(100), allowNull: true },
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,
   },
@@ -70,6 +75,7 @@ InventoryMovement.init(
     indexes: [
       { name: 'idx_inv_mov_branch_item', fields: ['branch_id', 'inventory_item_id'] },
       { name: 'idx_inv_mov_order', fields: ['order_id'] },
+      { name: 'uq_inv_mov_idempotency', unique: true, fields: ['branch_id', 'idempotency_key'] },
     ],
   },
 );

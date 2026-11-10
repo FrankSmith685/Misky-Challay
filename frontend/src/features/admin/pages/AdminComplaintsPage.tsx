@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { BookText, Download, Inbox, RefreshCw, Search, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, BookText, Download, Inbox, RefreshCw, Search, ShieldCheck } from 'lucide-react';
 import toast from '@components/mui/MuiToast';
 import { Card } from '@components/ui/Card';
 import { Button } from '@components/ui/Button';
@@ -132,7 +132,9 @@ const AdminComplaintsPage = () => {
   const exportCsv = async () => {
     setIsExporting(true);
     try {
-      const blob = await complaintsAdminApi.exportCsv(query);
+      const today = new Date();
+      const fromDate = new Date(today.getTime() - 366 * 86_400_000);
+      const blob = await complaintsAdminApi.exportCsv({ ...query, from: fromDate.toISOString().slice(0, 10), to: today.toISOString().slice(0, 10), reason: 'Control legal del Libro de Reclamaciones' });
       // Enlace efimero: el archivo ya viene del servidor, aqui solo se dispara la
       // descarga. Sin revoke, cada exportacion deja el blob retenido en memoria.
       const url = URL.createObjectURL(blob);
@@ -155,7 +157,26 @@ const AdminComplaintsPage = () => {
   const [loadingId, setLoadingId] = useState<number | null>(null);
   const [response, setResponse] = useState('');
   const [responseStatus, setResponseStatus] = useState<'IN_PROGRESS' | 'RESOLVED'>('RESOLVED');
+  const [responseReason, setResponseReason] = useState('');
+  const [reopenReason, setReopenReason] = useState('');
+  const [note, setNote] = useState('');
+  const [assignedTo, setAssignedTo] = useState('');
+  const [assignees, setAssignees] = useState<Array<{ id: number; firstName: string | null; lastName: string | null }>>([]);
+  const [holidays, setHolidays] = useState<Array<{ holidayDate: string; label: string; isActive: boolean; source: 'NATIONAL' | 'CUSTOM' }>>([]);
+  const [holidayDate, setHolidayDate] = useState('');
+  const [holidayLabel, setHolidayLabel] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    void complaintsAdminApi.assignees().then(setAssignees).catch(() => undefined);
+    void complaintsAdminApi.holidays().then(setHolidays).catch(() => undefined);
+  }, []);
+
+  const saveHoliday = async () => {
+    if (!holidayDate || holidayLabel.trim().length < 3) { toast.error('Indica fecha y nombre del feriado'); return; }
+    try { await complaintsAdminApi.saveHoliday({ holidayDate, label: holidayLabel.trim(), isActive: true, reason: 'Actualización del calendario legal por superadmin' }); setHolidays(await complaintsAdminApi.holidays()); setHolidayDate(''); setHolidayLabel(''); toast.success('Calendario legal actualizado'); }
+    catch (error) { toast.error(getApiErrorMessage(error)); }
+  };
 
   const openDetail = async (id: number) => {
     setLoadingId(id);
@@ -164,6 +185,10 @@ const AdminComplaintsPage = () => {
       setSelected(detail);
       setResponse(detail.response ?? '');
       setResponseStatus(detail.status === 'RESOLVED' ? 'RESOLVED' : 'IN_PROGRESS');
+      setResponseReason('');
+      setReopenReason('');
+      setNote('');
+      setAssignedTo(detail.assignedTo ? String(detail.assignedTo) : '');
     } catch (error) {
       toast.error(getApiErrorMessage(error));
     } finally {
@@ -173,14 +198,18 @@ const AdminComplaintsPage = () => {
 
   const submitResponse = async () => {
     if (!selected) return;
-    if (response.trim().length < 5) {
-      toast.error('Escribe la respuesta al consumidor');
+    if (response.trim().length < 30) {
+      toast.error('Explica la solución al consumidor con al menos 30 caracteres');
+      return;
+    }
+    if (selected.responses.length > 0 && responseReason.trim().length < 5) {
+      toast.error('Indica el motivo de esta nueva versión');
       return;
     }
     setIsSaving(true);
     try {
-      await complaintsAdminApi.respond(selected.id, { response: response.trim(), status: responseStatus });
-      toast.success('Respuesta registrada. Le avisamos al consumidor por correo.');
+      await complaintsAdminApi.respond(selected.id, { response: response.trim(), status: responseStatus, reason: responseReason.trim() || undefined, expectedUpdatedAt: selected.updatedAt });
+      toast.success('Respuesta registrada y agregada al historial.');
       setSelected(null);
       await load();
     } catch (error) {
@@ -188,6 +217,54 @@ const AdminComplaintsPage = () => {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const reopen = async () => {
+    if (!selected || reopenReason.trim().length < 10) { toast.error('Explica por qué se reabre el expediente'); return; }
+    setIsSaving(true);
+    try { await complaintsAdminApi.reopen(selected.id, { reason: reopenReason.trim(), expectedUpdatedAt: selected.updatedAt }); toast.success('Reclamo reabierto'); setSelected(null); await load(); }
+    catch (error) { toast.error(getApiErrorMessage(error)); } finally { setIsSaving(false); }
+  };
+
+  const assign = async () => {
+    if (!selected) return;
+    setIsSaving(true);
+    try { await complaintsAdminApi.assign(selected.id, { userId: assignedTo ? Number(assignedTo) : null, reason: 'Asignación desde el expediente', expectedUpdatedAt: selected.updatedAt }); toast.success('Responsable actualizado'); await openDetail(selected.id); await load(); }
+    catch (error) { toast.error(getApiErrorMessage(error)); } finally { setIsSaving(false); }
+  };
+
+  const escalate = async () => {
+    if (!selected) return;
+    const reason = window.prompt('Motivo del escalamiento a administración general:');
+    if (!reason || reason.trim().length < 10) return;
+    setIsSaving(true);
+    try { await complaintsAdminApi.escalate(selected.id, { reason: reason.trim(), expectedUpdatedAt: selected.updatedAt }); toast.success('Reclamo escalado'); await openDetail(selected.id); await load(); }
+    catch (error) { toast.error(getApiErrorMessage(error)); } finally { setIsSaving(false); }
+  };
+
+  const saveNote = async () => {
+    if (!selected || note.trim().length < 5) return;
+    setIsSaving(true);
+    try { await complaintsAdminApi.note(selected.id, note.trim()); setNote(''); await openDetail(selected.id); toast.success('Nota interna guardada'); }
+    catch (error) { toast.error(getApiErrorMessage(error)); } finally { setIsSaving(false); }
+  };
+
+  const downloadEvidence = async (evidenceId: number, fileName: string) => {
+    if (!selected) return;
+    try {
+      const blob = await complaintsAdminApi.evidenceFile(selected.id, evidenceId);
+      const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = fileName; link.click(); URL.revokeObjectURL(url);
+    } catch (error) { toast.error(getApiErrorMessage(error)); }
+  };
+
+  const uploadEvidence = async (file: File) => {
+    if (!selected) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try { await complaintsAdminApi.addEvidence(selected.id, { fileName: file.name, dataUrl: String(reader.result) }); await openDetail(selected.id); toast.success('Evidencia guardada'); }
+      catch (error) { toast.error(getApiErrorMessage(error)); }
+    };
+    reader.readAsDataURL(file);
   };
 
   const filters: Array<{ value: FilterValue; label: string; count?: number }> = [
@@ -255,6 +332,26 @@ const AdminComplaintsPage = () => {
           <span className="ml-auto shrink-0 font-bold underline">Ver los vencidos</span>
         </button>
       )}
+
+      {summary && (
+        <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-5">
+          <Metric label="Vence en 3 días" value={summary.dueSoon} tone={summary.dueSoon ? 'amber' : 'default'} />
+          <Metric label="Sin responsable" value={summary.unassigned} tone={summary.unassigned ? 'red' : 'default'} />
+          <Metric label="Escalados" value={summary.escalated} tone={summary.escalated ? 'amber' : 'default'} />
+          <Metric label="Reabiertos" value={summary.reopened} tone="default" />
+          <Metric label="Avisos fallidos" value={summary.notificationFailures} tone={summary.notificationFailures ? 'red' : 'default'} />
+        </div>
+      )}
+
+      <Card className="mt-4 p-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <div><FieldLabel>Agregar excepción o feriado</FieldLabel><input type="date" value={holidayDate} onChange={(event) => setHolidayDate(event.target.value)} className="h-10 rounded-field border border-line bg-surface px-3 text-sm" /></div>
+          <input value={holidayLabel} onChange={(event) => setHolidayLabel(event.target.value)} placeholder="Nombre del día" className="h-10 flex-1 rounded-field border border-line bg-surface px-3 text-sm" />
+          <Button size="sm" variant="outline" onClick={() => void saveHoliday()}>Guardar calendario</Button>
+        </div>
+        <p className="mt-2 text-xs text-ink-muted">La fecha límite se calcula con lunes a viernes y estos feriados nacionales o excepciones. El calendario queda auditado.</p>
+        {holidays.filter((day) => day.isActive).slice(0, 8).map((day) => <span key={day.holidayDate} className="mr-2 mt-2 inline-block rounded-full bg-surface-muted px-2 py-1 text-xs text-ink-muted">{day.holidayDate} · {day.label}</span>)}
+      </Card>
 
       <div className="mt-5 flex flex-col gap-3 rounded-card border border-line bg-surface p-3 shadow-e1 sm:flex-row sm:items-center">
         <FilterPills
@@ -385,6 +482,20 @@ const AdminComplaintsPage = () => {
               )}
             </section>
 
+            <section className="rounded-card border border-line bg-surface-muted p-3">
+              <div className="flex items-end gap-3">
+                <div className="min-w-0 flex-1">
+                  <FieldLabel>Responsable</FieldLabel>
+                  <select value={assignedTo} onChange={(event) => setAssignedTo(event.target.value)} className="h-10 w-full rounded-field border border-line bg-surface px-3 text-sm">
+                    <option value="">Sin asignar</option>
+                    {assignees.map((person) => <option key={person.id} value={person.id}>{[person.firstName, person.lastName].filter(Boolean).join(' ') || `Usuario #${person.id}`}</option>)}
+                  </select>
+                </div>
+                <div className="flex gap-2"><Button size="sm" variant="outline" isLoading={isSaving} onClick={() => void assign()}>Guardar</Button><Button size="sm" variant="ghost" isLoading={isSaving} onClick={() => void escalate()}>Escalar</Button></div>
+              </div>
+              {selected.order && <p className="mt-2 text-xs text-ink-muted">Pedido vinculado: <strong>{selected.order.orderNumber}</strong> · {selected.order.status}</p>}
+            </section>
+
             <section>
               <FieldLabel>Detalle</FieldLabel>
               <p className="whitespace-pre-line rounded-card bg-surface-muted p-3 text-sm text-ink">{selected.detail}</p>
@@ -403,6 +514,8 @@ const AdminComplaintsPage = () => {
                 <p className="whitespace-pre-line rounded-card border border-brand-100 bg-brand-50/60 p-3 text-sm text-ink">
                   {selected.response ?? '—'}
                 </p>
+                <Textarea className="mt-3" value={reopenReason} onChange={(event) => setReopenReason(event.target.value)} rows={2} placeholder="Motivo para reabrir y corregir la atención" />
+                <Button className="mt-2" variant="outline" isLoading={isSaving} leftIcon={<AlertTriangle className="size-4" />} onClick={() => void reopen()}>Reabrir expediente</Button>
               </div>
             ) : (
               <div className="border-t border-line pt-4">
@@ -413,6 +526,7 @@ const AdminComplaintsPage = () => {
                   rows={4}
                   placeholder="Explica al consumidor cómo se atiende su caso."
                 />
+                {selected.responses.length > 0 && <Textarea className="mt-3" value={responseReason} onChange={(event) => setResponseReason(event.target.value)} rows={2} placeholder="Motivo de corrección o nueva versión" />}
                 <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                   <div className="sm:w-56">
                     <Select
@@ -430,6 +544,25 @@ const AdminComplaintsPage = () => {
                 </div>
               </div>
             )}
+            <section className="border-t border-line pt-4">
+              <FieldLabel>Historial de respuestas y notificaciones</FieldLabel>
+              <div className="grid gap-2">
+                {selected.responses.length === 0 && <p className="text-sm text-ink-muted">Aún no hay respuestas versionadas.</p>}
+                {selected.responses.map((entry) => <div key={entry.id} className="rounded-card border border-line p-3 text-sm"><div className="flex justify-between gap-3"><strong>Versión {entry.version} · {entry.status}</strong><span className="text-xs text-ink-muted">{entry.notificationStatus}</span></div><p className="mt-1 whitespace-pre-line">{entry.response}</p>{entry.reason && <p className="mt-1 text-xs text-ink-muted">Motivo: {entry.reason}</p>}{entry.notificationStatus === 'FAILED' && <Button className="mt-2" size="sm" variant="outline" onClick={() => void complaintsAdminApi.retryNotification(selected.id, entry.id).then(() => openDetail(selected.id)).catch((error) => toast.error(getApiErrorMessage(error)))}>Reintentar aviso</Button>}</div>)}
+              </div>
+            </section>
+
+            <section className="border-t border-line pt-4">
+              <FieldLabel>Notas internas</FieldLabel>
+              <div className="flex gap-2"><Textarea value={note} onChange={(event) => setNote(event.target.value)} rows={2} placeholder="Solo visible para el equipo" /><Button size="sm" variant="outline" isLoading={isSaving} onClick={() => void saveNote()}>Guardar</Button></div>
+              {selected.notes.map((entry) => <p key={entry.id} className="mt-2 rounded-card bg-amber-50 p-2 text-xs text-ink">{entry.note}</p>)}
+            </section>
+
+            <section className="border-t border-line pt-4">
+              <FieldLabel>Evidencias protegidas</FieldLabel>
+              <input type="file" accept="application/pdf,image/png,image/jpeg,image/webp" className="mb-2 block w-full text-xs" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadEvidence(file); event.currentTarget.value = ''; }} />
+              {selected.evidences.length === 0 ? <p className="text-sm text-ink-muted">No hay adjuntos.</p> : selected.evidences.map((evidence) => <div key={evidence.id} className="flex items-center justify-between rounded-card bg-surface-muted p-2 text-sm"><span>{evidence.fileName}</span><Button size="sm" variant="ghost" onClick={() => void downloadEvidence(evidence.id, evidence.fileName)}>Descargar</Button></div>)}
+            </section>
           </div>
         )}
       </Modal>
@@ -446,6 +579,13 @@ const Field = ({ label, value }: { label: string; value: string }) => (
     <FieldLabel>{label}</FieldLabel>
     <p className="text-sm text-ink">{value}</p>
   </div>
+);
+
+const Metric = ({ label, value, tone }: { label: string; value: number; tone: 'default' | 'amber' | 'red' }) => (
+  <Card className={`p-3 ${tone === 'red' ? 'border-red-200 bg-red-50' : tone === 'amber' ? 'border-amber-200 bg-amber-50' : ''}`}>
+    <p className="text-xs text-ink-muted">{label}</p>
+    <p className="mt-1 text-xl font-bold text-ink">{value}</p>
+  </Card>
 );
 
 export default AdminComplaintsPage;

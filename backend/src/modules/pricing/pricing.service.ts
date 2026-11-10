@@ -1,16 +1,16 @@
 import { experiencePricing, type ExperienceSelection } from '@modules/experiences/experience.pricing';
 import type { PackageSnapshot } from '@modules/experiences/experience.logic';
 import { Op } from 'sequelize';
-import { Branch, CakeProductProfile, Coupon, CouponRedemption, CoverageZone, Product, ProductVariant } from '@database/models';
+import { Branch, CakeProductProfile, Coupon, CouponRedemption, CoverageZone, Order, Product, ProductVariant } from '@database/models';
 import { carTransport } from '@modules/delivery/carTransport.service';
 import { PRODUCT_STATUS } from '@database/models/product.model';
-import { DISCOUNT_TYPE } from '@database/models/coupon.model';
+import { COUPON_STACK_MODE, DISCOUNT_TYPE, type CouponRules } from '@database/models/coupon.model';
 import { REDEMPTION_STATUS } from '@database/models/couponRedemption.model';
-import { CURRENCY, DELIVERY_TYPE, type DeliveryType } from '@config/constants';
+import { DELIVERY_TYPE, ORDER_STATUS, type DeliveryType, type PaymentMethod } from '@config/constants';
 import { ApiError } from '@shared/errors/ApiError';
 import { round2 } from '@shared/utils/money';
 import { splitTaxFromGross } from '@shared/utils/tax';
-import { env } from '@config/env';
+import { settingsService } from '@modules/settings/settings.service';
 import {
   customizationService,
   type QuoteResult,
@@ -43,6 +43,7 @@ export interface OrderQuoteInput {
   extraDeliveryFee?: number;
   deliveryType: DeliveryType;
   couponCode?: string | null;
+  paymentMethod?: PaymentMethod | null;
   userId?: number | null;
   /** El cliente decide si gasta su saldo en este pedido. */
   useWallet?: boolean;
@@ -65,6 +66,8 @@ export interface OrderQuote {
   items: QuoteResult[];
   subtotal: number;
   deliveryFee: number;
+  /** Recargo logístico aplicado una sola vez cuando el pedido contiene tortas. */
+  cakeDeliveryFee?: number;
   discountTotal: number;
   /** Saldo del plan aplicado a este pedido. */
   walletAmount: number;
@@ -87,15 +90,31 @@ export interface OrderQuote {
 
 // round2 vive en @shared/utils/money: mismo redondeo para precios, reembolsos y saldo.
 
-/** RN-011: valida vigencia, monto minimo y limites de uso del cupon. */
-const resolveCoupon = async (
+export interface CouponEvaluationContext {
+  branchId?: number | null;
+  deliveryType?: DeliveryType | null;
+  paymentMethod?: PaymentMethod | null;
+  productIds?: number[];
+  deliveryFee?: number;
+}
+
+export interface CouponEvaluation {
+  coupon: Coupon;
+  amount: number;
+  freeDelivery: boolean;
+  budgetImpact: number;
+}
+
+/** RN-011: valida vigencia, segmentación, presupuesto y límites de uso del cupón. */
+export const resolveCoupon = async (
   code: string,
   subtotal: number,
   userId: number | null | undefined,
-): Promise<{ coupon: Coupon; amount: number; freeDelivery: boolean }> => {
+  context: CouponEvaluationContext = {},
+): Promise<CouponEvaluation> => {
   const coupon = await Coupon.findOne({ where: { code: code.trim().toUpperCase() } });
 
-  if (!coupon || !coupon.isActive) throw ApiError.unprocessable('El cupon no existe o no esta activo');
+  if (!coupon || !coupon.isActive || coupon.archivedAt) throw ApiError.unprocessable('El cupón no existe o no está activo');
 
   const now = new Date();
   if (coupon.validFrom && now < coupon.validFrom) {
@@ -113,6 +132,20 @@ const resolveCoupon = async (
     );
   }
 
+  const rules = (coupon.rulesJson ?? {}) as CouponRules;
+  if (rules.branchIds?.length && (!context.branchId || !rules.branchIds.includes(context.branchId))) {
+    throw ApiError.unprocessable('El cupón no aplica en esta sucursal');
+  }
+  if (rules.deliveryTypes?.length && (!context.deliveryType || !rules.deliveryTypes.includes(context.deliveryType))) {
+    throw ApiError.unprocessable('El cupón no aplica para este tipo de entrega');
+  }
+  if (rules.paymentMethods?.length && (!context.paymentMethod || !rules.paymentMethods.includes(context.paymentMethod))) {
+    throw ApiError.unprocessable('El cupón no aplica para este medio de pago');
+  }
+  if (rules.productIds?.length && !(context.productIds ?? []).some((id) => rules.productIds!.includes(id))) {
+    throw ApiError.unprocessable('El cupón no aplica a los productos del carrito');
+  }
+
   if (userId) {
     const usedByUser = await CouponRedemption.count({
       where: {
@@ -124,10 +157,25 @@ const resolveCoupon = async (
     if (usedByUser >= coupon.usageLimitPerUser) {
       throw ApiError.unprocessable('Ya usaste este cupon');
     }
+    if (rules.firstOrderOnly) {
+      const priorOrders = await Order.count({
+        where: {
+          userId,
+          status: { [Op.notIn]: [ORDER_STATUS.PENDING_PAYMENT, ORDER_STATUS.CANCELLED] },
+        },
+      });
+      if (priorOrders > 0) throw ApiError.unprocessable('El cupón es válido solo para el primer pedido');
+    }
+  } else if (rules.firstOrderOnly) {
+    throw ApiError.unprocessable('Inicia sesión para usar este cupón');
   }
 
   if (coupon.discountType === DISCOUNT_TYPE.FREE_DELIVERY) {
-    return { coupon, amount: 0, freeDelivery: true };
+    const budgetImpact = round2(Math.max(0, context.deliveryFee ?? 0));
+    if (coupon.budgetAmount !== null && Number(coupon.budgetUsed) + budgetImpact > Number(coupon.budgetAmount)) {
+      throw ApiError.unprocessable('El presupuesto de esta campaña ya se agotó');
+    }
+    return { coupon, amount: 0, freeDelivery: true, budgetImpact };
   }
 
   let amount =
@@ -139,7 +187,11 @@ const resolveCoupon = async (
     amount = Math.min(amount, Number(coupon.maxDiscountAmount));
   }
 
-  return { coupon, amount: round2(Math.min(amount, subtotal)), freeDelivery: false };
+  const finalAmount = round2(Math.min(amount, subtotal));
+  if (coupon.budgetAmount !== null && Number(coupon.budgetUsed) + finalAmount > Number(coupon.budgetAmount)) {
+    throw ApiError.unprocessable('El presupuesto de esta campaña ya se agotó');
+  }
+  return { coupon, amount: finalAmount, freeDelivery: false, budgetImpact: finalAmount };
 };
 
 export const pricingService = {
@@ -206,8 +258,10 @@ export const pricingService = {
     // 2) Delivery según ubicación. El mínimo es opcional (0 = desactivado)
     // y solo se aplica a productos en delivery; el recojo siempre queda sin mínimo.
     let deliveryFee = 0;
+    let cakeDeliveryFee = 0;
     let minimumOrder = 0;
-    const deliveryVehicleType = await carTransport.requiresCar(input.items.map((item) => item.productId), input.deliveryType) ? 'CAR' as const : null;
+    const requiresCar = await carTransport.requiresCar(input.items.map((item) => item.productId), input.deliveryType);
+    const deliveryVehicleType = requiresCar ? 'CAR' as const : null;
     const deliveryHandlingInstructions = deliveryVehicleType
       ? (await Branch.findByPk(input.branchId))?.carDeliveryInstructions ?? null : null;
 
@@ -216,19 +270,38 @@ export const pricingService = {
         throw ApiError.unprocessable('Necesitamos una direccion con cobertura para el delivery');
       }
       const zone = await CoverageZone.findOne({
-        where: { id: input.coverageZoneId, isActive: true },
+        where: {
+          id: input.coverageZoneId,
+          isActive: true,
+          archivedAt: null,
+          [Op.or]: [{ effectiveFrom: null }, { effectiveFrom: { [Op.lte]: new Date() } }],
+        },
       });
       if (!zone) throw ApiError.unprocessable('La zona de entrega ya no esta activa');
 
-      deliveryFee = round2(Number(zone.deliveryFee) + Math.max(0, input.extraDeliveryFee ?? 0));
+      cakeDeliveryFee = requiresCar ? round2(Math.max(0, Number(zone.cakeDeliveryFee ?? 0))) : 0;
+      deliveryFee = round2(Number(zone.deliveryFee) + cakeDeliveryFee + Math.max(0, input.extraDeliveryFee ?? 0));
       minimumOrder = Number(zone.minimumOrder);
     }
 
     const discounts: AppliedDiscount[] = [];
     let discountTotal = 0;
 
+    // Se resuelve antes de los beneficios del plan para que EXCLUSIVE tenga un
+    // significado determinista y no permita una doble bonificación accidental.
+    const selectedCouponCode = input.couponCode?.trim() || null;
+    const selectedCoupon = selectedCouponCode
+      ? await resolveCoupon(selectedCouponCode, productSubtotal, input.userId, {
+        branchId: input.branchId,
+        deliveryType: input.deliveryType,
+        paymentMethod: input.paymentMethod,
+        productIds: input.items.map((item) => item.productId),
+        deliveryFee,
+      })
+      : null;
+
     // 3) Beneficios del plan vigente (RN-012): descuento y/o delivery gratis.
-    if (input.userId) {
+    if (input.userId && selectedCoupon?.coupon.stackMode !== COUPON_STACK_MODE.EXCLUSIVE) {
       const benefits = await plansService.activeBenefits(input.userId);
 
       for (const benefit of benefits) {
@@ -241,6 +314,7 @@ export const pricingService = {
             userPlanId: benefit.userPlanId,
           });
           deliveryFee = 0;
+          cakeDeliveryFee = 0;
         }
 
         if (benefit.type === BENEFIT_TYPE.DISCOUNT_PERCENT && benefit.value > 0) {
@@ -267,17 +341,14 @@ export const pricingService = {
     // 4) Cupón: solo se aplica el que el cliente escribió explícitamente.
     // No se autoselecciona ninguno: un cupón es una campaña con cupo limitado y
     // aplicarlo sin que nadie lo pida quema ese cupo en pedidos que ya iban a ocurrir.
-    const selectedCouponCode = input.couponCode?.trim() || null;
-
-    if (selectedCouponCode) {
-      const { coupon, amount, freeDelivery } = await resolveCoupon(
-        selectedCouponCode,
-        productSubtotal,
-        input.userId,
-      );
+    if (selectedCoupon) {
+      const { coupon, amount, freeDelivery } = selectedCoupon;
 
       const applied = freeDelivery ? deliveryFee : Math.min(amount, productSubtotal - discountTotal);
-      if (freeDelivery) deliveryFee = 0;
+      if (freeDelivery) {
+        deliveryFee = 0;
+        cakeDeliveryFee = 0;
+      }
       else discountTotal += applied;
 
       discounts.push({
@@ -304,7 +375,8 @@ export const pricingService = {
      * venta completa, y pagar parte con saldo del plan es una forma de pago, no un
      * descuento. Si se desglosara sobre lo cobrado con tarjeta, la boleta declararia
      * menos venta de la que hubo. */
-    const { base: taxableBase, tax: taxTotal } = splitTaxFromGross(payable, env.IGV_RATE);
+    const { taxRate, currency } = await settingsService.getBusinessInfo();
+    const { base: taxableBase, tax: taxTotal } = splitTaxFromGross(payable, taxRate);
 
     return {
       items,
@@ -312,19 +384,50 @@ export const pricingService = {
       subtotal,
       experience,
       deliveryFee: round2(deliveryFee),
+      cakeDeliveryFee: round2(cakeDeliveryFee),
       deliveryVehicleType,
       deliveryHandlingInstructions,
       discountTotal: round2(discountTotal),
       walletAmount,
       walletBalance: round2(walletBalance),
-      taxRate: env.IGV_RATE,
+      taxRate,
       taxableBase,
       taxTotal,
       grandTotal,
-      currency: CURRENCY,
+      currency,
       discounts,
       minimumOrder,
       meetsMinimum: productSubtotal >= minimumOrder,
+    };
+  },
+
+  /** Simulador del panel: usa la misma validación que el checkout. */
+  async previewCoupon(input: {
+    code: string;
+    subtotal: number;
+    userId?: number | null;
+    branchId?: number | null;
+    deliveryType?: DeliveryType | null;
+    paymentMethod?: PaymentMethod | null;
+    productIds?: number[];
+    deliveryFee?: number;
+  }) {
+    const result = await resolveCoupon(input.code, input.subtotal, input.userId, {
+      branchId: input.branchId,
+      deliveryType: input.deliveryType,
+      paymentMethod: input.paymentMethod,
+      productIds: input.productIds ?? [],
+      deliveryFee: input.deliveryFee,
+    });
+    return {
+      code: result.coupon.code,
+      description: result.coupon.description,
+      discountType: result.coupon.discountType,
+      amount: result.amount,
+      freeDelivery: result.freeDelivery,
+      budgetImpact: result.budgetImpact,
+      stackMode: result.coupon.stackMode,
+      rules: result.coupon.rulesJson ?? {},
     };
   },
 };

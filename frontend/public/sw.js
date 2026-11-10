@@ -1,5 +1,5 @@
-const CACHE = 'misky-challay-shell-v2';
-const SHELL = ['/', '/brand/misky-app-icon.png', '/manifest.webmanifest'];
+const CACHE = 'misky-challay-shell-v3';
+const SHELL = ['/', '/brand/misky-app-icon.jpg', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -50,8 +50,8 @@ self.addEventListener('fetch', (event) => {
 
 const show = (payload = {}) => self.registration.showNotification(payload.title || 'Misky Challay', {
   body: payload.body || 'Hay una novedad en la operación.',
-  icon: '/brand/misky-app-icon.png',
-  badge: '/brand/misky-app-icon.png',
+  icon: '/brand/misky-app-icon.jpg',
+  badge: '/brand/misky-app-icon.jpg',
   tag: payload.tag || 'misky-challay-operation',
   renotify: true,
   requireInteraction: payload.requireInteraction !== false,

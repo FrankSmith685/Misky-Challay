@@ -75,9 +75,9 @@ const checkoutBody = z
     couponCode: z.string().max(40).optional(),
     /** El cliente decide si gasta el saldo de su plan en este pedido. */
     useWallet: z.boolean().optional(),
-    /** ONLINE = pasarela; YAPE/PLIN = transferencia directa verificada por la tienda. */
-    paymentMethod: z.enum(['ONLINE', 'YAPE', 'PLIN'], {
-      errorMap: () => ({ message: 'Elige pago en línea, Yape o Plin. El efectivo no está disponible en el checkout.' }),
+    /** ONLINE = pasarela; YAPE/PLIN = transferencia directa; CASH = contra entrega. */
+    paymentMethod: z.enum(['ONLINE', 'YAPE', 'PLIN', 'CASH'], {
+      errorMap: () => ({ message: 'Elige pago en línea, Yape, Plin o contra entrega.' }),
     }).default('ONLINE'),
     mobilePayment: z.object({
       operationCode: z.string().trim().regex(/^[A-Za-z0-9-]{6,24}$/, 'Codigo de operacion invalido'),

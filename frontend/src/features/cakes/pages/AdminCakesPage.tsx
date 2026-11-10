@@ -71,7 +71,7 @@ const TAB_HELP: Record<Tab, { purpose: string; actions: string[]; result: string
     result: 'El tablero muestra el margen de las tortas y el resultado operativo estimado con los movimientos registrados.',
   },
   commissions: {
-    purpose: 'Consulta y liquida la comisión de las tortas cobradas.',
+    purpose: 'Consulta y liquida la comisión de los pedidos cobrados.',
     actions: ['Revisa la base y el saldo de cada pedido.', 'Registra un ajuste con motivo si corresponde.', 'Anota la transferencia y su referencia cuando se realice.'],
     result: 'La liquidación reduce el saldo pendiente y conserva el historial de transferencias.',
   },
@@ -109,7 +109,7 @@ const CakeAdminPage = () => {
   const linkedBranchId = Number(searchParams.get('branchId')) || null;
   const appliedLinkedBranch = useRef<number | null>(null);
   const { can, canAny, isSuperAdmin } = usePermissions();
-  const { branchId, branches, setBranchId, isLoadingBranches, branchesError, reloadBranches } = useActiveBranch();
+  const { branchId, branches, setBranchId, setGlobalScope, isLoadingBranches, branchesError, reloadBranches } = useActiveBranch({ allowAll: isSuperAdmin });
   const visibleTabs = TABS.filter(({ id }) => id === 'commissions'
     ? isSuperAdmin
     : id === 'finances'
@@ -135,6 +135,7 @@ const CakeAdminPage = () => {
   const [tasks, setTasks] = useState<ProductionTask[]>([]);
   const [commissions, setCommissions] = useState<CakeCommissionReport | null>(null);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [capacityDate, setCapacityDate] = useState(todayInLima);
   const [capacityStation, setCapacityStation] = useState<Station>('BAKING');
@@ -146,8 +147,9 @@ const CakeAdminPage = () => {
   const sequence = useRef(0);
   const sourceKey = `${branchId}:${tab}`;
   const currentSource = useRef(sourceKey); currentSource.current = sourceKey;
+  const loadedSourceRef = useRef('');
   const [loadedSource, setLoadedSource] = useState('');
-  const needsBranch = tab !== 'overview' && tab !== 'recipes';
+  const needsBranch = tab !== 'overview' && tab !== 'recipes' && tab !== 'commissions';
 
   useEffect(() => {
     if (!isLoadingBranches && linkedBranchId && appliedLinkedBranch.current !== linkedBranchId && branches.some((branch) => branch.id === linkedBranchId)) {
@@ -167,28 +169,29 @@ const CakeAdminPage = () => {
     if (!visibleTabs.some((item) => item.id === tab) && visibleTabs[0]) setTab(visibleTabs[0].id);
   }, [tab, visibleTabs]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (background = false) => {
     if (needsBranch && !branchId) return;
     const request = ++sequence.current;
     const source = currentSource.current;
     const valid = () => request === sequence.current && source === currentSource.current;
-    setLoading(true);
+    if (background && loadedSourceRef.current === source) setRefreshing(true);
+    else setLoading(true);
     try {
       if (tab === 'overview' || tab === 'recipes') { const rows = await cakesApi.configuration(); if (valid()) setConfig(rows); }
       if (tab === 'designs' && branchId) { const rows = await cakesApi.designBoard(branchId); if (valid()) setDesigns(rows); }
       if (tab === 'capacity' && branchId) { const rows = await cakesApi.capacities(branchId); if (valid()) setCapacities(rows); }
       if (tab === 'production' && branchId) { const rows = await cakesApi.tasks(branchId); if (valid()) setTasks(rows); }
-      if (tab === 'commissions' && branchId) { const rows = await cakesApi.commissions(branchId); if (valid()) setCommissions(rows); }
-      if (valid()) { setError(''); setLoadedSource(source); }
+      if (tab === 'commissions') { const rows = await cakesApi.commissions(branchId ?? undefined); if (valid()) setCommissions(rows); }
+      if (valid()) { setError(''); loadedSourceRef.current = source; setLoadedSource(source); }
     } catch (cause) { if (valid()) setError(getApiErrorMessage(cause)); }
-    finally { if (valid()) setLoading(false); }
+    finally { if (valid()) { setLoading(false); setRefreshing(false); } }
   }, [branchId, needsBranch, tab]);
   useEffect(() => {
     if (!isLoadingBranches) void load();
     const cancelPendingReads = () => { sequence.current++; };
     return cancelPendingReads;
   }, [isLoadingBranches, load]);
-  useLiveRefresh(['production', 'designs', 'availability', 'finance', 'catalog'], load, { enabled: !isLoadingBranches });
+  useLiveRefresh(['production', 'designs', 'availability', 'finance', 'catalog'], () => load(true), { enabled: !isLoadingBranches });
 
   const openReference = async (request: DesignRequest, referenceId?: number) => {
     try {
@@ -227,10 +230,10 @@ const CakeAdminPage = () => {
     }
   };
 
-  const changeTask = async (task: ProductionTask, status: 'IN_PROGRESS' | 'BLOCKED' | 'DONE') => {
+  const changeTask = async (task: ProductionTask, status: 'IN_PROGRESS' | 'BLOCKED' | 'DONE', incidentReason?: string) => {
     if (!branchId) return;
     try {
-      await cakesApi.updateTask(task.id, { branchId, status });
+      await cakesApi.updateTask(task.id, { branchId, status, ...(incidentReason ? { incidentReason } : {}) });
       toast.success('Estado de la tarea actualizado');
       await load();
     } catch (cause) {
@@ -271,13 +274,13 @@ const CakeAdminPage = () => {
               <span className="grid size-10 shrink-0 place-items-center rounded-card bg-brand-50 text-brand-700"><MapPin className="size-5" /></span>
               <div className="min-w-0">
                 <p className="text-[11px] font-black uppercase tracking-[.14em] text-brand-700">Contexto de trabajo</p>
-                <p className="mt-0.5 truncate text-sm font-bold text-ink">Sucursal activa</p>
+                <p className="mt-0.5 truncate text-sm font-bold text-ink">{tab === 'commissions' && isSuperAdmin && branchId === null ? 'Todas las sucursales' : 'Sucursal activa'}</p>
                 <p className="text-xs text-ink-muted">Cambia de sede para consultar su capacidad y operación.</p>
               </div>
             </div>
-            <div className="w-full min-w-0 sm:max-w-[300px]"><BranchSelector value={branchId} branches={branches} onChange={setBranchId} hasError={Boolean(branchesError)} /></div>
+            <div className="w-full min-w-0 sm:max-w-[300px]"><BranchSelector value={branchId} branches={branches} onChange={setBranchId} allowAll={isSuperAdmin} onSelectAll={setGlobalScope} hasError={Boolean(branchesError)} /></div>
           </div>
-          <Button className="w-full shrink-0 sm:w-auto" size="sm" variant="outline" leftIcon={<RefreshCw className="size-4" />} onClick={() => void load()} isLoading={loading} disabled={needsBranch && !branchId}>Actualizar sección</Button>
+          <Button className="w-full shrink-0 sm:w-auto" size="sm" variant="outline" leftIcon={<RefreshCw className="size-4" />} onClick={() => void load()} isLoading={loading || refreshing} disabled={needsBranch && !branchId}>Actualizar sección</Button>
         </div>
       </Card>
       {branchesError && <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-red-50 p-4 text-sm text-red-800"><span>{branchesError}</span><Button size="sm" variant="outline" onClick={() => void reloadBranches()}>Reintentar</Button></div>}

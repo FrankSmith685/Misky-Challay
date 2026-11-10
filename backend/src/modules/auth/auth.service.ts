@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { Op } from 'sequelize';
 import { ROLES, USER_STATUS } from '@config/constants';
-import { Permission, Role, User, UserRole } from '@database/models';
+import { Permission, Role, User, UserRole, UserSession } from '@database/models';
 import { ApiError } from '@shared/errors/ApiError';
 import { logger } from '@config/logger';
 import { comparePassword, hashPassword } from '@shared/utils/password';
@@ -18,6 +18,9 @@ import type { LoginInput, RegisterInput } from './auth.validation';
 /** El enlace de reset caduca a la hora. Suficiente para el usuario, corto para un atacante. */
 const RESET_TOKEN_TTL_MINUTES = 60;
 const sha256 = (value: string): string => crypto.createHash('sha256').update(value).digest('hex');
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+interface SessionMeta { ip?: string | null; userAgent?: string | null }
 
 export interface AuthenticatedUser {
   id: number;
@@ -36,6 +39,8 @@ export interface AuthenticatedUser {
   isSuperAdmin: boolean;
   /** Sucursales asignadas. Vacio = alcance global. */
   branchIds: number[];
+  mustChangePassword: boolean;
+  mfaEnabled: boolean;
 }
 
 export interface AuthResult {
@@ -84,10 +89,33 @@ const loadUserWithAccess = async (userId: number): Promise<AuthenticatedUser> =>
     permissions: [...permissions],
     isSuperAdmin: user.isSuperAdmin,
     branchIds,
+    mustChangePassword: user.mustChangePassword,
+    mfaEnabled: user.mfaEnabled,
   };
 };
 
-const issueTokens = (user: AuthenticatedUser, tokenVersion: number): Omit<AuthResult, 'user'> => {
+const issueTokens = async (
+  user: AuthenticatedUser,
+  tokenVersion: number,
+  meta: SessionMeta = {},
+  existingSessionId?: string,
+): Promise<Omit<AuthResult, 'user'>> => {
+  const now = new Date();
+  let sid = existingSessionId;
+  if (!sid) {
+    const placeholder = await UserSession.create({
+      userId: user.id,
+      tokenHash: sha256(crypto.randomUUID()),
+      createdAt: now,
+      lastSeenAt: now,
+      expiresAt: new Date(now.getTime() + SESSION_TTL_MS),
+      revokedAt: null,
+      ip: meta.ip ?? null,
+      userAgent: meta.userAgent?.slice(0, 250) ?? null,
+      deviceLabel: meta.userAgent?.slice(0, 120) ?? null,
+    });
+    sid = String(placeholder.id);
+  }
   const payload: TokenPayload = {
     sub: user.id,
     email: user.email,
@@ -96,16 +124,24 @@ const issueTokens = (user: AuthenticatedUser, tokenVersion: number): Omit<AuthRe
     isSuperAdmin: user.isSuperAdmin,
     branchIds: user.branchIds,
     tv: tokenVersion,
+    sid,
   };
+
+  const refreshToken = signRefreshToken({ sub: user.id, tv: tokenVersion, sid });
+  const [updated] = await UserSession.update(
+    { tokenHash: sha256(refreshToken), lastSeenAt: now, expiresAt: new Date(now.getTime() + SESSION_TTL_MS), revokedAt: null },
+    { where: { id: Number(sid), userId: user.id, revokedAt: null } },
+  );
+  if (updated !== 1) throw ApiError.unauthorized('No se pudo crear la sesion');
 
   return {
     accessToken: signAccessToken(payload),
-    refreshToken: signRefreshToken({ sub: user.id, tv: tokenVersion }),
+    refreshToken,
   };
 };
 
 export const authService = {
-  async register(input: RegisterInput): Promise<AuthResult> {
+  async register(input: RegisterInput, meta: SessionMeta = {}): Promise<AuthResult> {
     const email = input.email.trim().toLowerCase();
     const phone = normalizePhone(input.phone);
 
@@ -149,10 +185,10 @@ export const authService = {
     }
 
     const user = await loadUserWithAccess(created.id);
-    return { user, ...issueTokens(user, created.tokenVersion) };
+    return { user, ...(await issueTokens(user, created.tokenVersion, meta)) };
   },
 
-  async login(input: LoginInput): Promise<AuthResult> {
+  async login(input: LoginInput, meta: SessionMeta = {}): Promise<AuthResult> {
     const account = await User.scope('withPassword').findOne({ where: { email: input.email } });
     if (!account?.passwordHash) throw ApiError.unauthorized('Credenciales incorrectas');
     if (account.status !== USER_STATUS.ACTIVE) throw ApiError.forbidden('La cuenta no esta activa');
@@ -160,11 +196,25 @@ export const authService = {
     const valid = await comparePassword(input.password, account.passwordHash);
     if (!valid) throw ApiError.unauthorized('Credenciales incorrectas');
 
+    if (account.mfaEnabled) {
+      if (!input.mfaCode) throw ApiError.unauthorized('Código MFA requerido');
+      const { decryptTotpSecret, verifyTotp } = await import('@shared/utils/totp');
+      let validMfa = account.mfaSecretEncrypted
+        ? verifyTotp(decryptTotpSecret(account.mfaSecretEncrypted), input.mfaCode)
+        : false;
+      if (!validMfa && account.mfaRecoveryCodesJson?.includes(sha256(input.mfaCode.toUpperCase()))) {
+        account.mfaRecoveryCodesJson = account.mfaRecoveryCodesJson.filter((code) => code !== sha256(input.mfaCode!.toUpperCase()));
+        await account.save();
+        validMfa = true;
+      }
+      if (!validMfa) throw ApiError.unauthorized('Código MFA inválido');
+    }
+
     account.lastLoginAt = new Date();
     await account.save();
 
     const user = await loadUserWithAccess(account.id);
-    return { user, ...issueTokens(user, account.tokenVersion) };
+    return { user, ...(await issueTokens(user, account.tokenVersion, meta)) };
   },
 
   async refresh(refreshToken: string): Promise<AuthResult> {
@@ -179,8 +229,13 @@ export const authService = {
       throw ApiError.unauthorized('Sesion expirada, vuelve a iniciar sesion');
     }
 
+    if (payload.sid) {
+      const session = await UserSession.findOne({ where: { id: Number(payload.sid), userId: account.id, tokenHash: sha256(refreshToken), revokedAt: null } });
+      if (!session || session.expiresAt <= new Date()) throw ApiError.unauthorized('Sesion revocada o expirada');
+    }
+
     const user = await loadUserWithAccess(account.id);
-    return { user, ...issueTokens(user, account.tokenVersion) };
+    return { user, ...(await issueTokens(user, account.tokenVersion, {}, payload.sid)) };
   },
 
   async me(userId: number): Promise<AuthenticatedUser> {
@@ -190,6 +245,7 @@ export const authService = {
   /** Revoca todos los refresh tokens del usuario subiendo su version. */
   async logout(userId: number): Promise<void> {
     await User.increment('tokenVersion', { where: { id: userId } });
+    await UserSession.update({ revokedAt: new Date() }, { where: { userId, revokedAt: null } });
   },
 
   /**
@@ -250,6 +306,9 @@ export const authService = {
     user.passwordResetExpiresAt = null;
     // Cierra cualquier sesion abierta: los refresh tokens previos dejan de servir.
     user.tokenVersion += 1;
+    user.mustChangePassword = false;
+    user.passwordChangedAt = new Date();
     await user.save();
+    await UserSession.update({ revokedAt: new Date() }, { where: { userId: user.id, revokedAt: null } });
   },
 };

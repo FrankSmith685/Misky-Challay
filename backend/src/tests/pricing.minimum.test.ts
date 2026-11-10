@@ -56,6 +56,17 @@ test('la entrega en auto usa una sola tarifa de zona y conserva el recargo por d
   assert.equal(quote.deliveryHandlingInstructions, 'Mantener la caja sobre una superficie nivelada.');
 });
 
+test('el recargo por torta se cobra una sola vez por pedido', async () => {
+  const { zone } = prepare();
+  zone.cakeDeliveryFee = 4.5;
+  mock.method(carTransport, 'requiresCar', async () => true);
+  mock.method(Branch, 'findByPk', async () => ({ carDeliveryInstructions: 'Traslado protegido.' }));
+  const quote = await pricingService.quoteOrder({ ...input, extraDeliveryFee: 2 });
+  assert.equal(quote.cakeDeliveryFee, 4.5);
+  assert.equal(quote.deliveryFee, 13.4);
+  assert.equal(quote.grandTotal, 31.4);
+});
+
 test('un mínimo activado por administración se respeta y no se completa con el delivery', async () => {
   prepare(25);
   const quote = await pricingService.quoteOrder({ ...input, extraDeliveryFee: 37.26 });

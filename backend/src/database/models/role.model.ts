@@ -16,6 +16,7 @@ export class Role extends Model<InferAttributes<Role>, InferCreationAttributes<R
   declare name: string;
   declare description: string | null;
   declare isSystem: CreationOptional<boolean>;
+  declare archivedAt: CreationOptional<Date | null>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
 
@@ -29,6 +30,7 @@ Role.init(
     name: { type: DataTypes.STRING(80), allowNull: false },
     description: { type: DataTypes.STRING(255), allowNull: true },
     isSystem: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    archivedAt: { type: DataTypes.DATE, allowNull: true },
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,
   },

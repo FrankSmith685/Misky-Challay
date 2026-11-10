@@ -1,6 +1,6 @@
 import { useLiveRefresh } from '@services/realtime';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useBeforeUnload, useBlocker, useSearchParams } from 'react-router-dom';
 import {
   Checkbox,
   Dialog,
@@ -19,6 +19,7 @@ import {
   ChevronRight,
   ClipboardList,
   Clock3,
+  Download,
   Eye,
   History,
   Layers3,
@@ -30,6 +31,7 @@ import {
   QrCode,
   RefreshCw,
   Rocket,
+  RotateCcw,
   Save,
   Search,
   Send,
@@ -68,6 +70,8 @@ import { SceneEditor } from './SceneEditor';
 import { useExperienceMedia } from './useExperienceMedia';
 import { ExperienceViewer } from './ExperienceViewer';
 import { publicCakeWebOrigin } from '../cakes/utils/cakePreviewLinks';
+import { useActiveBranch } from '@features/admin/hooks/useActiveBranch';
+import { BranchSelector } from '@features/admin/components/BranchSelector';
 
 const blankPackage: ExperiencePackage = {
   id: 0,
@@ -85,8 +89,16 @@ const blankPackage: ExperiencePackage = {
   sortOrder: 0,
 };
 export default function ExperienceStudioPage() {
-  const { can, branchIds, isSuperAdmin } = usePermissions();
-  const global = isSuperAdmin || !branchIds.length;
+  const { can, isSuperAdmin } = usePermissions();
+  const global = isSuperAdmin;
+  const {
+    branchId,
+    branches,
+    setBranchId,
+    setGlobalScope,
+    isLoadingBranches,
+    branchesError,
+  } = useActiveBranch({ allowAll: isSuperAdmin });
   const write = can(PERM.EXPERIENCE_WRITE);
   const publish = can(PERM.EXPERIENCE_PUBLISH);
   const [params, setParams] = useSearchParams();
@@ -120,12 +132,20 @@ export default function ExperienceStudioPage() {
   const [loadingProject, setLoadingProject] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const loadSequence = useRef(0);
   const [starts, setStarts] = useState('');
   const refresh = useCallback(async () => {
     setError('');
     try {
-      const list = await api.projects();
+      const list = await api.projects({
+        branchId: isSuperAdmin ? branchId : null,
+        from: fromDate,
+        to: toDate,
+        page: 1,
+        pageSize: 100,
+      });
       setProjects(list);
       if (global) {
         const next = await api.config();
@@ -138,7 +158,7 @@ export default function ExperienceStudioPage() {
     } finally {
       setLoading(false);
     }
-  }, [global]);
+  }, [branchId, fromDate, global, isSuperAdmin, toDate]);
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -151,8 +171,10 @@ export default function ExperienceStudioPage() {
       const d = await api.project(id);
       if (sequence !== loadSequence.current) return;
       setDetail(d);
-      setScene(d.project.sceneJson);
-      setAssigned(d.project.assignedTo ? String(d.project.assignedTo) : '');
+      setScene(d.project.draftSceneJson ?? d.project.sceneJson);
+      setAssigned(
+        String(d.project.draftAssignedTo ?? d.project.assignedTo ?? ''),
+      );
       setPreview(null);
     } catch (e) {
       if (sequence === loadSequence.current) setError(getApiErrorMessage(e));
@@ -189,6 +211,43 @@ export default function ExperienceStudioPage() {
     (JSON.stringify(scene) !== JSON.stringify(detail.project.sceneJson) ||
       assigned !== (detail.project.assignedTo ? String(detail.project.assignedTo) : '')),
   );
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      dirty && !busy && currentLocation.pathname !== nextLocation.pathname,
+  );
+  useBeforeUnload(
+    useCallback(
+      (event: BeforeUnloadEvent) => {
+        if (dirty) {
+          event.preventDefault();
+          event.returnValue = '';
+        }
+      },
+      [dirty],
+    ),
+  );
+  useEffect(() => {
+    if (blocker.state !== 'blocked') return;
+    if (window.confirm('Tienes cambios guardados como borrador. ¿Salir de todas formas?')) blocker.proceed();
+    else blocker.reset();
+  }, [blocker]);
+  const draftFingerprint = useRef('');
+  useEffect(() => {
+    if (!detail || !write || !dirty || busy || editorBusy) return;
+    const fingerprint = `${detail.project.id}:${detail.project.version}:${JSON.stringify(scene)}:${assigned}`;
+    if (draftFingerprint.current === fingerprint) return;
+    const timer = window.setTimeout(() => {
+      draftFingerprint.current = fingerprint;
+      void api
+        .saveDraft(detail.project.id, {
+          expectedVersion: detail.project.version,
+          scene,
+          assignedTo: assigned ? Number(assigned) : null,
+        })
+        .catch((cause) => setError(getApiErrorMessage(cause)));
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [assigned, busy, detail, dirty, editorBusy, scene, write]);
   const filteredProjects = projects.filter(
     (p) =>
       (statusFilter === 'ALL' || p.status === statusFilter) &&
@@ -197,6 +256,35 @@ export default function ExperienceStudioPage() {
         .toLocaleLowerCase('es')
         .includes(search.trim().toLocaleLowerCase('es')),
   );
+  const activeArPackage = config.packages.find((item) => item.mode === 'AR' && item.isActive);
+  const activeArTemplate = activeArPackage?.templateId
+    ? config.templates.find((item) => item.id === activeArPackage.templateId && item.isActive)
+    : undefined;
+  const stableCampaignReady = Boolean(activeArPackage && activeArTemplate);
+  const exportProjects = () => {
+    const escape = (value: unknown) => `"${String(value ?? '').replaceAll('"', '""')}"`;
+    const rows = [
+      ['Pedido', 'Sucursal', 'Servicio', 'Estado', 'Versión', 'Inicio', 'Vencimiento'],
+      ...filteredProjects.map((project) => [
+        project.order?.orderNumber ?? project.orderId,
+        project.order?.branch?.name ?? project.order?.branchId ?? '',
+        project.packageSnapshotJson.name,
+        EXPERIENCE_LABELS[project.status] ?? project.status,
+        project.version,
+        project.startsAt ?? '',
+        project.expiresAt ?? '',
+      ]),
+    ];
+    const blob = new Blob([rows.map((row) => row.map(escape).join(',')).join('\n')], {
+      type: 'text/csv;charset=utf-8',
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `experiencias-qr-${new Date().toISOString().slice(0, 10)}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
   const openSavedPreview = () => {
     if (detail)
       setPreview({
@@ -204,12 +292,14 @@ export default function ExperienceStudioPage() {
         base: '/experiences/admin/projects/' + detail.project.id,
         ...(detail.project.status === 'PUBLISHED'
           ? {
-              url: publicCakeWebOrigin() + '/experiencias/' + detail.project.publicToken,
+              url: publicCakeWebOrigin() + '/experiencias/' + detail.project.publicToken + '?camera=1',
               expiresAt: detail.project.expiresAt,
             }
           : {}),
       });
   };
+  const idempotencyKey = () =>
+    globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const saveProject = () => {
     if (detail)
       void run(async () => {
@@ -217,7 +307,7 @@ export default function ExperienceStudioPage() {
           expectedVersion: detail.project.version,
           scene,
           assignedTo: assigned ? Number(assigned) : null,
-        });
+        }, idempotencyKey());
         await load(p.id);
       }, 'Nueva versión guardada');
   };
@@ -225,11 +315,16 @@ export default function ExperienceStudioPage() {
     if (detail)
       void run(
         async () => {
+          const reason =
+            action === 'PAUSE'
+              ? window.prompt('Indica el motivo de la pausa (opcional):') ?? undefined
+              : undefined;
           await api.action(detail.project.id, {
             expectedVersion: detail.project.version,
             action,
+            ...(reason?.trim() ? { reason: reason.trim() } : {}),
             ...(action === 'PUBLISH' && starts ? { startsAt: new Date(starts).toISOString() } : {}),
-          });
+          }, idempotencyKey());
           await load(detail.project.id);
         },
         action === 'REVIEW'
@@ -238,6 +333,44 @@ export default function ExperienceStudioPage() {
             ? 'Publicación pausada'
             : 'Publicación guardada',
       );
+  };
+  const restoreVersion = (eventId: number) => {
+    if (!detail || dirty) return;
+    void run(
+      async () => {
+        await api.restore(
+          detail.project.id,
+          { expectedVersion: detail.project.version, eventId },
+          idempotencyKey(),
+        );
+        await load(detail.project.id);
+      },
+      'Versión restaurada',
+    );
+  };
+  const discardDraft = () => {
+    if (!detail || !dirty) return;
+    void run(
+      async () => {
+        await api.discardDraft(detail.project.id);
+        await load(detail.project.id);
+      },
+      'Borrador descartado',
+    );
+  };
+  const rotatePublicToken = () => {
+    if (!detail || !window.confirm('Esto revocará el QR anterior. ¿Generar un enlace nuevo?')) return;
+    void run(
+      async () => {
+        await api.rotateToken(
+          detail.project.id,
+          { expectedVersion: detail.project.version },
+          idempotencyKey(),
+        );
+        await load(detail.project.id);
+      },
+      'Enlace QR renovado',
+    );
   };
   const tabItems = [
     { value: 'projects', label: 'Trabajos por pedido' },
@@ -271,7 +404,7 @@ export default function ExperienceStudioPage() {
           </Button>
         }
       />
-      <div className="grid grid-cols-3 gap-2 sm:gap-3" aria-label="Resumen de trabajos recientes">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3" aria-label="Resumen de trabajos recientes">
         {[
           {
             label: 'En creación',
@@ -294,6 +427,18 @@ export default function ExperienceStudioPage() {
             ).length,
             icon: Rocket,
             hint: 'Experiencias con publicación vigente',
+          },
+          {
+            label: 'Por vencer',
+            value: projects.filter(
+              (p) =>
+                p.status === 'PUBLISHED' &&
+                p.expiresAt &&
+                new Date(p.expiresAt).getTime() > Date.now() &&
+                new Date(p.expiresAt).getTime() <= Date.now() + 7 * 86400000,
+            ).length,
+            icon: CalendarClock,
+            hint: 'Publicaciones que requieren renovación',
           },
         ].map(({ label, value, icon: Icon, hint }) => (
           <div
@@ -349,10 +494,10 @@ export default function ExperienceStudioPage() {
                 <div className="max-w-xl">
                   <p className="exp-kicker mb-3">De una tarjeta a una sorpresa</p>
                   <h2 className="text-2xl font-extrabold sm:text-3xl">
-                    Una celebración de otro planeta
+                    Una torta que cobra vida
                   </h2>
                   <p className="mt-3 text-sm leading-7 text-white/75">
-                    Descubre el recorrido que vivirá tu cliente: un alien animado, una dedicatoria,
+                    Descubre el recorrido que vivirá tu cliente: una torta 3D, una dedicatoria,
                     su video y una tarjeta que cobra vida al enfocar la cámara.
                   </p>
                   <Button
@@ -376,7 +521,7 @@ export default function ExperienceStudioPage() {
                 </div>
                 <img
                   src="/experiences/demo-poster.svg"
-                  alt="Vista del saludo animado del alien"
+                  alt="Vista del saludo animado de una torta"
                   className="w-full rounded-lg border border-white/15 md:w-72 xl:w-96"
                 />
               </section>
@@ -410,17 +555,51 @@ export default function ExperienceStudioPage() {
             </div>
           )}
           {tab === 'projects' && (
-            <div className="grid items-start gap-5 xl:grid-cols-[290px_minmax(0,1fr)]">
+            <div className="grid items-start gap-5 xl:grid-cols-[330px_minmax(0,1fr)]">
               <div className="min-w-0 xl:sticky xl:top-24">
                 <ExperiencePanel
                   icon={ClipboardList}
                   title="Trabajos recientes"
                   description="Busca un pedido y abre su propuesta."
                   action={
-                    <span className="text-xs font-bold text-brand-700">{projects.length}</span>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      {isSuperAdmin && (
+                        <BranchSelector
+                          value={branchId}
+                          branches={branches}
+                          onChange={setBranchId}
+                          allowAll
+                          onSelectAll={setGlobalScope}
+                          hasError={Boolean(branchesError)}
+                          disabled={isLoadingBranches || loading || busy || editorBusy}
+                        />
+                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        leftIcon={<Download size={13} />}
+                        disabled={!filteredProjects.length || loading || busy || editorBusy}
+                        onClick={exportProjects}
+                      >
+                        Exportar
+                      </Button>
+                      <span className="text-xs font-bold text-brand-700">{projects.length}</span>
+                    </div>
                   }
                 >
-                  <div className="mb-4 grid gap-3">
+                  <div className="-mx-[22px] -mt-[22px] border-b border-line bg-surface-muted/55 p-4 sm:p-5">
+                    <div className="mb-3 flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-extrabold text-ink">Filtrar trabajos</p>
+                        <p className="mt-1 text-[11px] leading-relaxed text-ink-muted">
+                          Encuentra rápido una propuesta.
+                        </p>
+                      </div>
+                      <span className="shrink-0 rounded-pill bg-brand-50 px-2 py-1 text-[10px] font-extrabold text-brand-700">
+                        {filteredProjects.length} resultado{filteredProjects.length === 1 ? '' : 's'}
+                      </span>
+                    </div>
+                    <div className="grid gap-3">
                     <Input
                       label="Buscar pedido"
                       placeholder="Número o servicio"
@@ -437,13 +616,31 @@ export default function ExperienceStudioPage() {
                     >
                       <MenuItem value="ALL">Todos los estados</MenuItem>
                       {Object.entries(EXPERIENCE_LABELS)
-                        .filter(([key]) => key !== 'EXPIRED')
                         .map(([key, label]) => (
                           <MenuItem key={key} value={key}>
                             {label}
                           </MenuItem>
                         ))}
                     </TextField>
+                    <div className="grid grid-cols-2 gap-2">
+                      <TextField
+                        label="Desde"
+                        type="date"
+                        size="small"
+                        value={fromDate}
+                        onChange={(e) => setFromDate(e.target.value)}
+                        slotProps={{ inputLabel: { shrink: true } }}
+                      />
+                      <TextField
+                        label="Hasta"
+                        type="date"
+                        size="small"
+                        value={toDate}
+                        onChange={(e) => setToDate(e.target.value)}
+                        slotProps={{ inputLabel: { shrink: true } }}
+                      />
+                    </div>
+                    </div>
                   </div>
                   {filteredProjects.length ? (
                     <div className="grid max-h-[540px] gap-2 overflow-y-auto pr-1">
@@ -463,6 +660,11 @@ export default function ExperienceStudioPage() {
                             <span className="my-2 block truncate text-[11px] text-ink-muted">
                               {p.packageSnapshotJson.name}
                             </span>
+                            {p.order?.branch && (
+                              <span className="mb-2 block truncate text-[10px] text-ink-muted">
+                                {p.order.branch.name}
+                              </span>
+                            )}
                             <ExperienceStatus status={p.status} />
                           </div>
                           <ChevronRight size={14} className="mt-0.5 shrink-0 text-ink-muted" />
@@ -470,25 +672,39 @@ export default function ExperienceStudioPage() {
                       ))}
                     </div>
                   ) : (
-                    <div className="py-5 text-center">
-                      <ClipboardList size={25} className="mx-auto mb-3 text-brand-300" />
-                      <p className="text-xs leading-relaxed text-ink-muted">
-                        {projects.length
-                          ? 'No hay trabajos que coincidan con los filtros.'
-                          : 'Todavía no hay pedidos con un adicional QR.'}
-                      </p>
-                      {(search || statusFilter !== 'ALL') && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setSearch('');
-                            setStatusFilter('ALL');
-                          }}
-                        >
-                          Limpiar filtros
-                        </Button>
-                      )}
+                    <div className="border-t border-line bg-white p-4 sm:p-5">
+                      <div className="rounded-card border border-dashed border-brand-200 bg-brand-50/45 p-4">
+                        <div className="flex items-start gap-3 text-left">
+                          <span className="grid size-9 shrink-0 place-items-center rounded-field bg-white text-brand-600 shadow-sm">
+                            <ClipboardList size={18} aria-hidden="true" />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-xs font-extrabold text-ink">
+                              {projects.length ? 'Sin coincidencias' : 'Sin trabajos todavía'}
+                            </p>
+                            <p className="mt-1 text-[11px] leading-relaxed text-ink-muted">
+                              {projects.length
+                                ? 'Prueba con otro término o limpia los filtros.'
+                                : 'Los pedidos con un adicional QR aparecerán aquí.'}
+                            </p>
+                          </div>
+                        </div>
+                        {(search || statusFilter !== 'ALL' || fromDate || toDate) && (
+                          <Button
+                            className="mt-3 w-full"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSearch('');
+                              setStatusFilter('ALL');
+                              setFromDate('');
+                              setToDate('');
+                            }}
+                          >
+                            Limpiar filtros
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   )}
                 </ExperiencePanel>
@@ -522,7 +738,7 @@ export default function ExperienceStudioPage() {
                           <dt>Pago del pedido</dt>
                           <dd className="inline-flex items-center gap-1.5">
                             {detail.order.balancePaidAt || detail.order.depositPaidAt ? (
-                              <CheckCircle2 size={13} className="text-[#527363]" />
+                              <CheckCircle2 size={13} className="text-emerald-600" />
                             ) : (
                               <Clock3 size={13} />
                             )}
@@ -546,7 +762,7 @@ export default function ExperienceStudioPage() {
                         </div>
                       </dl>
                     </div>
-                    <div className="border-t border-line bg-[#fffcfa] px-5 py-4 sm:px-6">
+                    <div className="border-t border-line bg-surface-muted px-5 py-4 sm:px-6">
                       <p className="mb-1 text-[11px] font-bold text-ink">La idea del cliente</p>
                       <p className="whitespace-pre-line break-words text-xs leading-relaxed text-ink-muted">
                         {detail.project.brief}
@@ -620,12 +836,22 @@ export default function ExperienceStudioPage() {
                               </>
                             ) : (
                               <>
-                                <Check size={13} className="text-[#527363]" />
+                                <Check size={13} className="text-emerald-600" />
                                 Estás viendo la versión guardada
                               </>
                             )}
                           </p>
                           <div className="exp-primary-actions flex flex-wrap gap-2">
+                            {dirty && (
+                              <Button
+                                variant="ghost"
+                                leftIcon={<X size={15} />}
+                                disabled={busy || editorBusy}
+                                onClick={discardDraft}
+                              >
+                                Descartar borrador
+                              </Button>
+                            )}
                             <Button
                               leftIcon={<Save size={15} />}
                               isLoading={busy}
@@ -679,7 +905,7 @@ export default function ExperienceStudioPage() {
                             busy ||
                             editorBusy ||
                             dirty ||
-                            (!['APPROVED', 'PAUSED'].includes(detail.project.status) &&
+                            (!['APPROVED', 'PAUSED', 'EXPIRED'].includes(detail.project.status) &&
                               !(
                                 detail.project.status === 'PUBLISHED' &&
                                 detail.project.expiresAt &&
@@ -699,6 +925,14 @@ export default function ExperienceStudioPage() {
                           onClick={() => projectAction('PAUSE')}
                         >
                           Pausar
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          leftIcon={<QrCode size={15} />}
+                          disabled={busy || editorBusy}
+                          onClick={rotatePublicToken}
+                        >
+                          Renovar QR
                         </Button>
                       </div>
                       {detail.project.expiresAt ? (
@@ -741,6 +975,18 @@ export default function ExperienceStudioPage() {
                                 {h.note}
                               </p>
                             )}
+                            {write && h.snapshotJson && h.version < detail.project.version && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                leftIcon={<RotateCcw size={13} />}
+                                className="mt-2"
+                                disabled={busy || editorBusy || dirty}
+                                onClick={() => restoreVersion(h.id)}
+                              >
+                                Restaurar esta versión
+                              </Button>
+                            )}
                           </div>
                         </li>
                       ))}
@@ -748,29 +994,52 @@ export default function ExperienceStudioPage() {
                   </ExperiencePanel>
                 </div>
               ) : (
-                <div className="exp-panel">
-                  <ExperienceEmpty
-                    icon={Layers3}
-                    title={
-                      projects.length
-                        ? 'Cada celebración tiene su historia'
-                        : 'Tu próximo proyecto empieza aquí'
-                    }
-                    description={
-                      projects.length
-                        ? 'Selecciona un pedido para preparar su escena, revisar los comentarios y gestionar su publicación.'
-                        : 'Cuando un cliente añada una experiencia QR a su pedido, podrás crear y acompañar su propuesta desde este espacio.'
-                    }
-                    action={
-                      <Button
-                        variant="outline"
-                        leftIcon={<Eye size={15} />}
-                        onClick={() => setParams({ tab: 'demo' })}
-                      >
-                        Explorar la demostración
-                      </Button>
-                    }
-                  />
+                <div className="exp-panel overflow-hidden">
+                  <div className="grid min-h-[460px] lg:grid-cols-[minmax(0,1.15fr)_minmax(260px,.85fr)]">
+                    <div className="flex flex-col justify-center p-6 sm:p-8">
+                      <span className="exp-kicker mb-3 inline-flex items-center gap-2"><Layers3 size={14} /> Espacio de trabajo</span>
+                      <h2 className="max-w-xl text-2xl font-extrabold leading-tight text-ink sm:text-3xl">
+                        {projects.length ? "Selecciona un trabajo para continuar" : "Prepara tu primera experiencia AR"}
+                      </h2>
+                      <p className="mt-3 max-w-xl text-sm leading-7 text-ink-muted">
+                        {projects.length ? "Abre un pedido de la lista para editar su escena, revisar la aprobación y gestionar su publicación." : "Este espacio reúne el contenido, el marcador, el QR y la publicación de cada celebración."}
+                      </p>
+                      {projects.length ? (
+                        <Button className="mt-6 w-fit" variant="outline" leftIcon={<ClipboardList size={15} />} onClick={() => document.querySelector(".exp-choice")?.scrollIntoView({ behavior: "smooth", block: "center" })}>
+                          Ver trabajos disponibles
+                        </Button>
+                      ) : (
+                        <div className="mt-6 flex flex-wrap gap-2">
+                          <Button leftIcon={<Eye size={15} />} onClick={() => setParams({ tab: "demo" })}>Explorar demostración</Button>
+                          {global && <Button variant="outline" leftIcon={<Plus size={15} />} onClick={() => setParams({ tab: "services" })}>Configurar servicio</Button>}
+                        </div>
+                      )}
+                    </div>
+                    <aside className="border-t border-line bg-surface-muted/70 p-6 sm:p-8 lg:border-l lg:border-t-0">
+                      <p className="text-xs font-extrabold uppercase tracking-[.14em] text-brand-700">Ruta recomendada</p>
+                      <div className="mt-5 grid gap-4">
+                        {[
+                          { icon: Package, number: "01", title: "Define el servicio", text: "Precio, vigencia y condición de pago." },
+                          { icon: Palette, number: "02", title: "Prepara la plantilla", text: "Escena, mensaje, modelo y marcador." },
+                          { icon: Rocket, number: "03", title: "Publica con control", text: "Aprobación del cliente, QR y vigencia." },
+                        ].map(({ icon: Icon, number, title, text }) => (
+                          <div key={number} className="flex items-start gap-3">
+                            <span className="grid size-8 shrink-0 place-items-center rounded-full bg-white text-brand-700 shadow-sm"><Icon size={15} aria-hidden="true" /></span>
+                            <div><p className="text-sm font-bold text-ink">{title}</p><p className="mt-1 text-xs leading-5 text-ink-muted">{text}</p></div>
+                          </div>
+                        ))}
+                      </div>
+                      {global ? (
+                        <div className={stableCampaignReady ? "mt-6 rounded-card border border-emerald-200 bg-emerald-50 p-4" : "mt-6 rounded-card border border-amber-200 bg-amber-50 p-4"}>
+                          <p className="text-xs font-bold text-ink">{stableCampaignReady ? "Campaña AR lista" : "Campaña AR pendiente"}</p>
+                          <p className="mt-1 text-xs leading-5 text-ink-muted">{stableCampaignReady ? "La tarjeta estable ya tiene un servicio y una plantilla activa." : "Activa un servicio AR y asígnale una plantilla para habilitar la tarjeta estable."}</p>
+                          {!stableCampaignReady && <Button size="sm" variant="ghost" className="mt-2 px-0" onClick={() => setParams({ tab: "services" })}>Revisar configuración</Button>}
+                        </div>
+                      ) : (
+                        <p className="mt-6 rounded-card border border-brand-100 bg-brand-50 p-4 text-xs leading-5 text-brand-900">El superadmin configura los servicios y plantillas globales. Aquí podrás trabajar los pedidos asignados a tu sucursal.</p>
+                      )}
+                    </aside>
+                  </div>
                 </div>
               )}
             </div>

@@ -1,7 +1,8 @@
 import { checkoutTermsService } from '@modules/settings/checkoutTerms.service';
+import { settingsService } from '@modules/settings/settings.service';
 import { geoService } from '@modules/geo/geo.service';
 import { Op } from 'sequelize';
-import { Branch, City, DeliverySlot, Order, OrderItem, Payment, Product, ProductVariant, Subscription, SubscriptionCycle, SubscriptionPlan, User, sequelize } from '@database/models';
+import { Branch, CakeCommission, City, DeliverySlot, Order, OrderItem, Payment, Product, ProductVariant, Subscription, SubscriptionCycle, SubscriptionPlan, User, sequelize } from '@database/models';
 import type { BoxItem } from '@database/models/subscription.model';
 import { SUBSCRIPTION_STATUS } from '@database/models/subscription.model';
 import { PAYABLE_TYPE } from '@database/models/payment.model';
@@ -58,14 +59,21 @@ const publicPlan = async (plan: SubscriptionPlan) => {
   const activeCount = await Subscription.count({
     where: { planId: plan.id, status: { [Op.in]: [SUBSCRIPTION_STATUS.PENDING, SUBSCRIPTION_STATUS.ACTIVE, SUBSCRIPTION_STATUS.PAST_DUE] } },
   });
+  const retailValue = round2((await describePlanItems(plan.itemsJson)).reduce((sum, item) => sum + item.catalogPrice * item.quantity, 0));
+  const monthlyPrice = Number(plan.monthlyPrice);
+  const customerSavings = round2(Math.max(0, retailValue - monthlyPrice));
   return {
     id: plan.id, code: plan.code, name: plan.name, description: plan.description,
-    monthlyPrice: Number(plan.monthlyPrice), items: await describePlanItems(plan.itemsJson),
+    monthlyPrice, items: await describePlanItems(plan.itemsJson),
     branchIds: plan.branchIdsJson, leadDays: plan.leadDays,
     maxActiveSubscribers: plan.maxActiveSubscribers,
     remainingSubscriptions: Math.max(0, plan.maxActiveSubscribers - activeCount),
     maxDailyPickups: plan.maxDailyPickups,
-    isActive: plan.isActive, sortOrder: plan.sortOrder,
+    isActive: plan.isActive, sortOrder: plan.sortOrder, version: plan.version,
+    effectiveFrom: plan.effectiveFrom, archivedAt: plan.archivedAt,
+    publicationStatus: plan.archivedAt ? 'ARCHIVED' : !plan.isActive ? 'DRAFT' : plan.effectiveFrom && plan.effectiveFrom > new Date() ? 'SCHEDULED' : 'PUBLISHED',
+    retailValue, customerSavings,
+    savingsPercent: retailValue > 0 ? round2((customerSavings / retailValue) * 100) : 0,
   };
 };
 
@@ -135,12 +143,16 @@ const reconcileInvoice = async (invoice: MpInvoice): Promise<boolean> => {
     if (created && locked.status !== SUBSCRIPTION_STATUS.CANCELED) locked.status = SUBSCRIPTION_STATUS.ACTIVE;
     await locked.save({ transaction });
   });
+  subscription.lastSyncAt = paidAt;
+  subscription.lastSyncError = null;
+  await subscription.save();
   return true;
 };
 
 export const subscriptionsService = {
   async listPublic() {
-    const plans = await SubscriptionPlan.findAll({ where: { isActive: true }, order: [['sortOrder', 'ASC'], ['id', 'ASC']] });
+    if (!mpSubscriptions.enabled()) return [];
+    const plans = await SubscriptionPlan.findAll({ where: { isActive: true, archivedAt: null, [Op.or]: [{ effectiveFrom: null }, { effectiveFrom: { [Op.lte]: new Date() } }] }, order: [['sortOrder', 'ASC'], ['id', 'ASC']] });
     const visible = [];
     for (const plan of plans) {
       try { await snapshotItems(plan.itemsJson); visible.push(await publicPlan(plan)); }
@@ -157,7 +169,7 @@ export const subscriptionsService = {
     return variants.map((variant) => ({ id: variant.id, name: `${(variant.get('product') as Product).name} · ${variant.name}`, price: Number(variant.basePrice) }));
   },
   async savePlan(input: { code: string; name: string; description: string; monthlyPrice: number; items: Array<{ variantId: number; quantity: number }>; branchIds: number[];
-    leadDays: number; maxActiveSubscribers: number; maxDailyPickups: number; isActive: boolean; sortOrder: number }, id?: number) {
+    leadDays: number; maxActiveSubscribers: number; maxDailyPickups: number; isActive: boolean; sortOrder: number; effectiveFrom?: string | null; expectedVersion?: number }, id?: number) {
     if (!Number.isFinite(input.monthlyPrice) || input.monthlyPrice <= 0) throw ApiError.badRequest('El precio mensual debe ser positivo');
     const code = input.code.trim().toUpperCase();
     if (!/^[A-Z0-9_-]{3,40}$/.test(code)) throw ApiError.badRequest('Código de plan inválido');
@@ -169,13 +181,28 @@ export const subscriptionsService = {
     if (items.reduce((sum, item) => sum + item.catalogPrice * item.quantity, 0) <= 0) throw ApiError.badRequest('La caja necesita productos con precio');
     const plan = id ? await SubscriptionPlan.findByPk(id) : null;
     if (id && !plan) throw ApiError.notFound('Suscripción no encontrada');
+    if (input.isActive && !mpSubscriptions.enabled()) throw new ApiError(503, 'Configura Mercado Pago antes de publicar una caja mensual', 'SUBSCRIPTIONS_UNAVAILABLE');
+    if (plan && input.expectedVersion !== undefined && input.expectedVersion !== plan.version) throw ApiError.conflict('La caja cambió mientras la editabas. Recarga la página e inténtalo otra vez');
+    const effectiveFrom = input.effectiveFrom ? new Date(input.effectiveFrom) : null;
+    if (effectiveFrom && Number.isNaN(effectiveFrom.getTime())) throw ApiError.badRequest('La fecha de publicación no es válida');
     const duplicate = await SubscriptionPlan.findOne({ where: { code, ...(id ? { id: { [Op.ne]: id } } : {}) } });
     if (duplicate) throw ApiError.conflict('El código ya existe');
     const values = { code, name: input.name.trim(), description: input.description.trim(), monthlyPrice: round2(input.monthlyPrice),
       itemsJson: input.items, branchIdsJson: branchIds, leadDays: input.leadDays, maxActiveSubscribers: input.maxActiveSubscribers,
-      maxDailyPickups: input.maxDailyPickups, isActive: input.isActive, sortOrder: input.sortOrder };
-    if (plan) { await plan.update(values); return publicPlan(plan); }
-    return publicPlan(await SubscriptionPlan.create(values));
+      maxDailyPickups: input.maxDailyPickups, isActive: input.isActive, sortOrder: input.sortOrder, effectiveFrom, archivedAt: plan?.archivedAt ?? null };
+    if (plan) { await plan.update({ ...values, version: plan.version + 1 }); return publicPlan(plan); }
+    return publicPlan(await SubscriptionPlan.create({ ...values, version: 1 }));
+  },
+
+  async archivePlan(id: number, expectedVersion?: number) {
+    const plan = await SubscriptionPlan.findByPk(id);
+    if (!plan) throw ApiError.notFound('Caja mensual no encontrada');
+    if (expectedVersion !== undefined && expectedVersion !== plan.version) throw ApiError.conflict('La caja cambió mientras la editabas. Recarga la página e inténtalo otra vez');
+    plan.isActive = false;
+    plan.archivedAt = new Date();
+    plan.version += 1;
+    await plan.save();
+    return publicPlan(plan);
   },
   async subscribe(userId: number, planId: number, branchId: number, termsVersion: string, client: 'WEB' | 'MOBILE' = 'WEB') {
 
@@ -199,7 +226,6 @@ export const subscriptionsService = {
       return Subscription.create({ planId, userId, branchId, planNameSnapshot: currentPlan.name, priceSnapshot: Number(currentPlan.monthlyPrice),
         itemsSnapshotJson: items, leadDaysSnapshot: currentPlan.leadDays, termsSnapshotJson: { ...terms, acceptedAt: new Date().toISOString(), channel: client }, termsVersion, termsAcceptedAt: new Date() }, { transaction });
     });
-    try {
       const back = new URL(client === 'MOBILE' ? '/planes/movil' : '/cuenta/suscripciones', client === 'MOBILE' ? (env.MOBILE_RETURN_BASE_URL ?? env.FRONTEND_URL) : env.FRONTEND_URL);
       if (client === 'MOBILE') back.searchParams.set('subscription', String(subscription.id));
       const remote = await mpSubscriptions.create({ id: subscription.id, email: user.email, name: subscription.planNameSnapshot, amount: Number(subscription.priceSnapshot), backUrl: back.toString() });
@@ -207,11 +233,6 @@ export const subscriptionsService = {
       subscription.providerReference = remote.id;
       await subscription.save();
       return { id: subscription.id, checkoutUrl: remote.init_point };
-    } catch (error) {
-      // No anulamos el registro: si la respuesta se perdió, Mercado Pago podría haber
-      // creado la suscripción. La conciliación la recupera por external_reference.
-      throw error;
-    }
   },
   async mine(userId: number) {
     const rows = await Subscription.findAll({ where: { userId }, order: [['createdAt', 'DESC']], limit: 30 });
@@ -222,20 +243,71 @@ export const subscriptionsService = {
       cycles: cycles.filter((cycle) => cycle.subscriptionId === row.id).map((cycle) => ({ id: cycle.id, amount: Number(cycle.amount), paidAt: cycle.paidAt,
         expiresAt: cycle.expiresAt, scheduledAt: cycle.scheduledAt, orderId: cycle.orderId })) }));
   },
-  async adminSubscribers(planId?: number, branchIds: number[] = []) {
-    const rows = await Subscription.findAll({ where: { ...(planId ? { planId } : {}), ...(branchIds.length ? { branchId: branchIds } : {}) }, include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'] }], order: [['createdAt', 'DESC']], limit: 200 });
+  async adminSubscribers(filters: { planId?: number; branchIds?: number[]; page?: number; pageSize?: number; status?: string } = {}) {
+    const page = Math.max(1, filters.page ?? 1);
+    const pageSize = Math.min(100, Math.max(1, filters.pageSize ?? 50));
+    const where = {
+      ...(filters.planId ? { planId: filters.planId } : {}),
+      ...(filters.branchIds?.length ? { branchId: filters.branchIds } : {}),
+      ...(filters.status && Object.values(SUBSCRIPTION_STATUS).includes(filters.status as typeof SUBSCRIPTION_STATUS[keyof typeof SUBSCRIPTION_STATUS]) ? { status: filters.status } : {}),
+    };
+    const result = await Subscription.findAndCountAll({ where, include: [{ model: User, as: 'user', attributes: ['id', 'firstName', 'lastName', 'email'] }], order: [['createdAt', 'DESC']], limit: pageSize, offset: (page - 1) * pageSize, distinct: true });
+    const rows = result.rows;
     const cycles = rows.length ? await SubscriptionCycle.findAll({ where: { subscriptionId: rows.map((row) => row.id) }, attributes: ['subscriptionId', 'orderId', 'expiresAt'] }) : [];
-    return rows.map((row) => ({ id: row.id, planId: row.planId, planName: row.planNameSnapshot, status: row.status,
+    return { rows: rows.map((row) => ({ id: row.id, planId: row.planId, planName: row.planNameSnapshot, status: row.status,
       user: row.get('user'), price: Number(row.priceSnapshot), nextChargeAt: row.nextChargeAt, branchId: row.branchId, createdAt: row.createdAt,
+      lastSyncAt: row.lastSyncAt, lastSyncError: row.lastSyncError, cancellationReason: row.cancellationReason,
       paidCycles: cycles.filter((cycle) => cycle.subscriptionId === row.id).length,
       pendingBoxes: cycles.filter((cycle) => cycle.subscriptionId === row.id && !cycle.orderId && cycle.expiresAt > new Date()).length,
-      scheduledBoxes: cycles.filter((cycle) => cycle.subscriptionId === row.id && cycle.orderId).length }));
+      expiredBoxes: cycles.filter((cycle) => cycle.subscriptionId === row.id && !cycle.orderId && cycle.expiresAt <= new Date()).length,
+      scheduledBoxes: cycles.filter((cycle) => cycle.subscriptionId === row.id && cycle.orderId).length })), total: result.count, page, pageSize };
+  },
+
+  async adminDashboard(branchIds: number[] = []) {
+    const subscriptions = await Subscription.findAll({ where: branchIds.length ? { branchId: branchIds } : undefined, attributes: ['id', 'planId', 'branchId', 'status', 'priceSnapshot'] });
+    const ids = subscriptions.map((row) => row.id);
+    const cycles = ids.length ? await SubscriptionCycle.findAll({ where: { subscriptionId: ids }, attributes: ['id', 'subscriptionId', 'amount', 'orderId', 'expiresAt', 'paidAt'] }) : [];
+    const orderIds = cycles.map((cycle) => cycle.orderId).filter((id): id is number => id !== null);
+    const commissions = orderIds.length ? await CakeCommission.findAll({ where: { orderId: orderIds }, attributes: ['orderId', 'commissionAmount'] }) : [];
+    const commissionByOrder = new Map(commissions.map((row) => [row.orderId, Number(row.commissionAmount)]));
+    const active = subscriptions.filter((row) => row.status === SUBSCRIPTION_STATUS.ACTIVE);
+    const pastDue = subscriptions.filter((row) => row.status === SUBSCRIPTION_STATUS.PAST_DUE);
+    const canceled = subscriptions.filter((row) => row.status === SUBSCRIPTION_STATUS.CANCELED);
+    const pending = subscriptions.filter((row) => row.status === SUBSCRIPTION_STATUS.PENDING);
+    const grossCollected = round2(cycles.reduce((sum, cycle) => sum + Number(cycle.amount), 0));
+    const redeemed = cycles.filter((cycle) => cycle.orderId !== null);
+    const unredeemed = cycles.filter((cycle) => cycle.orderId === null && cycle.expiresAt > new Date());
+    const expiredUnredeemed = cycles.filter((cycle) => cycle.orderId === null && cycle.expiresAt <= new Date());
+    const commissionAccrued = round2(redeemed.reduce((sum, cycle) => sum + (commissionByOrder.get(cycle.orderId!) ?? 0), 0));
+    const byPlan = [...new Set(subscriptions.map((row) => row.planId))].map((planId) => {
+      const planSubscriptions = subscriptions.filter((row) => row.planId === planId);
+      const planCycles = cycles.filter((cycle) => planSubscriptions.some((row) => row.id === cycle.subscriptionId));
+      return { planId, active: planSubscriptions.filter((row) => row.status === SUBSCRIPTION_STATUS.ACTIVE).length, pastDue: planSubscriptions.filter((row) => row.status === SUBSCRIPTION_STATUS.PAST_DUE).length, grossCollected: round2(planCycles.reduce((sum, cycle) => sum + Number(cycle.amount), 0)), pendingRedemption: planCycles.filter((cycle) => cycle.orderId === null && cycle.expiresAt > new Date()).length };
+    });
+    return {
+      providerAvailable: mpSubscriptions.enabled(),
+      mrr: round2(active.reduce((sum, row) => sum + Number(row.priceSnapshot), 0)),
+      active: active.length,
+      pastDue: pastDue.length,
+      canceled: canceled.length,
+      pending: pending.length,
+      churnRate: active.length + canceled.length ? round2((canceled.length / (active.length + canceled.length)) * 100) : 0,
+      grossCollected,
+      redeemedCycles: redeemed.length,
+      pendingRedemption: unredeemed.length,
+      expiredUnredeemed: expiredUnredeemed.length,
+      commissionAccrued,
+      byPlan,
+    };
   },
   async sync(id: number, userId?: number) {
     const subscription = await Subscription.findByPk(id);
     if (!subscription || (userId !== undefined && subscription.userId !== userId)) throw ApiError.notFound('Suscripción no encontrada');
     const remote = await resolveRemote(subscription);
     if (!remote) {
+      subscription.lastSyncAt = new Date();
+      subscription.lastSyncError = null;
+      await subscription.save();
       if (subscription.status === SUBSCRIPTION_STATUS.CANCELED) await subscription.update({ updatedAt: new Date() });
       return { status: subscription.status, paidCycles: 0 };
     }
@@ -250,6 +322,9 @@ export const subscriptionsService = {
     for (const invoice of await mpSubscriptions.invoices(remote.id)) {
       if (await reconcileInvoice(invoice)) paidCycles += 1;
     }
+    subscription.lastSyncAt = new Date();
+    subscription.lastSyncError = null;
+    await subscription.save();
     return { status: subscription.status, paidCycles };
   },
   async checkout(id: number, userId: number) {
@@ -260,7 +335,7 @@ export const subscriptionsService = {
     if (!remote?.init_point) throw ApiError.conflict('El enlace aún no está disponible. Actualiza el estado o contacta a soporte.');
     return { checkoutUrl: remote.init_point };
   },
-  async cancel(id: number, userId?: number) {
+  async cancel(id: number, userId?: number, reason?: string) {
     const subscription = await Subscription.findByPk(id);
     if (!subscription || (userId !== undefined && subscription.userId !== userId)) throw ApiError.notFound('Suscripción no encontrada');
     if (subscription.status === SUBSCRIPTION_STATUS.CANCELED) return;
@@ -269,6 +344,7 @@ export const subscriptionsService = {
     subscription.status = SUBSCRIPTION_STATUS.CANCELED;
     subscription.canceledAt = new Date();
     subscription.nextChargeAt = null;
+    subscription.cancellationReason = reason?.trim().slice(0, 500) || null;
     await subscription.save();
   },
   async handleWebhook(signature: string | undefined, requestId: string | undefined, resourceId: string | undefined, type: string) {
@@ -329,10 +405,11 @@ export const subscriptionsService = {
       slot.reservedCount += 1;
       await slot.save({ transaction });
       const price = Number(cycle.amount);
-      const tax = splitTaxFromGross(price, env.IGV_RATE);
+      const { taxRate, currency } = await settingsService.getBusinessInfo();
+      const tax = splitTaxFromGross(price, taxRate);
       const order = await Order.create({ orderNumber: `BOX-${cycle.id}`, userId, branchId: branch.id, deliveryType: DELIVERY_TYPE.PICKUP,
         serviceMode: SERVICE_MODE.SCHEDULED, deliverySlotId: slot.id, scheduledAt: slot.startsAt, status: ORDER_STATUS.PENDING_PAYMENT,
-        subtotal: price, grandTotal: price, taxRate: env.IGV_RATE, taxableBase: tax.base, taxTotal: tax.tax,
+        subtotal: price, grandTotal: price, taxRate, taxableBase: tax.base, taxTotal: tax.tax, currency,
         notes: `Caja mensual de ${subscription.planNameSnapshot}. Cuota ${cycle.providerInvoiceId}.`, idempotencyKey: `subscription-cycle-${cycle.id}` }, { transaction });
       const items = subscription.itemsSnapshotJson;
       const weight = items.reduce((sum, item) => sum + item.catalogPrice * item.quantity, 0);
@@ -341,7 +418,7 @@ export const subscriptionsService = {
         const item = items[index];
         const line = index === items.length - 1 ? round2(price - allocated) : round2(price * item.catalogPrice * item.quantity / weight);
         allocated = round2(allocated + line);
-        const lineTax = splitTaxFromGross(line, env.IGV_RATE);
+        const lineTax = splitTaxFromGross(line, taxRate);
         await OrderItem.create({ orderId: order.id, productId: item.productId, variantId: item.variantId,
           productNameSnapshot: item.productName, variantNameSnapshot: item.variantName, descriptionSnapshot: `Caja mensual ${subscription.planNameSnapshot}`,
           quantity: item.quantity, unitPrice: round2(line / item.quantity), lineTotal: line, taxableBase: lineTax.base, taxTotal: lineTax.tax }, { transaction });

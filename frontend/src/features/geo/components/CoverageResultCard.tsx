@@ -10,7 +10,9 @@ import {
   Store,
   XCircle,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { Button } from '@components/ui/Button';
+import { ROUTES } from '@constants/routes';
 import { formatCurrency } from '@lib/format';
 import type { CoverageResult } from '../types';
 
@@ -24,6 +26,7 @@ interface CoverageResultCardProps {
   onConfirm: () => void;
   onPickup: () => void;
   onEdit: () => void;
+  onContinue?: () => void;
 }
 
 const Metric = ({
@@ -53,6 +56,7 @@ export const CoverageResultCard = ({
   onConfirm,
   onPickup,
   onEdit,
+  onContinue,
 }: CoverageResultCardProps) => {
   if (!result) {
     return (
@@ -103,6 +107,11 @@ export const CoverageResultCard = ({
               <Metric icon={Store} label="Local asignado" value={result.branch.name} />
             </div>
             {result.extraDeliveryFee ? <p className="text-xs leading-5 text-ink-muted">El delivery incluye {formatCurrency(result.extraDeliveryFee)} por {result.extraDistanceKm?.toFixed(1)} km fuera de la zona habitual.</p> : null}
+            <p className="text-xs leading-5 text-ink-muted">
+              {result.etaSource === 'LIVE_ROUTE'
+                ? 'Tiempo calculado con la ruta disponible en este momento.'
+                : 'Tiempo estimado; puede variar según el tráfico y la demanda.'}
+            </p>
 
             <div className="flex items-start gap-2 rounded-card bg-white px-3 py-2.5 text-xs text-ink-muted ring-1 ring-brand-100">
               <span
@@ -119,6 +128,11 @@ export const CoverageResultCard = ({
                 {result.routeDistanceKm != null ? ` · ${result.routeDistanceKm.toFixed(1)} km` : ''}
               </span>
             </div>
+            {!result.branch.isOpenNow && (
+              <p className="rounded-card bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-900">
+                Podrás elegir un horario disponible cuando continúes con tu pedido.
+              </p>
+            )}
           </div>
 
           <div className="grid min-w-0 grid-cols-1 gap-3">
@@ -140,7 +154,9 @@ export const CoverageResultCard = ({
               leftIcon={!isAuthenticated ? <LockKeyhole className="size-4" /> : undefined}
               onClick={onConfirm}
             >
-              {isAuthenticated ? 'Guardar y usar esta dirección' : 'Ingresar para usar esta dirección'}
+              {isAuthenticated
+                ? onContinue ? 'Guardar y continuar al catálogo' : 'Guardar y usar esta dirección'
+                : 'Ingresar para usar esta dirección'}
             </Button>
             <button
               type="button"
@@ -210,6 +226,9 @@ export const CoverageResultCard = ({
 
       <Button className="w-full" variant="ghost" onClick={onEdit}>
         Revisar otra ubicación
+      </Button>
+      <Button component={Link} to={ROUTES.menu} className="w-full" variant="outline">
+        Explorar el catálogo
       </Button>
     </section>
   );

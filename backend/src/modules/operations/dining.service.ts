@@ -3,25 +3,30 @@ import { Op, type Transaction } from 'sequelize';
 import {
   Branch,
   CakeProductProfile,
+  Coupon,
+  CouponRedemption,
   DiningOffering,
   DiningOrderRequest,
   DiningTable,
   KitchenTicket,
   Order,
+  OrderDiscount,
   OrderItem,
   OrderItemCustomization,
   OrderStatusHistory,
   Payment,
+  MobilePaymentClaim,
   Product,
   ProductVariant,
   User,
   sequelize,
 } from '@database/models';
 import { PAYABLE_TYPE } from '@database/models/payment.model';
+import { DISCOUNT_SOURCE } from '@database/models/orderDiscount.model';
+import { REDEMPTION_STATUS } from '@database/models/couponRedemption.model';
 import { TICKET_STATUS } from '@database/models/kitchenTicket.model';
 import {
   BILLING_DOC_TYPE,
-  CURRENCY,
   DELIVERY_TYPE,
   DOCUMENT_TYPE,
   INVOICE_STATUS,
@@ -46,6 +51,7 @@ import { inventoryService } from './inventory.service';
 import { publishKitchenEvent } from './kitchenEvents';
 import { kitchenPushService } from './kitchenPush.service';
 import { confirmPaidOrder } from '@modules/payments/payments.service';
+import { directPaymentsService } from '@modules/payments/directPayments.service';
 import { ordersService } from '@modules/orders/orders.service';
 import { settingsService } from '@modules/settings/settings.service';
 import { RECEIPT_MODE } from '@database/models/receiptSetting.model';
@@ -64,9 +70,28 @@ const ADDABLE_TICKET_STATUSES = [TICKET_STATUS.QUEUED, TICKET_STATUS.ACCEPTED] a
 const REQUEST_REPLAY_MS = 10 * 60 * 1_000;
 type DiningPaymentMethod = 'cash' | 'card' | 'yape' | 'plin';
 type DiningItemInput = QuoteItemInput & { offeringId?: number };
+type PosPaymentInput = {
+  method: DiningPaymentMethod;
+  amount: number;
+  reference?: string | null;
+  operationCode?: string | null;
+  payerPhone?: string | null;
+};
 
 const orderNumber = (): string =>
   `VB-${Date.now().toString(36).toUpperCase()}-${crypto.randomInt(1000, 9999)}`;
+
+const allocateDiscounts = (total: number, lineTotals: number[]): number[] => {
+  const gross = lineTotals.reduce((sum, value) => sum + value, 0);
+  if (gross <= 0 || total <= 0) return lineTotals.map(() => 0);
+  let assigned = 0;
+  return lineTotals.map((lineTotal, index) => {
+    if (index === lineTotals.length - 1) return round2(Math.max(0, total - assigned));
+    const amount = round2(Math.min(lineTotal, total * lineTotal / gross));
+    assigned = round2(assigned + amount);
+    return amount;
+  });
+};
 
 export const limaClock = (now = new Date()) => {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -127,7 +152,7 @@ const applyOfferings = async (
       transaction,
       lock: transaction.LOCK.UPDATE,
     });
-    if (!offering) throw ApiError.unprocessable('El menÃº elegido ya no estÃ¡ disponible en este local');
+    if (!offering) throw ApiError.unprocessable('El menú elegido ya no está disponible en este local');
 
     const clock = limaClock();
     if (String(offering.soldDate ?? '') !== clock.date) {
@@ -136,7 +161,7 @@ const applyOfferings = async (
     }
     const state = offeringState(offering);
     if (!state.activeNow || (state.remaining !== null && state.remaining < input.quantity)) {
-      throw ApiError.unprocessable(`Se agotÃ³ o terminÃ³ el horario de ${offering.name}`);
+      throw ApiError.unprocessable(`Se agotó o terminó el horario de ${offering.name}`);
     }
 
     const line = quote.items[index];
@@ -162,11 +187,13 @@ const createOrderItems = async (
   inputs: DiningItemInput[],
   transaction: Transaction,
 ) => {
+  const lineDiscounts = allocateDiscounts(quote.discountTotal, quote.items.map((line) => line.lineTotal));
   for (let index = 0; index < quote.items.length; index += 1) {
     const line = quote.items[index];
     const source = inputs[index];
     const product = await Product.findByPk(line.productId, { transaction });
-    const tax = splitTaxFromGross(line.lineTotal, quote.taxRate);
+    const discount = lineDiscounts[index] ?? 0;
+    const tax = splitTaxFromGross(round2(Math.max(0, line.lineTotal - discount)), quote.taxRate);
     const snapshot = buildOrderItemSnapshot(line);
     const item = await OrderItem.create({
       orderId: order.id,
@@ -178,7 +205,7 @@ const createOrderItems = async (
       quantity: line.quantity,
       unitPrice: line.unitPrice,
       extrasTotal: line.extrasTotal,
-      discountTotal: 0,
+      discountTotal: discount,
       lineTotal: line.lineTotal,
       taxableBase: tax.base,
       taxTotal: tax.tax,
@@ -234,7 +261,7 @@ export const diningService = {
   async counterCatalog(branchId: number) {
     const products = await catalogService.listProducts({ branchId });
     return products
-      // El diseÃ±o especial necesita su cotizaciÃ³n y aprobaciÃ³n; el mostrador
+      // El diseño especial necesita su cotización y aprobación; el mostrador
       // solo ofrece bases listas o personalizables con precio publicado.
       .filter((product) => product.isAvailable && product.defaultVariantId !== null && product.cakeSaleMode !== 'ADVANCED')
       .map((product) => ({
@@ -245,8 +272,28 @@ export const diningService = {
         variantId: product.defaultVariantId as number,
         variantName: product.defaultVariantName,
         price: product.defaultVariantPrice,
+        categoryId: product.categoryId,
+        categoryName: product.categoryName,
         cakeSaleMode: product.cakeSaleMode,
       }));
+  },
+
+  async quoteCounterSale(input: { branchId: number; items: DiningItemInput[]; couponCode?: string | null }) {
+    const branch = await Branch.findByPk(input.branchId);
+    if (!branch) throw ApiError.notFound('Sucursal no encontrada');
+    const profileRows = await CakeProductProfile.findAll({ where: { productId: [...new Set(input.items.map((item) => item.productId))] } });
+    if (profileRows.some((profile) => profile.saleMode === 'ADVANCED')) {
+      throw ApiError.unprocessable('Los diseños especiales se cotizan y se venden desde Pedidos; no se pueden registrar como venta directa');
+    }
+    const quote = await pricingService.quoteOrder({
+      branchId: input.branchId,
+      deliveryType: DELIVERY_TYPE.PICKUP,
+      items: input.items,
+      userId: null,
+      useWallet: false,
+      couponCode: input.couponCode,
+    });
+    return { subtotal: quote.subtotal, discountTotal: quote.discountTotal, total: quote.grandTotal, currency: quote.currency };
   },
 
   /**
@@ -258,21 +305,51 @@ export const diningService = {
     branchId: number;
     actorId: number;
     items: DiningItemInput[];
-    paymentMethod: DiningPaymentMethod;
+    payments?: PosPaymentInput[];
+    /** Compatibilidad con clientes POS anteriores. Se convierte a un pago. */
+    paymentMethod?: DiningPaymentMethod;
+    cashReceived?: number | null;
     customerName?: string | null;
     notes?: string | null;
+    couponCode?: string | null;
+    documentType?: DocumentType;
+    billingDocType?: BillingDocType | null;
+    billingDocNumber?: string | null;
+    billingName?: string | null;
+    billingAddress?: string | null;
     idempotencyKey?: string | null;
   }) {
+    const legacyPayment = !input.payments?.length;
+    const payments: PosPaymentInput[] = input.payments?.length
+      ? input.payments
+      : [{ method: input.paymentMethod ?? 'cash', amount: 0 }];
+    if (payments.length > 4) throw ApiError.unprocessable('Puedes combinar hasta cuatro medios de pago');
+    if (!legacyPayment && payments.some((part) => !Number.isFinite(part.amount) || part.amount <= 0)) {
+      throw ApiError.unprocessable('Cada medio de pago debe tener un importe positivo');
+    }
+    const directPayments = payments.filter((part) => part.method === 'yape' || part.method === 'plin');
+    if (directPayments.length > 0 && (directPayments.length !== 1 || payments.length !== 1)) {
+      throw ApiError.unprocessable('Yape o Plin debe verificarse como un único pago de la venta');
+    }
     const rawKey = input.idempotencyKey?.trim() || crypto.randomUUID();
     const idempotencyKey = `pos-${input.branchId}-${rawKey}`.slice(0, 100);
     const previous = await Order.findOne({ where: { idempotencyKey } });
-    if (previous) return { orderNumber: previous.orderNumber, status: previous.status, total: Number(previous.grandTotal), reused: true };
+    if (previous) {
+      const pending = await Payment.findOne({ where: { payableType: PAYABLE_TYPE.ORDER, payableId: previous.id, status: PAYMENT_STATUS.PENDING }, order: [['id', 'ASC']] });
+      return { orderNumber: previous.orderNumber, status: previous.status, total: Number(previous.grandTotal), reused: true, paymentPending: Boolean(pending), paymentId: pending?.id ?? null, change: 0 };
+    }
+
+    const receiptSettings = await settingsService.getReceiptSettings();
+    const fiscalEnabled = receiptSettings.mode !== RECEIPT_MODE.INTERNAL_ONLY;
 
     return sequelize.transaction(async (transaction) => {
-      await Branch.findByPk(input.branchId, { transaction, lock: transaction.LOCK.UPDATE });
+      const branch = await Branch.findByPk(input.branchId, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!branch) throw ApiError.notFound('Sucursal no encontrada');
       const existing = await Order.findOne({ where: { idempotencyKey }, transaction });
-      if (existing) return { orderNumber: existing.orderNumber, status: existing.status, total: Number(existing.grandTotal), reused: true };
-      const profileRows = await CakeProductProfile.findAll({ where: { productId: [...new Set(input.items.map((item) => item.productId))] } });
+      if (existing) {
+        return { orderNumber: existing.orderNumber, status: existing.status, total: Number(existing.grandTotal), reused: true, paymentPending: existing.status === ORDER_STATUS.PENDING_PAYMENT, paymentId: null, change: 0 };
+      }
+      const profileRows = await CakeProductProfile.findAll({ where: { productId: [...new Set(input.items.map((item) => item.productId))] }, transaction });
       if (profileRows.some((profile) => profile.saleMode === 'ADVANCED')) {
         throw ApiError.unprocessable('Los diseños especiales se cotizan y se venden desde Pedidos; no se pueden registrar como venta directa');
       }
@@ -283,8 +360,27 @@ export const diningService = {
         items: input.items,
         userId: null,
         useWallet: false,
+        couponCode: input.couponCode,
       });
       await inventoryService.assertCartAvailability(input.branchId, input.items);
+
+      const expected = round2(quote.grandTotal);
+      if (legacyPayment) payments[0].amount = expected;
+      const registered = round2(payments.reduce((sum, part) => sum + Number(part.amount), 0));
+      if (Math.abs(registered - expected) > 0.01) {
+        throw ApiError.unprocessable(`Los medios de pago deben sumar S/ ${expected.toFixed(2)}`);
+      }
+      if (fiscalEnabled && (input.documentType ?? DOCUMENT_TYPE.BOLETA) === DOCUMENT_TYPE.FACTURA && (
+        input.billingDocType !== BILLING_DOC_TYPE.RUC ||
+        !/^\d{11}$/.test(input.billingDocNumber ?? '') ||
+        !input.billingName?.trim() ||
+        !input.billingAddress?.trim()
+      )) {
+        throw ApiError.unprocessable('Para factura ingresa RUC, razón social y domicilio fiscal');
+      }
+      if (fiscalEnabled && (input.documentType ?? DOCUMENT_TYPE.BOLETA) === DOCUMENT_TYPE.BOLETA && input.billingDocNumber && !/^(\d{8}|[A-Za-z0-9]{6,12})$/.test(input.billingDocNumber)) {
+        throw ApiError.unprocessable('Documento de boleta inválido');
+      }
 
       const created = await Order.create({
         orderNumber: orderNumber(),
@@ -304,7 +400,7 @@ export const diningService = {
         contactPhone: null,
         subtotal: quote.subtotal,
         deliveryFee: 0,
-        discountTotal: 0,
+        discountTotal: quote.discountTotal,
         walletAmount: 0,
         taxRate: quote.taxRate,
         taxableBase: quote.taxableBase,
@@ -317,17 +413,34 @@ export const diningService = {
         depositPaidAt: null,
         balancePaidAt: null,
         currency: quote.currency,
-        documentType: DOCUMENT_TYPE.BOLETA,
-        billingDocType: null,
-        billingDocNumber: null,
-        billingName: null,
-        billingAddress: null,
+        documentType: fiscalEnabled ? input.documentType ?? DOCUMENT_TYPE.BOLETA : DOCUMENT_TYPE.BOLETA,
+        billingDocType: fiscalEnabled ? input.billingDocType ?? null : null,
+        billingDocNumber: fiscalEnabled ? input.billingDocNumber?.trim() || null : null,
+        billingName: fiscalEnabled ? input.billingName?.trim() || input.customerName?.trim() || 'Cliente de mostrador' : null,
+        billingAddress: fiscalEnabled ? input.billingAddress?.trim() || null : null,
         invoiceStatus: INVOICE_STATUS.PENDING,
         notes: input.notes?.trim() || null,
         idempotencyKey,
       }, { transaction });
 
       await createOrderItems(created, quote, input.items, transaction);
+      for (const discount of quote.discounts) {
+        await OrderDiscount.create({
+          orderId: created.id,
+          source: discount.source === 'COUPON' ? DISCOUNT_SOURCE.COUPON : DISCOUNT_SOURCE.PLAN_BENEFIT,
+          referenceId: discount.couponId ?? discount.userPlanId ?? null,
+          code: discount.code,
+          description: discount.description,
+          amount: discount.amount,
+        }, { transaction });
+        if (discount.source === 'COUPON' && discount.couponId) {
+          const coupon = await Coupon.findByPk(discount.couponId, { transaction, lock: transaction.LOCK.UPDATE });
+          if (!coupon?.isActive) throw ApiError.unprocessable('El cupón dejó de estar disponible');
+          const reservedUses = await CouponRedemption.count({ where: { couponId: coupon.id, status: { [Op.in]: [REDEMPTION_STATUS.RESERVED, REDEMPTION_STATUS.CONFIRMED] } }, transaction });
+          if (coupon.usageLimit !== null && reservedUses >= coupon.usageLimit) throw ApiError.unprocessable('El cupón alcanzó su límite de usos');
+          await CouponRedemption.create({ couponId: coupon.id, userId: null, orderId: created.id, amount: discount.amount, status: REDEMPTION_STATUS.RESERVED }, { transaction });
+        }
+      }
       await OrderStatusHistory.create({
         orderId: created.id,
         fromStatus: null,
@@ -340,32 +453,63 @@ export const diningService = {
       await inventoryService.reserveForOrder(created, transaction, true);
 
       const now = new Date();
-      const provider = input.paymentMethod === 'card' ? 'pos' : input.paymentMethod;
-      const payment = await Payment.create({
-        payableType: PAYABLE_TYPE.ORDER,
-        payableId: created.id,
-        userId: null,
-        provider,
-        method: input.paymentMethod,
-        amount: quote.grandTotal,
-        currency: quote.currency,
-        status: PAYMENT_STATUS.SUCCEEDED,
-        stage: 'FULL',
-        idempotencyKey: `pos-payment-${idempotencyKey}`.slice(0, 80),
-        authorizedAt: now,
-        capturedAt: now,
-      }, { transaction });
+      let change = 0;
+      const createdPayments: Payment[] = [];
+      for (let index = 0; index < payments.length; index += 1) {
+        const part = payments[index];
+        const isDirect = part.method === 'yape' || part.method === 'plin';
+        const cashReceived = part.method === 'cash' ? round2(input.cashReceived ?? part.amount) : 0;
+        if (part.method === 'cash' && cashReceived < part.amount) throw ApiError.unprocessable('El efectivo recibido no cubre el importe');
+        if (part.method === 'card' && !legacyPayment && !part.reference?.trim()) throw ApiError.unprocessable('Registra la referencia del POS o voucher de la tarjeta');
+        if (isDirect && !part.operationCode?.trim()) throw ApiError.unprocessable('Registra el código de operación de Yape o Plin');
+        if (part.method === 'cash') change = round2(Math.max(0, cashReceived - part.amount));
+        const directSnapshot = isDirect
+          ? directPaymentsService.snapshot(part.method as 'yape' | 'plin', await settingsService.getLocalPaymentSettings())
+          : null;
+        const payment = await Payment.create({
+          payableType: PAYABLE_TYPE.ORDER,
+          payableId: created.id,
+          userId: null,
+          provider: part.method === 'card' ? PAYMENT_PROVIDER.POS : part.method,
+          method: part.method,
+          amount: part.amount,
+          currency: quote.currency,
+          status: isDirect ? PAYMENT_STATUS.PENDING : PAYMENT_STATUS.SUCCEEDED,
+          stage: 'FULL',
+          idempotencyKey: `pos-payment-${idempotencyKey}-${index}`.slice(0, 80),
+          safeResponseJson: { posSale: { capturedBy: input.actorId, reference: part.reference?.trim() || null, operationCode: part.operationCode?.trim() || null, cashReceived, change }, ...(directSnapshot ? { directPayment: directSnapshot } : {}) },
+          authorizedAt: isDirect ? null : now,
+          capturedAt: isDirect ? null : now,
+        }, { transaction });
+        createdPayments.push(payment);
+        if (isDirect) {
+          await MobilePaymentClaim.create({
+            paymentId: payment.id,
+            provider: part.method as 'yape' | 'plin',
+            operationCode: part.operationCode!.trim(),
+            payerPhone: part.payerPhone?.trim() || null,
+            payerName: input.customerName?.trim() || null,
+            paidAt: now,
+            declaredAmount: part.amount,
+            status: 'PENDING',
+          }, { transaction });
+        }
+      }
 
-      await confirmPaidOrder(
-        created,
-        transaction,
-        'STAFF',
-        `Venta de mostrador cobrada con ${input.paymentMethod}`,
-        payment,
-        { skipCakeProduction: true },
-      );
+      const pendingPayment = createdPayments.find((payment) => payment.status === PAYMENT_STATUS.PENDING);
+      if (!pendingPayment) {
+        await confirmPaidOrder(created, transaction, 'STAFF', `Venta de mostrador cobrada con ${payments.map((part) => part.method).join(' + ')}`, createdPayments[0], { skipCakeProduction: true });
+      }
 
-      return { orderNumber: created.orderNumber, status: created.status, total: Number(created.grandTotal), reused: false };
+      return {
+        orderNumber: created.orderNumber,
+        status: created.status,
+        total: Number(created.grandTotal),
+        reused: false,
+        paymentPending: Boolean(pendingPayment),
+        paymentId: pendingPayment?.id ?? null,
+        change,
+      };
     });
   },
 
@@ -439,7 +583,7 @@ export const diningService = {
       where: { branchId: input.branchId, code: input.code.trim().toUpperCase() },
       defaults: { branchId: input.branchId, code: input.code.trim().toUpperCase(), area: input.area.trim(), capacity: input.capacity, isActive: true },
     });
-    if (!created) throw ApiError.conflict('Ya existe una mesa con ese cÃ³digo en el local');
+    if (!created) throw ApiError.conflict('Ya existe una mesa con ese código en el local');
     return table;
   },
 
@@ -459,7 +603,7 @@ export const diningService = {
 
   async createOffering(input: { branchId: number; productId: number; variantId: number; name: string; price: number; weekdays: number[]; startsAt: string; endsAt: string; dailyLimit?: number | null }) {
     const variant = await ProductVariant.findOne({ where: { id: input.variantId, productId: input.productId, isActive: true } });
-    if (!variant) throw ApiError.unprocessable('El producto o su presentaciÃ³n ya no estÃ¡ disponible');
+    if (!variant) throw ApiError.unprocessable('El producto o su presentación ya no está disponible');
     const offering = await DiningOffering.create({
       branchId: input.branchId, productId: input.productId, variantId: input.variantId,
       name: input.name.trim(), price: input.price, weekdaysJson: [...new Set(input.weekdays)].sort(),
@@ -471,7 +615,7 @@ export const diningService = {
 
   async updateOffering(input: { branchId: number; offeringId: number; isActive?: boolean; price?: number; dailyLimit?: number | null; startsAt?: string; endsAt?: string }) {
     const offering = await DiningOffering.findOne({ where: { id: input.offeringId, branchId: input.branchId } });
-    if (!offering) throw ApiError.notFound('MenÃº programado no encontrado');
+    if (!offering) throw ApiError.notFound('Menú programado no encontrado');
     if (typeof input.isActive === 'boolean') offering.isActive = input.isActive;
     if (input.price !== undefined) offering.price = input.price;
     if (input.dailyLimit !== undefined) offering.dailyLimit = input.dailyLimit;
@@ -501,7 +645,7 @@ export const diningService = {
         source: ORDER_SOURCE.POS, coverageZoneId: null, deliveryType: DELIVERY_TYPE.DINE_IN, serviceMode: SERVICE_MODE.ASAP,
         status: ORDER_STATUS.PENDING_PAYMENT, addressSnapshotJson: null, contactName: input.guestName?.trim() || `Cliente ${table.code}`, contactPhone: null,
         subtotal: quote.subtotal, deliveryFee: 0, discountTotal: 0, walletAmount: 0, taxRate: quote.taxRate,
-        taxableBase: quote.taxableBase, taxTotal: quote.taxTotal, grandTotal: quote.grandTotal, currency: CURRENCY,
+        taxableBase: quote.taxableBase, taxTotal: quote.taxTotal, grandTotal: quote.grandTotal, currency: quote.currency,
         documentType: DOCUMENT_TYPE.BOLETA, invoiceStatus: INVOICE_STATUS.PENDING, notes: input.notes?.trim() || null,
         /*
          * La clave del cliente cuando la manda: la generada con `Date.now()` es
@@ -534,7 +678,7 @@ export const diningService = {
     const baseQuote = await pricingService.quoteOrder({ branchId: input.branchId, deliveryType: DELIVERY_TYPE.DINE_IN, items: input.items, userId: null, useWallet: false });
     await inventoryService.assertCartAvailability(input.branchId, input.items);
       const ticket = await KitchenTicket.findOne({ where: { orderId: order.id }, transaction, lock: transaction.LOCK.UPDATE });
-      if (!ticket || !(ADDABLE_TICKET_STATUSES as readonly string[]).includes(ticket.status)) throw ApiError.conflict('Cocina ya empezÃ³ a preparar. Abre una nueva comanda adicional para evitar confusiones');
+      if (!ticket || !(ADDABLE_TICKET_STATUSES as readonly string[]).includes(ticket.status)) throw ApiError.conflict('Cocina ya empezó a preparar. Abre una nueva comanda adicional para evitar confusiones');
       const quote = await applyOfferings(baseQuote, input.items, input.branchId, transaction, true);
       await createOrderItems(order, quote, input.items, transaction);
       order.subtotal = round2(Number(order.subtotal) + quote.subtotal);
@@ -552,8 +696,8 @@ export const diningService = {
       transaction.afterCommit(() => {
         publishKitchenEvent({ type: 'TICKET_UPDATED', branchId: order.branchId, ticketId: ticket.id, orderNumber: order.orderNumber, status: ticket.status });
         void kitchenPushService.notifyBranch(order.branchId, {
-          title: `ActualizaciÃ³n ${order.orderNumber}`,
-          body: 'La mesa agregÃ³ productos a su comanda.',
+          title: `Actualización ${order.orderNumber}`,
+          body: 'La mesa agregó productos a su comanda.',
           tag: `kitchen-ticket-${ticket.id}`,
         }).catch(() => undefined);
         void sendMobilePushToStaff({
@@ -587,9 +731,9 @@ export const diningService = {
       const paid = round2(input.payments.reduce((sum, payment) => sum + payment.amount, 0));
       if (Math.abs(paid - Number(order.grandTotal)) > 0.01) throw ApiError.unprocessable(`Los medios de pago deben sumar S/ ${Number(order.grandTotal).toFixed(2)}`);
       if (fiscalEnabled && input.documentType === DOCUMENT_TYPE.FACTURA && (input.billingDocType !== BILLING_DOC_TYPE.RUC || !/^\d{11}$/.test(input.billingDocNumber ?? '') || !input.billingName?.trim() || !input.billingAddress?.trim())) {
-        throw ApiError.unprocessable('Para factura ingresa RUC, razÃ³n social y domicilio fiscal');
+        throw ApiError.unprocessable('Para factura ingresa RUC, razón social y domicilio fiscal');
       }
-      if (fiscalEnabled && input.documentType === DOCUMENT_TYPE.BOLETA && input.billingDocNumber && !/^(\d{8}|[A-Za-z0-9]{6,12})$/.test(input.billingDocNumber)) throw ApiError.unprocessable('Documento de boleta invÃ¡lido');
+      if (fiscalEnabled && input.documentType === DOCUMENT_TYPE.BOLETA && input.billingDocNumber && !/^(\d{8}|[A-Za-z0-9]{6,12})$/.test(input.billingDocNumber)) throw ApiError.unprocessable('Documento de boleta inválido');
 
       const pending = await Payment.findOne({ where: { payableType: PAYABLE_TYPE.ORDER, payableId: order.id, status: PAYMENT_STATUS.PENDING }, transaction, lock: transaction.LOCK.UPDATE });
       if (!pending) throw ApiError.conflict('La comanda no tiene un cobro pendiente');
@@ -617,14 +761,14 @@ export const diningService = {
         'Comanda entregada a Salon',
         transaction,
       );
-      await ordersService.changeStatus(order, ORDER_STATUS.DELIVERED, { actorId: input.actorId, source: 'STAFF', comment: `Mesa cerrada Â· ${input.payments.map((part) => part.method).join(' + ')}`, transaction });
+      await ordersService.changeStatus(order, ORDER_STATUS.DELIVERED, { actorId: input.actorId, source: 'STAFF', comment: `Mesa cerrada · ${input.payments.map((part) => part.method).join(' + ')}`, transaction });
       return receipt(order, transaction);
     });
   },
 
   async publicTable(token: string) {
     const table = await DiningTable.findOne({ where: { qrToken: token, qrEnabled: true, isActive: true } });
-    if (!table) throw ApiError.notFound('Este QR de mesa no estÃ¡ activo');
+    if (!table) throw ApiError.notFound('Este QR de mesa no está activo');
     const branch = await Branch.findByPk(table.branchId);
     const open = await Order.findOne({ where: { diningTableId: table.id, status: { [Op.in]: [...OPEN_STATUSES] } }, order: [['placedAt', 'DESC']] });
     return { table: { id: table.id, code: table.code, area: table.area, capacity: table.capacity }, branch: { id: table.branchId, name: branch?.name ?? 'Misky Challay' }, command: open ? { orderNumber: open.orderNumber, status: open.status, total: Number(open.grandTotal) } : null, catalog: await this.catalog(table.branchId) };
@@ -649,7 +793,7 @@ export const diningService = {
     },
   ) {
     const table = await DiningTable.findOne({ where: { qrToken: token, qrEnabled: true, isActive: true } });
-    if (!table) throw ApiError.notFound('Este QR de mesa no estÃ¡ activo');
+    if (!table) throw ApiError.notFound('Este QR de mesa no está activo');
 
     const idempotencyKey = input.idempotencyKey?.trim() || null;
 

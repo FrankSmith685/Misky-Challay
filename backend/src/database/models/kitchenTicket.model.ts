@@ -14,6 +14,7 @@ export const TICKET_STATUS = {
   ACCEPTED: 'ACCEPTED', // cocina lo acepto
   PREPARING: 'PREPARING', // en preparacion
   READY: 'READY', // listo para despacho o recojo
+  ON_HOLD: 'ON_HOLD', // incidencia o espera operativa
   DISPATCHED: 'DISPATCHED', // salio de cocina
   CANCELLED: 'CANCELLED',
 } as const;
@@ -21,10 +22,11 @@ export type TicketStatus = (typeof TICKET_STATUS)[keyof typeof TICKET_STATUS];
 
 /** Transiciones validas del ticket de cocina. */
 export const TICKET_FLOW: Record<TicketStatus, TicketStatus[]> = {
-  QUEUED: ['ACCEPTED', 'CANCELLED'],
-  ACCEPTED: ['PREPARING', 'CANCELLED'],
-  PREPARING: ['READY', 'CANCELLED'],
-  READY: ['DISPATCHED', 'CANCELLED'],
+  QUEUED: ['ACCEPTED', 'ON_HOLD', 'CANCELLED'],
+  ACCEPTED: ['PREPARING', 'ON_HOLD', 'CANCELLED'],
+  PREPARING: ['READY', 'ON_HOLD', 'CANCELLED'],
+  READY: ['DISPATCHED', 'ON_HOLD', 'CANCELLED'],
+  ON_HOLD: ['CANCELLED'],
   DISPATCHED: [],
   CANCELLED: [],
 };
@@ -48,6 +50,12 @@ export class KitchenTicket extends Model<
   declare acceptedAt: CreationOptional<Date | null>;
   declare startedAt: CreationOptional<Date | null>;
   declare readyAt: CreationOptional<Date | null>;
+  declare station: CreationOptional<string | null>;
+  declare assignedTo: CreationOptional<number | null>;
+  declare pausedFromStatus: CreationOptional<TicketStatus | null>;
+  declare incidentReason: CreationOptional<string | null>;
+  declare incidentAt: CreationOptional<Date | null>;
+  declare incidentBy: CreationOptional<number | null>;
   declare dispatchedAt: CreationOptional<Date | null>;
   /** Primera alerta de que nadie acepto la comanda dentro del SLA. */
   declare escalatedAt: CreationOptional<Date | null>;
@@ -75,6 +83,12 @@ KitchenTicket.init(
     acceptedAt: { type: DataTypes.DATE, allowNull: true },
     startedAt: { type: DataTypes.DATE, allowNull: true },
     readyAt: { type: DataTypes.DATE, allowNull: true },
+    station: { type: DataTypes.STRING(40), allowNull: true },
+    assignedTo: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
+    pausedFromStatus: { type: DataTypes.STRING(20), allowNull: true },
+    incidentReason: { type: DataTypes.STRING(500), allowNull: true },
+    incidentAt: { type: DataTypes.DATE, allowNull: true },
+    incidentBy: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
     dispatchedAt: { type: DataTypes.DATE, allowNull: true },
     escalatedAt: { type: DataTypes.DATE, allowNull: true },
     prepMinutesActual: { type: DataTypes.INTEGER, allowNull: true },

@@ -33,4 +33,13 @@ export const applyCssVars = (tokens: ThemeTokens): void => {
   root.setProperty('--radius-field', `${radius}px`);
   root.setProperty('--radius-card', `${radius}px`);
   root.setProperty('--radius-pill', `${radius}px`);
+  root.setProperty('--font-sans', tokens.fontFamily === 'serif' ? 'Georgia, Cambria, serif' : tokens.fontFamily === 'system' ? 'ui-sans-serif, system-ui, sans-serif' : "'Inter', ui-sans-serif, system-ui, sans-serif");
+  root.setProperty('--text-base-size', `${Math.min(18, Math.max(14, tokens.baseFontSize))}px`);
+  const shadow = Math.min(1.5, Math.max(0, tokens.shadowStrength / 100));
+  root.setProperty('--density-scale', tokens.density === 'compact' ? '0.88' : '1');
+  root.setProperty('--shadow-alpha-e1', String(0.05 * shadow));
+  root.setProperty('--shadow-alpha-e2', String(0.06 * shadow));
+  root.setProperty('--shadow-alpha-e3', String(0.10 * shadow));
+  root.setProperty('--shadow-alpha-e4', String(0.14 * shadow));
+  root.setProperty('--shadow-alpha-e5', String(0.20 * shadow));
 };

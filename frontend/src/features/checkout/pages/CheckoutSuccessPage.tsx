@@ -14,6 +14,7 @@ import { forgetPendingOrder } from '../pendingOrder';
 import type { OrderDetail } from '../types';
 import { DirectPaymentCheckout } from '../components/DirectPaymentCheckout';
 import type { DirectPaymentDetail } from '../directPayments';
+import { CakeOrderArCard } from '@features/cakes/components/CakeOrderArCard';
 
 /** Tras este numero de intentos dejamos de esperar al webhook y damos salidas. */
 const MAX_POLLS = 10;
@@ -266,6 +267,8 @@ const CheckoutSuccessPage = () => {
             )}
           </dl>
         )}
+
+        {isConfirmed && order && <div className="mt-6 text-left"><CakeOrderArCard orderNumber={order.orderNumber} items={order.items} /></div>}
 
         {view === 'decision' ? (
           <div className="mt-6 grid gap-2">

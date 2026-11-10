@@ -93,7 +93,7 @@ export const cakeFinanceService = {
     });
   },
 
-  async report(input: { branchId: number; from?: string; to?: string; isOwner: boolean }) {
+  async report(input: { branchId: number; from?: string; to?: string; isSuperAdmin: boolean }) {
     const orderWhere = { branchId: input.branchId, ...(input.from || input.to ? { placedAt: dateFilter(input.from, input.to) } : {}) };
     const entryWhere = { branchId: input.branchId, ...(input.from || input.to ? { occurredAt: dateFilter(input.from, input.to) } : {}) };
     const [commissions, entries, purchases] = await Promise.all([
@@ -163,10 +163,10 @@ export const cakeFinanceService = {
       supplierOutstanding: round2(Math.max(0, purchases.reduce((sum, entry) => sum + amount(entry.total), 0) - allSupplierPayments.reduce((sum, entry) => sum + amount(entry.amount), 0))),
       incompleteOrders: rows.filter((row) => !row.costsComplete).length,
     };
-    const platform = input.isOwner ? await cakeFinanceService.platformSummary(input.from, input.to) : undefined;
+    const platform = input.isSuperAdmin ? await cakeFinanceService.platformSummary(input.from, input.to) : undefined;
     const purchaseOrders = purchases.map((order) => ({ id: order.id, orderNumber: order.orderNumber, total: amount(order.total),
       paid: round2(allSupplierPayments.filter((entry) => entry.purchaseOrderId === order.id).reduce((sum, entry) => sum + amount(entry.amount), 0)) }));
-    return { rows, entries, purchaseOrders, summary, platform, canManagePlatform: input.isOwner };
+    return { rows, entries, purchaseOrders, summary, platform, canManagePlatform: input.isSuperAdmin };
   },
 
   async platformSummary(from?: string, to?: string) {

@@ -32,6 +32,7 @@ import { accountApi } from '../../src/services/api/account.service';
 import { businessApi } from '../../src/services/api/business.service';
 import { checkoutApi } from '../../src/services/api/checkout.service';
 import { checkoutTermsApi } from '../../src/services/api/checkoutTerms.service';
+import { experiencesApi } from '../../src/services/api/experiences.service';
 import { geoApi } from '../../src/services/api/geo.service';
 import { colors, layout, radius, shadow, spacing, type } from '../../src/theme/tokens';
 import type {
@@ -41,8 +42,9 @@ import type {
   OrderQuote,
   PublicSettings,
 } from '../../src/types/domain';
+import type { ExperiencePackage } from '../../src/types/experiences';
 
-type PaymentMethod = 'ONLINE' | 'YAPE' | 'PLIN';
+type PaymentMethod = 'ONLINE' | 'YAPE' | 'PLIN' | 'CASH';
 type Timing = 'ASAP' | 'SCHEDULED';
 type DocumentType = 'BOLETA' | 'FACTURA';
 
@@ -66,6 +68,7 @@ interface FieldErrors {
   billing?: string;
   operationCode?: string;
   payerPhone?: string;
+  experience?: string;
 }
 
 /** El total se recotiza solo; esta pausa evita un POST por cada tecla del cupón. */
@@ -126,6 +129,7 @@ const cartFingerprint = (input: CheckoutInput): string =>
     address: input.address?.line1 ?? null,
     coupon: input.couponCode ?? null,
     wallet: input.useWallet ?? false,
+    experience: input.experience ?? null,
     whatsappOptIn: input.whatsappOptIn ?? false,
   });
 
@@ -209,14 +213,21 @@ export default function CheckoutScreen() {
   const toast = useToast();
 
   const [addressId, setAddressId] = useState<number | null>(null);
-  const [timing, setTiming] = useState<Timing>('SCHEDULED');
+  const [timing, setTiming] = useState<Timing>('ASAP');
   const [slots, setSlots] = useState<DeliverySlot[]>([]);
   const [slotId, setSlotId] = useState<number | null>(null);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [slotsError, setSlotsError] = useState('');
+  const [experiencePackageId, setExperiencePackageId] = useState<number | null>(null);
+  const [experienceBrief, setExperienceBrief] = useState('');
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
   const terms = useResource({ key: 'settings:terms', fetcher: checkoutTermsApi.get, cacheMs: 0, pollIntervalMs: 30000 });
+  const experiences = useResource<ExperiencePackage[]>({
+    key: 'experiences:packages',
+    fetcher: experiencesApi.packages,
+    cacheMs: 300_000,
+  });
   const [acceptedTermsVersion, setAcceptedTermsVersion] = useState<number | null>(null);
   const acceptedTerms = Boolean(terms.data && !terms.error && acceptedTermsVersion === terms.data.version);
   useEffect(() => { setAcceptedTermsVersion(null); }, [user?.id]);
@@ -276,6 +287,18 @@ export default function CheckoutScreen() {
     [addressId, addressRows],
   );
   const hasPreciseDeliveryAddress = selectedAddress?.latitude != null && selectedAddress.longitude != null;
+  const selectedExperience = useMemo(
+    () => (experiences.data ?? []).find((entry) => entry.id === experiencePackageId) ?? null,
+    [experiencePackageId, experiences.data],
+  );
+  const experienceInput = useMemo<CheckoutInput['experience']>(() => {
+    if (!selectedExperience || experienceBrief.trim().length < 10) return undefined;
+    return {
+      packageId: selectedExperience.id,
+      expectedVersion: selectedExperience.version,
+      brief: experienceBrief.trim(),
+    };
+  }, [experienceBrief, selectedExperience]);
 
   // --- Guardas de entrada ------------------------------------------------
   useEffect(() => {
@@ -394,7 +417,7 @@ export default function CheckoutScreen() {
         }
         if (!targetBranchId) throw new Error('Elige primero el local de recojo.');
 
-        const response = await checkoutApi.availability({ items: items.map((item) => ({ productId:item.productId,variantId:item.variantId,quantity:item.quantity,selections:item.selections.map((entry)=>({optionId:entry.optionId,quantity:entry.quantity})),requestedServings:item.requestedServings,designQuoteId:item.designQuoteId })), branchId:targetBranchId,deliveryType:serviceMode === 'DELIVERY' ? 'DELIVERY' : 'PICKUP',serviceMode:'ASAP',...(serviceMode === 'DELIVERY' && selectedAddress ? {address:{line1:selectedAddress.line1,latitude:selectedAddress.latitude ?? undefined,longitude:selectedAddress.longitude ?? undefined,districtId:selectedAddress.districtId ?? undefined}} : {}) });
+        const response = await checkoutApi.availability({ items: items.map((item) => ({ productId:item.productId,variantId:item.variantId,quantity:item.quantity,selections:item.selections.map((entry)=>({optionId:entry.optionId,quantity:entry.quantity})),requestedServings:item.requestedServings,designQuoteId:item.designQuoteId })), branchId:targetBranchId,deliveryType:serviceMode === 'DELIVERY' ? 'DELIVERY' : 'PICKUP',serviceMode:'ASAP',experience: experienceInput, ...(serviceMode === 'DELIVERY' && selectedAddress ? {address:{line1:selectedAddress.line1,latitude:selectedAddress.latitude ?? undefined,longitude:selectedAddress.longitude ?? undefined,districtId:selectedAddress.districtId ?? undefined}} : {}) });
         const rows = response.slots;
         if (!active) return;
 
@@ -414,7 +437,7 @@ export default function CheckoutScreen() {
     return () => {
       active = false;
     };
-  }, [approvedDesignSlotId, branch, hasPreciseDeliveryAddress, items, purchaseAddress?.id, purchaseCoverage, selectedAddress, serviceMode, timing]);
+  }, [approvedDesignSlotId, branch, experienceInput, hasPreciseDeliveryAddress, items, purchaseAddress?.id, purchaseCoverage, selectedAddress, serviceMode, timing]);
 
   // --- Cotización automática ---------------------------------------------
   /**
@@ -459,11 +482,12 @@ export default function CheckoutScreen() {
           : {}),
       couponCode: appliedCoupon ?? undefined,
       useWallet,
+      experience: experienceInput,
       // El medio de pago no cambia el precio: se decide al confirmar.
       paymentMethod: 'ONLINE',
       billing: { documentType: 'BOLETA' },
     };
-  }, [appliedCoupon, branch, hasPreciseDeliveryAddress, items, selectedAddress, serviceMode, slotId, timing, useWallet]);
+  }, [appliedCoupon, branch, experienceInput, hasPreciseDeliveryAddress, items, selectedAddress, serviceMode, slotId, timing, useWallet]);
 
   useEffect(() => {
     if (!quoteInput) {
@@ -482,6 +506,9 @@ export default function CheckoutScreen() {
           if (cancelled) return;
           lastValidQuote.current = result;
           setQuote(result);
+          if ((result.requiresScheduledDelivery || !result.isOpenNow) && timing !== 'SCHEDULED') {
+            setTiming('SCHEDULED');
+          }
           setQuoteError('');
           void mobileAnalytics.track(
             'CHECKOUT_STEP',
@@ -565,8 +592,17 @@ export default function CheckoutScreen() {
       });
     }
 
+    if (config.cod.enabled && serviceMode === 'DELIVERY' && quote?.paymentPlan !== 'DEPOSIT_BALANCE' && quote && quote.grandTotal <= config.cod.maxAmount) {
+      rows.push({
+        value: 'CASH',
+        label: 'Efectivo al recibir',
+        hint: 'Paga el total cuando llegue tu pedido.',
+        icon: 'cash',
+      });
+    }
+
     return rows;
-  }, [config, needsPayment]);
+  }, [config, needsPayment, quote, serviceMode]);
 
   useEffect(() => {
     if (paymentOptions.length === 0) return;
@@ -665,6 +701,10 @@ export default function CheckoutScreen() {
       found.contactPhone = 'Ingresa un teléfono de contacto válido (6 a 20 dígitos).';
     }
 
+    if (selectedExperience && experienceBrief.trim().length < 10) {
+      found.experience = 'Describe tu idea para la experiencia QR en al menos 10 caracteres.';
+    }
+
     if (fiscalEnabled && documentType === 'FACTURA') {
       if (!isValidRuc(ruc)) found.billing = 'Ingresa un RUC válido (11 dígitos, empieza en 10/20).';
       else if (billingName.trim().length < 3) found.billing = 'Ingresa la razón social.';
@@ -686,9 +726,11 @@ export default function CheckoutScreen() {
     contactPhone,
     dni,
     documentType,
+    experienceBrief,
     invoiceTotal,
     isMobilePayment,
     ruc,
+    selectedExperience,
   ]);
 
   /**
@@ -730,6 +772,7 @@ export default function CheckoutScreen() {
     const firstIssue =
       found.contactName ??
       found.contactPhone ??
+      found.experience ??
       found.billing ??
       found.operationCode ??
       found.payerPhone;
@@ -830,6 +873,13 @@ export default function CheckoutScreen() {
         run: () => setTiming('ASAP'),
       };
     }
+    if (selectedExperience && experienceBrief.trim().length < 10) {
+      return {
+        label: 'Describir experiencia',
+        detail: 'Cuéntanos tu idea en al menos 10 caracteres',
+        run: () => checkoutScroll.current?.scrollTo({ y: 900, animated: true }),
+      };
+    }
     // Sin cotización y sin error todavía se está calculando: el botón espera con
     // su spinner en vez de ofrecer un reintento que no hace falta.
     if (quote === null) {
@@ -867,6 +917,7 @@ export default function CheckoutScreen() {
   }, [
     missingDestination,
     selectedAddress,
+    experienceBrief,
     missingForMinimum,
     needsPayment,
     paymentMethod,
@@ -875,6 +926,7 @@ export default function CheckoutScreen() {
     refetchSettings,
     retryQuote,
     serviceMode,
+    selectedExperience,
     slotId,
     timing,
   ]);
@@ -882,6 +934,7 @@ export default function CheckoutScreen() {
   const confirmLabel = useMemo(() => {
     if (!quote) return 'Calculando tu total…';
     if (quote.grandTotal === 0) return 'Confirmar con mi saldo';
+    if (paymentMethod === 'CASH') return `Confirmar · pagar ${money(quote.grandTotal)} al recibir`;
     if (isMobilePayment) return 'Crear pedido y ver instrucciones';
     return `Pagar ${money(depositPlan ? quote.depositAmount ?? 0 : quote.grandTotal)}`;
   }, [isMobilePayment, paymentMethod, quote]);
@@ -1043,6 +1096,13 @@ export default function CheckoutScreen() {
                 description="Preparación inmediata o una franja reservada."
               >
                 <OptionRow
+                  icon="clock-fast"
+                  title="Lo antes posible"
+                  subtitle="Disponible para productos preparados y con stock"
+                  selected={timing === 'ASAP'}
+                  onPress={() => setTiming('ASAP')}
+                />
+                <OptionRow
                   icon="calendar-clock"
                   title="Programar pedido"
                   subtitle="Eliges el día y la franja horaria"
@@ -1106,6 +1166,57 @@ export default function CheckoutScreen() {
                     </ScrollView>
                   )
                 ) : null}
+              </Section>
+
+              <Section
+                icon="qrcode"
+                title="Experiencia QR (opcional)"
+                description="Añade un saludo o una sorpresa digital a tu pedido."
+              >
+                {experiences.loading && !experiences.data ? (
+                  <Skeleton height={76} rounded="md" />
+                ) : experiences.error ? (
+                  <View style={styles.warning}>
+                    <MaterialCommunityIcons name="cloud-alert-outline" size={20} color={colors.warning} />
+                    <View style={styles.optionCopy}>
+                      <Text style={styles.warningText}>No pudimos cargar las experiencias disponibles.</Text>
+                      <PrimaryButton label="Reintentar" variant="secondary" onPress={() => void experiences.refetch()} style={styles.inlineAction} />
+                    </View>
+                  </View>
+                ) : (
+                  <>
+                    <OptionRow
+                      icon="close-circle-outline"
+                      title="Sin experiencia QR"
+                      subtitle="Continúa solo con los productos del pedido."
+                      selected={experiencePackageId === null}
+                      onPress={() => { setExperiencePackageId(null); setExperienceBrief(''); setErrors((current) => ({ ...current, experience: undefined })); }}
+                    />
+                    {(experiences.data ?? []).map((entry) => (
+                      <OptionRow
+                        key={entry.id}
+                        icon={entry.mode === 'AR' ? 'camera-iris' : 'play-circle-outline'}
+                        title={`${entry.name} · ${money(entry.price)}`}
+                        subtitle={`${entry.description} · entrega mínima ${entry.minLeadHours} h`}
+                        selected={experiencePackageId === entry.id}
+                        onPress={() => { setExperiencePackageId(entry.id); setTiming('SCHEDULED'); }}
+                      />
+                    ))}
+                    {selectedExperience ? (
+                      <FormField
+                        label="Cuéntanos tu idea"
+                        value={experienceBrief}
+                        onChangeText={(value) => { setExperienceBrief(value); setErrors((current) => ({ ...current, experience: undefined })); }}
+                        placeholder="Ej. Un saludo de cumpleaños con colores rosados y una canción alegre"
+                        maxLength={1500}
+                        multiline
+                        icon="text-box-outline"
+                        error={errors.experience}
+                        hint="La propuesta se prepara después de confirmar el pedido y podrás revisarla desde su detalle."
+                      />
+                    ) : null}
+                  </>
+                )}
               </Section>
 
               <Section

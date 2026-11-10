@@ -35,6 +35,13 @@ export function useExperienceMedia(scene: ExperienceScene | null, base: string, 
             if (scene.audioAssetId === id) media.audio = url;
             if (scene.targetAssetId === id) media.target = url;
             if (scene.targetImageAssetId === id) media.image = url;
+            const activeMarkers = (scene.markers ?? []).filter((marker) => marker.enabled);
+            const markerTargetIds = [...new Set(activeMarkers.map((marker) => marker.targetAssetId))];
+            const markerIndex = markerTargetIds.indexOf(id);
+            if (markerIndex >= 0) {
+              media.targets ??= [];
+              media.targets[markerIndex] = url;
+            }
           }),
         );
         if (!abort.signal.aborted) setState({ key, media, error: '' });

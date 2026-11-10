@@ -9,6 +9,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } 
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
+  Banknote,
   CalendarClock,
   CheckCircle2,
   ChevronDown,
@@ -56,6 +57,7 @@ import { getDeliveryReferenceError } from '@features/geo/utils/deliveryAddress';
 import type { Address, DeliverySlot } from '@features/geo/types';
 import { accountApi } from '@features/account/services/account.service';
 import {
+  useCodSettings,
   useInvoicingSettings,
   useLocalPaymentSettings,
   useOnlinePaymentSettings,
@@ -132,6 +134,7 @@ const CheckoutPage = () => {
   } = useAppState();
   const invoicing = useInvoicingSettings();
   const localPayments = useLocalPaymentSettings();
+  const cod = useCodSettings();
   const onlinePayments = useOnlinePaymentSettings();
   const receipts = useReceiptSettings();
   const { pending, isChecking: isCheckingPending, dismiss: dismissPending, recoveryError, retryRecovery } = usePendingOrder();
@@ -140,7 +143,7 @@ const CheckoutPage = () => {
   const [couponInput, setCouponInput] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
   const [useWallet, setUseWallet] = useState(true);
-  const [paymentMethod, setPaymentMethod] = useState<'ONLINE' | 'YAPE' | 'PLIN'>('ONLINE');
+  const [paymentMethod, setPaymentMethod] = useState<'ONLINE' | 'YAPE' | 'PLIN' | 'CASH'>('ONLINE');
   // Comprobante: boleta (por defecto) o factura con RUC.
   const [documentType, setDocumentType] = useState<'BOLETA' | 'FACTURA'>('BOLETA');
   const [ruc, setRuc] = useState('');
@@ -242,7 +245,7 @@ const CheckoutPage = () => {
       setKitchenNotes(draft.kitchenNotes ?? '');
       setDeliveryNotes(draft.deliveryNotes ?? '');
       setExperience(draft.experience);
-      setPaymentMethod(draft.paymentMethod === 'YAPE' || draft.paymentMethod === 'PLIN' ? draft.paymentMethod : 'ONLINE');
+      setPaymentMethod(draft.paymentMethod === 'YAPE' || draft.paymentMethod === 'PLIN' || draft.paymentMethod === 'CASH' ? draft.paymentMethod : 'ONLINE');
     } catch {
       localStorage.removeItem(DRAFT_STORAGE);
     }
@@ -499,9 +502,11 @@ const CheckoutPage = () => {
     receipts.mode !== 'INTERNAL_ONLY' && documentType === 'BOLETA' && invoiceTotal >= invoicing.boletaDniThreshold;
 
   const onlineLabel = onlinePayments.onlineProvider === 'mercadopago' ? 'Mercado Pago' : 'Pago en línea';
-  const paymentMethodAvailable = paymentMethod === 'ONLINE' ? onlinePayments.onlineEnabled
-    : paymentMethod === 'YAPE' ? localPayments.yapeEnabled : localPayments.plinEnabled;
   const depositPlan = quote?.paymentPlan === 'DEPOSIT_BALANCE';
+  const codAvailable = cod.enabled && deliveryType === 'DELIVERY' && !depositPlan && !!quote && quote.grandTotal <= cod.maxAmount;
+  const paymentMethodAvailable = paymentMethod === 'ONLINE' ? onlinePayments.onlineEnabled
+    : paymentMethod === 'YAPE' ? localPayments.yapeEnabled
+    : paymentMethod === 'PLIN' ? localPayments.plinEnabled : codAvailable;
   /*
    * Si el medio elegido deja de estar disponible se cae al primero que si lo
    * este. Antes se caia siempre a tarjeta, que sin pasarela configurada no se
@@ -509,10 +514,11 @@ const CheckoutPage = () => {
    */
   useEffect(() => {
     if (!quote || isQuoting) return;
-    const available: Array<'ONLINE' | 'YAPE' | 'PLIN'> = [
+    const available: Array<'ONLINE' | 'YAPE' | 'PLIN' | 'CASH'> = [
           ...(onlinePayments.onlineEnabled ? (['ONLINE'] as const) : []),
           ...(localPayments.yapeEnabled ? (['YAPE'] as const) : []),
           ...(localPayments.plinEnabled ? (['PLIN'] as const) : []),
+          ...(codAvailable ? (['CASH'] as const) : []),
         ];
     if (available.length > 0 && !available.includes(paymentMethod)) {
       setPaymentMethod(available[0]);
@@ -520,6 +526,7 @@ const CheckoutPage = () => {
   }, [
     localPayments.plinEnabled,
     localPayments.yapeEnabled,
+    codAvailable,
     onlinePayments.onlineEnabled,
     paymentMethod,
     depositPlan,
@@ -676,6 +683,7 @@ const CheckoutPage = () => {
     (deliveryType === 'DELIVERY' && (!address || !branchId))
     || (deliveryType === 'PICKUP' && (!branchId || pickupBranch?.id !== branchId));
   const payingMobile = paymentMethod === 'YAPE' || paymentMethod === 'PLIN';
+  const payingCash = paymentMethod === 'CASH';
   const selectedLocal = paymentMethod === 'YAPE'
     ? { name: 'Yape', phone: localPayments.yapePhone, recipient: localPayments.yapeRecipient, qr: localPayments.yapeQrImageUrl }
     : { name: 'Plin', phone: localPayments.plinPhone, recipient: localPayments.plinRecipient, qr: localPayments.plinQrImageUrl };
@@ -783,28 +791,35 @@ const CheckoutPage = () => {
   const payLabel =
     quote?.grandTotal === 0
       ? 'Pagar con mi saldo'
+      : payingCash
+          ? `Confirmar pedido · pagar ${quote ? formatCurrency(quote.grandTotal) : ''} al recibir`
       : payingMobile
           ? `Continuar con ${selectedLocal.name}`
           : `${depositPlan ? 'Pagar anticipo' : 'Pagar'} ${quote ? formatCurrency(depositPlan ? quote.depositAmount ?? 0 : quote.grandTotal) : ''}`;
   const payLabelCompact =
-    quote?.grandTotal === 0 ? 'Pagar con saldo' : payingMobile ? `Continuar con ${selectedLocal.name}` : depositPlan ? 'Pagar anticipo' : 'Pagar en línea';
+    quote?.grandTotal === 0 ? 'Pagar con saldo' : payingCash ? 'Confirmar · pagar al recibir' : payingMobile ? `Continuar con ${selectedLocal.name}` : depositPlan ? 'Pagar anticipo' : 'Pagar en línea';
   const payIcon =
     quote?.grandTotal === 0 ? (
       <Wallet className="size-4" />
     ) : payingMobile ? (
       <Smartphone className="size-4" />
+    ) : payingCash ? (
+      <Banknote className="size-4" />
     ) : (
       <CreditCard className="size-4" />
     );
   const totalLabel =
-    schedulePending ? 'Total estimado' : quote?.grandTotal === 0 ? 'Total' : depositPlan ? 'Total del pedido' : payingMobile ? `A pagar con ${selectedLocal.name}` : 'A pagar en línea';
-  const paymentLabel = quote?.grandTotal === 0 ? 'Con mi saldo' : payingMobile ? selectedLocal.name : onlineLabel;
+    schedulePending ? 'Total estimado' : quote?.grandTotal === 0 ? 'Total' : depositPlan ? 'Total del pedido' : payingCash ? 'A pagar al recibir' : payingMobile ? `A pagar con ${selectedLocal.name}` : 'A pagar en línea';
+  const paymentLabel = quote?.grandTotal === 0 ? 'Con mi saldo' : payingCash ? 'Efectivo al recibir' : payingMobile ? selectedLocal.name : onlineLabel;
+  const cakeDeliveryFee = quote?.cakeDeliveryFee ?? 0;
+  const baseDeliveryFee = quote ? Math.max(0, quote.deliveryFee - cakeDeliveryFee) : 0;
 
   const summaryLines: SummaryLine[] = quote
     ? [
         { label: 'Productos', value: formatCurrency(quote.productSubtotal ?? quote.subtotal) },
         ...(quote.experience ? [{ label: quote.experience.name, value: formatCurrency(quote.experience.price) }] : []),
-        { label: deliveryType === 'DELIVERY' ? (quote.deliveryVehicleType === 'CAR' ? 'Entrega en auto' : 'Delivery') : 'Recojo en taller', value: quote.deliveryFee === 0 ? (deliveryType === 'PICKUP' ? 'Sin costo' : 'Gratis') : formatCurrency(quote.deliveryFee) },
+        { label: deliveryType === 'DELIVERY' ? (quote.deliveryVehicleType === 'CAR' ? 'Entrega en auto' : 'Delivery') : 'Recojo en taller', value: baseDeliveryFee === 0 ? (deliveryType === 'PICKUP' ? 'Sin costo' : 'Gratis') : formatCurrency(baseDeliveryFee) },
+        ...(cakeDeliveryFee > 0 ? [{ label: 'Manejo especial de torta', value: formatCurrency(cakeDeliveryFee) }] : []),
         ...(quote.discountTotal > 0
           ? [{ label: 'Descuentos', value: `-${formatCurrency(quote.discountTotal)}`, tone: 'positive' as const }]
           : []),
@@ -962,6 +977,7 @@ const CheckoutPage = () => {
               pickupBranch={deliveryType === 'PICKUP' && pickupBranch?.id === branchId ? pickupBranch : null}
               branchId={branchId}
               deliveryFee={quote?.deliveryFee}
+              cakeDeliveryFee={quote?.cakeDeliveryFee}
               extraDeliveryFee={quote?.extraDeliveryFee}
               deliveryFeeLoading={isFirstQuote}
               onReferenceChange={(reference) => { if (address) setAddress({ ...address, reference }); }}
@@ -993,7 +1009,7 @@ const CheckoutPage = () => {
           <FormSection
             id="checkout-schedule"
             title="¿Cuándo lo quieres?"
-            description={hasCake ? 'Las tortas se entregan en una franja programada que tenga capacidad de producción.' : 'Elige preparación inmediata o reserva una franja disponible.'}
+            description={hasCake ? 'Este pedido incluye productos preparados bajo pedido. Elige una franja que tenga capacidad de producción.' : 'Elige preparación inmediata o reserva una franja disponible.'}
             icon={CalendarClock}
           >
             <FormStack spacing={2.5}>
@@ -1003,7 +1019,7 @@ const CheckoutPage = () => {
               </Callout>
             )}
             {hasCake && minimumLeadHours > 0 && (
-              <p className="text-xs leading-5 text-ink-muted">Este pedido requiere al menos {minimumLeadHours} horas de anticipación. Mostramos las franjas que cumplen ese plazo.</p>
+              <p className="text-xs leading-5 text-ink-muted">Este pedido requiere al menos {minimumLeadHours} horas de anticipación. Los productos listos para venta se entregarán junto con el resto del pedido.</p>
             )}
             {!hasCake && (
               <ChoiceGroup
@@ -1189,7 +1205,7 @@ const CheckoutPage = () => {
           <FormSection
             id="checkout-payment"
             title="¿Cómo quieres pagar?"
-            description="Elige pago en línea o transferencia directa al taller."
+            description="Elige cómo pagar tu pedido."
             icon={CreditCard}
           >
             {quote && quote.grandTotal > 0 ? (
@@ -1199,8 +1215,8 @@ const CheckoutPage = () => {
                   value={paymentMethod}
                   onChange={setPaymentMethod}
                   variant="tile"
-                  columns={3}
-                  className="grid-cols-1 sm:grid-cols-3"
+                  columns={4}
+                  className="grid-cols-1 sm:grid-cols-2 xl:grid-cols-4"
                   options={[
                     /* Sin pasarela configurada el backend rechazaria el cobro al
                      * confirmar: no se ofrece un medio que no se puede cumplir. */
@@ -1209,6 +1225,7 @@ const CheckoutPage = () => {
                       : []),
                     { value: 'YAPE' as const, label: 'Yape', hint: localPayments.yapeEnabled ? 'Transferencia directa al taller.' : 'Temporalmente no disponible.', disabled: !localPayments.yapeEnabled, icon: <Smartphone className="size-4" /> },
                     { value: 'PLIN' as const, label: 'Plin', hint: localPayments.plinEnabled ? 'Transferencia directa al taller.' : 'Temporalmente no disponible.', disabled: !localPayments.plinEnabled, icon: <Smartphone className="size-4" /> },
+                    { value: 'CASH' as const, label: 'Al recibir', hint: codAvailable ? 'Paga en efectivo cuando llegue tu pedido.' : !cod.enabled ? 'Temporalmente no disponible.' : deliveryType !== 'DELIVERY' ? 'Solo para delivery.' : depositPlan ? 'Este pedido requiere anticipo.' : `Hasta ${formatCurrency(cod.maxAmount)}.`, disabled: !codAvailable, icon: <Banknote className="size-4" /> },
                   ]}
                 />
                 {payingMobile && (
@@ -1216,12 +1233,15 @@ const CheckoutPage = () => {
                     Primero registraremos tu pedido y su {depositPlan ? 'anticipo' : 'total'} de <b>{formatCurrency(depositPlan ? quote.depositAmount ?? 0 : quote.grandTotal)}</b>. Después verás el número y QR del taller para transferir con {selectedLocal.name} y reportar el pago.
                   </div>
                 )}
+                {payingCash && codAvailable && <div className="rounded-card border border-brand-200 bg-brand-50/60 p-4 text-sm leading-6 text-brand-900">Pagarás <b>{formatCurrency(quote.grandTotal)}</b> en efectivo al recibir el pedido. Ten el importe preparado para la entrega.</div>}
                 <p className="text-xs leading-5 text-ink-muted">
-                  {payingMobile
+                  {payingCash
+                    ? 'Confirmaremos el pedido ahora; el cobro se registrará al entregar.'
+                    : payingMobile
                     ? 'El taller verificará el movimiento recibido antes de confirmar el pago. Podrás seguirlo desde Mis pedidos.'
                     : 'Te llevamos a la pasarela para completar el pago. Nunca guardamos los datos de tu tarjeta.'}
                 </p>
-                {!onlinePayments.onlineEnabled && !localPayments.yapeEnabled && !localPayments.plinEnabled && <Callout tone="warning" size="sm">Por ahora no hay medios de pago disponibles. Inténtalo más tarde.</Callout>}
+                {!onlinePayments.onlineEnabled && !localPayments.yapeEnabled && !localPayments.plinEnabled && !codAvailable && <Callout tone="warning" size="sm">Por ahora no hay medios de pago disponibles para este pedido. Inténtalo más tarde.</Callout>}
               </FormStack>
             ) : (
               <p className="text-xs leading-5 text-ink-muted">
@@ -1395,7 +1415,7 @@ const CheckoutPage = () => {
             {quote && quote.grandTotal > 0 && (
               <div className="flex items-center justify-between gap-3 border-t border-line pt-4 text-sm">
                 <span className="flex min-w-0 items-center gap-2">
-                  {payingMobile ? <Smartphone className="size-4 shrink-0 text-brand-700" /> : <CreditCard className="size-4 shrink-0 text-brand-700" />}
+                  {payingCash ? <Banknote className="size-4 shrink-0 text-brand-700" /> : payingMobile ? <Smartphone className="size-4 shrink-0 text-brand-700" /> : <CreditCard className="size-4 shrink-0 text-brand-700" />}
                   <span className="min-w-0 truncate font-medium text-ink">{paymentLabel}</span>
                 </span>
                 <Button type="button" size="sm" variant="ghost" onClick={() => scrollToSection('checkout-payment')}>
@@ -1434,6 +1454,8 @@ const CheckoutPage = () => {
                 ? 'Elige un horario disponible para continuar con el pago.'
                 : quote?.grandTotal === 0
                 ? 'Tu saldo cubre todo el pedido: no se cobrara nada a tu tarjeta.'
+                  : payingCash
+                    ? 'El pedido se confirma ahora y pagarás en efectivo al recibirlo.'
                   : payingMobile
                     ? 'Crearás el pedido y verás los datos para transferir. El taller verificará el pago reportado.'
                   : 'El pago se procesa fuera de esta web. Nunca guardamos datos de tu tarjeta.'}

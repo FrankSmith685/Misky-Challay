@@ -52,11 +52,7 @@ export const cakeProductionService = {
     if (!profile) return [];
     if (line.designQuoteId && line.themeId) throw ApiError.unprocessable('La cotización aprobada ya incluye su diseño');
     const theme = await resolveCakeTheme(line);
-    const minLeadHours = Math.max(profile.minLeadHours, theme?.minLeadHours ?? 0);
     if (!Number.isFinite(deliveryAt.getTime())) throw ApiError.badRequest('Fecha de entrega invalida');
-    if (!line.designQuoteId && profile.saleMode !== 'ADVANCED' && deliveryAt.getTime() < Date.now() + minLeadHours * 60 * 60_000) {
-      throw ApiError.unprocessable(`Este producto requiere al menos ${minLeadHours} horas de anticipación`);
-    }
     if (profile.saleMode === 'ADVANCED' && !line.designQuoteId) throw ApiError.unprocessable('Este diseno requiere una cotizacion aprobada antes de comprar');
     if (line.designQuoteId) {
       const quote = await CakeDesignQuote.findByPk(line.designQuoteId);
@@ -68,13 +64,18 @@ export const cakeProductionService = {
       }
       return needsFromEffort(asEffort(quote.effortJson), profile.stationOffsetsJson, deliveryAt, 1);
     }
-    const variant = await ProductVariant.findByPk(line.variantId);
-    if (!variant || variant.productId !== line.productId) throw ApiError.badRequest('Presentacion de torta invalida');
     const product = await Product.findByPk(line.productId);
     if (product?.preparationMode === 'READY_STOCK') {
       if (profile.saleMode !== 'STANDARD' || line.requestedServings != null || line.selections?.length) throw ApiError.unprocessable('Este producto se vende preparado, sin personalización');
       return [];
     }
+    const minLeadHours = Math.max(profile.minLeadHours, theme?.minLeadHours ?? 0);
+    if (!line.designQuoteId && profile.saleMode !== 'ADVANCED' && deliveryAt.getTime() < Date.now() + minLeadHours * 60 * 60_000) {
+      throw ApiError.unprocessable(`Este producto requiere al menos ${minLeadHours} horas de anticipación`);
+    }
+    if (!product) throw ApiError.badRequest('Producto no encontrado');
+    const variant = await ProductVariant.findByPk(line.variantId);
+    if (!variant || variant.productId !== line.productId) throw ApiError.badRequest('Presentacion de torta invalida');
     const servingRule = await resolveCakeCustomServings(line.productId, line.variantId, line.requestedServings);
     const effort = asEffort(Object.values(variant.productionMinutesJson ?? {}).some((value) => Number(value) > 0)
       ? variant.productionMinutesJson : profile.baseEffortJson);
@@ -139,8 +140,24 @@ export const cakeProductionService = {
   async reserveForOrder(order: Order, lines: CakeLine[], transaction: Transaction): Promise<void> {
     const profiles = await CakeProductProfile.findAll({ where: { productId: { [Op.in]: lines.map((entry) => entry.productId) }, isActive: true }, transaction });
     if (!profiles.length) return;
+    const products = await Product.findAll({
+      where: { id: [...new Set(lines.map((entry) => entry.productId))] },
+      attributes: ['id', 'preparationMode'],
+      transaction,
+    });
+    const productById = new Map(products.map((product) => [product.id, product]));
+    const profileById = new Map(profiles.map((profile) => [profile.productId, profile]));
+    const linesToProduce = lines.filter((line) => {
+      const product = productById.get(line.productId);
+      const profile = profileById.get(line.productId);
+      if (!product) return Boolean(line.designQuoteId || line.themeId) || Boolean(profile && profile.saleMode !== 'STANDARD');
+      return product.preparationMode !== 'READY_STOCK'
+        || Boolean(line.designQuoteId || line.themeId)
+        || Boolean(profile && profile.saleMode !== 'STANDARD');
+    });
+    if (!linesToProduce.length) return;
     if (!order.scheduledAt) throw ApiError.unprocessable('Las tortas requieren una fecha de entrega programada');
-    const needs = await cakeProductionService.estimateOrder(lines, order.scheduledAt);
+    const needs = await cakeProductionService.estimateOrder(linesToProduce, order.scheduledAt);
     for (const need of needs) {
       const capacity = await CakeStationCapacity.findOne({
         where: { branchId: order.branchId, workDate: need.workDate, station: need.station },
@@ -323,7 +340,7 @@ export const cakeProductionService = {
     return { mime: task.evidenceMime, bytes: task.evidenceBytes };
   },
 
-  async updateTask(taskId: number, branchId: number, input: { status?: 'IN_PROGRESS' | 'DONE' | 'BLOCKED'; assignedTo?: number | null; checklistJson?: Record<string, boolean>; evidenceUrl?: string | null }) {
+  async updateTask(taskId: number, branchId: number, actorId: number, input: { status?: 'IN_PROGRESS' | 'DONE' | 'BLOCKED'; assignedTo?: number | null; checklistJson?: Record<string, boolean>; evidenceUrl?: string | null; incidentReason?: string | null }) {
     return sequelize.transaction(async (transaction) => {
       const task = await CakeProductionTask.findOne({ where: { id: taskId, branchId }, transaction, lock: transaction.LOCK.UPDATE });
       if (!task) throw ApiError.notFound('Tarea no encontrada');
@@ -345,6 +362,13 @@ export const cakeProductionService = {
       if (input.assignedTo !== undefined) task.assignedTo = input.assignedTo;
       if (input.checklistJson !== undefined) task.checklistJson = input.checklistJson;
       if (input.evidenceUrl !== undefined) task.evidenceUrl = input.evidenceUrl;
+      if (input.status === 'BLOCKED') {
+        const reason = input.incidentReason?.trim() ?? '';
+        if (reason.length < 5) throw ApiError.unprocessable('Indica el motivo del bloqueo para que la incidencia pueda resolverse');
+        task.incidentReason = reason.slice(0, 500);
+        task.incidentAt = new Date();
+        task.incidentBy = actorId;
+      }
       if (input.status === 'DONE' || input.status === 'IN_PROGRESS') {
         const previous = await CakeProductionTask.count({ where: { orderId: task.orderId, sequence: { [Op.lt]: task.sequence }, status: { [Op.ne]: 'DONE' } }, transaction });
         if (previous) throw ApiError.conflict('Completa las etapas anteriores primero');

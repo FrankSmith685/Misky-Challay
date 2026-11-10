@@ -114,6 +114,10 @@ const SavedBowlsPage = () => {
         imageUrl: bowl.product?.imageUrl ?? null, quantity: 1, unitPrice: quote.basePrice,
         extrasTotal: quote.extrasTotal, lineTotal: quote.lineTotal,
         selections: quote.selections.map((line) => ({ groupId: line.groupId, groupName: line.groupName, optionId: line.optionId, optionName: line.optionName, quantity: line.quantity, priceDelta: line.priceDelta })),
+        preparationMode: configs[bowl.productId]?.product.preparationMode,
+        requiresScheduledDelivery: configs[bowl.productId]?.product.preparationMode !== 'READY_STOCK',
+        requiresCarDelivery: configs[bowl.productId]?.product.family === 'CAKE',
+        minLeadHours: configs[bowl.productId]?.product.preparationMode === 'READY_STOCK' ? 0 : configs[bowl.productId]?.product.minLeadHours,
       }));
       toast.success('Bowl agregado al carrito');
       navigate(ROUTES.cart);

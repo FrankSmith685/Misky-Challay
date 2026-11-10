@@ -24,6 +24,9 @@ export const up = async ({ context: q }: MigrationParams<QueryInterface>) => {
       legalName: String(row.legal_name), commercialName: String(row.commercial_name), ruc: String(row.ruc),
       address: String(row.address), phone: String(row.phone), email: String(row.email),
       supportEmail: String(row.support_email), complaintResponseDays: Number(row.complaint_response_days),
+      timeZone: String(row.time_zone ?? businessInfo.timeZone), currency: String(row.currency ?? businessInfo.currency),
+      taxRate: Number(row.tax_rate ?? businessInfo.taxRate),
+      platformCommissionRate: Number(row.platform_commission_rate ?? businessInfo.platformCommissionRate),
     } : businessInfo;
     const { acceptanceLabel, ...terms } = defaultCheckoutTerms(business);
     await q.bulkInsert('checkout_terms', [{ id: 1, ...terms, acceptance_label: acceptanceLabel, updated_by: null, created_at: new Date(), updated_at: new Date() }]);

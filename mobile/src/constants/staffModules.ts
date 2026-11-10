@@ -3,7 +3,7 @@
 export type StaffModuleKey =
   | 'dashboard' | 'orders' | 'cash' | 'dining' | 'kitchen' | 'delivery' | 'inventory'
   | 'procurement' | 'catalog' | 'builder' | 'media' | 'coupons' | 'plans' | 'coverage' | 'cakes'
-  | 'users' | 'roles' | 'complaints' | 'audit' | 'business' | 'design';
+  | 'experiences' | 'users' | 'roles' | 'complaints' | 'audit' | 'business' | 'design';
 
 export interface StaffModule {
   key: StaffModuleKey;
@@ -37,6 +37,7 @@ export const STAFF_MODULES: StaffModule[] = [
   { key: 'procurement', title: 'Compras y lotes', description: 'Proveedores, Ã³rdenes recibidas, vencimientos y costos.', group: 'ABASTECIMIENTO', icon: 'truck-delivery-outline', permissions: ['procurement.read', 'procurement.manage'], branchScoped: true, live: true },
   { key: 'catalog', title: 'CatÃ¡logo', description: 'Productos, precios y publicaciÃ³n.', group: 'NEGOCIO', icon: 'food-apple-outline', permissions: ['catalog.product.read', 'catalog.product.write', 'catalog.product.publish', 'catalog.category.write', 'catalog.availability.write', 'allergen.write', 'dietary_tag.write'] },
   { key: 'builder', title: 'Constructor', description: 'Pasos, ingredientes e incompatibilidades.', group: 'NEGOCIO', icon: 'bowl-mix-outline', permissions: ['catalog.customization.write', 'allergen.write'] },
+  { key: 'experiences', title: 'Experiencias QR', description: 'Revisión, publicación y pausa de experiencias vinculadas a pedidos.', group: 'NEGOCIO', icon: 'qrcode', permissions: ['experience.read', 'experience.write', 'experience.publish'], live: true },
   { key: 'media', title: 'Multimedia', description: 'ImÃ¡genes reutilizables de platos e ingredientes.', group: 'NEGOCIO', icon: 'image-multiple-outline', permissions: ['catalog.product.write', 'catalog.customization.write'] },
   { key: 'coupons', title: 'Cupones', description: 'Promociones, lÃ­mites y vigencias.', group: 'NEGOCIO', icon: 'ticket-percent-outline', permissions: ['promotion.manage'] },
   { key: 'coverage', title: 'Zonas y sucursales', description: 'Sedes, horarios y zonas de reparto.', group: 'ADMINISTRACION', icon: 'map-marker-radius-outline', permissions: ['geo.read', 'geo.write'] },

@@ -12,8 +12,8 @@ const out = path.join(root, 'backend/tmp/photo-3d/description-preview-review');
   const products = (await (await fetch(`${base}/api/v1/catalog/products`)).json()).data;
   const product = products.find(item => item.cakeSaleMode === 'SEMI_CUSTOM');
   assert(product, 'No published customizable cake');
-  const bytes = await fs.readFile(path.join(root, 'frontend/public/images/cakes/vanilla.png'));
-  const dataUrl = `data:image/png;base64,${bytes.toString('base64')}`;
+  const bytes = await fs.readFile(path.join(root, 'frontend/public/images/cakes/vanilla.svg'));
+  const dataUrl = `data:image/svg+xml;base64,${bytes.toString('base64')}`;
   const photo = await fs.readFile(path.join(root, 'frontend/public/images/brand/patisserie-chocolate-v1.jpg'));
   const browser = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   const requests = [], errors = [], writes = [];
@@ -28,7 +28,7 @@ const out = path.join(root, 'backend/tmp/photo-3d/description-preview-review');
       if (pathname.endsWith('/cakes/visual-preview')) {
         requests.push(request.postDataJSON());
         await new Promise(resolve => setTimeout(resolve, requests.length === 2 ? 4000 : 200));
-        return route.fulfill({ json: { success: true, data: { dataUrl, mimeType: 'image/png' } } });
+        return route.fulfill({ json: { success: true, data: { dataUrl, mimeType: 'image/svg+xml' } } });
       }
       if (pathname.includes('/cakes/reconstructions')) { reconstructionCalls++; return route.abort(); }
       if (request.method() !== 'GET' && !pathname.endsWith('/customizations/quote')) { writes.push(`${request.method()} ${pathname}`); return route.abort(); }

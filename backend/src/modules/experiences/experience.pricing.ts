@@ -61,7 +61,7 @@ export const experiencePricing = {
         packageSnapshotJson: snapshot,
         sceneJson:
           template?.sceneJson ??
-          sceneSchema.parse({ content: pack.mode === 'VIDEO' ? 'VIDEO' : 'ALIEN' }),
+          sceneSchema.parse({ content: pack.mode === 'VIDEO' ? 'VIDEO' : 'CAKE' }),
         publishedSceneJson: null,
         brief: selection.brief,
         approvedVersion: null,

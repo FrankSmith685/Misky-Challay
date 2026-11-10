@@ -802,7 +802,7 @@ const CakeDesignWizard = ({
               className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-brand-50 px-3 text-xs font-semibold text-brand-800 disabled:opacity-50"
             >
               <Box className="size-4" />
-              {show3d ? 'Ocultar vista 3D' : 'Ver idea en 3D y compartir por QR'}
+              {show3d ? 'Ocultar vista 3D' : 'Ver idea en 3D'}
             </button>
             {show3d && previewConfig && (
               <div className="mt-3">
@@ -832,8 +832,8 @@ const CakeDesignWizard = ({
               </div>
             )}
             <p className="mt-2 text-[11px] leading-4 text-ink-muted">
-              El QR conserva tus ajustes visuales. La primera referencia aparece en el modelo; solo
-              se publica si eliges incluirla. El tema escrito y las notas permanecen privados.
+              La vista 3D es una referencia visual opcional. El tema escrito y las notas se envían
+              de forma privada junto con tu solicitud.
             </p>
           </div>
         </aside>

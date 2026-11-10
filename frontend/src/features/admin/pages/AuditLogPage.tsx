@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Eraser, RefreshCw, ScrollText } from 'lucide-react';
+import { Download, Eraser, RefreshCw, ScrollText, ShieldCheck } from 'lucide-react';
 import { Button } from '@components/ui/Button';
 import { Input } from '@components/ui/Input';
 import { Pagination } from '@components/ui/Pagination';
@@ -101,6 +101,11 @@ const ACTION_LABEL: Record<string, string> = {
 
   'promotion.coupon.create': 'Creó un cupón',
   'promotion.coupon.update': 'Editó un cupón',
+  'promotion.coupon.archive': 'Archivó un cupón',
+  'subscription.plan.create': 'Creó una caja mensual',
+  'subscription.plan.update': 'Editó una caja mensual',
+  'subscription.plan.archive': 'Archivó una caja mensual',
+  'subscription.cancel': 'Canceló una suscripción',
   'plan.create': 'Creó un plan',
   'plan.update': 'Editó un plan',
   'plan.benefit.set': 'Configuró un beneficio de plan',
@@ -292,6 +297,14 @@ const AuditLogPage = () => {
   const [params, setParams] = useSearchParams();
   const entity = params.get('entidad') ?? '';
   const actor = params.get('actor') ?? '';
+  const action = params.get('accion') ?? '';
+  const entityId = params.get('entidadId') ?? '';
+  const severity = params.get('severidad') ?? '';
+  const outcome = params.get('resultado') ?? '';
+  const search = params.get('buscar') ?? '';
+  const correlationId = params.get('correlation') ?? '';
+  const from = params.get('desde') ?? '';
+  const to = params.get('hasta') ?? '';
   const page = Math.max(1, Number(params.get('pagina') ?? '1') || 1);
 
   const [rows, setRows] = useState<AuditLogRow[]>([]);
@@ -300,6 +313,12 @@ const AuditLogPage = () => {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [staff, setStaff] = useState<StaffRow[]>([]);
+  const [summary, setSummary] = useState<{ today: number; critical: number; failures: number } | null>(null);
+  const [integrity, setIntegrity] = useState<{ valid: boolean; checked: number; violations: Array<{ id: number; reason: string }>; checkedAt: string } | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const canExport = can(PERM.AUDIT_EXPORT);
+  const canVerify = can(PERM.AUDIT_VERIFY);
   // Token de secuencia: cambiar de filtro rapido deja peticiones en vuelo y sin
   // esto gana la ultima en RESOLVER, no la ultima SOLICITADA.
   const requestId = useRef(0);
@@ -308,15 +327,24 @@ const AuditLogPage = () => {
     const id = ++requestId.current;
     setIsLoading(true);
     try {
-      const result = await adminApi.auditLogPage({
+      const [result, counters] = await Promise.all([adminApi.auditLogPage({
         entity: entity || undefined,
         actorId: actor ? Number(actor) : undefined,
+        action: action || undefined,
+        entityId: entityId || undefined,
+        severity: severity as 'INFO' | 'WARNING' | 'CRITICAL' || undefined,
+        outcome: outcome as 'SUCCESS' | 'FAILURE' || undefined,
+        search: search || undefined,
+        correlationId: correlationId || undefined,
+        from: from || undefined,
+        to: to || undefined,
         page,
         pageSize: PAGE_SIZE,
-      });
+      }), adminApi.auditSummary()]);
       if (id !== requestId.current) return;
       setRows(result.rows);
       setMeta(result.meta);
+      setSummary(counters);
       setLoadError(null);
     } catch (error) {
       if (id !== requestId.current) return;
@@ -332,7 +360,7 @@ const AuditLogPage = () => {
         setHasLoadedOnce(true);
       }
     }
-  }, [entity, actor, page]);
+  }, [entity, actor, action, entityId, severity, outcome, search, correlationId, from, to, page]);
 
   useEffect(() => {
     void load();
@@ -369,7 +397,7 @@ const AuditLogPage = () => {
   };
 
   /** Cualquier cambio de filtro vuelve a la primera pagina. */
-  const setFilter = (key: 'entidad' | 'actor', value: string) => {
+  const setFilter = (key: string, value: string) => {
     const next = new URLSearchParams(params);
     if (value) next.set(key, value);
     else next.delete(key);
@@ -384,7 +412,26 @@ const AuditLogPage = () => {
     setParams(next, { replace: true });
   };
 
-  const hasFilters = entity !== '' || actor !== '';
+  const hasFilters = [entity, actor, action, entityId, severity, outcome, search, correlationId, from, to].some(Boolean);
+
+  const verifyIntegrity = async () => {
+    setIsVerifying(true);
+    try { setIntegrity(await adminApi.verifyAuditIntegrity()); }
+    catch (error) { setLoadError(getApiErrorMessage(error)); }
+    finally { setIsVerifying(false); }
+  };
+
+  const exportAudit = async () => {
+    const end = to || new Date().toISOString().slice(0, 10);
+    const start = from || new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
+    const reason = window.prompt('Motivo de la exportación de bitácora:');
+    if (!reason || reason.trim().length < 10) return;
+    setIsExporting(true);
+    try {
+      const blob = await adminApi.exportAuditCsv({ entity: entity || undefined, actorId: actor ? Number(actor) : undefined, action: action || undefined, entityId: entityId || undefined, severity: severity as 'INFO' | 'WARNING' | 'CRITICAL' || undefined, outcome: outcome as 'SUCCESS' | 'FAILURE' || undefined, search: search || undefined, correlationId: correlationId || undefined, from: start, to: end, reason: reason.trim() });
+      const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `bitacora-${end}.csv`; link.click(); URL.revokeObjectURL(url);
+    } catch (error) { setLoadError(getApiErrorMessage(error)); } finally { setIsExporting(false); }
+  };
 
   if (!hasLoadedOnce) return <PageLoader />;
 
@@ -396,17 +443,16 @@ const AuditLogPage = () => {
         title="Bitácora"
         description="Cada cambio sensible queda registrado: quién lo hizo, cuándo y con qué valores antes y después."
         action={
-          <Button
-            variant="outline"
-            size="sm"
-            isLoading={isLoading}
-            leftIcon={<RefreshCw className="size-4" />}
-            onClick={() => void load()}
-          >
-            Actualizar
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {canVerify && <Button variant="outline" size="sm" isLoading={isVerifying} leftIcon={<ShieldCheck className="size-4" />} onClick={() => void verifyIntegrity()}>Verificar integridad</Button>}
+            {canExport && <Button variant="outline" size="sm" isLoading={isExporting} leftIcon={<Download className="size-4" />} onClick={() => void exportAudit()}>Exportar</Button>}
+            <Button variant="outline" size="sm" isLoading={isLoading} leftIcon={<RefreshCw className="size-4" />} onClick={() => void load()}>Actualizar</Button>
+          </div>
         }
       />
+
+      {summary && <div className="mt-4 grid grid-cols-3 gap-3"><Metric label="Eventos hoy" value={summary.today} /><Metric label="Críticos hoy" value={summary.critical} tone={summary.critical ? 'critical' : 'default'} /><Metric label="Fallidos hoy" value={summary.failures} tone={summary.failures ? 'critical' : 'default'} /></div>}
+      {integrity && <div className={`mt-4 flex items-center gap-2 rounded-card border px-4 py-3 text-sm ${integrity.valid ? 'border-brand-200 bg-brand-50 text-brand-700' : 'border-red-200 bg-red-50 text-red-700'}`}><ShieldCheck className="size-4" />{integrity.valid ? `Cadena íntegra: ${integrity.checked} registros verificados.` : `Se encontraron ${integrity.violations.length} inconsistencias en ${integrity.checked} registros.`}</div>}
 
       <div className="flex flex-col gap-3 rounded-card border border-line bg-surface p-3 shadow-e1 sm:flex-row sm:flex-wrap sm:items-center">
         <div className="sm:w-80">
@@ -460,6 +506,12 @@ const AuditLogPage = () => {
             />
           )}
         </div>
+
+        <Input label="Acción" value={action} onChange={(event) => setFilter('accion', event.target.value)} placeholder="ej. role.update" />
+        <Input label="Buscar" value={search} onChange={(event) => setFilter('buscar', event.target.value)} placeholder="Entidad, ID o correlación" />
+        <div className="flex gap-2"><Input label="Desde" type="date" value={from} onChange={(event) => setFilter('desde', event.target.value)} /><Input label="Hasta" type="date" value={to} onChange={(event) => setFilter('hasta', event.target.value)} /></div>
+        <div className="sm:w-40"><Select label="Severidad" size="small" value={severity} onChange={(event) => setFilter('severidad', event.target.value)}><SelectOption value="">Todas</SelectOption><SelectOption value="INFO">Info</SelectOption><SelectOption value="WARNING">Advertencia</SelectOption><SelectOption value="CRITICAL">Crítica</SelectOption></Select></div>
+        <div className="sm:w-40"><Select label="Resultado" size="small" value={outcome} onChange={(event) => setFilter('resultado', event.target.value)}><SelectOption value="">Todos</SelectOption><SelectOption value="SUCCESS">Exitosos</SelectOption><SelectOption value="FAILURE">Fallidos</SelectOption></Select></div>
 
         {hasFilters && (
           <Button
@@ -519,11 +571,14 @@ const AuditLogPage = () => {
                   >
                     {entry.action}
                   </span>
+                  <span className={cn('rounded-pill border px-2 py-1 text-[10px] font-bold', entry.severity === 'CRITICAL' ? 'border-red-200 bg-red-50 text-red-700' : entry.severity === 'WARNING' ? 'border-accent-200 bg-accent-50 text-accent-700' : 'border-line bg-surface-muted text-ink-muted')}>{entry.severity}</span>
+                  <span className="rounded-pill border border-line bg-surface-muted px-2 py-1 text-[10px] font-bold text-ink-muted">{entry.outcome === 'SUCCESS' ? 'OK' : 'FALLÓ'}</span>
                   <span className="rounded-pill border border-line bg-surface-muted px-2 py-1 text-[10px] font-bold text-ink-muted">
                     {entityLabel(entry.entity)}
                     {entry.entityId ? ` #${entry.entityId}` : ''}
                   </span>
                 </div>
+                {(entry.correlationId || entry.ip) && <p className="mt-2 text-[11px] text-ink-muted">{entry.ip ? `IP ${entry.ip}` : ''}{entry.correlationId ? ` · Correlación ${entry.correlationId}` : ''}</p>}
               </div>
 
               <AuditDiff entry={entry} />
@@ -540,5 +595,12 @@ const AuditLogPage = () => {
     </div>
   );
 };
+
+const Metric = ({ label, value, tone = 'default' }: { label: string; value: number; tone?: 'default' | 'critical' }) => (
+  <div className={cn('rounded-card border p-3', tone === 'critical' ? 'border-red-200 bg-red-50' : 'border-line bg-surface')}>
+    <p className="text-xs text-ink-muted">{label}</p>
+    <p className="mt-1 text-xl font-bold text-ink">{value}</p>
+  </div>
+);
 
 export default AuditLogPage;

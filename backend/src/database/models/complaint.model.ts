@@ -4,8 +4,13 @@ import {
   InferAttributes,
   InferCreationAttributes,
   Model,
+  NonAttribute,
 } from 'sequelize';
 import { sequelize } from '../connection';
+import type { ComplaintResponse } from './complaintResponse.model';
+import type { ComplaintNote } from './complaintNote.model';
+import type { ComplaintEvidence } from './complaintEvidence.model';
+import type { User } from './user.model';
 
 /**
  * LIBRO DE RECLAMACIONES VIRTUAL (INDECOPI)
@@ -76,6 +81,21 @@ export class Complaint extends Model<
   declare response: CreationOptional<string | null>;
   declare respondedAt: CreationOptional<Date | null>;
   declare respondedBy: CreationOptional<number | null>;
+  declare assignedTo: CreationOptional<number | null>;
+  declare assignedAt: CreationOptional<Date | null>;
+  declare reopenedAt: CreationOptional<Date | null>;
+  declare reopenedBy: CreationOptional<number | null>;
+  declare reopenReason: CreationOptional<string | null>;
+  declare draftResponse: CreationOptional<string | null>;
+  declare draftUpdatedAt: CreationOptional<Date | null>;
+  declare draftBy: CreationOptional<number | null>;
+  declare escalatedAt: CreationOptional<Date | null>;
+  declare escalationReason: CreationOptional<string | null>;
+
+  declare assignedUser?: NonAttribute<User | null>;
+  declare responses?: NonAttribute<ComplaintResponse[]>;
+  declare notes?: NonAttribute<ComplaintNote[]>;
+  declare evidences?: NonAttribute<ComplaintEvidence[]>;
 
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
@@ -122,6 +142,16 @@ Complaint.init(
     response: { type: DataTypes.TEXT, allowNull: true },
     respondedAt: { type: DataTypes.DATE, allowNull: true },
     respondedBy: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
+    assignedTo: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
+    assignedAt: { type: DataTypes.DATE, allowNull: true },
+    reopenedAt: { type: DataTypes.DATE, allowNull: true },
+    reopenedBy: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
+    reopenReason: { type: DataTypes.STRING(500), allowNull: true },
+    draftResponse: { type: DataTypes.TEXT, allowNull: true },
+    draftUpdatedAt: { type: DataTypes.DATE, allowNull: true },
+    draftBy: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
+    escalatedAt: { type: DataTypes.DATE, allowNull: true },
+    escalationReason: { type: DataTypes.STRING(500), allowNull: true },
 
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,
@@ -135,6 +165,7 @@ Complaint.init(
       { name: 'idx_complaints_status_created', fields: ['status', 'created_at'] },
       { name: 'idx_complaints_user', fields: ['user_id'] },
       { name: 'idx_complaints_doc', fields: ['doc_number'] },
+      { name: 'idx_complaints_due_assignment', fields: ['status', 'due_at', 'assigned_to'] },
     ],
   },
 );

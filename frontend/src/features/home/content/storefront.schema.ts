@@ -17,7 +17,32 @@ export const storefrontImage = text(700).refine((value) => {
 
 const card = z.object({ title: text(100), description: text(700) }).strict();
 const imageCard = card.extend({ imageUrl: storefrontImage, imageAlt: text(180) });
-const choice = card.extend({ label: text(60) });
+const linkAction = z.enum(['catalog', 'custom', 'business', 'plans', 'experiences', 'cart', 'coverage', 'orders', 'guide', 'whatsapp']);
+const choice = card.extend({ label: text(60), action: linkAction.optional() });
+const heroSlide = z.object({
+  eyebrow: text(70),
+  title: text(130),
+  description: text(500),
+  imageUrl: storefrontImage,
+  imageAlt: text(180),
+}).strict();
+const benefit = z.object({
+  icon: z.enum(['cake', 'flame', 'calendar', 'map-pin', 'chef-hat', 'truck']).optional(),
+  title: text(100),
+  description: text(400),
+}).strict();
+const quickLink = z.object({ id: text(40).regex(/^[a-z0-9-]+$/), label: text(60), action: linkAction }).strict();
+const defaultBenefits = defaults.benefits as unknown as Array<z.infer<typeof benefit>>;
+const defaultQuickLinks = defaults.quickLinks as unknown as Array<z.infer<typeof quickLink>>;
+const optionalHttpsUrl = (message: string) => z.string().max(700).refine((value) => {
+  if (value === '') return true;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}, message);
 const sectionId = z.enum(['abc', 'walkthrough', 'choices', 'featured', 'extras', 'faq', 'contact']);
 export const storefrontSchema = z
   .object({
@@ -28,10 +53,16 @@ export const storefrontSchema = z
         description: text(500),
         primaryLabel: text(60),
         secondaryLabel: text(60),
+        primaryAction: linkAction.default('custom'),
+        secondaryAction: linkAction.default('catalog'),
         imageUrl: storefrontImage,
         imageAlt: text(180),
+        slides: z.array(heroSlide).max(4).default(defaults.hero.slides),
       })
       .strict(),
+    benefits: z.array(benefit).length(3).default(defaultBenefits),
+    quickLinks: z.array(quickLink).min(1).max(8).default(defaultQuickLinks),
+    featuredProductIds: z.array(z.number().int().positive()).max(12).default(defaults.featuredProductIds),
     sections: z
       .array(
         z
@@ -63,17 +94,7 @@ export const storefrontSchema = z
       .object({
         title: text(130),
         description: text(500),
-        videoUrl: z.union([
-          z.literal(''),
-          z
-            .string()
-            .url()
-            .max(700)
-            .refine((value) => {
-              const url = new URL(value);
-              return url.protocol === 'https:' && !url.username && !url.password;
-            }, 'Usa un enlace HTTPS al video'),
-        ]),
+        videoUrl: optionalHttpsUrl('Usa un enlace HTTPS al video'),
         steps: z
           .array(
             card.extend({

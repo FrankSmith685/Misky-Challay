@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import { ok } from '@shared/http/ApiResponse';
 import { asyncHandler } from '@shared/utils/asyncHandler';
 import { ApiError } from '@shared/errors/ApiError';
-import { branchScopeCheck, resolveBranchId } from '@shared/utils/scope';
+import { branchScopeCheck, resolveBranchId, resolveOptionalBranchId } from '@shared/utils/scope';
 import { PERMISSIONS, type PermissionCode } from '@config/constants';
 import type { DeliveryStatus } from '@database/models/delivery.model';
 import { deliveryService } from './delivery.service';
@@ -63,11 +63,11 @@ export const deliveryController = {
   updateDriver: asyncHandler(async (req: Request, res: Response) => {
     const branchId = resolveBranchId(req, req.body.branchId);
     const driver = await carTransport.updateDriver(Number(req.params.driverId), branchId, req.body);
-    await audit(req, { action: 'delivery.driver.vehicle', entity: 'Driver', entityId: driver.id, after: { vehicleType: driver.vehicleType, vehicle: driver.vehicle, status: driver.status } });
+    await audit(req, { action: 'delivery.driver.update', entity: 'Driver', entityId: driver.id, after: { vehicleType: driver.vehicleType, vehicle: driver.vehicle, status: driver.status, maxActiveDeliveries: driver.maxActiveDeliveries } });
     return ok(res, driver, 'Vehículo actualizado');
   }),
   board: asyncHandler(async (req: Request, res: Response) => {
-    const branchId = resolveBranchId(req, req.query.branchId as string | undefined);
+    const branchId = resolveOptionalBranchId(req, req.query.branchId as string | undefined);
 
     // Al repartidor se le acota a lo suyo. Se resuelve por sucursal a proposito:
     // una cuenta sin sucursal asignada tiene alcance global y podia pedir cualquier
@@ -76,7 +76,7 @@ export const deliveryController = {
       ? await deliveryService.driverIdsForUser(requireActor(req), branchId)
       : undefined;
 
-    const deliveries = await deliveryService.board(branchId, { onlyDriverIds });
+    const deliveries = await deliveryService.board(branchId, { onlyDriverIds, includeFailed: req.query.includeFailed === 'true' });
 
     if (onlyDriverIds?.length === 0) {
       return ok(res, deliveries, 'Tu cuenta no esta vinculada a ningun repartidor de esta cocina');
@@ -86,7 +86,7 @@ export const deliveryController = {
   }),
 
   drivers: asyncHandler(async (req: Request, res: Response) => {
-    const branchId = resolveBranchId(req, req.query.branchId as string | undefined);
+    const branchId = resolveOptionalBranchId(req, req.query.branchId as string | undefined);
     const drivers = await deliveryService.listDrivers(branchId);
     return ok(res, drivers);
   }),
@@ -109,6 +109,7 @@ export const deliveryController = {
           req.body.vehicleType,
         );
 
+    await audit(req, { action: 'delivery.assign', entity: 'Delivery', entityId: delivery.id, after: { status: delivery.status, driverId: delivery.driverId, reason: req.body.reason } });
     return ok(
       res,
       { id: delivery.id, status: delivery.status, driverId: delivery.driverId },
@@ -134,6 +135,12 @@ export const deliveryController = {
       { onlyDriverIds, proof: req.body.recipientName ? { recipientName: req.body.recipientName } : undefined },
     );
 
+    await audit(req, { action: 'delivery.advance', entity: 'Delivery', entityId: delivery.id, after: { status: delivery.status, comment: req.body.comment, recipientName: req.body.recipientName } });
     return ok(res, { id: delivery.id, status: delivery.status }, 'Reparto actualizado');
+  }),
+  retry: asyncHandler(async (req: Request, res: Response) => {
+    const delivery = await deliveryService.retryFailed(Number(req.params.deliveryId), requireActor(req), branchScopeCheck(req), req.body?.comment);
+    await audit(req, { action: 'delivery.retry', entity: 'Delivery', entityId: delivery.id, after: { status: delivery.status, comment: req.body?.comment } });
+    return ok(res, { id: delivery.id, status: delivery.status }, 'Entrega reprogramada');
   }),
 };

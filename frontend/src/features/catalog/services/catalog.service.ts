@@ -5,11 +5,13 @@ import type { Category, Product, ProductDetail, Allergen, DietaryTag } from '../
 
 export interface ProductQuery {
   branchId?: number | null;
+  productIds?: number[];
   categoryId?: number | null;
   search?: string;
   dietaryTags?: string[];
   excludeAllergens?: string[];
   featured?: boolean;
+  sort?: 'BEST_SELLERS' | 'RECOMMENDED';
   audience?: 'RETAIL' | 'BUSINESS';
 }
 
@@ -29,11 +31,13 @@ const toParams = (query: ProductQuery): Record<string, string | number> => {
   const params: Record<string, string | number> = {};
 
   if (query.branchId) params.branchId = query.branchId;
+  if (query.productIds?.length) params.productIds = query.productIds.join(',');
   if (query.categoryId) params.categoryId = query.categoryId;
   if (query.search) params.search = query.search;
   if (query.dietaryTags?.length) params.dietaryTags = query.dietaryTags.join(',');
   if (query.excludeAllergens?.length) params.excludeAllergens = query.excludeAllergens.join(',');
   if (query.featured) params.featured = 'true';
+  if (query.sort) params.sort = query.sort;
   if (query.audience) params.audience = query.audience;
 
   return params;

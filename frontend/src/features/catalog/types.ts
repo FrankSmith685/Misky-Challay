@@ -2,8 +2,10 @@ import type { PreparationMode, ProductFamily } from './pastry';
 
 export interface Category {
   id: number;
+  parentId: number | null;
   name: string;
   slug: string;
+  description: string | null;
   sortOrder: number;
   imageUrl: string | null;
 }
@@ -45,6 +47,7 @@ export interface Product {
   allergens: string[];
   isAvailable: boolean;
   cakeSaleMode: 'STANDARD' | 'SEMI_CUSTOM' | 'ADVANCED';
+  salesCount?: number;
 }
 
 export interface ProductVariant {

@@ -24,6 +24,8 @@ services:
       - --collation-server=utf8mb4_unicode_ci
       # Zona horaria de la conexion: la app guarda en UTC y convierte a Lima al leer.
       - --default-time-zone=+00:00
+      # La migracion de auditoria crea triggers con el usuario de la aplicacion.
+      - --log-bin-trust-function-creators=1
     volumes:
       - db_data:/var/lib/mysql
       - ./backups:/backups
@@ -74,7 +76,7 @@ services:
     volumes:
       # Las imagenes del panel viven fuera del contenedor: si no, cada despliegue
       # borra el catalogo de fotos y deja los productos con la URL rota.
-      - uploads:/app/backend/uploads
+      - uploads:/app/uploads
     depends_on:
       db:
         condition: service_healthy
@@ -88,6 +90,7 @@ services:
       args:
         # Relativa: nginx hace de proxy hacia `api` por la red interna.
         VITE_API_URL: /api/v1
+        VITE_PREVIEW_MODE: ${PREVIEW_MODE:-false}
     restart: unless-stopped
     ports:
       - '${WEB_PORT:-8080}:80'

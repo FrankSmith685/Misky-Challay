@@ -5,6 +5,7 @@ import { audit } from '@shared/utils/audit';
 import { commercialAdminService } from './commercialAdmin.service';
 import { customizationAdminService } from '@modules/customization/customizationAdmin.service';
 import { builderInsightsService } from '@modules/customization/builderInsights.service';
+import { pricingService } from '@modules/pricing/pricing.service';
 
 /** ABM de cupones, planes, cobertura y constructor. Todo cambio sensible se audita. */
 export const commercialAdminController = {
@@ -25,7 +26,16 @@ export const commercialAdminController = {
       action: 'promotion.coupon.create',
       entity: 'coupons',
       entityId: coupon.id,
-      after: { code: coupon.code, type: coupon.discountType, value: Number(coupon.value) },
+      after: {
+        code: coupon.code,
+        type: coupon.discountType,
+        value: Number(coupon.value),
+        validFrom: coupon.validFrom,
+        validUntil: coupon.validUntil,
+        stackMode: coupon.stackMode,
+        rules: coupon.rulesJson,
+        budgetAmount: coupon.budgetAmount,
+      },
     });
 
     return created(res, { id: coupon.id, code: coupon.code }, 'Cupon creado');
@@ -42,10 +52,50 @@ export const commercialAdminController = {
       entity: 'coupons',
       entityId: coupon.id,
       before,
-      after: { isActive: coupon.isActive },
+      after: {
+        isActive: coupon.isActive,
+        validFrom: coupon.validFrom,
+        validUntil: coupon.validUntil,
+        value: Number(coupon.value),
+        version: coupon.version,
+      },
     });
 
     return ok(res, { id: coupon.id, isActive: coupon.isActive }, 'Cupon actualizado');
+  }),
+
+  archiveCoupon: asyncHandler(async (req: Request, res: Response) => {
+    const { coupon, before } = await commercialAdminService.archiveCoupon(
+      Number(req.params.couponId),
+      req.body.expectedVersion,
+    );
+    await audit(req, {
+      action: 'promotion.coupon.archive',
+      entity: 'coupons',
+      entityId: coupon.id,
+      before,
+      after: { archivedAt: coupon.archivedAt, version: coupon.version },
+    });
+    return ok(res, { id: coupon.id, archivedAt: coupon.archivedAt }, 'Cupón archivado');
+  }),
+
+  couponRedemptions: asyncHandler(async (req: Request, res: Response) =>
+    ok(res, await commercialAdminService.couponRedemptions(Number(req.params.couponId)))),
+
+  couponMetrics: asyncHandler(async (req: Request, res: Response) =>
+    ok(res, await commercialAdminService.couponMetrics(Number(req.params.couponId)))),
+
+  previewCoupon: asyncHandler(async (req: Request, res: Response) => {
+    const result = await pricingService.previewCoupon({
+      code: req.body.code,
+      subtotal: req.body.subtotal,
+      userId: req.body.userId ?? null,
+      branchId: req.body.branchId ?? null,
+      deliveryType: req.body.deliveryType ?? null,
+      paymentMethod: req.body.paymentMethod ?? null,
+      productIds: req.body.productIds ?? [],
+    });
+    return ok(res, result, 'Simulación calculada');
   }),
 
   // --- Planes ---
@@ -122,6 +172,10 @@ export const commercialAdminController = {
     return ok(res, coverage);
   }),
 
+  previewCoverageQuote: asyncHandler(async (req: Request, res: Response) => {
+    return ok(res, await commercialAdminService.previewCoverageQuote(req.body), 'Simulacion calculada');
+  }),
+
   createBranch: asyncHandler(async (req: Request, res: Response) => {
     const branch = await commercialAdminService.createBranch(req.body);
 
@@ -170,6 +224,20 @@ export const commercialAdminController = {
     return ok(res, { id: schedule.id }, 'Horario actualizado');
   }),
 
+  setScheduleException: asyncHandler(async (req: Request, res: Response) => {
+    const schedule = await commercialAdminService.setScheduleException(
+      Number(req.params.branchId),
+      req.body,
+    );
+    await audit(req, {
+      action: 'geo.schedule.exception.update',
+      entity: 'branch_schedules',
+      entityId: schedule.id,
+      after: { exceptionDate: schedule.exceptionDate, isClosed: schedule.isClosed, opensAt: schedule.opensAt, closesAt: schedule.closesAt },
+    });
+    return ok(res, { id: schedule.id }, 'Excepcion de horario guardada');
+  }),
+
   createZone: asyncHandler(async (req: Request, res: Response) => {
     const zone = await commercialAdminService.createZone(req.body);
 
@@ -177,7 +245,7 @@ export const commercialAdminController = {
       action: 'geo.zone.create',
       entity: 'coverage_zones',
       entityId: zone.id,
-      after: { name: zone.name, deliveryFee: Number(zone.deliveryFee), extraCoverageKm: Number(zone.extraCoverageKm), extraFeePerKm: Number(zone.extraFeePerKm) },
+      after: { name: zone.name, deliveryFee: Number(zone.deliveryFee), cakeDeliveryFee: Number(zone.cakeDeliveryFee), extraCoverageKm: Number(zone.extraCoverageKm), extraFeePerKm: Number(zone.extraFeePerKm) },
     });
 
     return created(res, { id: zone.id }, 'Zona creada');
@@ -197,6 +265,7 @@ export const commercialAdminController = {
       before,
       after: {
         deliveryFee: Number(zone.deliveryFee),
+        cakeDeliveryFee: Number(zone.cakeDeliveryFee),
         extraCoverageKm: Number(zone.extraCoverageKm),
         extraFeePerKm: Number(zone.extraFeePerKm),
         minimumOrder: Number(zone.minimumOrder),
@@ -205,6 +274,21 @@ export const commercialAdminController = {
     });
 
     return ok(res, { id: zone.id }, 'Zona actualizada');
+  }),
+
+  archiveZone: asyncHandler(async (req: Request, res: Response) => {
+    const { zone, before } = await commercialAdminService.archiveZone(
+      Number(req.params.zoneId),
+      req.body.expectedVersion,
+    );
+    await audit(req, {
+      action: 'geo.zone.archive',
+      entity: 'coverage_zones',
+      entityId: zone.id,
+      before,
+      after: { archivedAt: zone.archivedAt, isActive: zone.isActive, version: zone.version },
+    });
+    return ok(res, { id: zone.id, archivedAt: zone.archivedAt }, 'Zona archivada');
   }),
 
   assignZone: asyncHandler(async (req: Request, res: Response) => {
@@ -291,6 +375,44 @@ export const commercialAdminController = {
       Number(req.query.days ?? 30),
     );
     return ok(res, data);
+  }),
+
+  builderHealth: asyncHandler(async (req: Request, res: Response) => {
+    return ok(res, await customizationAdminService.health(Number(req.params.productId)));
+  }),
+
+  builderCatalogHealth: asyncHandler(async (_req: Request, res: Response) => {
+    return ok(res, await customizationAdminService.catalogHealth());
+  }),
+
+  builderGovernance: asyncHandler(async (req: Request, res: Response) => {
+    return ok(res, await customizationAdminService.governance(Number(req.params.productId)));
+  }),
+
+  builderOptionImpact: asyncHandler(async (req: Request, res: Response) => {
+    return ok(res, await customizationAdminService.optionImpact(Number(req.params.optionId)));
+  }),
+
+  saveBuilderDraft: asyncHandler(async (req: Request, res: Response) => {
+    const result = await customizationAdminService.saveDraft(Number(req.params.productId), req.user!.sub, req.body.publishAt ?? null);
+    await audit(req, { action: 'builder.draft.save', entity: 'admin_drafts', entityId: result.id, after: { productId: Number(req.params.productId), status: result.status, publishAt: result.publishAt } });
+    return ok(res, result, result.publishAt ? 'Borrador guardado y publicación programada' : 'Borrador guardado');
+  }),
+
+  publishBuilderDraft: asyncHandler(async (req: Request, res: Response) => {
+    const result = await customizationAdminService.publishDraft(Number(req.params.productId), req.user!.sub, req.body.idempotencyKey ?? null);
+    await audit(req, { action: 'builder.publish', entity: 'builder_releases', entityId: result.id, after: { productId: Number(req.params.productId), version: result.version } });
+    return ok(res, result, `Constructor publicado · versión ${result.version}`);
+  }),
+
+  builderReleases: asyncHandler(async (req: Request, res: Response) => {
+    return ok(res, await customizationAdminService.releases(Number(req.params.productId), Number(req.query.limit ?? 30)));
+  }),
+
+  rollbackBuilder: asyncHandler(async (req: Request, res: Response) => {
+    const result = await customizationAdminService.rollback(Number(req.params.productId), Number(req.params.releaseId), req.user!.sub, req.body.idempotencyKey ?? null);
+    await audit(req, { action: 'builder.rollback', entity: 'builder_releases', entityId: result.id, after: { productId: Number(req.params.productId), restoredFrom: result.restoredFrom, version: result.version } });
+    return ok(res, result, `Versión ${result.restoredFrom} restaurada como versión ${result.version}`);
   }),
 
   createGroup: asyncHandler(async (req: Request, res: Response) => {

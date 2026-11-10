@@ -25,6 +25,10 @@ export interface BusinessInfo {
   email: string;
   supportEmail: string;
   complaintResponseDays: number;
+  timeZone: string;
+  currency: string;
+  taxRate: number;
+  platformCommissionRate: number;
 }
 
 /** Configuracion publica del pago contra entrega. */
@@ -77,12 +81,16 @@ const FALLBACK: PublicSettings = {
   business: {
     legalName: 'Misky Challay (datos legales pendientes)',
     commercialName: 'Misky Challay',
-    ruc: '20600000000',
+    ruc: '',
     address: 'Miraflores, Lima',
     phone: '+51 999 999 999',
     email: 'contacto@ejemplo.com',
     supportEmail: 'reclamos@ejemplo.com',
     complaintResponseDays: 15,
+    timeZone: 'America/Lima',
+    currency: 'PEN',
+    taxRate: 0.18,
+    platformCommissionRate: 0.15,
   },
   cod: { enabled: false, maxAmount: 300 },
   invoicing: { boletaDniThreshold: 700 },
@@ -91,9 +99,7 @@ const FALLBACK: PublicSettings = {
     plinEnabled: false, plinPhone: '', plinRecipient: '', plinQrImageUrl: '',
     instructions: 'Paga el importe exacto e ingresa el codigo de operacion.',
   },
-  // El respaldo asume que si: sin respuesta del servidor es mejor ofrecer la
-  // tarjeta y que falle al confirmar que dejar al cliente sin medio de pago.
-  payments: { onlineEnabled: true },
+  payments: { onlineEnabled: false },
   receipts: { mode: 'INTERNAL_ONLY', autoPrintKitchenTicket: true, autoPrintCustomerTicket: false, paperWidth: 80 },
 };
 

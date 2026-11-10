@@ -9,6 +9,8 @@ build
 # Secretos. El .env se inyecta en tiempo de ejecucion, jamas se copia dentro.
 .env
 **/.env
+.env.docker
+.env.preview
 !**/.env.example
 
 .git

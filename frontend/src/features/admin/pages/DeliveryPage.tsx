@@ -1,6 +1,6 @@
 import { useSearchParams } from 'react-router-dom';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Bike, CircleCheckBig, Clock3, PackageCheck, Phone, RefreshCw, UserRoundCheck, WifiOff } from 'lucide-react';
+import { Bike, CircleCheckBig, Clock3, Download, PackageCheck, Phone, RefreshCw, UserRoundCheck, WifiOff } from 'lucide-react';
 import toast from '@components/mui/MuiToast';
 import { Card } from '@components/ui/Card';
 import { Input } from '@components/ui/Input';
@@ -78,13 +78,13 @@ const DeliveryPage = () => {
   /** Asignacion en vuelo, para que el desplegable no muestre a quien NO se asigno. */
   const [pendingDriver, setPendingDriver] = useState<Record<number, number>>({});
   const [now, setNow] = useState(() => Date.now());
+  const { can, isSuperAdmin } = usePermissions();
   const {
-    branchId, branches, setBranchId, isLoadingBranches, branchesError, reloadBranches,
-  } = useActiveBranch();
+    branchId, branches, setBranchId, setGlobalScope, isLoadingBranches, branchesError, reloadBranches,
+  } = useActiveBranch({ allowAll: isSuperAdmin });
   const [params] = useSearchParams();
   const linkedDelivery = Number(params.get('reparto'));
   const appliedDelivery = useRef<number>();
-  const { can } = usePermissions();
   const confirm = useConfirm();
 
   const canAssign = can(PERM.DELIVERY_ASSIGN);
@@ -92,18 +92,18 @@ const DeliveryPage = () => {
 
   const fetcher = useCallback(
     async (signal: AbortSignal): Promise<DeliveryBoard> => {
-      if (!branchId) return { deliveries: [], drivers: [] };
+      if (!branchId && !isSuperAdmin) return { deliveries: [], drivers: [] };
 
       // La flota entra en el ciclo de sondeo: se cargaba UNA vez y quien estaba
       // ocupado a las 9 seguia marcado como ocupado el resto de la jornada.
       const [deliveries, drivers] = await Promise.all([
-        adminApi.deliveryBoard(branchId, signal),
-        canAssign ? adminApi.drivers(branchId, signal) : Promise.resolve<Driver[]>([]),
+        adminApi.deliveryBoard(branchId ?? undefined, signal, true),
+        canAssign ? adminApi.drivers(branchId ?? undefined, signal) : Promise.resolve<Driver[]>([]),
       ]);
 
       return { deliveries, drivers };
     },
-    [branchId, canAssign],
+    [branchId, canAssign, isSuperAdmin],
   );
   const { data, error, isLoading, lastSuccessAt, isStale, refresh } =
     usePolling<DeliveryBoard>(fetcher, 6000);
@@ -226,16 +226,19 @@ const DeliveryPage = () => {
   if ((isLoading && !data) || isLoadingBranches) return <PageLoader />;
 
   const deliveries = data?.deliveries ?? [];
+  const activeDeliveries = deliveries.filter((delivery) => delivery.status !== 'FAILED');
+  const failedDeliveries = deliveries.filter((delivery) => delivery.status === 'FAILED');
   const drivers = data?.drivers ?? [];
-  const activeBranchName = branches.find((branch) => branch.id === branchId)?.name ?? null;
-  const waitingAssignment = deliveries.filter((delivery) => delivery.status === 'PENDING').length;
-  const assigned = deliveries.filter((delivery) => delivery.status === 'ASSIGNED').length;
-  const readyForPickup = deliveries.filter(
+  const activeBranchName = branchId === null && isSuperAdmin ? 'Todas las sucursales' : branches.find((branch) => branch.id === branchId)?.name ?? null;
+  const waitingAssignment = activeDeliveries.filter((delivery) => delivery.status === 'PENDING').length;
+  const assigned = activeDeliveries.filter((delivery) => delivery.status === 'ASSIGNED').length;
+  const readyForPickup = activeDeliveries.filter(
     (delivery) => delivery.status === 'ASSIGNED' && delivery.order?.status === 'READY',
   ).length;
-  const onTheRoad = deliveries.filter(
+  const onTheRoad = activeDeliveries.filter(
     (delivery) => delivery.status === 'PICKED_UP' || delivery.status === 'ON_ROUTE',
   ).length;
+  const overdue = activeDeliveries.filter((delivery) => delivery.order?.scheduledAt && new Date(delivery.order.scheduledAt).getTime() < now && delivery.status !== 'DELIVERED').length;
 
   const freshnessLabel = (() => {
     if (lastSuccessAt === null) return 'todavía sin datos de esta cocina';
@@ -244,6 +247,12 @@ const DeliveryPage = () => {
       ? `datos de hace ${seconds} s`
       : `datos de ${formatRelative(new Date(lastSuccessAt))}`;
   })();
+  const exportDeliveries = () => {
+    const escape = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const lines = [['Pedido', 'Sucursal', 'Estado', 'Cliente', 'Fecha programada', 'Repartidor', 'Motivo de fallo', 'Cobro pendiente'], ...deliveries.map((delivery) => [delivery.order?.orderNumber ?? delivery.id, branches.find((branch) => branch.id === delivery.branchId)?.name ?? delivery.branchId, delivery.status, delivery.order?.contactName, delivery.order?.scheduledAt, delivery.driver?.fullName, delivery.failureReason, delivery.cashDue ?? ''])];
+    const blob = new Blob([`\uFEFF${lines.map((line) => line.map(escape).join(',')).join('\n')}\n`], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `reparto-${new Date().toISOString().slice(0, 10)}.csv`; link.click(); URL.revokeObjectURL(url);
+  };
 
   return (
     <div>
@@ -257,12 +266,7 @@ const DeliveryPage = () => {
         }
         icon={Bike}
         action={
-          <BranchSelector
-            value={branchId}
-            branches={branches}
-            onChange={setBranchId}
-            hasError={Boolean(branchesError)}
-          />
+          <div className="flex flex-wrap items-center gap-2"><BranchSelector value={branchId} branches={branches} onChange={setBranchId} allowAll={isSuperAdmin} onSelectAll={setGlobalScope} hasError={Boolean(branchesError)} /><Button size="sm" variant="outline" leftIcon={<Download className="size-4" />} disabled={!deliveries.length} onClick={exportDeliveries}>Exportar</Button></div>
         }
       />
 
@@ -277,6 +281,7 @@ const DeliveryPage = () => {
             { label: 'Asignados', value: assigned, icon: UserRoundCheck, tone: 'brand' },
             { label: 'Listos para recoger', value: readyForPickup, icon: PackageCheck },
             { label: 'En traslado', value: onTheRoad, icon: CircleCheckBig },
+            { label: 'Atrasadas', value: overdue, icon: Clock3, tone: overdue > 0 ? 'danger' : 'neutral' },
           ]}
           ariaLabel="Carga actual de reparto"
         />
@@ -339,8 +344,9 @@ const DeliveryPage = () => {
           }
         />
       ) : (
+        <>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {deliveries.map((delivery) => {
+          {activeDeliveries.map((delivery) => {
             const next = NEXT_STEP[delivery.status];
             const order = delivery.order;
             const address = order?.addressSnapshotJson ?? null;
@@ -351,7 +357,7 @@ const DeliveryPage = () => {
             const selectedDriverId = pendingDriver[delivery.id] ?? delivery.driver?.id ?? '';
             const isDriverListed =
               !delivery.driver || drivers.some((driver) => driver.id === delivery.driver?.id);
-            const compatibleDrivers = drivers.filter((driver) => order?.deliveryVehicleType !== 'CAR' || driver.vehicleType === 'CAR');
+            const compatibleDrivers = drivers.filter((driver) => driver.branchId === delivery.branchId && (order?.deliveryVehicleType !== 'CAR' || driver.vehicleType === 'CAR'));
             const hasAvailableDriver = compatibleDrivers.some((driver) => driver.status !== 'OFFLINE');
             const assignmentHint = drivers.length === 0
               ? 'Primero registra un repartidor para esta sucursal desde el aviso superior.'
@@ -382,6 +388,7 @@ const DeliveryPage = () => {
                   {order?.contactName ?? 'Sin contacto'} · {formatCurrency(order?.grandTotal ?? 0)}
                 </p>
 
+                {delivery.cashDue !== null && delivery.cashDue !== undefined && <p className="rounded-field border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900">Cobrar contra entrega: {formatCurrency(delivery.cashDue)}</p>}
                 <div className="flex flex-wrap gap-2">
                   {order?.contactPhone ? (
                     <Button
@@ -448,7 +455,7 @@ const DeliveryPage = () => {
                   </p>
                 )}
 
-                {canOperate && delivery.status === 'ON_ROUTE' && <Input label="Nombre de quien recibe (opcional)" value={recipients[delivery.id] ?? ''} maxLength={120} onChange={(event) => setRecipients((current) => ({ ...current, [delivery.id]: event.target.value }))} />}
+                {canOperate && delivery.status === 'ON_ROUTE' && <Input required label="Nombre de quien recibe (o adjunta foto de entrega)" value={recipients[delivery.id] ?? ''} maxLength={120} onChange={(event) => setRecipients((current) => ({ ...current, [delivery.id]: event.target.value }))} />}
                 {canOperate && (next || delivery.status !== 'PENDING') && (
                   <div className="mt-auto grid gap-2 pt-1">
                     {next && (
@@ -480,6 +487,8 @@ const DeliveryPage = () => {
             );
           })}
         </div>
+        {failedDeliveries.length > 0 && <section className="mt-6 space-y-3" aria-labelledby="failed-deliveries-title"><div><h2 id="failed-deliveries-title" className="text-lg font-black text-ink">Entregas fallidas</h2><p className="mt-1 text-sm text-ink-muted">Revisa el motivo y reprograma la entrega después de contactar al cliente.</p></div><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{failedDeliveries.map((delivery) => <Card key={delivery.id} className="border-red-200 bg-red-50/40"><div className="flex items-start justify-between gap-2"><div><p className="font-semibold text-ink">{delivery.order?.orderNumber ?? `Reparto #${delivery.id}`}</p><p className="mt-1 text-xs text-ink-muted">{delivery.order?.contactName ?? ''} · {delivery.order?.scheduledAt ? new Date(delivery.order.scheduledAt).toLocaleString('es-PE', { timeZone: 'America/Lima', dateStyle: 'medium', timeStyle: 'short' }) : 'Sin fecha'}</p></div><DeliveryStatusBadge status={delivery.status} /></div><p className="mt-3 rounded-field border border-red-200 bg-white p-3 text-sm text-red-800"><strong>Motivo:</strong> {delivery.failureReason ?? 'Sin motivo registrado'}</p>{canAssign && <Button className="mt-3 w-full" disabled={busyId === delivery.id} isLoading={busyId === delivery.id} onClick={() => void run(delivery.id, async () => { await adminApi.retryDelivery(delivery.id, 'Reprogramada desde Reparto'); toast.success('Entrega reprogramada'); })}>Reprogramar entrega</Button>}</Card>)}</div></section>}
+        </>
       )}
     </div>
   );

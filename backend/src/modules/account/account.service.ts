@@ -17,6 +17,7 @@ import {
   User,
   UserPreference,
   UserPurchaseContext,
+  UserSession,
   Wallet,
   sequelize,
 } from '@database/models';
@@ -189,6 +190,7 @@ export const accountService = {
       altText: `Foto de perfil de ${user.fullName || 'cliente'}`,
       category: 'profile',
       createdBy: user.id,
+      sourceType: 'PROFILE',
     });
 
     user.avatarUrl = asset.url;
@@ -230,7 +232,11 @@ export const accountService = {
     // Cambiar la clave cierra las demas sesiones: es lo que promete jwt.ts y lo que
     // hace el reset. Sin esto, una sesion robada sobrevivia al cambio de contrasena.
     user.tokenVersion += 1;
+    user.mustChangePassword = false;
+    user.passwordChangedAt = new Date();
     await user.save();
+    await UserSession.update({ revokedAt: new Date() }, { where: { userId, revokedAt: null } });
+    revokeSessionCache(userId);
   },
 
   /**

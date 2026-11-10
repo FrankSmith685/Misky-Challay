@@ -9,7 +9,7 @@ interface BuilderMobileOverviewProps {
   isQuoting: boolean;
 }
 
-/** Resumen temprano para mÃ³vil/tablet; el detalle completo permanece en el aside de escritorio. */
+/** Resumen temprano para móvil/tablet; el detalle completo permanece en el aside de escritorio. */
 export const BuilderMobileOverview = ({
   options,
   total,
@@ -22,7 +22,7 @@ export const BuilderMobileOverview = ({
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-extrabold text-ink">
-          {options.length ? `${options.length} ingredientes elegidos` : 'Tu bowl estÃ¡ esperando'}
+          {options.length ? `${options.length} ingredientes elegidos` : 'Tu bowl está esperando'}
         </span>
         <span className="mt-0.5 block text-xs text-ink-muted">Toca para ver la vista previa</span>
       </span>
@@ -32,7 +32,7 @@ export const BuilderMobileOverview = ({
     <div className="grid gap-4 border-t border-line bg-gradient-to-br from-brand-50/70 to-white p-4 sm:grid-cols-[220px_1fr] sm:items-center sm:p-5">
       <BowlPreview options={options} isUpdating={isQuoting} />
       <div className="rounded-card border border-line bg-white p-4 text-sm text-ink-muted">
-        Revisa tus ingredientes y el precio antes de confirmar tu combinaciÃ³n.
+        Revisa tus ingredientes y el precio antes de confirmar tu combinación.
       </div>
     </div>
   </details>

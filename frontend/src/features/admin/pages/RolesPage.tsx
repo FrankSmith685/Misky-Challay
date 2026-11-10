@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, KeyRound, Lock, Plus, ShieldCheck, Trash2, Users } from 'lucide-react';
+﻿import { useCallback, useEffect, useState } from 'react';
+import { AlertTriangle, AlertOctagon, Copy, Eye, History, KeyRound, Lock, MapPin, Plus, ShieldCheck, Trash2, Users } from 'lucide-react';
 import toast from '@components/mui/MuiToast';
 import { Card, CardDescription } from '@components/ui/Card';
 import { Button } from '@components/ui/Button';
@@ -13,7 +13,7 @@ import { getApiErrorMessage } from '@services/api/client';
 import { usePermissions } from '@hooks/usePermissions';
 import { PERM } from '@constants/permissions';
 import { cn } from '@lib/cn';
-import { accessApi, type PermissionGroup, type RoleRow } from '../services/access.service';
+import { accessApi, type PermissionGroup, type RoleImpact, type RoleRow } from '../services/access.service';
 import { OperationsMetricStrip } from '../components/OperationsMetricStrip';
 
 /**
@@ -34,18 +34,21 @@ const RolesPage = () => {
 
   const [editing, setEditing] = useState<RoleRow | null>(null);
   const [isCreating, setIsCreating] = useState(false);
-  const [form, setForm] = useState({ code: '', name: '', description: '' });
+  const [form, setForm] = useState({ code: '', name: '', description: '', reason: '' });
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
   // Id del rol que se esta borrando: sin esto el segundo clic llega a un rol que
   // ya no existe y el usuario recibe un 404 que no explica nada.
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [impact, setImpact] = useState<RoleImpact | null>(null);
+  const [impactLoading, setImpactLoading] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
 
   const load = useCallback(async () => {
     setIsLoading(true);
     try {
       const [roleRows, permissionGroups] = await Promise.all([
-        accessApi.roles(),
+        accessApi.roles(showArchived),
         accessApi.permissions(),
       ]);
       setRoles(roleRows);
@@ -58,7 +61,7 @@ const RolesPage = () => {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [showArchived]);
 
   useEffect(() => {
     void load();
@@ -67,15 +70,27 @@ const RolesPage = () => {
   const openCreate = () => {
     setIsCreating(true);
     setEditing(null);
-    setForm({ code: '', name: '', description: '' });
+    setForm({ code: '', name: '', description: '', reason: '' });
     setSelected(new Set());
+    setImpact(null);
   };
 
   const openEdit = (role: RoleRow) => {
     setEditing(role);
     setIsCreating(false);
-    setForm({ code: role.code, name: role.name, description: role.description ?? '' });
+    setForm({ code: role.code, name: role.name, description: role.description ?? '', reason: '' });
     setSelected(new Set(role.permissions));
+    setImpact(null);
+    setImpactLoading(true);
+    void accessApi.roleImpact(role.id).then(setImpact).catch(() => setImpact(null)).finally(() => setImpactLoading(false));
+  };
+
+  const openClone = (role: RoleRow) => {
+    setIsCreating(true);
+    setEditing(null);
+    setForm({ code: `${role.code}_copy`, name: `${role.name} (copia)`, description: role.description ?? '', reason: '' });
+    setSelected(new Set(role.permissions));
+    setImpact(null);
   };
 
   const closeModal = () => {
@@ -100,6 +115,10 @@ const RolesPage = () => {
       toast.error('Marca al menos un permiso');
       return;
     }
+    if (!form.reason.trim()) {
+      toast.error('Indica el motivo del cambio de acceso');
+      return;
+    }
 
     if (editing && editing.userCount > 0) {
       const { confirmed } = await confirm({
@@ -118,6 +137,7 @@ const RolesPage = () => {
           name: form.name.trim(),
           description: form.description.trim() || undefined,
           permissions: [...selected],
+          reason: form.reason.trim(),
         });
         toast.success('Rol creado');
       } else if (editing) {
@@ -125,6 +145,7 @@ const RolesPage = () => {
           name: form.name.trim(),
           description: form.description.trim(),
           permissions: [...selected],
+          reason: form.reason.trim(),
         });
         toast.success('Rol actualizado');
       }
@@ -142,16 +163,18 @@ const RolesPage = () => {
     const { confirmed } = await confirm({
       title: `¿Eliminar el rol ${role.name}?`,
       message:
-        'El rol y sus permisos se borran definitivamente. Solo se puede si ya no lo tiene ningún usuario.',
-      confirmLabel: 'Eliminar rol',
+        'El rol se archivará para conservar su historial. Solo se puede archivar si ya no lo tiene ningún usuario.',
+      confirmLabel: 'Archivar rol',
       tone: 'danger',
     });
     if (!confirmed) return;
+    const reason = window.prompt('Motivo para archivar este rol');
+    if (!reason?.trim()) return;
 
     setDeletingId(role.id);
     try {
-      await accessApi.deleteRole(role.id);
-      toast.success('Rol eliminado');
+      await accessApi.deleteRole(role.id, reason.trim());
+      toast.success('Rol archivado');
       await load();
     } catch (error) {
       toast.error(getApiErrorMessage(error));
@@ -159,6 +182,32 @@ const RolesPage = () => {
       setDeletingId(null);
     }
   };
+
+  const handleRestore = async (role: RoleRow) => {
+    const reason = window.prompt('Motivo para restaurar este rol');
+    if (!reason?.trim()) return;
+    try {
+      await accessApi.restoreRole(role.id, reason.trim());
+      toast.success('Rol restaurado');
+      await load();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error));
+    }
+  };
+
+  const selectedMissingDependencies = [...selected].flatMap((code) => {
+    const permission = groups.flatMap((group) => group.permissions).find((item) => item.code === code);
+    return (permission?.dependencies ?? []).filter((dependency) => !selected.has(dependency));
+  }).filter((code, index, all) => all.indexOf(code) === index);
+  const selectedRisk = groups.flatMap((group) => group.permissions).filter((permission) => selected.has(permission.code));
+  const selectedRiskLevel = selectedRisk.some((permission) => permission.risk === 'CRITICAL') ? 'CRITICAL' : selectedRisk.some((permission) => permission.risk === 'HIGH') ? 'HIGH' : selected.size ? 'NORMAL' : 'NONE';
+  const selectedBranchScoped = selectedRisk.some((permission) => permission.scope === 'BRANCH');
+  const selectedConflictReasons = [
+    selected.has('payment.refund') && selected.has('payment.verify') ? 'Verifica pagos y aprueba reembolsos' : null,
+    selected.has('user.manage') && selected.has('audit.read') ? 'Gestiona usuarios y consulta su propia auditoría' : null,
+    selected.has('catalog.product.write') && selected.has('payment.verify') ? 'Combina catálogo y validación de pagos' : null,
+    selected.has('procurement.manage') && selected.has('cake.finance.manage') ? 'Combina compras y finanzas' : null,
+  ].filter((reason): reason is string => Boolean(reason));
 
   if (isLoading) return <PageLoader />;
 
@@ -169,11 +218,7 @@ const RolesPage = () => {
         title="Roles y permisos"
         description="Crea paquetes de permisos reutilizables sin necesidad de programar."
         icon={ShieldCheck}
-        action={canManage && !loadError && (
-          <Button leftIcon={<Plus className="size-4" />} onClick={openCreate}>
-            Crear rol
-          </Button>
-        )}
+        action={!loadError && <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={() => setShowArchived((current) => !current)} leftIcon={<History className="size-4" />}>{showArchived ? 'Ocultar archivados' : 'Ver archivados'}</Button>{canManage && <Button leftIcon={<Plus className="size-4" />} onClick={openCreate}>Crear rol</Button>}</div>}
       />
 
       <OperationsMetricStrip
@@ -181,7 +226,7 @@ const RolesPage = () => {
         ariaLabel="Resumen de seguridad"
         metrics={[
           { label: 'Roles configurados', value: roles.length, icon: ShieldCheck },
-          { label: 'Usuarios asignados', value: roles.reduce((total, role) => total + role.userCount, 0), icon: Users, tone: 'brand' },
+          { label: 'Asignaciones de rol', value: roles.reduce((total, role) => total + role.userCount, 0), icon: Users, tone: 'brand' },
           { label: 'Permisos disponibles', value: groups.reduce((total, group) => total + group.permissions.length, 0), icon: KeyRound, tone: 'neutral' },
           { label: 'Roles protegidos', value: roles.filter((role) => role.isProtected).length, icon: Lock, tone: 'accent' },
         ]}
@@ -192,12 +237,12 @@ const RolesPage = () => {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {roles.map((role) => (
-            <Card key={role.id} className={cn('flex flex-col overflow-hidden', role.isProtected ? 'border-accent-200 bg-gradient-to-br from-white to-accent-50/35' : 'border-brand-100')}>
+            <Card key={role.id} className={cn('flex flex-col overflow-hidden', role.isArchived ? 'border-line bg-surface-muted opacity-75' : role.isProtected ? 'border-accent-200 bg-gradient-to-br from-white to-accent-50/35' : 'border-brand-100')}>
               <div className="flex items-start justify-between gap-2">
                 <div className="flex min-w-0 items-start gap-3">
                   <span className={cn('grid size-10 shrink-0 place-items-center rounded-card', role.isProtected ? 'bg-accent-100 text-accent-700' : 'bg-brand-50 text-brand-700')}><ShieldCheck className="size-5" /></span>
                   <div className="min-w-0">
-                    <p className="flex items-center gap-1.5 font-bold text-ink">{role.name}{role.isSystem && <Lock className="size-3.5 text-ink-muted" />}</p>
+                    <p className="flex items-center gap-1.5 font-bold text-ink">{role.name}{role.isSystem && <Lock className="size-3.5 text-ink-muted" />}{role.isArchived && <span className="rounded-pill bg-surface-muted px-2 py-0.5 text-[10px] text-ink-muted">Archivado</span>}</p>
                     <p className="mt-0.5 font-mono text-[11px] text-ink-muted">{role.code}</p>
                   </div>
                 </div>
@@ -214,10 +259,14 @@ const RolesPage = () => {
                 <p className="text-xs font-bold text-ink">{role.permissions.length === 0 ? 'Sin acceso al panel' : `${role.permissions.length} permisos en ${new Set(role.permissions.map((permission) => permission.split('.')[0])).size} áreas`}</p>
                 {role.permissions.length > 0 && <div className="mt-2 flex flex-wrap gap-1">{[...new Set(role.permissions.map((permission) => permission.split('.')[0]))].slice(0, 5).map((module) => <span key={module} className="rounded-pill border border-line bg-white px-2 py-0.5 text-[10px] font-semibold text-ink-muted">{module}</span>)}{new Set(role.permissions.map((permission) => permission.split('.')[0])).size > 5 && <span className="px-1 text-[10px] text-ink-muted">+ más</span>}</div>}
               </div>
+              <div className="mt-2 flex flex-wrap gap-1.5"><span className={cn('rounded-pill px-2 py-0.5 text-[10px] font-bold', role.security.level === 'CRITICAL' ? 'bg-red-50 text-red-700' : role.security.level === 'HIGH' ? 'bg-amber-50 text-amber-700' : 'bg-brand-50 text-brand-700')}>Riesgo {role.security.level}</span>{role.security.requiresBranch && <span className="inline-flex items-center gap-1 rounded-pill bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700"><MapPin className="size-3" />Requiere sucursal</span>}</div>
+              {role.security.reasons.length > 0 && <p className="mt-2 text-[11px] text-amber-800">{role.security.reasons.join(' · ')}</p>}
 
               {canManage && (
                 <div className="mt-4 flex gap-2">
-                  {role.isProtected ? (
+                  {role.isArchived ? (
+                    isSuperAdmin && <Button size="sm" variant="outline" className="flex-1" onClick={() => void handleRestore(role)}>Restaurar rol</Button>
+                  ) : role.isProtected ? (
                     /*
                      * ROL PROTEGIDO: NO SE LE TOCAN LOS PERMISOS DESDE AQUI.
                      *
@@ -229,12 +278,10 @@ const RolesPage = () => {
                      * aqui solo produce un rol que miente hasta el reinicio. Para
                      * recortar a alguien se crea un rol nuevo y se le asigna.
                      */
-                    <p className="flex items-start gap-1.5 text-xs text-ink-muted">
-                      <Lock className="mt-0.5 size-3.5 shrink-0" />
-                      Rol protegido: sus permisos no se editan desde el panel.
-                    </p>
+                    <div className="flex items-center justify-between gap-2"><p className="flex items-start gap-1.5 text-xs text-ink-muted"><Lock className="mt-0.5 size-3.5 shrink-0" />Rol protegido: sus permisos no se editan.</p><Button size="sm" variant="ghost" onClick={() => openClone(role)} aria-label={`Clonar el rol ${role.name}`}><Copy className="size-4" /></Button></div>
                   ) : (
                     <>
+                      <Button size="sm" variant="ghost" onClick={() => openClone(role)} aria-label={`Clonar el rol ${role.name}`}><Copy className="size-4" /></Button>
                       <Button size="sm" variant="outline" className="flex-1" onClick={() => openEdit(role)}>
                         Editar permisos
                       </Button>
@@ -272,7 +319,7 @@ const RolesPage = () => {
         eyebrow="Control de acceso"
         maxWidth="lg"
         disableBackdropClose
-        actions={<><Button variant="outline" disabled={isSaving} onClick={closeModal}>Cancelar</Button><Button isLoading={isSaving} onClick={() => void handleSave()}>{isCreating ? 'Crear rol' : 'Guardar permisos'}</Button></>}
+        actions={<><Button variant="outline" disabled={isSaving} onClick={closeModal}>Cancelar</Button><Button isLoading={isSaving} disabled={selectedMissingDependencies.length > 0} onClick={() => void handleSave()}>{isCreating ? 'Crear rol' : 'Guardar permisos'}</Button></>}
       >
         <div className="grid gap-4">
           {editing && editing.userCount > 0 && (
@@ -287,6 +334,8 @@ const RolesPage = () => {
               </p>
             </div>
           )}
+
+          {editing && (impactLoading || impact) && <div className="rounded-card border border-line bg-surface-muted p-3 text-sm"><p className="flex items-center gap-2 font-semibold text-ink"><Eye className="size-4 text-brand-700" />Impacto actual</p>{impactLoading ? <p className="mt-2 text-xs text-ink-muted">Calculando usuarios y sucursales afectadas…</p> : impact && <><div className="mt-2 grid gap-2 text-xs text-ink-muted sm:grid-cols-4"><span><strong className="block text-lg text-ink">{impact.activeUsers}</strong>usuarios activos</span><span><strong className="block text-lg text-ink">{impact.assignments}</strong>asignaciones</span><span><strong className="block text-lg text-ink">{impact.globalAssignments}</strong>alcances globales</span><span><strong className="block text-lg text-ink">{impact.audit.length}</strong>cambios recientes</span></div><details className="mt-3"><summary className="cursor-pointer text-xs font-semibold text-brand-700">Ver usuarios afectados</summary><ul className="mt-2 grid gap-1 text-xs text-ink-muted">{impact.users.map((user) => <li key={user.id} className="flex items-center justify-between gap-2"><span>{user.name} · {user.branches.length ? user.branches.join(', ') : 'alcance global'}</span><span>{user.status}</span></li>)}</ul></details></>}</div>}
 
           {isCreating && (
             <div className="grid gap-3 sm:grid-cols-2">
@@ -328,6 +377,16 @@ const RolesPage = () => {
             placeholder="Que puede hacer este rol"
           />
 
+          <Input
+            label="Motivo del cambio"
+            value={form.reason}
+            onChange={(event) => setForm((current) => ({ ...current, reason: event.target.value }))}
+            placeholder="Ej. separar validación de pagos de reembolsos"
+            hint="Se guarda en la bitácora de auditoría"
+          />
+
+          <div className="grid gap-1 rounded-card border border-line bg-surface-muted p-3 text-xs"><div className="flex flex-wrap items-center gap-2"><span className="font-bold text-ink">Riesgo resultante: {selectedRiskLevel}</span>{selectedBranchScoped && <span className="inline-flex items-center gap-1 text-blue-700"><MapPin className="size-3.5" />Requiere alcance por sucursal</span>}{selectedMissingDependencies.length > 0 && <span className="inline-flex items-center gap-1 text-red-700"><AlertOctagon className="size-3.5" />Faltan permisos base: {selectedMissingDependencies.join(', ')}</span>}</div>{selectedConflictReasons.length > 0 && <p className="text-amber-800">Revisar separación de funciones: {selectedConflictReasons.join(' · ')}</p>}</div>
+
           <div className="grid max-h-72 gap-4 overflow-y-auto rounded-card border border-line p-3">
             {groups.map((group) => (
               <fieldset key={group.module}>
@@ -356,6 +415,8 @@ const RolesPage = () => {
                           className="size-4 accent-brand-600"
                         />
                         <span className="text-ink">{permission.label}</span>
+                        {permission.risk !== 'NORMAL' && <span className={cn('rounded-pill px-1.5 py-0.5 text-[10px] font-bold', permission.risk === 'CRITICAL' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700')}>{permission.risk}</span>}
+                        {permission.scope === 'BRANCH' && <MapPin className="size-3.5 text-blue-700" />}
                         <code className="ml-auto text-[10px] text-ink-muted">{permission.code}</code>
                       </label>
                     );

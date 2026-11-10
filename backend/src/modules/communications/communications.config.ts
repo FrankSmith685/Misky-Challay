@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { MessagingSetting } from '@database/models/messaging.model';
 import { env } from '@config/env';
 import { decryptSetting, encryptSetting } from '@shared/security/settingsEncryption';
+import { ApiError } from '@shared/errors/ApiError';
 
 export const COMMUNICATION_EVENTS = [
   'PAYMENT_PENDING',
@@ -70,6 +71,24 @@ export const messagingConfigSchema = z.object({
   events: z.record(z.enum(COMMUNICATION_EVENTS), eventRule),
 });
 export type MessagingConfig = z.infer<typeof messagingConfigSchema>;
+
+const missingWhatsappTemplates = (config: MessagingConfig): string[] =>
+  Object.entries(config.events)
+    .filter(([, rule]) => rule.whatsapp && !rule.template.trim())
+    .map(([event]) => event);
+
+const readiness = (config: MessagingConfig, accessToken: string, appSecret: string) => {
+  const connectionReady = Boolean(accessToken && config.phoneNumberId && config.graphVersion);
+  const webhookReady = Boolean(appSecret);
+  const missingTemplates = missingWhatsappTemplates(config);
+  return {
+    connectionReady,
+    webhookReady,
+    templatesReady: missingTemplates.length === 0,
+    missingWhatsappTemplates: missingTemplates,
+    readyToSend: connectionReady && webhookReady && missingTemplates.length === 0,
+  };
+};
 export const messagingUpdateSchema = z.object({
   config: messagingConfigSchema,
   accessToken: z.string().trim().max(4000).optional(),
@@ -152,19 +171,21 @@ export const messagingConfigService = {
   },
   async admin() {
     const runtime = await messagingConfigService.runtime();
+    const status = readiness(runtime.config, runtime.accessToken, runtime.appSecret);
     return {
       config: runtime.config,
       accessTokenConfigured: Boolean(runtime.accessToken),
       appSecretConfigured: Boolean(runtime.appSecret),
       verifyToken: runtime.verifyToken,
-      connectionReady: Boolean(
-        runtime.accessToken && runtime.config.phoneNumberId && runtime.config.graphVersion,
-      ),
-      webhookReady: Boolean(runtime.appSecret && runtime.verifyToken),
+      connectionReady: status.connectionReady,
+      webhookReady: status.webhookReady && Boolean(runtime.verifyToken),
+      templatesReady: status.templatesReady,
+      missingWhatsappTemplates: status.missingWhatsappTemplates,
+      readyToSend: status.readyToSend && Boolean(runtime.verifyToken),
       updatedAt: runtime.updatedAt,
     };
   },
-  async update(input: z.infer<typeof messagingUpdateSchema>, actorId: number) {
+  async update(input: z.infer<typeof messagingUpdateSchema>, actorId: number, whatsappEnabled = true) {
     const [row] = await MessagingSetting.findOrCreate({
       where: { id: 1 },
       defaults: { id: 1, config: defaults() },
@@ -176,6 +197,32 @@ export const messagingConfigService = {
     }
     if (!secrets.verifyToken || input.rotateVerifyToken)
       secrets.verifyToken = encryptSetting(randomBytes(24).toString('hex'));
+    const previousConfig = row.config as Partial<MessagingConfig> | undefined;
+    const activatingReal =
+      input.config.enabled &&
+      !input.config.testMode &&
+      (!previousConfig || previousConfig.testMode !== false || previousConfig.enabled !== true);
+    if (activatingReal && whatsappEnabled) {
+      const accessToken = input.accessToken?.trim()
+        ? input.accessToken.trim()
+        : secrets.accessToken
+          ? decryptSetting(secrets.accessToken)
+          : '';
+      const appSecret = input.appSecret?.trim()
+        ? input.appSecret.trim()
+        : secrets.appSecret
+          ? decryptSetting(secrets.appSecret)
+          : '';
+      const status = readiness(input.config, accessToken, appSecret);
+      if (!status.readyToSend || !secrets.verifyToken) {
+        const problems = [
+          !status.connectionReady ? 'la conexión con Meta' : '',
+          !status.webhookReady || !secrets.verifyToken ? 'el webhook' : '',
+          !status.templatesReady ? `las plantillas: ${status.missingWhatsappTemplates.join(', ')}` : '',
+        ].filter(Boolean);
+        throw ApiError.unprocessable(`Completa antes de activar envíos reales: ${problems.join('; ')}.`);
+      }
+    }
     // La fecha de activación pertenece al servidor: no se contactan pedidos antiguos.
     const previous = row.config.paymentReminders as MessagingConfig['paymentReminders'] | undefined;
     const paymentReminders = {

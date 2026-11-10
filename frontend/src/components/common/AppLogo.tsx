@@ -27,7 +27,7 @@ export const AppLogo = ({ compact = false, inverse = false, onClick, className }
   >
     {(compact === true || compact === 'xs') && (
       <img
-        src="/brand/misky-mark.png"
+        src="/brand/misky-mark.jpg"
         alt=""
         width={40}
         height={40}
@@ -44,11 +44,13 @@ export const AppLogo = ({ compact = false, inverse = false, onClick, className }
         aria-hidden="true"
       >
         <img
-          src="/brand/misky-challay-wordmark.png"
+          src="/brand/misky-challay-light.jpeg"
           alt=""
           width={176}
           height={56}
-          className="block size-full object-cover object-center"
+          loading="eager"
+          decoding="async"
+          className="block size-full object-contain object-center"
         />
       </span>
     )}

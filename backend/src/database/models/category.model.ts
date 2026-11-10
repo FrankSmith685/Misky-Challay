@@ -20,6 +20,7 @@ export class Category extends Model<InferAttributes<Category>, InferCreationAttr
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
   declare deletedAt: CreationOptional<Date | null>;
+  declare version: CreationOptional<number>;
 }
 
 Category.init(
@@ -35,6 +36,7 @@ Category.init(
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,
     deletedAt: DataTypes.DATE,
+    version: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 1 },
   },
   {
     sequelize,

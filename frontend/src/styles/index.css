@@ -24,50 +24,50 @@
 @theme {
   --container-8xl: 96rem;
 
-  --color-brand-50: #fcf5f6;
-  --color-brand-100: #f5e6eb;
-  --color-brand-200: #e9cbd6;
-  --color-brand-300: #d8a5b8;
-  --color-brand-400: #bf7893;
-  --color-brand-500: #a55475;
-  --color-brand-600: #8b3d59;
-  --color-brand-700: #713047;
-  --color-brand-800: #572538;
-  --color-brand-900: #391b28;
+  --color-brand-50: #ebf3f9;
+  --color-brand-100: #d6e8f4;
+  --color-brand-200: #add1e9;
+  --color-brand-300: #7ab4db;
+  --color-brand-400: #4294cb;
+  --color-brand-500: #1a7dc0;
+  --color-brand-600: #006fb9;
+  --color-brand-700: #005b98;
+  --color-brand-800: #00497a;
+  --color-brand-900: #003a60;
 
   /* Acento calido. Se ancla en el 500 (no en el 600 como brand), por eso las
      paradas oscuras arrancan ahi. La rampa va COMPLETA a proposito: Tailwind v4
      solo genera las utilidades de las paradas declaradas, y con solo 400/500 los
      avisos de bg-accent-50 / border-accent-300 / text-accent-700 se pintaban
      transparentes. */
-  --color-accent-50: #fcf7ee;
-  --color-accent-100: #f6ecd8;
-  --color-accent-200: #ead6b1;
-  --color-accent-300: #dbba83;
-  --color-accent-400: #ce9f60;
-  --color-accent-500: #c28a47;
-  --color-accent-600: #a16b31;
-  --color-accent-700: #805027;
-  --color-accent-800: #633e23;
-  --color-accent-900: #442b1c;
+  --color-accent-50: #fffbf1;
+  --color-accent-100: #fff6e1;
+  --color-accent-200: #ffedbe;
+  --color-accent-300: #ffde8b;
+  --color-accent-400: #ffc940;
+  --color-accent-500: #ffbd16;
+  --color-accent-600: #b88810;
+  --color-accent-700: #8f6a0c;
+  --color-accent-800: #6e5109;
+  --color-accent-900: #543e07;
 
   /* Tercer color de marca (gestionable desde el editor de tema). */
-  --color-tertiary-50: #f2f7f3;
-  --color-tertiary-100: #e4eee6;
-  --color-tertiary-200: #c8dccd;
-  --color-tertiary-300: #a2bfa9;
-  --color-tertiary-400: #80a48c;
-  --color-tertiary-500: #658a73;
-  --color-tertiary-600: #527363;
-  --color-tertiary-700: #415c4e;
-  --color-tertiary-800: #33483d;
-  --color-tertiary-900: #24332c;
+  --color-tertiary-50: #fef2ef;
+  --color-tertiary-100: #fde5df;
+  --color-tertiary-200: #fbcbc0;
+  --color-tertiary-300: #f8aa99;
+  --color-tertiary-400: #f5866d;
+  --color-tertiary-500: #f26b4e;
+  --color-tertiary-600: #f15b3a;
+  --color-tertiary-700: #c64b30;
+  --color-tertiary-800: #9f3c26;
+  --color-tertiary-900: #7d2f1e;
 
   --color-surface: #ffffff;
-  --color-surface-muted: #faf6f1;
-  --color-line: #e7ddd5;
-  --color-ink: #352721;
-  --color-ink-muted: #76665e;
+  --color-surface-muted: #f5faff;
+  --color-line: #d6e5ef;
+  --color-ink: #17324d;
+  --color-ink-muted: #5b7185;
 
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-display: 'Inter', ui-sans-serif, system-ui, sans-serif;
@@ -85,11 +85,16 @@
   --radius-pill: 5px;
 
   /* Escala de ELEVACION (sombras tintadas de marca). Genera shadow-e1 .. shadow-e5. */
-  --shadow-e1: 0 1px 2px rgba(23, 50, 77, 0.05);
-  --shadow-e2: 0 1px 2px rgba(23, 50, 77, 0.03), 0 10px 30px rgba(23, 50, 77, 0.06);
-  --shadow-e3: 0 8px 28px rgba(23, 50, 77, 0.10);
-  --shadow-e4: 0 16px 48px rgba(23, 50, 77, 0.14);
-  --shadow-e5: 0 24px 70px rgba(23, 50, 77, 0.20);
+  --shadow-alpha-e1: .05;
+  --shadow-alpha-e2: .06;
+  --shadow-alpha-e3: .10;
+  --shadow-alpha-e4: .14;
+  --shadow-alpha-e5: .20;
+  --shadow-e1: 0 1px 2px rgba(23, 50, 77, var(--shadow-alpha-e1));
+  --shadow-e2: 0 1px 2px rgba(23, 50, 77, calc(var(--shadow-alpha-e2) * .5)), 0 10px 30px rgba(23, 50, 77, var(--shadow-alpha-e2));
+  --shadow-e3: 0 8px 28px rgba(23, 50, 77, var(--shadow-alpha-e3));
+  --shadow-e4: 0 16px 48px rgba(23, 50, 77, var(--shadow-alpha-e4));
+  --shadow-e5: 0 24px 70px rgba(23, 50, 77, var(--shadow-alpha-e5));
 
   /* Escala de MOVIMIENTO. Genera ease-standard; las duraciones se usan como var(--duration-*). */
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
@@ -107,8 +112,33 @@
   body {
     @apply bg-surface-muted text-ink antialiased;
     font-family: var(--font-sans);
+    font-size: var(--text-base-size, 16px);
     min-width: 320px;
     overflow-x: hidden;
+  }
+
+  #root,
+  #root > *,
+  .public-shell,
+  .auth-public-shell,
+  .admin-shell,
+  .admin-shell > *,
+  .admin-shell main,
+  .admin-shell main > *,
+  .container-shell {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /* El contenido administrativo mezcla MUI, Tailwind y HTML heredado. Estas
+     reglas comunes evitan que una etiqueta, URL o control fijo ensanche toda
+     la página en teléfonos pequeños. */
+  h1, h2, h3, h4, h5, h6, p, li, a, label, button, code, pre {
+    overflow-wrap: anywhere;
+  }
+
+  img, video, canvas, iframe {
+    max-width: 100%;
   }
 
   :focus-visible {
@@ -159,7 +189,10 @@
 }
 
 .public-shell main {
-  background: var(--color-surface-muted);
+  background:
+    radial-gradient(circle at 4% 8%, color-mix(in srgb, var(--color-accent-50) 82%, transparent) 0, transparent 26rem),
+    radial-gradient(circle at 96% 12%, color-mix(in srgb, var(--color-tertiary-50) 72%, transparent) 0, transparent 24rem),
+    var(--color-surface-muted);
 }
 
 .public-shell main { min-height: 55vh; }
@@ -180,12 +213,27 @@
 img { max-width: 100%; }
 
 /* Los paneles de datos siguen siendo utilizables en pantallas estrechas. */
+.admin-shell { min-width: 0; overflow-x: clip; }
 .admin-shell main { container-type: inline-size; }
 .admin-shell main { overflow-x: clip; }
 .admin-shell main .overflow-x-auto { scrollbar-width: thin; scrollbar-color: var(--color-brand-200) transparent; }
 
+/* MUI renderiza diálogos y drawers en un portal fuera del layout que los abrió.
+ * El ancho del componente debe respetar la ventana, incluso si el contenido
+ * interno trae una tabla o un formulario largo. */
+.MuiDialog-container { padding: max(12px, env(safe-area-inset-left)) max(12px, env(safe-area-inset-right)); }
+.MuiDialog-paper { max-width: calc(100vw - 24px) !important; max-height: calc(100dvh - 24px); margin: 0 !important; }
+.MuiDialogTitle-root, .MuiDialogContent-root, .MuiDialogActions-root { min-width: 0; }
+.MuiDialogContent-root { overflow-x: hidden; }
+.MuiDialogActions-root { flex-wrap: wrap; gap: 8px; }
+.MuiDrawer-paper { max-width: 100vw; }
+.admin-shell main .MuiTableContainer-root { max-width: 100%; }
+.admin-shell main .MuiFormControl-root, .admin-shell main .MuiTextField-root { max-width: 100%; }
+
 .admin-shell main {
-  background: var(--color-surface-muted);
+  background:
+    radial-gradient(circle at 100% 0, color-mix(in srgb, var(--color-tertiary-50) 52%, transparent) 0, transparent 22rem),
+    var(--color-surface-muted);
 }
 
 .admin-shell main > * { animation: ds-fade-in .22s ease-out; }
@@ -293,6 +341,9 @@ img { max-width: 100%; }
  * modal estaba cubierto. De ahi que los contenedores portalados se nombren aparte. */
 @media (max-width: 639px) {
   .admin-shell main table { min-width: 640px; }
+  .admin-shell main .min-w-56,
+  .admin-shell main .min-w-60,
+  .admin-shell main .min-w-\[240px\] { min-width: 0; }
   .admin-shell main input,
   .admin-shell main select,
   .admin-shell main textarea,
@@ -306,6 +357,47 @@ img { max-width: 100%; }
 
 .public-shell main > div:not(.admin-shell) h1,
 .public-shell main > div:not(.admin-shell) h2 { text-wrap: balance; }
+
+/* Las políticas comparten una lectura ancha, con índice y superficies iguales.
+ * El contenido de MUI se normaliza aquí para que no dependa de los márgenes de
+ * cada página y no genere huecos irregulares entre párrafos y listas. */
+.legal-document-page {
+  width: 100%;
+}
+
+.legal-section-body p {
+  margin: 0;
+}
+
+.legal-section-body p + p {
+  margin-top: 1rem;
+}
+
+.legal-section-body ul,
+.legal-section-body ol {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.legal-section-body li + li {
+  margin-top: .55rem;
+}
+
+.legal-section-body a {
+  color: var(--color-brand-700);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.legal-process-page {
+  width: 100%;
+}
+
+.legal-process-page > .MuiPaper-root {
+  border-color: var(--color-line);
+  box-shadow: var(--shadow-e1);
+}
 
 @media (hover: hover) {
   a, button { -webkit-tap-highlight-color: transparent; }
@@ -387,6 +479,48 @@ body.kds-active [id^='kitchen-ticket-'] { font-size: 1.02rem; }
  * oculta, pero la vista sigue siendo HTML accesible antes de abrir el diálogo de
  * impresión del navegador. */
 @media print {
+  body:has(.terms-page) {
+    background: white !important;
+  }
+  body:has(.terms-page) .public-shell > header,
+  body:has(.terms-page) .public-shell > footer,
+  body:has(.terms-page) .public-shell > a,
+  body:has(.terms-page) .public-shell > [aria-label="Pedido en curso"],
+  body:has(.terms-page) .terms-toc,
+  body:has(.terms-page) .terms-related,
+  body:has(.terms-page) .terms-actions {
+    display: none !important;
+  }
+  body:has(.terms-page) .terms-content {
+    border: 0 !important;
+    box-shadow: none !important;
+    max-width: none !important;
+  }
+  body:has(.legal-document-page) {
+    background: white !important;
+  }
+  body:has(.legal-document-page) .public-shell > header,
+  body:has(.legal-document-page) .public-shell > footer,
+  body:has(.legal-document-page) .public-shell > a,
+  body:has(.legal-document-page) .public-shell > [aria-label="Pedido en curso"],
+  body:has(.legal-document-page) .legal-document-toc,
+  body:has(.legal-document-page) .legal-document-related,
+  body:has(.legal-document-page) .legal-document-contact {
+    display: none !important;
+  }
+  body:has(.legal-document-page) .legal-document-content {
+    border: 0 !important;
+    box-shadow: none !important;
+    max-width: none !important;
+  }
+  body:has(.legal-document-page) .legal-document-page header {
+    border: 0 !important;
+    background: white !important;
+  }
+  body:has(.terms-page) .terms-page header {
+    border: 0 !important;
+    background: white !important;
+  }
   body.admin-receipt-printing * { visibility: hidden !important; }
   body.admin-receipt-printing [data-admin-receipt],
   body.admin-receipt-printing [data-admin-receipt] * { visibility: visible !important; }

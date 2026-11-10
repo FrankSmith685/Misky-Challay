@@ -30,6 +30,7 @@ export class CommunicationSetting extends Model<
   declare fromEmail: string;
   declare fromName: string;
   declare replyToEmail: CreationOptional<string | null>;
+  declare version: CreationOptional<number>;
   declare updatedBy: CreationOptional<number | null>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
@@ -63,6 +64,7 @@ CommunicationSetting.init(
     fromEmail: { type: DataTypes.STRING(160), allowNull: false },
     fromName: { type: DataTypes.STRING(100), allowNull: false },
     replyToEmail: { type: DataTypes.STRING(160), allowNull: true },
+    version: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 1 },
     updatedBy: { type: DataTypes.BIGINT.UNSIGNED, allowNull: true },
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,

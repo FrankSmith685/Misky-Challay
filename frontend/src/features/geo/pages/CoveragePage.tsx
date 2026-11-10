@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Bike, Clock3, RefreshCw, ShieldCheck, Store } from 'lucide-react';
+import { Bike, Clock3, LockKeyhole, MapPin, RefreshCw, ShieldCheck, Store } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@components/ui/Button';
 import { Card } from '@components/ui/Card';
+import { ROUTES } from '@constants/routes';
 import { BranchCard } from '../components/BranchCard';
 import { CoverageChecker } from '../components/CoverageChecker';
 import { CoverageHero } from '../components/CoverageHero';
@@ -12,12 +14,12 @@ const serviceSignals = [
   {
     icon: Bike,
     title: 'Entrega coordinada',
-    description: 'Asignamos la pastelería adecuada según tu ubicación.',
+    description: 'Asignamos el local adecuado según tu ubicación.',
   },
   {
     icon: ShieldCheck,
     title: 'Costo transparente',
-    description: 'Conoce delivery y pedido mínimo antes de comprar.',
+    description: 'Conoce la tarifa y el pedido mínimo antes de comprar.',
   },
   {
     icon: Clock3,
@@ -28,6 +30,7 @@ const serviceSignals = [
 
 /** Página pública de cobertura: valida la zona y presenta los locales disponibles. */
 const CoveragePage = () => {
+  const navigate = useNavigate();
   const [branches, setBranches] = useState<Branch[]>([]);
   const [isLoadingBranches, setIsLoadingBranches] = useState(true);
   const [branchesError, setBranchesError] = useState(false);
@@ -68,23 +71,38 @@ const CoveragePage = () => {
             </p>
           </div>
 
+          <div className="mb-6 grid gap-3 rounded-card border border-brand-100 bg-brand-50/70 p-4 text-xs leading-5 text-ink-muted sm:grid-cols-3 sm:gap-5 sm:p-5">
+            <div className="flex items-start gap-2.5">
+              <MapPin className="mt-0.5 size-4 shrink-0 text-brand-700" aria-hidden="true" />
+              <p><strong className="block text-ink">Dirección exacta</strong>Usa el pin en la entrada donde recibirás el pedido.</p>
+            </div>
+            <div className="flex items-start gap-2.5">
+              <Clock3 className="mt-0.5 size-4 shrink-0 text-brand-700" aria-hidden="true" />
+              <p><strong className="block text-ink">Datos antes de pagar</strong>Verás tarifa, mínimo y tiempo estimado.</p>
+            </div>
+            <div className="flex items-start gap-2.5">
+              <LockKeyhole className="mt-0.5 size-4 shrink-0 text-brand-700" aria-hidden="true" />
+              <p><strong className="block text-ink">Tu ubicación, bajo control</strong>Solo la guardamos cuando confirmas y tienes una cuenta. <Link to={ROUTES.privacy} className="font-semibold text-brand-700 underline underline-offset-2">Ver privacidad</Link></p>
+            </div>
+          </div>
+
           <div className="rounded-card border border-line bg-white/90 p-4 shadow-e2 backdrop-blur-sm sm:p-6 lg:p-8">
-            <CoverageChecker />
+            <CoverageChecker onContinue={() => navigate(ROUTES.menu)} />
           </div>
         </section>
 
-        <section className="mt-14 sm:mt-20">
+        <section id="locales" className="mt-14 scroll-mt-24 sm:mt-20">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="text-xs font-extrabold uppercase tracking-[.18em] text-brand-700">
                 Nuestra red
               </p>
               <h2 className="mt-2 text-2xl font-black tracking-[-.02em] text-ink sm:text-3xl">
-                Pastelerías listas para atenderte
+                {branches.length === 1 ? 'Nuestro local' : 'Locales listos para atenderte'}
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-muted">
                 La asignación final depende de tu dirección, los horarios y la disponibilidad del
-                local.
+                local. Si prefieres recojo, elige una sede disponible al comprar.
               </p>
             </div>
             {!isLoadingBranches && branches.length > 0 && (

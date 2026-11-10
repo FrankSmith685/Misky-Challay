@@ -49,13 +49,24 @@ export interface DirectPaymentDetail {
   orderNumber: string;
   orderStatus: string;
   branchId: number;
+  branchName: string | null;
   contactName: string | null;
   contactPhone: string | null;
   createdAt: string;
   canReport: boolean;
   overdue: boolean;
+  reviewAgeMinutes: number;
+  hasEvidence: boolean;
   refundableAmount: number;
   refundedAmount: number;
+  platformCommission: {
+    rate: number;
+    baseAmount: number | null;
+    amount: number | null;
+    settledAmount: number;
+    outstandingAmount: number | null;
+    status: string | null;
+  };
   claim: {
     status: string;
     operationCode: string;
@@ -100,6 +111,17 @@ export interface DirectPaymentList {
   page: number;
   pageSize: number;
   counts: Partial<Record<DirectPaymentState, number>>;
+  amounts: Partial<Record<DirectPaymentState, number>>;
+  summary: {
+    totalAmount: number;
+    amounts: Partial<Record<DirectPaymentState, number>>;
+    overdueCount: number;
+    overdueAmount: number;
+    platformRate: number;
+    platformAccrued: number;
+    platformSettled: number;
+    platformOutstanding: number;
+  };
 }
 
 export const directPaymentsApi = {
@@ -112,13 +134,13 @@ export const directPaymentsApi = {
     ).data.data;
   },
   async list(
-    branchId: number,
-    filters: { state?: string; provider?: string; search?: string; page?: number },
+    branchId: number | null | undefined,
+    filters: { state?: string; provider?: string; search?: string; page?: number; from?: string; to?: string },
     signal?: AbortSignal,
   ): Promise<DirectPaymentList> {
     return (
       await api.get<ApiSuccess<DirectPaymentList>>('/payments/mobile', {
-        params: { branchId, ...filters },
+        params: { ...(branchId ? { branchId } : {}), ...filters },
         signal,
       })
     ).data.data;

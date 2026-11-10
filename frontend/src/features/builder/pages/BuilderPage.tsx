@@ -255,7 +255,7 @@ const BuilderPage = () => {
           .find(({ option }) => option.id === expensive.optionId);
         if (entry) {
           return {
-            title: 'Hazlo mÃ¡s econÃ³mico',
+            title: 'Hazlo más económico',
             description: `Retira ${entry.option.name} y ahorra ${formatCurrency(expensive.lineExtra)}.`,
             action: 'remove',
             ...entry,
@@ -373,9 +373,13 @@ const BuilderPage = () => {
           quantity: line.quantity,
           priceDelta: line.priceDelta,
         })),
+        preparationMode: config.product.preparationMode,
+        requiresScheduledDelivery: config.product.preparationMode !== 'READY_STOCK',
+        requiresCarDelivery: config.product.family === 'CAKE',
+        minLeadHours: config.product.preparationMode === 'READY_STOCK' ? 0 : config.product.minLeadHours,
       }),
     );
-    toast.success('Tu bowl estÃ¡ listo y ya estÃ¡ en el carrito');
+    toast.success('Tu bowl está listo y ya está en el carrito');
     reset();
     navigate(ROUTES.cart);
   };
@@ -420,7 +424,7 @@ const BuilderPage = () => {
                     Perfil alimentario activo.
                   </strong>{' '}
                   <span className="text-ink-muted">
-                    Evitamos recomendaciones con tus alÃ©rgenos y
+                    Evitamos recomendaciones con tus alérgenos y
                     respetamos tus metas.
                   </span>
                 </div>
@@ -433,10 +437,10 @@ const BuilderPage = () => {
           <div className="mb-7 flex flex-col justify-between gap-3 border-b border-line pb-6 sm:flex-row sm:items-end">
             <div>
               <p className="text-xs font-extrabold uppercase tracking-[.16em] text-brand-700">
-                PersonalizaciÃ³n guiada
+                Personalización guiada
               </p>
               <h2 className="mt-1.5 text-2xl font-black tracking-tight text-ink sm:text-3xl">
-                Construye tu combinaciÃ³n paso a paso
+                Construye tu combinación paso a paso
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-muted">
                 Completa los pasos esenciales. Puedes volver y cambiar cualquier ingrediente antes de confirmar.
@@ -524,7 +528,7 @@ const BuilderPage = () => {
                         optionId: option.id,
                       });
                       toast.success(
-                        `${option.name} reemplazÃ³ la opciÃ³n incompatible`,
+                        `${option.name} reemplazó la opción incompatible`,
                       );
                     }}
                     selectedOptionNames={selectedOptionNames}
@@ -575,7 +579,7 @@ const BuilderPage = () => {
               saveLabel={
                 isAuthenticated
                   ? 'Guardar este bowl'
-                  : 'Inicia sesiÃ³n para guardarlo'
+                  : 'Inicia sesión para guardarlo'
               }
               onApplyRecommendation={() => {
                 if (!recommendation) return;
@@ -627,7 +631,7 @@ const BuilderPage = () => {
         maxWidth="3xl"
         label={
           isComplete
-            ? 'Tu bowl estÃ¡ listo'
+            ? 'Tu bowl está listo'
             : nextMissingGroup
               ? `Siguiente: ${nextMissingGroup.name}`
               : 'Validando tu bowl'

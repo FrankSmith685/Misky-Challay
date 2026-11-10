@@ -1,19 +1,26 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link, useBeforeUnload, useBlocker, useSearchParams } from 'react-router-dom';
 import {
   ArrowDown,
   ArrowUp,
   BookOpen,
+  CalendarClock,
+  Download,
   Eye,
   Globe,
+  History,
   Image,
   LayoutTemplate,
+  Link2,
   ListOrdered,
   Plus,
   RefreshCw,
   Save,
   Search,
+  Sparkles,
+  Star,
   Trash2,
+  Upload,
 } from 'lucide-react';
 import toast from '@components/mui/MuiToast';
 import { PageHeader } from '@components/common/PageHeader';
@@ -32,14 +39,19 @@ import { ROUTES } from '@constants/routes';
 import { cn } from '@lib/cn';
 import { getApiErrorMessage } from '@services/api/client';
 import { HomeEditorial } from '@features/home/components/HomeLearningContent';
+import { catalogApi } from '@features/catalog/services/catalog.service';
+import type { Product } from '@features/catalog/types';
 import { useStorefront } from '@features/home/content/StorefrontContext';
-import { storefrontApi, type StorefrontState } from '@features/home/content/storefront.service';
+import { storefrontApi, type StorefrontHistoryEntry, type StorefrontState } from '@features/home/content/storefront.service';
 import { storefrontSchema, type StorefrontContent } from '@features/home/content/storefront.schema';
 import { MediaPicker } from '../components/MediaPicker';
 
 const TABS = [
   { id: 'sections', label: 'Secciones y orden', icon: ListOrdered },
   { id: 'hero', label: 'Presentación', icon: LayoutTemplate },
+  { id: 'benefits', label: 'Beneficios', icon: Sparkles },
+  { id: 'links', label: 'Enlaces y destinos', icon: Link2 },
+  { id: 'featured', label: 'Destacados', icon: Star },
   { id: 'abc', label: 'El ABC del pedido', icon: BookOpen },
   { id: 'walkthrough', label: 'Personalizador', icon: Image },
   { id: 'choices', label: 'Opciones de compra', icon: LayoutTemplate },
@@ -49,6 +61,7 @@ const TABS = [
   { id: 'seo', label: 'Buscadores y enlaces', icon: Search },
 ] as const;
 type TabId = (typeof TABS)[number]['id'];
+type LinkAction = StorefrontContent['quickLinks'][number]['action'];
 type Copy = { title: string; description: string; label?: string };
 const FIELD_LABELS: Record<string, string> = {
   sections: 'Secciones',
@@ -60,6 +73,9 @@ const FIELD_LABELS: Record<string, string> = {
   faqs: 'Preguntas frecuentes',
   guide: 'Guía',
   seo: 'Buscadores',
+  benefits: 'Beneficios',
+  quickLinks: 'Enlaces rápidos',
+  featuredProductIds: 'Productos destacados',
   title: 'Título',
   description: 'Descripción',
   imageUrl: 'Imagen',
@@ -74,6 +90,13 @@ const FIELD_LABELS: Record<string, string> = {
   guideTitle: 'Título SEO de la guía',
   guideDescription: 'Descripción SEO de la guía',
   socialImageUrl: 'Imagen para compartir',
+};
+const toDateTimeLocal = (value: string | null | undefined): string => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+  const pad = (part: number) => String(part).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 };
 
 const CopyFields = ({
@@ -119,6 +142,14 @@ const HomeContentPage = () => {
   const tab: TabId = TABS.find((item) => item.id === requested)?.id ?? 'sections';
   const [saved, setSaved] = useState<StorefrontState | null>(null);
   const [draft, setDraft] = useState<StorefrontContent | null>(null);
+  const [draftStatus, setDraftStatus] = useState<'DRAFT' | 'SCHEDULED' | null>(null);
+  const [publishAt, setPublishAt] = useState('');
+  const [savedPublishAt, setSavedPublishAt] = useState('');
+  const [history, setHistory] = useState<StorefrontHistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [products, setProducts] = useState<Product[]>([]);
+  const importInput = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -130,7 +161,7 @@ const HomeContentPage = () => {
     errorSummary.current?.scrollIntoView({ block: 'center' });
     errorSummary.current?.focus({ preventScroll: true });
   }, [error]);
-  const dirty = Boolean(draft && saved && JSON.stringify(draft) !== JSON.stringify(saved.content));
+  const dirty = Boolean((draft && saved && JSON.stringify(draft) !== JSON.stringify(saved.content)) || publishAt !== savedPublishAt);
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
       dirty && !saving && currentLocation.pathname !== nextLocation.pathname,
@@ -152,10 +183,13 @@ const HomeContentPage = () => {
     setError(null);
     setIssues([]);
     try {
-      const state = await storefrontApi.get();
-      setSaved(state);
-      setDraft(structuredClone(state.content));
-      replace(state);
+      const state = await storefrontApi.getAdmin();
+      setSaved(state.published);
+      setDraft(structuredClone(state.draft?.content ?? state.published.content));
+      setDraftStatus(state.draft?.status ?? null);
+      setPublishAt(toDateTimeLocal(state.draft?.publishAt));
+      setSavedPublishAt(toDateTimeLocal(state.draft?.publishAt));
+      replace(state.published);
     } catch (cause) {
       setError(getApiErrorMessage(cause));
     } finally {
@@ -165,6 +199,10 @@ const HomeContentPage = () => {
   useEffect(() => {
     void load();
   }, [load]);
+  useEffect(() => {
+    if (tab !== 'featured' || products.length > 0) return;
+    void catalogApi.getProducts({ sort: 'RECOMMENDED' }).then(setProducts).catch(() => setProducts([]));
+  }, [products.length, tab]);
 
   const update = (mutate: (content: StorefrontContent) => void) =>
     setDraft((current) => {
@@ -193,15 +231,101 @@ const HomeContentPage = () => {
     setError(null);
     setIssues([]);
     try {
-      const state = await storefrontApi.save({ content: parsed.data, version: saved.version });
+      const state = await storefrontApi.saveDraft({
+        content: parsed.data,
+        version: saved.version,
+        publishAt: publishAt ? new Date(publishAt).toISOString() : null,
+      });
+      setSaved(state.published);
+      setDraft(structuredClone(state.draft?.content ?? parsed.data));
+      setDraftStatus(state.draft?.status ?? null);
+      setPublishAt(toDateTimeLocal(state.draft?.publishAt));
+      setSavedPublishAt(toDateTimeLocal(state.draft?.publishAt));
+      toast.success(publishAt ? 'Borrador guardado y publicación programada.' : 'Borrador guardado. Publícalo cuando lo hayas revisado.');
+    } catch (cause) {
+      setError(getApiErrorMessage(cause));
+    } finally {
+      setSaving(false);
+    }
+  };
+  const publish = async () => {
+    if (!draft || !saved || saving || !dirty) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const state = await storefrontApi.publishDraft(crypto.randomUUID());
       setSaved(state);
       setDraft(structuredClone(state.content));
+      setDraftStatus(null);
+      setPublishAt('');
+      setSavedPublishAt('');
       replace(state);
       toast.success('Contenido publicado. La portada y la guía ya están actualizadas.');
     } catch (cause) {
       setError(getApiErrorMessage(cause));
     } finally {
       setSaving(false);
+    }
+  };
+  const discard = async () => {
+    if (!(await confirm({ title: 'Descartar borrador', message: 'Se eliminará el borrador guardado y se conservará la versión publicada.', confirmLabel: 'Descartar borrador' })).confirmed) return;
+    setSaving(true);
+    try {
+      const state = await storefrontApi.discardDraft();
+      setSaved(state.published);
+      setDraft(structuredClone(state.published.content));
+      setDraftStatus(null);
+      setPublishAt('');
+      setSavedPublishAt('');
+      replace(state.published);
+      toast.success('Borrador descartado.');
+    } catch (cause) { setError(getApiErrorMessage(cause)); }
+    finally { setSaving(false); }
+  };
+  const loadHistory = async () => {
+    setHistoryLoading(true);
+    try { setHistory(await storefrontApi.history(30)); }
+    catch (cause) { setError(getApiErrorMessage(cause)); }
+    finally { setHistoryLoading(false); }
+  };
+  const rollback = async (entry: StorefrontHistoryEntry) => {
+    if (!(await confirm({ title: 'Restaurar versión', message: 'Se publicará una nueva versión con el contenido seleccionado.', confirmLabel: 'Restaurar y publicar' })).confirmed) return;
+    setSaving(true);
+    try {
+      const state = await storefrontApi.rollback(entry.id, crypto.randomUUID());
+      setSaved(state);
+      setDraft(structuredClone(state.content));
+      setDraftStatus(null);
+      setPublishAt('');
+      setSavedPublishAt('');
+      replace(state);
+      toast.success('Versión restaurada y publicada.');
+      await loadHistory();
+    } catch (cause) { setError(getApiErrorMessage(cause)); }
+    finally { setSaving(false); }
+  };
+  const exportContent = () => {
+    if (!draft) return;
+    const blob = new Blob([JSON.stringify(draft, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `misky-portada-v${saved?.version ?? 'borrador'}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+  const importContent = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    try {
+      const parsed = storefrontSchema.safeParse(JSON.parse(await file.text()));
+      if (!parsed.success) throw new Error('El archivo no coincide con el esquema de contenido de la portada.');
+      setDraft(structuredClone(parsed.data));
+      setError(null);
+      toast.success('Contenido importado como borrador local. Guárdalo para persistirlo.');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'No se pudo importar el contenido.');
     }
   };
   const reload = async () => {
@@ -265,25 +389,20 @@ const HomeContentPage = () => {
       />
       <div className="mb-6 flex flex-col justify-between gap-3 rounded-card border border-line bg-white p-5 sm:flex-row sm:items-center">
         <div>
-          <p className="text-sm font-semibold text-ink">
-            {dirty ? 'Tienes cambios sin publicar' : 'Contenido publicado'}
-          </p>
+          <p className="text-sm font-semibold text-ink">{dirty ? 'Tienes cambios sin publicar' : 'Contenido publicado'}</p>
           <p className="mt-1 text-xs leading-6 text-ink-muted">
-            {saved.updatedAt
-              ? `Última actualización: ${new Intl.DateTimeFormat('es-PE', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Lima' }).format(new Date(saved.updatedAt))}`
-              : 'Contenido inicial listo para personalizar'}{' '}
-            · Versión {saved.version}
+            {saved.updatedAt ? `Última actualización: ${new Intl.DateTimeFormat('es-PE', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Lima' }).format(new Date(saved.updatedAt))}` : 'Contenido inicial listo para personalizar'}{' '}· Versión {saved.version}
           </p>
+          {draftStatus && <p className="mt-1 text-xs font-semibold text-accent-700">{draftStatus === 'SCHEDULED' ? `Publicación programada${publishAt ? ` para ${new Date(publishAt).toLocaleString('es-PE')}` : ''}` : 'Borrador guardado en el servidor'}</p>}
         </div>
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={() => void reload()}
-          disabled={saving}
-          leftIcon={<RefreshCw className="size-4" />}
-        >
-          Recargar publicado
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="ghost" onClick={() => void reload()} disabled={saving} leftIcon={<RefreshCw className="size-4" />}>Recargar</Button>
+          <Button type="button" variant="ghost" onClick={() => void discard()} disabled={saving || !draftStatus} leftIcon={<Trash2 className="size-4" />}>Descartar borrador</Button>
+          <Button type="button" variant="ghost" onClick={() => { setHistoryOpen(true); void loadHistory(); }} disabled={saving} leftIcon={<History className="size-4" />}>Historial</Button>
+          <Button type="button" variant="ghost" onClick={exportContent} disabled={saving} leftIcon={<Download className="size-4" />}>Exportar</Button>
+          <Button type="button" variant="ghost" onClick={() => importInput.current?.click()} disabled={saving} leftIcon={<Upload className="size-4" />}>Importar</Button>
+          <input ref={importInput} type="file" accept="application/json,.json" className="hidden" onChange={(event) => void importContent(event)} />
+        </div>
       </div>
       {error && (
         <div className="mb-6 outline-none" ref={errorSummary} tabIndex={-1}>
@@ -476,6 +595,28 @@ const HomeContentPage = () => {
                       }
                     />
                   </FormGrid>
+                  <FormGrid>
+                    <Select
+                      label="Destino del botón principal"
+                      value={draft.hero.primaryAction}
+                      onChange={(e) => update((next) => { next.hero.primaryAction = e.target.value as typeof next.hero.primaryAction; })}
+                    >
+                      <SelectOption value="custom">Personalizador</SelectOption>
+                      <SelectOption value="catalog">Catálogo</SelectOption>
+                      <SelectOption value="business">Empresas</SelectOption>
+                      <SelectOption value="guide">Guía</SelectOption>
+                    </Select>
+                    <Select
+                      label="Destino del botón secundario"
+                      value={draft.hero.secondaryAction}
+                      onChange={(e) => update((next) => { next.hero.secondaryAction = e.target.value as typeof next.hero.secondaryAction; })}
+                    >
+                      <SelectOption value="catalog">Catálogo</SelectOption>
+                      <SelectOption value="custom">Personalizador</SelectOption>
+                      <SelectOption value="coverage">Cobertura</SelectOption>
+                      <SelectOption value="guide">Guía</SelectOption>
+                    </Select>
+                  </FormGrid>
                   <MediaPicker
                     label="Imagen de presentación"
                     category="marketing"
@@ -500,6 +641,66 @@ const HomeContentPage = () => {
                       })
                     }
                   />
+                  <div className="space-y-4 border-t border-line pt-5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div><p className="text-sm font-semibold text-ink">Diapositivas adicionales</p><p className="text-xs text-ink-muted">Edita las imágenes y textos del carrusel. Máximo 4.</p></div>
+                      <Button type="button" variant="outline" size="sm" disabled={draft.hero.slides.length >= 4} onClick={() => update((next) => { next.hero.slides.push({ eyebrow: '', title: '', description: '', imageUrl: next.hero.imageUrl, imageAlt: next.hero.imageAlt }); })}><Plus className="mr-1 size-4" />Agregar</Button>
+                    </div>
+                    {draft.hero.slides.map((slide, i) => (
+                      <article key={i} className="space-y-4 rounded-card border border-line bg-surface-muted/40 p-4">
+                        <div className="flex items-center justify-between gap-3"><span className="text-xs font-bold uppercase tracking-wide text-brand-700">Diapositiva {i + 2}</span><Button type="button" variant="ghost" size="sm" disabled={draft.hero.slides.length <= 1} onClick={() => update((next) => { next.hero.slides.splice(i, 1); })}><Trash2 className="size-4" /></Button></div>
+                        <Input label="Texto superior" value={slide.eyebrow} maxLength={70} required onChange={(e) => update((next) => { next.hero.slides[i].eyebrow = e.target.value; })} />
+                        <Input label="Título" value={slide.title} maxLength={130} required onChange={(e) => update((next) => { next.hero.slides[i].title = e.target.value; })} />
+                        <Textarea label="Descripción" value={slide.description} maxLength={500} rows={2} required onChange={(e) => update((next) => { next.hero.slides[i].description = e.target.value; })} />
+                        <MediaPicker label="Imagen" category="marketing" layout="stacked" value={slide.imageUrl} altText={slide.imageAlt} onChange={({ url, altText }) => update((next) => { next.hero.slides[i].imageUrl = url; next.hero.slides[i].imageAlt = altText; })} />
+                        <Input label="Texto alternativo" value={slide.imageAlt} maxLength={180} required onChange={(e) => update((next) => { next.hero.slides[i].imageAlt = e.target.value; })} />
+                      </article>
+                    ))}
+                  </div>
+                </FormStack>
+              </FormSection>
+            )}
+            {tab === 'benefits' && (
+              <FormSection title="Beneficios de la portada" description="Edita los tres mensajes de valor que aparecen bajo el carrusel." icon={Sparkles}>
+                <FormStack>
+                  {draft.benefits.map((benefit, i) => (
+                    <article key={i} className="space-y-4 rounded-card border border-line bg-surface-muted/40 p-4">
+                      <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Beneficio {i + 1}</p>
+                      <Select label="Icono" value={benefit.icon ?? 'cake'} onChange={(e) => update((next) => { next.benefits[i].icon = e.target.value as typeof next.benefits[number]['icon']; })}>
+                        <SelectOption value="cake">Torta</SelectOption><SelectOption value="flame">Precio</SelectOption><SelectOption value="calendar">Calendario</SelectOption><SelectOption value="map-pin">Ubicación</SelectOption><SelectOption value="chef-hat">Chef</SelectOption><SelectOption value="truck">Entrega</SelectOption>
+                      </Select>
+                      <Input label="Título" value={benefit.title} maxLength={100} required onChange={(e) => update((next) => { next.benefits[i].title = e.target.value; })} />
+                      <Textarea label="Descripción" value={benefit.description} maxLength={400} rows={2} required onChange={(e) => update((next) => { next.benefits[i].description = e.target.value; })} />
+                    </article>
+                  ))}
+                </FormStack>
+              </FormSection>
+            )}
+            {tab === 'links' && (
+              <FormSection title="Enlaces y destinos" description="Los destinos se eligen de una lista segura de rutas internas y WhatsApp." icon={Link2}>
+                <FormStack>
+                  {draft.quickLinks.map((item, i) => (
+                    <article key={item.id} className="space-y-4 rounded-card border border-line bg-surface-muted/40 p-4">
+                      <Input label={`Enlace ${i + 1}`} value={item.label} maxLength={60} required onChange={(e) => update((next) => { next.quickLinks[i].label = e.target.value; })} />
+                      <Select label="Destino" value={item.action} onChange={(e) => update((next) => { next.quickLinks[i].action = e.target.value as typeof next.quickLinks[number]['action']; })}>
+                        <SelectOption value="catalog">Catálogo</SelectOption><SelectOption value="custom">Personalizador</SelectOption><SelectOption value="business">Empresas</SelectOption><SelectOption value="plans">Cajas mensuales</SelectOption><SelectOption value="experiences">Experiencias QR</SelectOption><SelectOption value="coverage">Cobertura</SelectOption><SelectOption value="guide">Guía</SelectOption><SelectOption value="orders">Mis pedidos</SelectOption><SelectOption value="whatsapp">WhatsApp</SelectOption>
+                      </Select>
+                    </article>
+                  ))}
+                </FormStack>
+              </FormSection>
+            )}
+            {tab === 'featured' && (
+              <FormSection title="Productos destacados" description="Selecciona hasta 12 productos publicados. Se mostrarán en el orden elegido; si no eliges ninguno se usan los más vendidos." icon={Star}>
+                <FormStack>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {products.map((product) => {
+                      const checked = draft.featuredProductIds.includes(product.id);
+                      return <label key={product.id} className="flex items-start gap-3 rounded-card border border-line p-3 text-sm"><input type="checkbox" checked={checked} onChange={() => update((next) => { next.featuredProductIds = checked ? next.featuredProductIds.filter((id) => id !== product.id) : [...next.featuredProductIds, product.id].slice(0, 12); })} /><span><strong className="block">{product.name}</strong><span className="text-xs text-ink-muted">{product.isAvailable ? 'Disponible' : 'No disponible'}</span></span></label>;
+                    })}
+                  </div>
+                  {products.length === 0 && <Alert title="No se pudieron cargar los productos">Recarga la página para elegir productos publicados.</Alert>}
+                  <p className="text-xs text-ink-muted">Seleccionados: {draft.featuredProductIds.length}/12. El catálogo seguirá verificando disponibilidad por sucursal.</p>
                 </FormStack>
               </FormSection>
             )}
@@ -582,6 +783,13 @@ const HomeContentPage = () => {
                       })
                     }
                   />
+                  <Select
+                    label="Destino del enlace"
+                    value={item.action ?? (tab === 'choices' ? ['catalog', 'custom', 'business'][i] : ['plans', 'experiences'][i])}
+                    onChange={(e) => update((next) => { next[tab][i].action = e.target.value as LinkAction; })}
+                  >
+                    <SelectOption value="catalog">Catálogo</SelectOption><SelectOption value="custom">Personalizador</SelectOption><SelectOption value="business">Empresas</SelectOption><SelectOption value="plans">Cajas mensuales</SelectOption><SelectOption value="experiences">Experiencias QR</SelectOption><SelectOption value="guide">Guía</SelectOption><SelectOption value="orders">Mis pedidos</SelectOption>
+                  </Select>
                 </FormSection>
               ))}
             {tab === 'faqs' && (
@@ -813,19 +1021,14 @@ const HomeContentPage = () => {
             )}
           </fieldset>
           <div className="sticky bottom-4 z-10 mt-6 flex flex-col justify-between gap-4 rounded-card border border-line bg-white/95 p-4 shadow-e2 backdrop-blur sm:flex-row sm:items-center">
-            <p className="text-xs leading-6 text-ink-muted">
-              {dirty
-                ? 'Los cambios se verán en la web al publicarlos.'
-                : 'La portada está al día. Puedes revisar la vista previa.'}
-            </p>
-            <Button
-              type="submit"
-              disabled={!dirty}
-              isLoading={saving}
-              leftIcon={<Save className="size-4 shrink-0" />}
-            >
-              Publicar cambios
-            </Button>
+            <div className="flex flex-col gap-2">
+              <p className="text-xs leading-6 text-ink-muted">{dirty ? 'Guarda el borrador y publícalo cuando lo hayas revisado.' : 'La portada está al día. Puedes revisar la vista previa.'}</p>
+              <label className="flex items-center gap-2 text-xs text-ink-muted"><CalendarClock className="size-4" />Programar publicación <input type="datetime-local" value={publishAt} onChange={(event) => setPublishAt(event.target.value)} className="rounded border border-line px-2 py-1 text-xs text-ink" /></label>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" disabled={!dirty} isLoading={saving} leftIcon={<Save className="size-4 shrink-0" />}>Guardar borrador</Button>
+              <Button type="button" disabled={!dirty || !draftStatus} isLoading={saving} onClick={() => void publish()} leftIcon={<Globe className="size-4 shrink-0" />}>Publicar ahora</Button>
+            </div>
           </div>
         </form>
       </div>
@@ -844,6 +1047,18 @@ const HomeContentPage = () => {
         >
           <HomeEditorial content={draft} preview />
         </div>
+      </Modal>
+      <Modal isOpen={historyOpen} onClose={() => setHistoryOpen(false)} title="Historial de publicaciones" description="Cada restauración crea una nueva versión auditada." maxWidth="lg">
+        {historyLoading ? <PageLoader /> : history.length === 0 ? <p className="text-sm text-ink-muted">Todavía no hay publicaciones registradas.</p> : (
+          <div className="space-y-3">
+            {history.map((entry) => (
+              <article key={entry.id} className="flex flex-col gap-3 rounded-card border border-line p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div><p className="text-sm font-semibold text-ink">{entry.action}</p><p className="text-xs text-ink-muted">{new Intl.DateTimeFormat('es-PE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(entry.createdAt))} · Versión {entry.after?.version ?? '—'}</p></div>
+                <Button type="button" variant="outline" size="sm" disabled={saving || !entry.after} onClick={() => void rollback(entry)}>Restaurar</Button>
+              </article>
+            ))}
+          </div>
+        )}
       </Modal>
       <Modal
         isOpen={blocker.state === 'blocked'}

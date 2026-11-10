@@ -1,7 +1,7 @@
 import { CreationOptional, DataTypes, InferAttributes, InferCreationAttributes, Model } from 'sequelize';
 import { sequelize } from '../connection';
 
-export const UX_EVENT_TYPES = ['COVERAGE_SUCCESS', 'COVERAGE_FAIL', 'COVERAGE_ERROR', 'CHECKOUT_START', 'CHECKOUT_ERROR', 'PAYMENT_REDIRECT', 'APP_OPEN', 'MENU_VIEW', 'PRODUCT_VIEW', 'FAVORITE_ADD', 'FAVORITE_REMOVE', 'CART_ADD', 'CHECKOUT_STEP', 'ORDER_COMPLETED', 'REVIEW_SUBMITTED', 'RECOMMENDATION_OPEN'] as const;
+export const UX_EVENT_TYPES = ['COVERAGE_SUCCESS', 'COVERAGE_FAIL', 'COVERAGE_ERROR', 'CHECKOUT_START', 'CHECKOUT_ERROR', 'PAYMENT_REDIRECT', 'APP_OPEN', 'MENU_VIEW', 'PRODUCT_VIEW', 'FAVORITE_ADD', 'FAVORITE_REMOVE', 'CART_ADD', 'CHECKOUT_STEP', 'ORDER_COMPLETED', 'REVIEW_SUBMITTED', 'RECOMMENDATION_OPEN', 'AR_QR_OPEN', 'AR_CAMERA_REQUEST', 'AR_CAMERA_READY', 'AR_TARGET_FOUND', 'AR_TARGET_LOST', 'AR_CAMERA_ERROR', 'AR_FALLBACK_3D'] as const;
 export type UxEventType = (typeof UX_EVENT_TYPES)[number];
 
 export class UxEvent extends Model<InferAttributes<UxEvent>, InferCreationAttributes<UxEvent>> {

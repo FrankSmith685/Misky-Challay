@@ -72,13 +72,22 @@ async function ensureCategory(db, definition) {
 
 async function ensureProduct(db, definition, categoryId, branches, allergenIds) {
   const slug = slugify(definition.name);
+  const immediateKekes = new Set(['keke-de-platano-crumble', 'keke-de-zanahoria', 'keke-de-naranja-glaseada']);
+  const preparationMode = immediateKekes.has(slug) ? 'READY_STOCK' : definition.preparationMode;
+  const minLeadHours = preparationMode === 'READY_STOCK'
+    ? 0
+    : definition.category === 'tortas-24-horas' || definition.family === 'NOUGAT'
+      ? 24
+      : definition.family === 'CAKE'
+        ? 12
+        : 0;
   const existing = await query(db, 'SELECT id FROM products WHERE slug=? LIMIT 1', [slug]);
   let productId;
   if (existing.length) {
     productId = existing[0].id;
-    if (definition.imageUrl) await query(db, 'UPDATE products SET image_url=COALESCE(image_url, ?), image_alt=COALESCE(image_alt, ?), updated_at=NOW() WHERE id=?', [definition.imageUrl, definition.name, productId]);
+    await query(db, 'UPDATE products SET preparation_mode=?, image_url=COALESCE(image_url, ?), image_alt=COALESCE(image_alt, ?), updated_at=NOW() WHERE id=?', [preparationMode, definition.imageUrl, definition.name, productId]);
   } else {
-    const productResult = await query(db, `INSERT INTO products (category_id, type, family, preparation_mode, name, slug, description, image_url, image_alt, status, is_featured, sort_order, allergens_reviewed_at, created_at, updated_at) VALUES (?, 'FIXED', ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 0, 0, NOW(), NOW(), NOW())`, [categoryId, definition.family, definition.preparationMode, definition.name, slug, definition.description, definition.imageUrl || null, definition.imageUrl ? definition.name : null]);
+    const productResult = await query(db, `INSERT INTO products (category_id, type, family, preparation_mode, name, slug, description, image_url, image_alt, status, is_featured, sort_order, allergens_reviewed_at, created_at, updated_at) VALUES (?, 'FIXED', ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 0, 0, NOW(), NOW(), NOW())`, [categoryId, definition.family, preparationMode, definition.name, slug, definition.description, definition.imageUrl || null, definition.imageUrl ? definition.name : null]);
     productId = productResult.insertId;
   }
 
@@ -93,7 +102,8 @@ async function ensureProduct(db, definition, categoryId, branches, allergenIds) 
   }
 
   const profile = await query(db, 'SELECT product_id FROM cake_product_profiles WHERE product_id=? LIMIT 1', [productId]);
-  if (!profile.length) await query(db, `INSERT INTO cake_product_profiles (product_id, sale_mode, min_lead_hours, base_effort_json, station_offsets_json, custom_servings_json, is_active, created_at, updated_at) VALUES (?, 'STANDARD', ?, '{}', '{}', ?, 1, NOW(), NOW())`, [productId, definition.preparationMode === 'READY_STOCK' ? 2 : 24, defaultServings]);
+  if (profile.length) await query(db, 'UPDATE cake_product_profiles SET sale_mode=\'STANDARD\', min_lead_hours=?, is_active=1, updated_at=NOW() WHERE product_id=?', [minLeadHours, productId]);
+  else await query(db, `INSERT INTO cake_product_profiles (product_id, sale_mode, min_lead_hours, base_effort_json, station_offsets_json, custom_servings_json, is_active, created_at, updated_at) VALUES (?, 'STANDARD', ?, '{}', '{}', ?, 1, NOW(), NOW())`, [productId, minLeadHours, defaultServings]);
 
   for (const code of definition.allergens) {
     const allergen = allergenIds.get(code);

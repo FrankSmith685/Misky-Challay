@@ -58,12 +58,12 @@ const REFUND_STATUS_LABEL: Record<string, string> = {
   FAILED: 'Fallido',
 };
 const PAYMENT_PROVIDER_LABEL: Record<string, string> = {
-  cash: 'Efectivo', yape: 'Yape', plin: 'Plin', stripe: 'Tarjeta', mercadopago: 'Mercado Pago', wallet: 'Saldo del cliente',
+  cash: 'Efectivo', pos: 'POS / tarjeta', yape: 'Yape', plin: 'Plin', stripe: 'Tarjeta', mercadopago: 'Mercado Pago', wallet: 'Saldo del cliente',
 };
 const PAYMENT_METHOD_LABEL: Record<string, string> = {
   credit_card: 'Tarjeta de crédito', debit_card: 'Tarjeta de débito', cash: 'Efectivo', wallet: 'Saldo',
 };
-const manualRefund = (provider: string) => ['cash', 'yape', 'plin'].includes(provider.toLowerCase());
+const manualRefund = (provider: string) => ['cash', 'pos', 'yape', 'plin'].includes(provider.toLowerCase());
 const statusLabel = (value: string) => ORDER_STATUS[value]?.label ?? value.replaceAll('_', ' ');
 const sourceLabel: Record<string, string> = { STAFF: 'Personal', SYSTEM: 'Sistema', PAYMENT: 'Pago', WEBHOOK: 'Pago', CUSTOMER: 'Cliente', KITCHEN: 'Cocina', DELIVERY: 'Reparto' };
 const webUrlError = (value: string): string | undefined => {
@@ -592,6 +592,7 @@ export const OrderDetailPanel = ({ orderNumber, onClose, onChanged }: OrderDetai
             <dl className="grid gap-1.5 text-sm">
               <Amount label="Subtotal" value={detail.subtotal} />
               {detail.deliveryFee > 0 && <Amount label={detail.deliveryVehicleType === 'CAR' ? 'Entrega en auto' : 'Delivery'} value={detail.deliveryFee} />}
+              {detail.cakeDeliveryFee && detail.cakeDeliveryFee > 0 && <p className="text-xs text-ink-muted">Incluye {formatCurrency(detail.cakeDeliveryFee)} por manejo especial de torta.</p>}
               {detail.discountTotal > 0 && (
                 <Amount label="Descuentos" value={-detail.discountTotal} />
               )}
@@ -654,6 +655,15 @@ export const OrderDetailPanel = ({ orderNumber, onClose, onChanged }: OrderDetai
                       </p>
                       {payment.failureReason && (
                         <p className="mt-1 text-sm text-red-700">{payment.failureReason}</p>
+                      )}
+                      {payment.posSale && payment.status !== 'PENDING' && (
+                        <p className="mt-2 rounded-card bg-surface-muted p-2 text-xs text-ink-muted">
+                          {payment.method === 'cash' && payment.posSale.cashReceived > payment.amount
+                            ? `Recibido ${formatCurrency(payment.posSale.cashReceived)} · Vuelto ${formatCurrency(payment.posSale.change)}`
+                            : payment.posSale.reference
+                              ? `Referencia POS: ${payment.posSale.reference}`
+                              : 'Cobro registrado en punto de venta'}
+                        </p>
                       )}
                       {payment.mobileClaim && (
                         <div className="mt-3 rounded-card border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950">

@@ -4,8 +4,10 @@ import {
   InferAttributes,
   InferCreationAttributes,
   Model,
+  NonAttribute,
 } from 'sequelize';
 import { sequelize } from '../connection';
+import type { Order } from './order.model';
 
 export const REDEMPTION_STATUS = {
   RESERVED: 'RESERVED',
@@ -31,6 +33,7 @@ export class CouponRedemption extends Model<
   declare status: CreationOptional<RedemptionStatus>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
+  declare order?: NonAttribute<Order | null>;
 }
 
 CouponRedemption.init(
@@ -55,6 +58,7 @@ CouponRedemption.init(
     indexes: [
       { name: 'uq_coupon_redemptions_order', unique: true, fields: ['coupon_id', 'order_id'] },
       { name: 'idx_coupon_redemptions_user', fields: ['coupon_id', 'user_id'] },
+      { name: 'idx_coupon_redemptions_status', fields: ['coupon_id', 'status'] },
     ],
   },
 );

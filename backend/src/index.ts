@@ -33,7 +33,7 @@ const bootstrap = async (): Promise<void> => {
   try {
     // Inicializa y anuncia la pasarela o el simulador al arrancar.
     // Así una configuración antigua del .env se detecta antes de atender solicitudes.
-    getPaymentProvider();
+    if (!env.PREVIEW_MODE && (env.MERCADOPAGO_ACCESS_TOKEN || env.STRIPE_SECRET_KEY)) getPaymentProvider();
 
     await initDatabase(DATABASE_STARTUP);
     installActivityHooks();
@@ -45,7 +45,7 @@ const bootstrap = async (): Promise<void> => {
     });
 
     // Tareas programadas (vencimiento de planes y saldo).
-    startJobs();
+    if (!env.PREVIEW_MODE) startJobs();
 
     let shuttingDown = false;
     const shutdown = async (signal: string): Promise<void> => {

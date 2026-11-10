@@ -3,7 +3,7 @@ import { ok } from '@shared/http/ApiResponse';
 import { asyncHandler } from '@shared/utils/asyncHandler';
 import { ApiError } from '@shared/errors/ApiError';
 import { audit } from '@shared/utils/audit';
-import { assertBranchScope, branchScopeCheck } from '@shared/utils/scope';
+import { assertBranchScope, branchScopeCheck, resolveOptionalBranchId } from '@shared/utils/scope';
 import { Order } from '@database/models';
 import { ORDER_STATUS, PERMISSIONS, type OrderStatus, type PermissionCode } from '@config/constants';
 import { ordersService } from '@modules/orders/orders.service';
@@ -12,9 +12,9 @@ import { cancelTicketForOrder } from '@modules/operations/operations.service';
 import { abortForOrder } from '@modules/delivery/delivery.service';
 import { paymentsService } from '@modules/payments/payments.service';
 import { sequelize } from '@database/models';
-import { adminService, type OrderBoardFilters } from './admin.service';
+import { adminService, type CashSummaryFilters, type OrderBoardFilters } from './admin.service';
+import type { CashMovementType } from '@database/models/cashMovement.model';
 import { cakeCommissionService } from '@modules/cakes/cakeCommission.service';
-import { isPlatformOwner } from '@middlewares/rbac.middleware';
 import { orderContactService } from './orderContact.service';
 
 /**
@@ -42,8 +42,8 @@ export const adminController = {
       filters.branchId = assertBranchScope(req, Number(filters.branchId ?? scope[0]));
     }
 
-    const { orders, meta } = await adminService.orderBoard(filters);
-    return ok(res, orders, `${meta.total} pedidos`, meta);
+    const { orders, meta, summary } = await adminService.orderBoard(filters);
+    return ok(res, orders, `${meta.total} pedidos`, { ...meta, summary } as typeof meta);
   }),
 
   /** Ficha completa del pedido: lineas, personalizaciones, historial y pago. */
@@ -241,6 +241,53 @@ export const adminController = {
     );
   }),
 
+  cashSummary: asyncHandler(async (req: Request, res: Response) => {
+    const filters: CashSummaryFilters = {
+      branchId: resolveOptionalBranchId(req, req.query.branchId as string | undefined),
+      from: req.query.from as string | undefined,
+      to: req.query.to as string | undefined,
+    };
+    return ok(res, await adminService.cashSummary(filters));
+  }),
+
+  cashSessionDetail: asyncHandler(async (req: Request, res: Response) => {
+    return ok(res, await adminService.cashSessionDetail(Number(req.params.id), branchScopeCheck(req)));
+  }),
+
+  openCashSession: asyncHandler(async (req: Request, res: Response) => {
+    const session = await adminService.openCashSession({
+      branchId: Number(req.body.branchId),
+      businessDate: req.body.businessDate,
+      openingFloat: Number(req.body.openingFloat),
+      actorId: req.user!.sub,
+    }, branchScopeCheck(req));
+    await audit(req, { action: 'cash.session.open', entity: 'cash_sessions', entityId: session.id, after: { branchId: session.branchId, businessDate: session.businessDate, openingFloat: session.openingFloat } });
+    return ok(res, session, 'Caja abierta');
+  }),
+
+  recordCashMovement: asyncHandler(async (req: Request, res: Response) => {
+    const movement = await adminService.recordCashMovement({
+      sessionId: Number(req.params.id),
+      type: req.body.type as CashMovementType,
+      amount: Number(req.body.amount),
+      reason: req.body.reason,
+      actorId: req.user!.sub,
+    }, branchScopeCheck(req));
+    await audit(req, { action: 'cash.movement.create', entity: 'cash_movements', entityId: movement.id, after: { sessionId: movement.sessionId, type: movement.type, amount: movement.amount, reason: movement.reason } });
+    return ok(res, movement, 'Movimiento registrado');
+  }),
+
+  closeCashSession: asyncHandler(async (req: Request, res: Response) => {
+    const session = await adminService.closeCashSession({
+      id: Number(req.params.id),
+      declaredCash: Number(req.body.declaredCash),
+      notes: req.body.notes,
+      actorId: req.user!.sub,
+    }, branchScopeCheck(req));
+    await audit(req, { action: 'cash.session.close', entity: 'cash_sessions', entityId: session.id, after: { status: session.status, expectedCash: session.expectedCash, declaredCash: session.declaredCash, variance: session.variance, notes: session.closingNotes } });
+    return ok(res, session, 'Caja cerrada');
+  }),
+
   reports: asyncHandler(async (req: Request, res: Response) => {
     const scope = req.user?.branchIds ?? [];
     const requested = req.query.branchId ? Number(req.query.branchId) : undefined;
@@ -255,6 +302,7 @@ export const adminController = {
       // La ruta se abrio a `report.operations.read`; el bloque de dinero sigue
       // necesitando `report.sales.read`.
       includeSales: has(req, PERMISSIONS.REPORT_SALES_READ),
+      includePlatform: Boolean(req.user?.isSuperAdmin),
     });
     return ok(res, reports);
   }),
@@ -270,6 +318,7 @@ export const adminController = {
       from: req.query.from as string | undefined,
       to: req.query.to as string | undefined,
       includeSales: has(req, PERMISSIONS.REPORT_SALES_READ),
+      includePlatform: Boolean(req.user?.isSuperAdmin),
     });
 
     const escapeCsv = (value: unknown): string => {
@@ -291,6 +340,13 @@ export const adminController = {
         ['Ventas', 'Descuentos', report.sales.discounts],
         ['Ventas', 'Delivery (%)', report.sales.deliveryShare],
       ] : []),
+      ['Caja', 'Pagos manuales pendientes', report.pendingPayments.count],
+      ['Caja', 'Importe manual pendiente', report.pendingPayments.amount],
+      ...('platform' in report && report.platform ? [
+        ['Plataforma', `Comision ${Math.round(report.platform.rate * 100)}% acumulada`, report.platform.accrued],
+        ['Plataforma', 'Comision liquidada', report.platform.settled],
+        ['Plataforma', 'Comision pendiente', report.platform.outstanding],
+      ] : []),
       ...report.topProducts.map((item) => ['Producto', item.name, `${item.units} unidades${'sales' in report && report.sales ? ` · S/ ${item.revenue.toFixed(2)}` : ''}`]),
       ...report.channelBreakdown.map((item) => ['Canal', item.channel, `${item.orders} pedidos${'sales' in report && report.sales ? ` · S/ ${item.revenue.toFixed(2)}` : ''}`]),
       ...('paymentBreakdown' in report && report.paymentBreakdown ? report.paymentBreakdown.map((item) => ['Pago', item.method, `${item.transactions} transacciones · S/ ${item.amount.toFixed(2)}`]) : []),
@@ -307,7 +363,7 @@ export const adminController = {
       ? assertBranchScope(req, requested ?? req.user!.branchIds![0])
       : requested;
     const report = await cakeCommissionService.report({ branchId, from: req.query.from as string | undefined, to: req.query.to as string | undefined, status: req.query.status as string | undefined });
-    return ok(res, { ...report, canManage: await isPlatformOwner(req.user!.sub) });
+    return ok(res, { ...report, canManage: Boolean(req.user?.isSuperAdmin) });
   }),
 
   adjustCakeCommission: asyncHandler(async (req: Request, res: Response) => {
@@ -325,5 +381,25 @@ export const adminController = {
   auditLogs: asyncHandler(async (req: Request, res: Response) => {
     const { logs, meta } = await adminService.auditLogs(req.query);
     return ok(res, logs, `${meta.total} registros`, meta);
+  }),
+
+  auditSummary: asyncHandler(async (_req: Request, res: Response) => ok(res, await adminService.auditSummary())),
+
+  auditIntegrity: asyncHandler(async (req: Request, res: Response) => {
+    const result = await adminService.verifyAuditIntegrity();
+    await audit(req, { action: 'audit.integrity.verify', entity: 'audit_logs', after: { valid: result.valid, checked: result.checked, violations: result.violations.length } });
+    return ok(res, result);
+  }),
+
+  auditExport: asyncHandler(async (req: Request, res: Response) => {
+    const csv = await adminService.exportAuditCsv(req.query);
+    await audit(req, { action: 'audit.export', entity: 'audit_logs', after: {
+      from: req.query.from, to: req.query.to, entity: req.query.entity, action: req.query.action,
+      severity: req.query.severity, outcome: req.query.outcome, reason: req.query.reason,
+    } });
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="bitacora-${stamp}.csv"`);
+    return res.send(csv);
   }),
 };

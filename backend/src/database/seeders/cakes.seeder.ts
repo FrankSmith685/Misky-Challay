@@ -16,7 +16,7 @@ const CAKES: Array<{
   {
     slug: 'torta-clasica-vainilla', name: 'Torta clásica de vainilla',
     description: 'Bizcocho de vainilla y relleno suave. Precio y porciones de demostración; confirma la receta antes de publicar.',
-    mode: 'STANDARD', type: 'FIXED', lead: 48, image: '/images/cakes/vanilla.png',
+    mode: 'STANDARD', type: 'FIXED', lead: 48, image: '/images/cakes/vanilla.svg',
     variants: [
       { sku: 'DF-CLASICA-12', name: '12 porciones', price: 120, servings: 12, effort: { BAKING: 45, COOLING: 30, FILLING: 35, DECORATING: 20, QA: 15, DISPATCH: 10 } },
       { sku: 'DF-CLASICA-24', name: '24 porciones', price: 180, servings: 24, effort: { BAKING: 70, COOLING: 45, FILLING: 55, DECORATING: 35, QA: 20, DISPATCH: 15 } },

@@ -22,6 +22,8 @@ export const EVENT_LABELS: Record<string, string> = {
   ORDER_DELIVERED: 'Entregado · agradecimiento',
   ORDER_CANCELLED: 'Cancelado',
   DESIGN_QUOTED: 'Diseño cotizado',
+  CONVERSATION: 'Conversación de WhatsApp',
+  TEST: 'Prueba técnica',
 };
 export const ORDER_TEMPLATE_SUGGESTIONS: Record<string, string> = {
   ORDER_RECEIVED: 'Hola, somos Misky Challay. Recibimos tu pedido {{1}}. El pago está pendiente de confirmación. Escríbenos para coordinar el diseño, las referencias y la entrega o el recojo. Detalle: {{2}}',
@@ -73,6 +75,9 @@ export interface MessagingSettings {
   verifyToken: string;
   connectionReady: boolean;
   webhookReady: boolean;
+  templatesReady: boolean;
+  missingWhatsappTemplates: string[];
+  readyToSend: boolean;
   smtpConfigured?: boolean;
   whatsappUpdatesEnabled?: boolean;
   emailNotificationsEnabled?: boolean;
@@ -89,6 +94,19 @@ export interface Conversation {
   lastInboundAt: string | null;
   lastMessage: string;
   unread: number;
+  customer?: {
+    id: number;
+    name: string;
+    email: string | null;
+  } | null;
+  orders?: Array<{
+    orderNumber: string;
+    status: string;
+    grandTotal: number;
+    currency: string;
+    branchName: string | null;
+    placedAt: string;
+  }>;
 }
 export interface ChatMessage {
   id: number;
@@ -100,6 +118,8 @@ export interface ChatMessage {
 }
 export interface ConversationDetail {
   conversation: Conversation;
+  customer?: Conversation['customer'];
+  orders?: Conversation['orders'];
   messages: ChatMessage[];
   hasMore: boolean;
 }
@@ -115,12 +135,22 @@ export interface Delivery {
   error: string | null;
   createdAt: string;
   providerMessageId: string | null;
+  orderId: number | null;
+  orderNumber: string | null;
+  userId: number | null;
 }
 export interface Paged<T> {
   items: T[];
   total: number;
   page: number;
   pageSize: number;
+}
+export interface DeliverySummary {
+  total: number;
+  states: Record<string, number>;
+}
+export interface DeliveryPage extends Paged<Delivery> {
+  summary: DeliverySummary;
 }
 const base = '/communications';
 /** El sondeo continúa si el proxy corta la conexión de eventos. */
@@ -182,10 +212,14 @@ export const communicationsApi = {
       await api.put<ApiSuccess<MessagingSettings>>(`${base}/settings`, { config, ...secrets })
     ).data.data;
   },
-  async conversations(search = '', page = 1) {
+  async conversations(
+    search = '',
+    page = 1,
+    filters: { mode?: string; unread?: string; assigned?: string; isTest?: string } = {},
+  ) {
     return (
       await api.get<ApiSuccess<Paged<Conversation>>>(`${base}/conversations`, {
-        params: { search, page },
+        params: { search, page, ...filters },
       })
     ).data.data;
   },
@@ -202,14 +236,16 @@ export const communicationsApi = {
   async reply(id: number, text: string, key: string) {
     await api.post(`${base}/conversations/${id}/reply`, { text, key });
   },
-  async deliveries(page = 1, state = '', channel = '', event = '') {
+  async deliveries(page = 1, state = '', channel = '', event = '', from?: string, to?: string) {
     return (
-      await api.get<ApiSuccess<Paged<Delivery>>>(`${base}/deliveries`, {
+      await api.get<ApiSuccess<DeliveryPage>>(`${base}/deliveries`, {
         params: {
           page,
           state: state || undefined,
           channel: channel || undefined,
           event: event || undefined,
+          from: from || undefined,
+          to: to || undefined,
         },
       })
     ).data.data;

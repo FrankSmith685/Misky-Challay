@@ -29,7 +29,7 @@ import { usePolling } from '../hooks/usePolling';
 import { useActiveBranch } from '../hooks/useActiveBranch';
 import { BranchSelector } from '../components/BranchSelector';
 import { MediaPicker } from '../components/MediaPicker';
-import type { StockMovementRow, StockRow } from '../types';
+import type { InventoryCountRow, InventoryTransferRow, StockMovementRow, StockRow } from '../types';
 
 type MovementType = 'PURCHASE' | 'WASTE' | 'ADJUSTMENT';
 
@@ -44,7 +44,7 @@ type StockSort = 'PRIORITY' | 'NAME' | 'AVAILABLE' | 'VALUE';
 const priority: Record<StockRow['stockStatus'], number> = { OUT: 0, CRITICAL: 1, LOW: 2, HEALTHY: 3 };
 const movementLabels: Record<StockMovementRow['type'], string> = {
   PURCHASE: 'Entrada', RESERVE: 'Reserva', RELEASE: 'Liberación',
-  CONSUME: 'Consumo', WASTE: 'Merma', ADJUSTMENT: 'Ajuste',
+  CONSUME: 'Consumo', WASTE: 'Merma', ADJUSTMENT: 'Ajuste', TRANSFER_OUT: 'Transferencia salida', TRANSFER_IN: 'Transferencia entrada',
 };
 
 const EMPTY_ITEM = {
@@ -203,12 +203,15 @@ const InventoryPage = () => {
   const [sort, setSort] = useState<StockSort>('PRIORITY');
   const [inventoryPage, setInventoryPage] = useState(1);
   const [inventoryPageSize, setInventoryPageSize] = useState<number>(10);
-  const [tab, setTab] = useState<'stock' | 'history'>('stock');
+  const [tab, setTab] = useState<'stock' | 'history' | 'transfers' | 'counts'>('stock');
   const [movements, setMovements] = useState<StockMovementRow[]>([]);
   const [movementError, setMovementError] = useState('');
   const [movementLoading, setMovementLoading] = useState(false);
   const movementRequestId = useRef(0);
   const [historyItemId, setHistoryItemId] = useState<number | null>(null);
+  const [historyType, setHistoryType] = useState('');
+  const [historyFrom, setHistoryFrom] = useState('');
+  const [historyTo, setHistoryTo] = useState('');
   const [editing, setEditing] = useState<StockRow | null>(null);
   const [actionRow, setActionRow] = useState<StockRow | null>(null);
   const [actionAnchor, setActionAnchor] = useState<HTMLElement | null>(null);
@@ -224,10 +227,15 @@ const InventoryPage = () => {
   const [masterError, setMasterError] = useState<string | null>(null);
   const [enablingId, setEnablingId] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [transfers, setTransfers] = useState<InventoryTransferRow[]>([]);
+  const [counts, setCounts] = useState<InventoryCountRow[]>([]);
+  const [governanceLoading, setGovernanceLoading] = useState(false);
+  const [transferForm, setTransferForm] = useState({ sourceBranchId: '', destinationBranchId: '', inventoryItemId: '', quantity: '', notes: '' });
+  const [countName, setCountName] = useState('Conteo físico');
+  const { can, isSuperAdmin } = usePermissions();
   const {
-    branchId, branches, setBranchId, isLoadingBranches, branchesError, reloadBranches,
-  } = useActiveBranch();
-  const { can } = usePermissions();
+    branchId, branches, setBranchId, setGlobalScope, isLoadingBranches, branchesError, reloadBranches,
+  } = useActiveBranch({ allowAll: isSuperAdmin });
   const confirm = useConfirm();
 
   const canManage = can(PERM.INVENTORY_MANAGE);
@@ -242,27 +250,66 @@ const InventoryPage = () => {
 
   const fetcher = useCallback(
     (signal: AbortSignal): Promise<StockRow[]> =>
-      branchId ? adminApi.stock(branchId, signal) : Promise.resolve([]),
+      adminApi.stock(branchId ?? undefined, signal),
     [branchId],
   );
   const { data, error, isLoading, lastSuccessAt, isStale, refresh } = usePolling<StockRow[]>(fetcher, 15000);
 
   const loadMovements = useCallback(async () => {
-    if (!branchId) return;
     const requestId = ++movementRequestId.current;
     setMovementLoading(true); setMovementError('');
     try {
-      const rows = await adminApi.stockMovements(branchId, historyItemId ?? undefined);
+      const rows = await adminApi.stockMovements(branchId ?? undefined, historyItemId ?? undefined, { limit: 1000, type: historyType || undefined, from: historyFrom || undefined, to: historyTo || undefined });
       if (requestId === movementRequestId.current) setMovements(rows);
     } catch (cause) {
       if (requestId === movementRequestId.current) setMovementError(getApiErrorMessage(cause));
     } finally {
       if (requestId === movementRequestId.current) setMovementLoading(false);
     }
-  }, [branchId, historyItemId]);
+  }, [branchId, historyItemId, historyType, historyFrom, historyTo]);
 
   useEffect(() => { if (tab === 'history') void loadMovements(); }, [tab, loadMovements]);
   useEffect(() => { setHistoryItemId(null); }, [branchId]);
+
+  const loadGovernance = useCallback(async () => {
+    if (tab !== 'transfers' && tab !== 'counts') return;
+    setGovernanceLoading(true);
+    try {
+      if (tab === 'transfers') setTransfers(await adminApi.inventoryTransfers(branchId ?? undefined));
+      else setCounts(await adminApi.inventoryCounts(branchId ?? undefined));
+    } catch (cause) { toast.error(getApiErrorMessage(cause)); }
+    finally { setGovernanceLoading(false); }
+  }, [tab, branchId]);
+  useEffect(() => { void loadGovernance(); }, [loadGovernance]);
+
+  const submitTransfer = async () => {
+    const source = Number(transferForm.sourceBranchId); const destination = Number(transferForm.destinationBranchId);
+    const itemId = Number(transferForm.inventoryItemId); const quantity = Number(transferForm.quantity);
+    if (!source || !destination || !itemId || !Number.isFinite(quantity) || quantity <= 0 || source === destination) { toast.error('Completa origen, destino, insumo y una cantidad válida'); return; }
+    setGovernanceLoading(true);
+    try {
+      await adminApi.createInventoryTransfer({ sourceBranchId: source, destinationBranchId: destination, notes: transferForm.notes.trim() || null, items: [{ inventoryItemId: itemId, quantity }] });
+      toast.success('Transferencia solicitada'); setTransferForm((current) => ({ ...current, quantity: '', notes: '' })); await loadGovernance();
+    } catch (cause) { toast.error(getApiErrorMessage(cause)); }
+    finally { setGovernanceLoading(false); }
+  };
+
+  const exportMovements = () => {
+    const headers = ['Fecha', 'Sucursal', 'Insumo', 'Tipo', 'Cantidad', 'Registrado después', 'Reservado después', 'Costo total', 'Responsable', 'Motivo'];
+    const values = movements.map((row) => [new Date(row.createdAt).toLocaleString('es-PE'), row.branchName ?? branches.find((branch) => branch.id === row.branchId)?.name ?? '', row.itemName, movementLabels[row.type], row.quantity, row.onHandAfter, row.reservedAfter, row.totalCost ?? '', row.actorName ?? '', row.reason ?? '']);
+    const csv = [headers, ...values].map((line) => line.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const url = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' }));
+    const anchor = document.createElement('a'); anchor.href = url; anchor.download = `inventario-movimientos-${new Date().toISOString().slice(0, 10)}.csv`; anchor.click(); URL.revokeObjectURL(url);
+  };
+
+  const startCount = async () => {
+    const targetBranch = branchId ?? Number(transferForm.sourceBranchId);
+    if (!targetBranch || countName.trim().length < 3) { toast.error('Selecciona una sucursal y escribe un nombre para el conteo'); return; }
+    setGovernanceLoading(true);
+    try { await adminApi.startInventoryCount({ branchId: targetBranch, name: countName.trim() }); toast.success('Conteo físico iniciado'); await loadGovernance(); }
+    catch (cause) { toast.error(getApiErrorMessage(cause)); }
+    finally { setGovernanceLoading(false); }
+  };
 
   const stock = useMemo(() => data ?? [], [data]);
   const summary = useMemo(() => ({
@@ -454,6 +501,7 @@ const InventoryPage = () => {
         expectedOnHand: selected.onHand,
         expectedReserved: selected.reserved,
         reason: reason.trim(),
+        idempotencyKey: crypto.randomUUID(),
       });
       toast.success('Inventario actualizado');
       closeModal();
@@ -546,13 +594,14 @@ const InventoryPage = () => {
         title="Inventario de insumos"
         description="Controla existencias, detecta faltantes y revisa cada movimiento de tu cocina."
         icon={Package}
-        action={<BranchSelector value={branchId} branches={branches} onChange={setBranchId} hasError={Boolean(branchesError)} />}
+        action={<BranchSelector value={branchId} branches={branches} onChange={setBranchId} allowAll={isSuperAdmin} onSelectAll={setGlobalScope} hasError={Boolean(branchesError)} />}
       />
 
       <section className="mt-5 rounded-card border border-brand-100 bg-brand-50/60 p-4 text-sm text-ink" aria-labelledby="inventory-guide-title">
         <h2 id="inventory-guide-title" className="font-black text-brand-900">Cómo funciona el inventario</h2>
         <p className="mt-1 text-xs leading-5 text-ink-muted">
           Cada insumo tiene una ficha compartida por todo el negocio, pero cada cocina controla sus propias cantidades.
+          {branchId === null && ' Este es un consolidado global; los ajustes de una fila requieren una sucursal, mientras las transferencias y conteos piden su sucursal en el formulario.'}
           Disponible = registrado − reservado: lo reservado sigue físicamente en cocina, aunque ya está comprometido con pedidos.
         </p>
         <ol className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -619,9 +668,11 @@ const InventoryPage = () => {
         <div className="flex gap-1" role="tablist" aria-label="Vistas del inventario">
           <button type="button" role="tab" aria-selected={tab === 'stock'} onClick={() => setTab('stock')} className={cn('rounded-lg px-4 py-2 text-sm font-bold', tab === 'stock' ? 'bg-brand-700 text-white' : 'text-ink-muted hover:bg-brand-50')}>Existencias</button>
           <button type="button" role="tab" aria-selected={tab === 'history'} onClick={() => setTab('history')} className={cn('flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold', tab === 'history' ? 'bg-brand-700 text-white' : 'text-ink-muted hover:bg-brand-50')}><History className="size-4" /> Movimientos</button>
+          <button type="button" role="tab" aria-selected={tab === 'transfers'} onClick={() => setTab('transfers')} className={cn('rounded-lg px-4 py-2 text-sm font-bold', tab === 'transfers' ? 'bg-brand-700 text-white' : 'text-ink-muted hover:bg-brand-50')}>Transferencias</button>
+          <button type="button" role="tab" aria-selected={tab === 'counts'} onClick={() => setTab('counts')} className={cn('rounded-lg px-4 py-2 text-sm font-bold', tab === 'counts' ? 'bg-brand-700 text-white' : 'text-ink-muted hover:bg-brand-50')}>Conteos físicos</button>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="outline" title="Consulta nuevamente los datos. No cambia existencias." leftIcon={<RefreshCw className="size-4" />} onClick={() => { refresh(); if (tab === 'history') void loadMovements(); }}>Actualizar</Button>
+          <Button size="sm" variant="outline" title="Consulta nuevamente los datos. No cambia existencias." leftIcon={<RefreshCw className="size-4" />} onClick={() => { refresh(); if (tab === 'history') void loadMovements(); if (tab === 'transfers' || tab === 'counts') void loadGovernance(); }}>Actualizar</Button>
           {canManage && <Button size="sm" variant="outline" title="Habilita insumos existentes en esta cocina y gestiona los archivados." disabled={!branchId} onClick={() => { setShowArchived(false); setEnableOpen(true); void loadMasterItems(); }}>Maestro de insumos</Button>}
           {canManage && <Button size="sm" title="Crea una ficha nueva para controlar cantidades y costos." disabled={!branchId} leftIcon={<Plus className="size-4" />} onClick={() => setCreateOpen(true)}>Nuevo insumo</Button>}
         </div>
@@ -661,7 +712,7 @@ const InventoryPage = () => {
             <div className="min-w-0 flex-1">
               <p className="font-bold text-amber-950">{summary.low.length} insumo{summary.low.length === 1 ? '' : 's'} requieren atención</p>
               <p className="mt-1 text-sm leading-relaxed text-amber-900">La sugerencia usa el disponible, el mínimo y el consumo reciente. El botón abre una orden precargada; revisa cantidad, costo y proveedor. El stock aumenta cuando recibas la compra y registres el lote.</p>
-              {canProcure && (
+              {canProcure && branchId && (
                 <div className="mt-3 flex flex-wrap gap-2">
                   {summary.low.slice(0, 4).map((row) => <Link key={row.inventoryItemId} to={purchaseLink(row)} className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-bold text-amber-950 hover:border-amber-600">Preparar compra de {row.name} · {formatQuantity(row.suggestedPurchase)} {row.unit}</Link>)}
                 </div>
@@ -687,11 +738,42 @@ const InventoryPage = () => {
           onRetry={refresh}
           className="mt-5"
         />
+      ) : tab === 'transfers' ? (
+        <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+          <Card className="border-line bg-white p-5 shadow-e1">
+            <h2 className="text-lg font-black text-ink">Transferir stock entre sucursales</h2>
+            <p className="mt-1 text-sm leading-6 text-ink-muted">La salida se descuenta al despachar y la entrada se registra al recibir. Cada etapa queda en el libro de movimientos.</p>
+            <div className="mt-4 grid gap-3">
+              <Select label="Sucursal de origen" value={transferForm.sourceBranchId} onChange={(event) => setTransferForm((current) => ({ ...current, sourceBranchId: event.target.value }))}>
+                <SelectOption value="" disabled>Selecciona origen</SelectOption>{branches.map((branch) => <SelectOption key={branch.id} value={branch.id}>{branch.name}</SelectOption>)}
+              </Select>
+              <Select label="Sucursal de destino" value={transferForm.destinationBranchId} onChange={(event) => setTransferForm((current) => ({ ...current, destinationBranchId: event.target.value }))}>
+                <SelectOption value="" disabled>Selecciona destino</SelectOption>{branches.map((branch) => <SelectOption key={branch.id} value={branch.id}>{branch.name}</SelectOption>)}
+              </Select>
+              <Select label="Insumo" value={transferForm.inventoryItemId} onChange={(event) => setTransferForm((current) => ({ ...current, inventoryItemId: event.target.value }))}>
+                <SelectOption value="" disabled>Selecciona insumo</SelectOption>{stock.map((row) => <SelectOption key={row.inventoryItemId} value={row.inventoryItemId}>{row.name} · {row.unit}</SelectOption>)}
+              </Select>
+              <Input label="Cantidad" type="number" min="0.01" step="0.01" value={transferForm.quantity} onChange={(event) => setTransferForm((current) => ({ ...current, quantity: event.target.value }))} />
+              <Input label="Nota" value={transferForm.notes} onChange={(event) => setTransferForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Motivo o referencia" />
+              <Button disabled={!canManage || governanceLoading} isLoading={governanceLoading} onClick={() => void submitTransfer()}>Solicitar transferencia</Button>
+            </div>
+          </Card>
+          <Card className="overflow-hidden border-line bg-white shadow-e1">
+            <div className="flex items-center justify-between border-b border-line p-5"><div><h2 className="text-lg font-black text-ink">Transferencias recientes</h2><p className="mt-1 text-sm text-ink-muted">El stock en tránsito no aparece como disponible en ninguna sucursal.</p></div><Button size="sm" variant="outline" onClick={() => void loadGovernance()}>Actualizar</Button></div>
+            {governanceLoading ? <p className="p-8 text-center text-sm text-ink-muted">Cargando transferencias…</p> : transfers.length === 0 ? <p className="p-8 text-center text-sm text-ink-muted">Todavía no hay transferencias.</p> : <div className="divide-y divide-line">{transfers.map((transfer) => <div key={transfer.id} className="p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-bold text-ink">{transfer.transferNumber}</p><p className="mt-1 text-sm text-ink-muted">{transfer.sourceBranch?.name ?? 'Origen'} → {transfer.destinationBranch?.name ?? 'Destino'}</p></div><Badge variant={transfer.status === 'RECEIVED' ? 'success' : transfer.status === 'CANCELLED' ? 'danger' : 'warning'}>{transfer.status === 'IN_TRANSIT' ? 'En tránsito' : transfer.status === 'REQUESTED' ? 'Solicitada' : transfer.status === 'APPROVED' ? 'Aprobada' : transfer.status === 'RECEIVED' ? 'Recibida' : 'Cancelada'}</Badge></div><p className="mt-2 text-xs text-ink-muted">{transfer.items.map((line) => `${line.item?.name ?? `#${line.inventoryItemId}`} · ${formatQuantity(line.quantityRequested)} ${line.item?.unit ?? ''}`).join(' · ')}</p><div className="mt-3 flex flex-wrap gap-2">{canManage && transfer.status === 'REQUESTED' && <Button size="sm" variant="outline" onClick={() => void adminApi.transitionInventoryTransfer(transfer.id, 'approve').then(loadGovernance).catch((cause) => toast.error(getApiErrorMessage(cause)))}>Aprobar</Button>}{canManage && ['REQUESTED', 'APPROVED'].includes(transfer.status) && <Button size="sm" variant="outline" onClick={() => void adminApi.transitionInventoryTransfer(transfer.id, 'ship').then(loadGovernance).catch((cause) => toast.error(getApiErrorMessage(cause)))}>Despachar</Button>}{canManage && transfer.status === 'IN_TRANSIT' && <Button size="sm" onClick={() => void adminApi.transitionInventoryTransfer(transfer.id, 'receive').then(loadGovernance).catch((cause) => toast.error(getApiErrorMessage(cause)))}>Recibir</Button>}</div></div>)}</div>}
+          </Card>
+        </div>
+      ) : tab === 'counts' ? (
+        <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
+          <Card className="border-line bg-white p-5 shadow-e1"><h2 className="text-lg font-black text-ink">Nuevo conteo físico</h2><p className="mt-1 text-sm leading-6 text-ink-muted">Se toma una fotografía del saldo actual. Si cambia mientras cuentas, el sistema exigirá iniciar otro conteo.</p><div className="mt-4 grid gap-3"><Input label="Nombre del conteo" value={countName} onChange={(event) => setCountName(event.target.value)} />{branchId === null && <Select label="Sucursal" value={transferForm.sourceBranchId} onChange={(event) => setTransferForm((current) => ({ ...current, sourceBranchId: event.target.value }))}><SelectOption value="" disabled>Selecciona sucursal</SelectOption>{branches.map((branch) => <SelectOption key={branch.id} value={branch.id}>{branch.name}</SelectOption>)}</Select>}<Button disabled={!canManage || governanceLoading} onClick={() => void startCount()}>Iniciar conteo</Button></div></Card>
+          <div className="grid gap-4">{governanceLoading ? <Card className="p-8 text-center text-sm text-ink-muted">Cargando conteos…</Card> : counts.length === 0 ? <Card className="p-8 text-center text-sm text-ink-muted">Todavía no hay sesiones de conteo.</Card> : counts.map((count) => <Card key={count.id} className="border-line bg-white p-5 shadow-e1"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-black text-ink">{count.name}</h3><p className="mt-1 text-sm text-ink-muted">{count.branch?.name ?? 'Sucursal'} · {new Date(count.startedAt).toLocaleString('es-PE')}</p></div><Badge variant={count.status === 'APPROVED' ? 'success' : count.status === 'CANCELLED' ? 'danger' : 'warning'}>{count.status === 'OPEN' ? 'Abierto' : count.status === 'SUBMITTED' ? 'Pendiente de aprobación' : count.status === 'APPROVED' ? 'Aprobado' : 'Cancelado'}</Badge></div>{count.status === 'OPEN' && <div className="mt-4 grid gap-2">{count.items.map((item) => <div key={item.id} className="grid grid-cols-[minmax(0,1fr)_110px] items-center gap-3 rounded-lg border border-line p-3"><div><p className="text-sm font-bold text-ink">{item.item?.name ?? `Insumo #${item.inventoryItemId}`}</p><p className="text-xs text-ink-muted">Sistema: {formatQuantity(item.expectedOnHand)} {item.item?.unit ?? ''}</p></div><input aria-label={`Conteo de ${item.item?.name ?? item.inventoryItemId}`} type="number" min="0" step="0.01" defaultValue={item.countedOnHand ?? ''} className="rounded-lg border border-line px-3 py-2 text-right text-sm" onBlur={(event) => { const value = Number(event.target.value); if (Number.isFinite(value) && value >= 0) void adminApi.updateInventoryCountItem(count.id, item.id, value).then((updated) => setCounts((rows) => rows.map((row) => row.id === updated.id ? updated : row))).catch((cause) => toast.error(getApiErrorMessage(cause))); }} /></div>)}</div>}<div className="mt-4 flex flex-wrap gap-2">{canManage && count.status === 'OPEN' && <Button size="sm" onClick={() => void adminApi.transitionInventoryCount(count.id, 'submit').then((updated) => setCounts((rows) => rows.map((row) => row.id === updated.id ? updated : row))).catch((cause) => toast.error(getApiErrorMessage(cause)))}>Enviar a aprobación</Button>}{canManage && count.status === 'SUBMITTED' && <Button size="sm" onClick={() => void adminApi.transitionInventoryCount(count.id, 'approve').then((updated) => setCounts((rows) => rows.map((row) => row.id === updated.id ? updated : row))).catch((cause) => toast.error(getApiErrorMessage(cause)))}>Aprobar y ajustar</Button>}</div></Card>)}</div>
+        </div>
       ) : tab === 'history' ? (
         <Card className="mt-5 overflow-hidden border-line bg-white shadow-e1">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line p-5">
-            <div><h2 className="text-lg font-black text-ink">Libro de movimientos</h2><p className="mt-1 text-sm text-ink-muted">Últimos 50 movimientos de esta cocina. Reservar o liberar cambia el disponible sin sacar stock; consumir, mermar o recibir cambia la cantidad registrada. Cada registro conserva el saldo posterior, motivo y responsable cuando corresponde.</p></div>
-            <label className="text-xs font-bold text-ink-muted">Insumo<select className="ml-2 rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink" value={historyItemId ?? ''} onChange={(event) => setHistoryItemId(event.target.value ? Number(event.target.value) : null)}><option value="">Todos</option>{stock.map((row) => <option key={row.inventoryItemId} value={row.inventoryItemId}>{row.name}</option>)}</select></label>
+            <div><h2 className="text-lg font-black text-ink">Libro de movimientos</h2><p className="mt-1 text-sm text-ink-muted">{branchId === null ? 'Movimientos consolidados de todas las sucursales.' : 'Últimos movimientos de esta cocina.'} Reservar o liberar cambia el disponible sin sacar stock; consumir, mermar o recibir cambia la cantidad registrada. Cada registro conserva el saldo posterior, motivo y responsable cuando corresponde.</p></div>
+            <Button size="sm" variant="outline" disabled={!movements.length} onClick={exportMovements}>Exportar CSV</Button>
+            <div className="flex flex-wrap items-center gap-2"><label className="text-xs font-bold text-ink-muted">Insumo<select className="ml-2 rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink" value={historyItemId ?? ''} onChange={(event) => setHistoryItemId(event.target.value ? Number(event.target.value) : null)}><option value="">Todos</option>{stock.map((row) => <option key={row.inventoryItemId} value={row.inventoryItemId}>{row.name}</option>)}</select></label><label className="text-xs font-bold text-ink-muted">Tipo<select className="ml-2 rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink" value={historyType} onChange={(event) => setHistoryType(event.target.value)}><option value="">Todos</option><option value="PURCHASE">Entradas</option><option value="WASTE">Mermas</option><option value="ADJUSTMENT">Ajustes</option><option value="RESERVE">Reservas</option><option value="RELEASE">Liberaciones</option><option value="CONSUME">Consumos</option><option value="TRANSFER_OUT">Transferencias salida</option><option value="TRANSFER_IN">Transferencias entrada</option></select></label><label className="text-xs font-bold text-ink-muted">Desde<input type="date" className="ml-2 rounded-lg border border-line px-2 py-2 text-sm text-ink" value={historyFrom} onChange={(event) => setHistoryFrom(event.target.value)} /></label><label className="text-xs font-bold text-ink-muted">Hasta<input type="date" className="ml-2 rounded-lg border border-line px-2 py-2 text-sm text-ink" value={historyTo} onChange={(event) => setHistoryTo(event.target.value)} /></label></div>
           </div>
           {movementError ? <LoadError className="m-5" title="No pudimos cargar los movimientos" message={movementError} onRetry={() => void loadMovements()} /> : movementLoading ? <p className="p-8 text-center text-sm text-ink-muted">Cargando movimientos…</p> : movements.length === 0 ? <div className="px-6 py-14 text-center"><History className="mx-auto size-9 text-brand-300" /><p className="mt-3 font-bold text-ink">Todavía no hay movimientos</p><p className="mt-1 text-sm text-ink-muted">Al registrar stock inicial, compras, reservas o consumo aparecerán aquí.</p></div> : <div className="overflow-x-auto"><table className="w-full min-w-[740px] text-left text-sm"><thead className="bg-surface-muted text-xs font-bold uppercase tracking-wide text-ink-muted"><tr><th className="px-5 py-3">Fecha y operación</th><th className="px-5 py-3">Insumo</th><th className="px-5 py-3 text-right">Movimiento</th><th className="px-5 py-3 text-right">Saldo posterior</th><th className="px-5 py-3">Motivo / referencia</th></tr></thead><tbody>{movements.map((row) => <tr key={row.id} className="border-t border-line"><td className="px-5 py-4"><p className="font-bold text-ink">{movementLabels[row.type]}</p><p className="mt-1 text-xs text-ink-muted">{new Date(row.createdAt).toLocaleString('es-PE')}</p><p className="mt-1 text-xs text-ink-muted">{row.actorName ? `Responsable: ${row.actorName}` : row.type === 'RESERVE' || row.type === 'RELEASE' ? 'Automático por pedido' : 'Responsable no registrado'}</p></td><td className="px-5 py-4 font-medium text-ink">{row.itemName}</td><td className="px-5 py-4 text-right font-bold tabular-nums">{row.type === 'RESERVE' ? 'Reserva +' : row.type === 'RELEASE' ? 'Liberación −' : row.type === 'PURCHASE' || row.type === 'ADJUSTMENT' && row.quantity > 0 ? '+' : '−'}{formatQuantity(Math.abs(row.quantity))} {row.unit}</td><td className="px-5 py-4 text-right tabular-nums"><strong>{formatQuantity(row.onHandAfter)} {row.unit}</strong><span className="block text-xs text-ink-muted">{formatQuantity(row.reservedAfter)} reservados</span></td><td className="px-5 py-4 text-ink-muted">{row.reason || (row.purchaseOrderId ? `Compra #${row.purchaseOrderId}` : row.orderId ? `Pedido #${row.orderId}` : 'Movimiento del sistema')}{row.lotId && <span className="block text-xs">Lote #{row.lotId}</span>}</td></tr>)}</tbody></table></div>}
         </Card>
@@ -767,9 +849,9 @@ const InventoryPage = () => {
                 </Td>
                 <Td align="right">
                   <div className="flex items-center justify-end gap-1 whitespace-nowrap">
-                    {row.isLow && canProcure
+                    {row.isLow && canProcure && branchId
                       ? <Link to={purchaseLink(row)} className="rounded-lg bg-brand-700 px-3 py-2 text-xs font-bold text-white hover:bg-brand-800">Preparar compra</Link>
-                      : canManage
+                      : canManage && branchId
                         ? <Button size="sm" variant="outline" onClick={() => openMovement(row)}>Movimiento</Button>
                         : <Button size="sm" variant="outline" onClick={() => showHistory(row)}>Historial</Button>}
                     {(canManage || row.isLow && canProcure) && <Button size="sm" variant="ghost" aria-label={`Más acciones para ${row.name}`} onClick={(event) => { setActionRow(row); setActionAnchor(event.currentTarget); }}><MoreHorizontal className="size-4" /></Button>}
@@ -825,11 +907,11 @@ const InventoryPage = () => {
               {row.isLow && <p className="mt-3 rounded-field bg-red-100 px-3 py-2 text-xs font-bold text-red-800">Compra sugerida: {formatQuantity(row.suggestedPurchase)} {row.unit}. Revísala antes de pedir.</p>}
               <p className="mt-3 text-xs text-ink-muted">Valor estimado: <strong>S/ {row.stockValue.toFixed(2)}</strong> · {row.averageUnitCost > 0 ? 'costo prom.' : 'costo ref.'} S/ {(row.averageUnitCost > 0 ? row.averageUnitCost : row.unitCost).toFixed(4)} / {row.unit}</p>
               <div className="mt-4 flex flex-wrap gap-2">
-                {canManage && <Button size="sm" variant="outline" onClick={() => openMovement(row)}>Movimiento</Button>}
-                {canManage && <Button size="sm" variant="ghost" onClick={() => openEdit(row)}>Editar</Button>}
+                {canManage && branchId && <Button size="sm" variant="outline" onClick={() => openMovement(row)}>Movimiento</Button>}
+                {canManage && branchId && <Button size="sm" variant="ghost" onClick={() => openEdit(row)}>Editar</Button>}
                 <Button size="sm" variant="ghost" onClick={() => { setHistoryItemId(row.inventoryItemId); setTab('history'); }}>Historial</Button>
-                {canManage && <Button size="sm" variant="ghost" className="text-red-700" onClick={() => void archiveItem(row)}>Archivar</Button>}
-                {row.isLow && canProcure && <Link to={purchaseLink(row)} className="rounded-lg bg-brand-700 px-3 py-2 text-xs font-bold text-white">Preparar compra</Link>}
+                {canManage && branchId && <Button size="sm" variant="ghost" className="text-red-700" onClick={() => void archiveItem(row)}>Archivar</Button>}
+                {row.isLow && canProcure && branchId && <Link to={purchaseLink(row)} className="rounded-lg bg-brand-700 px-3 py-2 text-xs font-bold text-white">Preparar compra</Link>}
               </div>
             </Card>
           ))}
@@ -846,10 +928,10 @@ const InventoryPage = () => {
       )}
 
       <Menu anchorEl={actionAnchor} open={Boolean(actionAnchor)} onClose={closeActions}>
-        {canManage && <MenuItem onClick={() => { if (actionRow) openMovement(actionRow); closeActions(); }}>Registrar movimiento</MenuItem>}
-        {canManage && <MenuItem onClick={() => { if (actionRow) openEdit(actionRow); closeActions(); }}>Editar insumo</MenuItem>}
+        {canManage && branchId && <MenuItem onClick={() => { if (actionRow) openMovement(actionRow); closeActions(); }}>Registrar movimiento</MenuItem>}
+        {canManage && branchId && <MenuItem onClick={() => { if (actionRow) openEdit(actionRow); closeActions(); }}>Editar insumo</MenuItem>}
         <MenuItem onClick={() => { if (actionRow) showHistory(actionRow); closeActions(); }}>Ver historial</MenuItem>
-        {canManage && <MenuItem sx={{ color: 'error.main' }} onClick={() => { const row = actionRow; closeActions(); if (row) void archiveItem(row); }}>Archivar insumo</MenuItem>}
+        {canManage && branchId && <MenuItem sx={{ color: 'error.main' }} onClick={() => { const row = actionRow; closeActions(); if (row) void archiveItem(row); }}>Archivar insumo</MenuItem>}
       </Menu>
 
       <Modal

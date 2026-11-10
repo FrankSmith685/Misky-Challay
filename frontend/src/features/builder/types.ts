@@ -51,6 +51,9 @@ export interface BuilderConfig {
     name: string;
     slug: string;
     type: string;
+    family?: import('@features/catalog/pastry').ProductFamily;
+    preparationMode?: import('@features/catalog/pastry').PreparationMode;
+    minLeadHours?: number;
     imageUrl: string | null;
     imageAlt: string | null;
     imagePosition: string;

@@ -8,6 +8,9 @@ export interface SubscriptionPlan {
   id: number; code: string; name: string; description: string; monthlyPrice: number; items: BoxItem[];
   branchIds: number[]; leadDays: number; maxActiveSubscribers: number; remainingSubscriptions: number; maxDailyPickups: number;
   isActive: boolean; sortOrder: number;
+  version: number; effectiveFrom: string | null; archivedAt: string | null;
+  publicationStatus: 'DRAFT' | 'SCHEDULED' | 'PUBLISHED' | 'ARCHIVED';
+  retailValue: number; customerSavings: number; savingsPercent: number;
 }
 export interface SubscriptionCycle {
   id: number; amount: number; paidAt: string; expiresAt: string; scheduledAt: string | null; orderId: number | null;
@@ -21,7 +24,7 @@ export interface CustomerSubscription {
 export interface PlanInput {
   code: string; name: string; description: string; monthlyPrice: number;
   items: Array<{ variantId: number; quantity: number }>; branchIds: number[];
-  leadDays: number; maxActiveSubscribers: number; maxDailyPickups: number; isActive: boolean; sortOrder: number;
+  leadDays: number; maxActiveSubscribers: number; maxDailyPickups: number; isActive: boolean; sortOrder: number; effectiveFrom?: string | null; expectedVersion?: number;
 }
 export interface Slot { id: number; startsAt: string; endsAt: string; available: number }
 
@@ -41,9 +44,11 @@ export const subscriptionsApi = {
   slots: (branchId: number) => get<Slot[]>(`/locations/slots?branchId=${branchId}&days=30`),
   adminPlans: () => get<SubscriptionPlan[]>('/subscriptions/admin/plans'),
   adminOptions: () => get<{ products: Array<{ id: number; name: string; price: number }>; branches: Array<{ id: number; name: string }> }>('/subscriptions/admin/options'),
-  adminSubscribers: () => get<Array<{ id: number; planId: number; planName: string; status: string; user: { id: number; firstName: string | null; lastName: string | null; email: string | null }; price: number; nextChargeAt: string | null; branchId: number; createdAt: string; paidCycles: number; pendingBoxes: number; scheduledBoxes: number }>>('/subscriptions/admin/subscribers'),
+  adminDashboard: () => get<{ providerAvailable: boolean; mrr: number; active: number; pastDue: number; canceled: number; pending: number; churnRate: number; grossCollected: number; redeemedCycles: number; pendingRedemption: number; expiredUnredeemed: number; commissionAccrued: number; byPlan: Array<{ planId: number; active: number; pastDue: number; grossCollected: number; pendingRedemption: number }> }>('/subscriptions/admin/dashboard'),
+  adminSubscribers: (params: { page?: number; pageSize?: number; status?: string; planId?: number } = {}) => get<{ rows: Array<{ id: number; planId: number; planName: string; status: 'PENDING' | 'ACTIVE' | 'PAST_DUE' | 'CANCELED'; user: { id: number; firstName: string | null; lastName: string | null; email: string | null }; price: number; nextChargeAt: string | null; branchId: number; createdAt: string; lastSyncAt: string | null; lastSyncError: string | null; cancellationReason: string | null; paidCycles: number; pendingBoxes: number; expiredBoxes: number; scheduledBoxes: number }>; total: number; page: number; pageSize: number }>(`/subscriptions/admin/subscribers?${new URLSearchParams(Object.entries(params).filter(([, value]) => value !== undefined).map(([key, value]) => [key, String(value)]))}`),
   createPlan: (input: PlanInput) => post<SubscriptionPlan>('/subscriptions/admin/plans', input),
   updatePlan: async (id: number, input: PlanInput) => (await api.put<ApiSuccess<SubscriptionPlan>>(`/subscriptions/admin/plans/${id}`, input)).data.data,
+  archivePlan: (id: number, expectedVersion?: number) => post<SubscriptionPlan>(`/subscriptions/admin/plans/${id}/archive`, { expectedVersion }),
   adminSync: (id: number) => post(`/subscriptions/admin/subscribers/${id}/sync`),
-  adminCancel: (id: number) => post(`/subscriptions/admin/subscribers/${id}/cancel`),
+  adminCancel: (id: number, reason?: string) => post(`/subscriptions/admin/subscribers/${id}/cancel`, { reason }),
 };

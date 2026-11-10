@@ -18,10 +18,15 @@ import { useBusinessInfo } from '@services/businessInfo';
 import { whatsappLink } from '@lib/whatsapp';
 import type { StorefrontContent } from '../content/storefront.schema';
 import { HomeHero } from './HomeHero';
+import { HomeBenefits } from './HomeBenefits';
 import { HomeFeaturedMenu } from './HomeFeaturedMenu';
 
-const CHOICES = [ROUTES.menu, ROUTES.customCake, ROUTES.business];
 const CHOICE_ICONS = [CakeSlice, Sparkles, Building2];
+const actionRoute = (action: StorefrontContent['choices'][number]['action']): string => ({
+  catalog: ROUTES.menu, custom: ROUTES.customCake, business: ROUTES.business, plans: ROUTES.plans,
+  experiences: ROUTES.cakeAr, cart: ROUTES.cart, coverage: ROUTES.coverage, orders: ROUTES.accountOrders,
+  guide: ROUTES.howToOrder, whatsapp: ROUTES.howToOrder,
+}[action ?? 'catalog']);
 type Section = StorefrontContent['sections'][number];
 
 export const OrderFaq = ({ faqs }: { faqs: StorefrontContent['faqs'] }) => (
@@ -52,7 +57,7 @@ export const WalkthroughCards = ({ steps }: { steps: StorefrontContent['walkthro
             width="640"
             height="420"
             loading="lazy"
-            className="aspect-[3/2] w-full rounded-card border border-line object-cover object-top"
+            className="aspect-[3/2] w-full rounded-card border border-line bg-white object-contain object-top"
           />
         </figure>
         <div className="p-5">
@@ -133,7 +138,7 @@ const HomeSection = ({
         </p>
       </MarketingSection>
     ) : (
-      <HomeFeaturedMenu title={section.title} description={section.description} />
+      <HomeFeaturedMenu title={section.title} description={section.description} productIds={content.featuredProductIds} />
     );
   return (
     <MarketingSection
@@ -203,6 +208,7 @@ const HomeSection = ({
           <div className="grid gap-5 lg:grid-cols-3">
             {content.choices.map((item, i) => {
               const Icon = CHOICE_ICONS[i];
+              const target = actionRoute(item.action ?? (['catalog', 'custom', 'business'] as const)[i]);
               return (
                 <article
                   key={i}
@@ -212,7 +218,7 @@ const HomeSection = ({
                   <h3 className="mt-5 text-xl font-bold leading-7">{item.title}</h3>
                   <p className="mb-7 mt-3 text-sm leading-7 text-ink-muted">{item.description}</p>
                   <Link
-                    to={CHOICES[i]}
+                    to={target}
                     className="mt-auto inline-flex min-h-11 items-center justify-between gap-3 border-t border-line pt-4 text-sm font-semibold text-brand-700"
                   >
                     {item.label}
@@ -227,6 +233,7 @@ const HomeSection = ({
           <div className="grid gap-5 md:grid-cols-2">
             {content.extras.map((item, i) => {
               const Icon = i ? QrCode : Gift;
+              const target = actionRoute(item.action ?? (['plans', 'experiences'] as const)[i]);
               return (
                 <article
                   key={i}
@@ -239,7 +246,7 @@ const HomeSection = ({
                     <h3 className="text-xl font-bold leading-7">{item.title}</h3>
                     <p className="mt-3 text-sm leading-7 text-ink-muted">{item.description}</p>
                     <Link
-                      to={i ? ROUTES.cakeAr : ROUTES.plans}
+                      to={target}
                       className="mt-5 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-brand-700"
                     >
                       {item.label}
@@ -265,11 +272,12 @@ export const HomeEditorial = ({
   preview?: boolean;
 }) => (
   <>
-    <HomeHero hero={content.hero} />
+    <HomeHero hero={content.hero} content={content} />
+    <HomeBenefits benefits={content.benefits} />
     {content.sections
       .filter((section) => section.enabled)
       .map((section) => (
-        <HomeSection key={section.id} section={section} content={content} preview={preview} />
+      <HomeSection key={section.id} section={section} content={content} preview={preview} />
       ))}
   </>
 );

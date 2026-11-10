@@ -36,6 +36,8 @@ import {
 interface CoverageCheckerProps {
   /** Se llama cuando el cliente confirma una dirección con cobertura. */
   onConfirmed?: () => void;
+  /** Acción posterior para llevar al cliente al siguiente paso de compra. */
+  onContinue?: () => void;
 }
 
 /**
@@ -43,7 +45,7 @@ interface CoverageCheckerProps {
  * este componente organiza la captura, representa el resultado y guarda el
  * contexto de compra confirmado.
  */
-export const CoverageChecker = ({ onConfirmed }: CoverageCheckerProps) => {
+export const CoverageChecker = ({ onConfirmed, onContinue }: CoverageCheckerProps) => {
   const navigate = useNavigate();
   const routeLocation = useLocation();
   const {
@@ -329,6 +331,7 @@ export const CoverageChecker = ({ onConfirmed }: CoverageCheckerProps) => {
     selectDelivery({ ...selected, id: saved?.id }, result.branch.id);
     toast.success(`Te atiende ${result.branch.name}`);
     onConfirmed?.();
+    onContinue?.();
   };
 
   const handlePickup = () => {
@@ -350,6 +353,7 @@ export const CoverageChecker = ({ onConfirmed }: CoverageCheckerProps) => {
     });
     toast.success(`Recojo seleccionado en ${result.nearestPickup.name}`);
     onConfirmed?.();
+    onContinue?.();
   };
 
   const handleEdit = () => {
@@ -407,6 +411,9 @@ export const CoverageChecker = ({ onConfirmed }: CoverageCheckerProps) => {
   return (
     <div ref={formRef} className="grid min-w-0 grid-cols-1 gap-6">
       <CoverageProgress steps={progressSteps} />
+      <p className="-mt-2 text-center text-xs leading-5 text-ink-muted">
+        Completa los tres pasos en orden. El botón se habilita cuando la dirección y el pin están sincronizados.
+      </p>
 
       {locationError && (
         <div
@@ -486,6 +493,9 @@ export const CoverageChecker = ({ onConfirmed }: CoverageCheckerProps) => {
                 <p className="mt-3 flex items-start gap-2 rounded-card bg-surface-muted px-3 py-2.5 text-xs leading-5 text-ink-muted">
                   <MapPin className="mt-0.5 size-3.5 shrink-0 text-brand-700" />
                   La selección es un contexto de búsqueda. La zona final siempre será la que corresponda al pin.
+                </p>
+                <p className="mt-2 text-[11px] leading-5 text-ink-muted">
+                  Comenzamos en Lima como referencia. Si estás en otra zona, cambia el departamento y la provincia.
                 </p>
               </>
             )}
@@ -599,7 +609,6 @@ export const CoverageChecker = ({ onConfirmed }: CoverageCheckerProps) => {
                 setResult(null);
               }}
               onResolvingChange={setIsResolvingPin}
-              autoLocate
               fillAvailableSpace
               coveragePolygon={result?.zone?.polygon}
             />
@@ -617,6 +626,7 @@ export const CoverageChecker = ({ onConfirmed }: CoverageCheckerProps) => {
             onConfirm={() => void handleConfirm()}
             onPickup={handlePickup}
             onEdit={handleEdit}
+            onContinue={onContinue}
           />
         </div>
       ) : (

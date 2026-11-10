@@ -6,6 +6,7 @@ const QUESTIONS = [
   { title: '¿Qué recibo con mi suscripción?', text: 'Una caja con los productos, cantidades y presentaciones que se indican en tu plan. Cada mensualidad confirmada habilita una nueva caja para programar desde tu cuenta.' },
   { title: '¿Cómo funciona el cobro mensual?', text: 'Al contratar autorizas un pago recurrente a través de Mercado Pago por el importe mensual del plan. Revisas el total y aceptas las condiciones antes de continuar al pago.' },
   { title: '¿Dónde y cuándo recojo mi caja?', text: 'Eliges una sucursal habilitada al contratar. Después de cada pago confirmado programas un horario de recojo disponible, respetando la anticipación y vigencia de tu caja.' },
+  { title: '¿El delivery está incluido?', text: 'Actualmente las cajas mensuales se recogen en la sucursal elegida. Elige tu fecha y horario de recojo después de cada pago confirmado.' },
   { title: '¿Puedo cancelar los siguientes cobros?', text: 'Sí. Puedes cancelar los futuros cobros desde Mis suscripciones. Las cajas que ya pagaste siguen disponibles para programar hasta su vencimiento.' },
 ];
 

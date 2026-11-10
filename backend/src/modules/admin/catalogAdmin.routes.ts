@@ -26,6 +26,7 @@ const imageUrl = z
   .refine((value) => value.startsWith('/') || /^https?:\/\//i.test(value), {
     message: 'Usa una ruta local /images/... o una URL http(s)',
   });
+const imageAlt = z.string().trim().max(180).nullable().optional();
 
 // --- Lectura ---
 router.get(
@@ -63,6 +64,7 @@ router.post(
         servingUnit: z.enum(['porciones', 'unidades', 'g', 'kg', 'ml', 'cajas']).optional(),
         description: z.string().max(2000).optional(),
         imageUrl: imageUrl.nullable().optional(),
+        imageAlt,
         variantName: z.string().min(1).max(80).default('Unico'),
         basePrice: z.coerce.number().positive(),
       }),
@@ -85,10 +87,19 @@ router.patch(
         preparationMode: z.enum(PREPARATION_MODES).optional(),
         isFeatured: z.boolean().optional(),
         imageUrl: imageUrl.nullable().optional(),
+        imageAlt,
+        expectedVersion: z.coerce.number().int().positive().optional(),
       }),
     }),
   ),
   catalogAdminController.updateProduct,
+);
+
+router.post(
+  '/products/:productId/duplicate',
+  requirePermissions(PERMISSIONS.CATALOG_PRODUCT_WRITE),
+  validate(z.object({ params: productId })),
+  catalogAdminController.duplicateProduct,
 );
 
 // Publicar o retirar: permiso propio.
@@ -98,7 +109,7 @@ router.patch(
   validate(
     z.object({
       params: productId,
-      body: z.object({ status: z.enum(['ACTIVE', 'INACTIVE']) }),
+      body: z.object({ status: z.enum(['ACTIVE', 'INACTIVE']), expectedVersion: z.coerce.number().int().positive().optional() }),
     }),
   ),
   catalogAdminController.changeStatus,
@@ -169,6 +180,7 @@ router.patch(
         servingSize: presentationContent,
         servingUnit: z.enum(['porciones', 'unidades', 'g', 'kg', 'ml', 'cajas']).optional(),
         isActive: z.boolean().optional(),
+        expectedVersion: z.coerce.number().int().positive().optional(),
       }),
     }),
   ),
@@ -267,6 +279,7 @@ router.patch(
       sortOrder: z.coerce.number().int().min(0).max(10000).optional(),
       isActive: z.boolean().optional(),
       imageUrl: imageUrl.nullable().optional(),
+      expectedVersion: z.coerce.number().int().positive().optional(),
     }).refine((body) => Object.keys(body).length > 0, { message: 'Indica al menos un campo para actualizar' }),
   })),
   catalogAdminController.updateCategory,

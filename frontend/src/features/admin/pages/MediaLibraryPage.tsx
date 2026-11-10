@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Tooltip } from '@mui/material';
-import { ArchiveRestore, Crop, FileImage, ImagePlus, Link2, Pencil, Search, Sparkles, Trash2, Upload } from 'lucide-react';
+import { AlertTriangle, ArchiveRestore, CheckCircle2, Crop, FileImage, ImagePlus, Link2, Pencil, Search, ShieldCheck, Sparkles, Trash2, Upload } from 'lucide-react';
 import toast from '@components/mui/MuiToast';
 import { LoadError } from '@components/common/LoadError';
 import { PageHeader } from '@components/common/PageHeader';
@@ -15,7 +15,7 @@ import { Select, SelectOption } from '@components/ui/Select';
 import { getApiErrorMessage } from '@services/api/client';
 import { cn } from '@lib/cn';
 import { formatRelative } from '@lib/format';
-import { mediaAdminApi, optimizeImage, type MediaAsset, type MediaListParams } from '../services/mediaAdmin.service';
+import { mediaAdminApi, optimizeImage, type MediaAsset, type MediaHealth, type MediaListParams } from '../services/mediaAdmin.service';
 import { AiImageGenerator } from '../components/AiImageGenerator';
 
 const CATEGORIES = ['ingredients', 'products', 'categories', 'builder-presets', 'marketing'];
@@ -54,6 +54,7 @@ const MediaLibraryPage = () => {
   const [editing, setEditing] = useState<MediaAsset | null>(null);
   const [editAlt, setEditAlt] = useState('');
   const [editCategory, setEditCategory] = useState('ingredients');
+  const [editStatus, setEditStatus] = useState<MediaAsset['reviewStatus']>('APPROVED');
   const [replacing, setReplacing] = useState<MediaAsset | null>(null);
   const [replacementId, setReplacementId] = useState<number | ''>('');
   const [candidates, setCandidates] = useState<MediaAsset[]>([]);
@@ -73,6 +74,7 @@ const MediaLibraryPage = () => {
   const [busy, setBusy] = useState(false);
   /** Accion en curso sobre UNA tarjeta: solo esa fila muestra su spinner. */
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [health, setHealth] = useState<MediaHealth | null>(null);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -100,6 +102,7 @@ const MediaLibraryPage = () => {
     }
   }, [category, includeDeleted, page, search, sort]);
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void mediaAdminApi.health().then(setHealth).catch(() => setHealth(null)); }, [assets.length, includeDeleted]);
 
   // El buscador consulta al servidor: sin espera, cada tecla seria una peticion.
   useEffect(() => {
@@ -191,6 +194,7 @@ const MediaLibraryPage = () => {
 
   return (
     <div>
+      {health && <Card className="mb-5 border-brand-200 bg-brand-50/40 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="flex items-center gap-2 font-bold text-ink"><ShieldCheck className="size-4 text-brand-700" /> Salud de la biblioteca</p><p className="mt-1 text-xs text-ink-muted">Última revisión: {new Date(health.checkedAt).toLocaleString('es-PE')}</p></div><span className="rounded-pill bg-white px-3 py-1 text-xs font-bold text-ink">{health.totals.active} activos · {health.totals.drafts} borrador(es)</span></div><div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5"><div className="rounded-xl bg-white p-3"><p className="text-xs text-ink-muted">Sin texto alternativo</p><p className="mt-1 text-xl font-black text-ink">{health.withoutAlt.count}</p></div><div className="rounded-xl bg-white p-3"><p className="text-xs text-ink-muted">Sin uso</p><p className="mt-1 text-xl font-black text-ink">{health.unused.count}</p></div><div className="rounded-xl bg-white p-3"><p className="text-xs text-ink-muted">Duplicados</p><p className="mt-1 text-xl font-black text-ink">{health.duplicateGroups.length}</p></div><div className="rounded-xl bg-white p-3"><p className="text-xs text-ink-muted">Archivos faltantes</p><p className="mt-1 text-xl font-black text-ink">{health.missingFiles.length}</p></div><div className="rounded-xl bg-white p-3"><p className="text-xs text-ink-muted">Huérfanos en disco</p><p className="mt-1 text-xl font-black text-ink">{health.orphanFiles.length}</p></div></div>{(health.withoutAlt.count || health.missingFiles.length || health.orphanFiles.length) ? <p className="mt-3 flex items-center gap-2 text-xs font-semibold text-amber-900"><AlertTriangle className="size-4" /> Hay incidencias que requieren revisión del superadmin.</p> : <p className="mt-3 flex items-center gap-2 text-xs font-semibold text-brand-800"><CheckCircle2 className="size-4" /> La biblioteca no presenta incidencias críticas.</p>}</Card>}
       <PageHeader eyebrow="Contenido visual" title="Biblioteca de imágenes" description="Gestiona recursos locales, accesibilidad, usos y papelera sin romper referencias." icon={FileImage} />
 
       <Card className="mb-5 overflow-hidden p-0">
@@ -308,7 +312,8 @@ const MediaLibraryPage = () => {
               <div className="mt-3 flex flex-wrap gap-1">{asset.deletedAt
                 ? <Button size="sm" variant="outline" isLoading={acting} leftIcon={<ArchiveRestore className="size-4" />} onClick={() => void run(() => mediaAdminApi.restore(asset.id), 'Imagen restaurada', asset.id)}>Restaurar</Button>
                 : <>
-                    <Tooltip title="Editar texto alternativo y categoría"><span className="inline-flex"><Button size="sm" variant="ghost" disabled={acting} onClick={() => { setEditing(asset); setEditAlt(asset.altText ?? ''); setEditCategory(asset.category); }} aria-label="Editar metadatos"><Pencil className="size-4" /></Button></span></Tooltip>
+                    <Tooltip title="Editar texto alternativo y categoría"><span className="inline-flex"><Button size="sm" variant="ghost" disabled={acting} onClick={() => { setEditing(asset); setEditAlt(asset.altText ?? ''); setEditCategory(asset.category); setEditStatus(asset.reviewStatus); }} aria-label="Editar metadatos"><Pencil className="size-4" /></Button></span></Tooltip>
+                    <Button size="sm" variant="ghost" disabled={acting} leftIcon={<ShieldCheck className="size-4" />} onClick={() => void run(() => mediaAdminApi.setStatus(asset.id, asset.reviewStatus === 'APPROVED' ? 'DRAFT' : 'APPROVED'), asset.reviewStatus === 'APPROVED' ? 'Imagen pasada a borrador' : 'Imagen aprobada', asset.id)}>{asset.reviewStatus === 'APPROVED' ? 'Revisar' : 'Aprobar'}</Button>
                     <Button size="sm" variant="ghost" disabled={acting || usage === 0} leftIcon={<Link2 className="size-4" />} onClick={() => { setReplacing(asset); setReplacementId(''); setCandidateQuery(''); setCandidates([]); }}>Reemplazar</Button>
                     <Tooltip title="Enviar a la papelera"><span className="inline-flex"><Button size="sm" variant="ghost" isLoading={acting} onClick={() => void sendToTrash(asset)} aria-label="Enviar a la papelera"><Trash2 className="size-4" /></Button></span></Tooltip>
                   </>}</div>
@@ -328,7 +333,7 @@ const MediaLibraryPage = () => {
         eyebrow="Contenido visual"
         maxWidth="sm"
         headerAside={editing && <img src={editing.url} alt="" className="hidden size-16 rounded-card border-2 border-white object-cover shadow-e2 sm:block" />}
-        actions={<><Button variant="outline" disabled={busy} onClick={() => setEditing(null)}>Cancelar</Button><Button isLoading={busy} disabled={!editAlt.trim()} onClick={() => editing && void run(() => mediaAdminApi.update(editing.id, { altText: editAlt.trim(), category: editCategory }).then(() => setEditing(null)), 'Imagen actualizada')}>Guardar cambios</Button></>}
+        actions={<><Button variant="outline" disabled={busy} onClick={() => setEditing(null)}>Cancelar</Button><Button isLoading={busy} disabled={!editAlt.trim()} onClick={() => editing && void run(() => mediaAdminApi.update(editing.id, { altText: editAlt.trim(), category: editCategory, reviewStatus: editStatus }).then(() => setEditing(null)), 'Imagen actualizada')}>Guardar cambios</Button></>}
       >
         <div className="grid gap-5 sm:grid-cols-[130px_1fr]">
           <div className="overflow-hidden rounded-card border border-line bg-surface-muted shadow-e1"><div className="aspect-square">{editing && <img src={editing.url} alt={editAlt} className="size-full object-cover" />}</div><p className="truncate border-t border-line px-2 py-2 text-[10px] text-ink-muted">{editing?.originalName}</p></div>

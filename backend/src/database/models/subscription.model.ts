@@ -26,6 +26,9 @@ export class SubscriptionPlan extends Model<InferAttributes<SubscriptionPlan>, I
   declare maxDailyPickups: CreationOptional<number>;
   declare isActive: CreationOptional<boolean>;
   declare sortOrder: CreationOptional<number>;
+  declare version: CreationOptional<number>;
+  declare effectiveFrom: CreationOptional<Date | null>;
+  declare archivedAt: CreationOptional<Date | null>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
 }
@@ -43,6 +46,9 @@ SubscriptionPlan.init({
   maxDailyPickups: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 10 },
   isActive: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
   sortOrder: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+  version: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 1 },
+  effectiveFrom: { type: DataTypes.DATE, allowNull: true },
+  archivedAt: { type: DataTypes.DATE, allowNull: true },
   createdAt: DataTypes.DATE,
   updatedAt: DataTypes.DATE,
 }, { sequelize, modelName: 'SubscriptionPlan', tableName: 'subscription_plans' });
@@ -68,6 +74,9 @@ export class Subscription extends Model<InferAttributes<Subscription>, InferCrea
   declare termsAcceptedAt: Date;
   declare nextChargeAt: CreationOptional<Date | null>;
   declare canceledAt: CreationOptional<Date | null>;
+  declare lastSyncAt: CreationOptional<Date | null>;
+  declare lastSyncError: CreationOptional<string | null>;
+  declare cancellationReason: CreationOptional<string | null>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
 }
@@ -88,6 +97,9 @@ Subscription.init({
   termsAcceptedAt: { type: DataTypes.DATE, allowNull: false },
   nextChargeAt: { type: DataTypes.DATE, allowNull: true },
   canceledAt: { type: DataTypes.DATE, allowNull: true },
+  lastSyncAt: { type: DataTypes.DATE, allowNull: true },
+  lastSyncError: { type: DataTypes.STRING(500), allowNull: true },
+  cancellationReason: { type: DataTypes.STRING(500), allowNull: true },
   createdAt: DataTypes.DATE,
   updatedAt: DataTypes.DATE,
 }, { sequelize, modelName: 'Subscription', tableName: 'subscriptions', indexes: [

@@ -2,14 +2,14 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/brand/misky-app-icon.png" />
+    <link rel="icon" type="image/jpeg" href="/brand/misky-app-icon.jpg" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="apple-touch-icon" href="/brand/misky-app-icon.png" />
+    <link rel="apple-touch-icon" href="/brand/misky-app-icon.jpg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <!-- La tienda es solo modo claro. Sin declararlo, los webviews con oscuro forzado
          invierten por su cuenta selects, barras de scroll y demas controles nativos. -->
     <meta name="color-scheme" content="light" />
-    <meta name="theme-color" content="#8b3d59" />
+    <meta name="theme-color" content="#006fb9" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Misky Challay" />
@@ -30,15 +30,15 @@
       property="og:description"
       content="Crea tu torta con el tamaño, bizcocho y relleno que prefieras. Consulta precios, programa delivery o recojo y sigue tu pedido en Misky Challay."
     />
-    <meta property="og:image" content="/brand/misky-challay-square.jpeg" />
-    <meta property="og:image:alt" content="Logo de Misky Challay, Pastelería Personalizada" />
+    <meta property="og:image" content="/brand/misky-challay-tech-web.webp" />
+    <meta property="og:image:alt" content="Misky Challay, pastelería artesanal con IA y realidad aumentada" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Tortas personalizadas y postres | Misky Challay" />
     <meta
       name="twitter:description"
       content="Crea tu torta con el tamaño, bizcocho y relleno que prefieras. Consulta precios, programa delivery o recojo y sigue tu pedido en Misky Challay."
     />
-    <meta name="twitter:image" content="/brand/misky-challay-square.jpeg" />
+    <meta name="twitter:image" content="/brand/misky-challay-tech-web.webp" />
   </head>
   <body>
     <div id="root"></div>
@@ -47,7 +47,7 @@
       // global de identidad visual no siga cargando el tema verde antiguo.
       (() => {
         try {
-          const key = 'verde-bowl:theme-cache-v4';
+          const key = 'verde-bowl:theme-cache-v5';
           if (localStorage.getItem(key) === 'done') return;
           localStorage.setItem(key, 'done');
           localStorage.removeItem('vb.theme.tokens.v1');

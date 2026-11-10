@@ -42,6 +42,7 @@ import { getPaymentProvider } from '@integrations/payments';
 import { inventoryService } from '@modules/operations/inventory.service';
 import { cakeProductionService } from '@modules/cakes/cakeProduction.service';
 import { cakeDesignService } from '@modules/cakes/cakeDesign.service';
+import { cakeCommissionService } from '@modules/cakes/cakeCommission.service';
 // Ciclo de importacion a proposito y seguro: estos modulos importan `ordersService`
 // y aqui solo se usan DENTRO de funciones, nunca al evaluar el modulo.
 import { cancelTicketForOrder } from '@modules/operations/operations.service';
@@ -291,6 +292,9 @@ export const ordersService = {
         order.deliveredAt = new Date();
         // Pago contra entrega: el efectivo se cobra al entregar.
         await settleCashPayment(order.id, PAYMENT_STATUS.SUCCEEDED, transaction);
+        // El cobro contra entrega se acredita aqui; hasta este momento no se
+        // podia devengar la comision porque el pago seguia pendiente.
+        await cakeCommissionService.ensureForOrder(order, transaction);
       }
       if (next === ORDER_STATUS.CANCELLED) {
         order.cancelledAt = new Date();
@@ -345,9 +349,13 @@ export const ordersService = {
       redemption.status = REDEMPTION_STATUS.CONFIRMED;
       await redemption.save({ transaction });
 
-      const coupon = await Coupon.findByPk(redemption.couponId, { transaction });
+      const coupon = await Coupon.findByPk(redemption.couponId, {
+        transaction,
+        lock: transaction ? transaction.LOCK.UPDATE : undefined,
+      });
       if (coupon) {
         coupon.usedCount += 1;
+        coupon.budgetUsed = Number(coupon.budgetUsed) + Number(redemption.amount);
         await coupon.save({ transaction });
       }
     }

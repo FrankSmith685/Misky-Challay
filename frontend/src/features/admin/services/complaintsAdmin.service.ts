@@ -17,6 +17,11 @@ export interface ComplaintRow {
   createdAt: string;
   dueAt: string;
   respondedAt: string | null;
+  assignedTo: number | null;
+  assignedUser?: { id: number; firstName: string | null; lastName: string | null } | null;
+  escalatedAt: string | null;
+  reopenedAt: string | null;
+  updatedAt: string;
 }
 
 /** Detalle completo, para el panel de respuesta. */
@@ -34,6 +39,13 @@ export interface ComplaintDetail extends ComplaintRow {
   orderId: number | null;
   userId: number | null;
   response: string | null;
+  draftResponse: string | null;
+  assignedAt: string | null;
+  reopenReason: string | null;
+  order?: { id: number; orderNumber: string; status: string } | null;
+  responses: Array<{ id: number; version: number; response: string; status: 'IN_PROGRESS' | 'RESOLVED'; reason: string | null; notificationStatus: 'PENDING' | 'SENT' | 'FAILED' | 'SIMULATED'; notificationError: string | null; sentAt: string | null; createdAt: string; actor?: { id: number; firstName: string | null; lastName: string | null } | null }>;
+  notes: Array<{ id: number; note: string; createdAt: string; author?: { id: number; firstName: string | null; lastName: string | null } | null }>;
+  evidences: Array<{ id: number; fileName: string; mimeType: string | null; createdAt: string }>;
 }
 
 export interface ComplaintFilters {
@@ -47,6 +59,10 @@ export interface ComplaintFilters {
   overdue?: boolean;
   page?: number;
   pageSize?: number;
+  from?: string;
+  to?: string;
+  reason?: string;
+  masked?: boolean;
 }
 
 export const complaintsAdminApi = {
@@ -74,9 +90,52 @@ export const complaintsAdminApi = {
 
   async respond(
     id: number,
-    input: { response: string; status: 'IN_PROGRESS' | 'RESOLVED' },
+    input: { response: string; status: 'IN_PROGRESS' | 'RESOLVED'; reason?: string; expectedUpdatedAt: string },
   ): Promise<void> {
     await api.post(ENDPOINTS.complaints.respond(id), input);
+  },
+
+  async reopen(id: number, input: { reason: string; expectedUpdatedAt: string }): Promise<void> {
+    await api.post(`${ENDPOINTS.complaints.detail(id)}/reopen`, input);
+  },
+
+  async assign(id: number, input: { userId: number | null; reason: string; expectedUpdatedAt: string }): Promise<void> {
+    await api.post(`${ENDPOINTS.complaints.detail(id)}/assign`, input);
+  },
+
+  async escalate(id: number, input: { reason: string; expectedUpdatedAt: string }): Promise<void> {
+    await api.post(`${ENDPOINTS.complaints.detail(id)}/escalate`, input);
+  },
+
+  async note(id: number, note: string): Promise<void> {
+    await api.post(`${ENDPOINTS.complaints.detail(id)}/notes`, { note });
+  },
+
+  async assignees(): Promise<Array<{ id: number; firstName: string | null; lastName: string | null }>> {
+    const { data } = await api.get<ApiSuccess<Array<{ id: number; firstName: string | null; lastName: string | null }>>>(`${ENDPOINTS.complaints.root}/assignees`);
+    return data.data;
+  },
+
+  async retryNotification(id: number, responseId: number): Promise<void> {
+    await api.post(`${ENDPOINTS.complaints.detail(id)}/responses/${responseId}/retry`);
+  },
+
+  async evidenceFile(id: number, evidenceId: number): Promise<Blob> {
+    const { data } = await api.get<Blob>(`${ENDPOINTS.complaints.detail(id)}/evidence/${evidenceId}/file`, { responseType: 'blob' });
+    return data;
+  },
+
+  async addEvidence(id: number, input: { fileName: string; dataUrl: string }): Promise<void> {
+    await api.post(`${ENDPOINTS.complaints.detail(id)}/evidence`, input);
+  },
+
+  async holidays(year = new Date().getFullYear()): Promise<Array<{ holidayDate: string; label: string; isActive: boolean; source: 'NATIONAL' | 'CUSTOM' }>> {
+    const { data } = await api.get<ApiSuccess<Array<{ holidayDate: string; label: string; isActive: boolean; source: 'NATIONAL' | 'CUSTOM' }>>>(`${ENDPOINTS.complaints.root}/holidays`, { params: { year } });
+    return data.data;
+  },
+
+  async saveHoliday(input: { holidayDate: string; label: string; isActive: boolean; reason: string }): Promise<void> {
+    await api.post(`${ENDPOINTS.complaints.root}/holidays`, input);
   },
 
   /**
@@ -105,4 +164,9 @@ export interface ComplaintSummary {
   inProgress: number;
   resolved: number;
   overdue: number;
+  dueSoon: number;
+  unassigned: number;
+  escalated: number;
+  reopened: number;
+  notificationFailures: number;
 }

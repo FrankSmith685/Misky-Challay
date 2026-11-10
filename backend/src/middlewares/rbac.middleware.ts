@@ -3,7 +3,7 @@ import { ApiError } from '@shared/errors/ApiError';
 import type { PermissionCode, RoleCode } from '@config/constants';
 import { PERMISSION_CATALOG, USER_STATUS } from '@config/constants';
 import { User } from '@database/models';
-import { env } from '@config/env';
+import { audit } from '@shared/utils/audit';
 
 /**
  * AUTORIZACION (seccion 7.1)
@@ -35,12 +35,73 @@ const PERMISSION_LABELS = new Map<string, string>(
   ),
 );
 
+/**
+ * Permisos de escritura/operacion incluyen la lectura necesaria para usar la
+ * pantalla que los contiene. Sin esta expansion, un rol con `inventory.manage`
+ * podia modificar por API pero no abrir Inventario, y `audit.export` no podia
+ * llegar a la Bitacora para exportar.
+ */
+const IMPLIED_PERMISSIONS: Record<string, readonly string[]> = {
+  'catalog.product.write': ['catalog.product.read'],
+  'catalog.product.publish': ['catalog.product.read'],
+  'catalog.category.write': ['catalog.product.read'],
+  'catalog.availability.write': ['catalog.product.read'],
+  'catalog.customization.write': ['catalog.product.read'],
+  'allergen.write': ['catalog.product.read'],
+  'dietary_tag.write': ['catalog.product.read'],
+  'geo.write': ['geo.read'],
+  'order.update_status': ['order.read'],
+  'order.cancel': ['order.read'],
+  'experience.write': ['experience.read'],
+  'experience.publish': ['experience.read'],
+  'kitchen.operate': ['kitchen.read'],
+  'dining.operate': ['dining.read'],
+  'inventory.manage': ['inventory.read'],
+  'procurement.manage': ['procurement.read'],
+  'delivery.assign': ['delivery.read'],
+  'delivery.operate': ['delivery.read'],
+  'payment.verify': ['payment.read'],
+  'payment.refund': ['payment.read'],
+  'invoice.manage': ['payment.read', 'order.read'],
+  'plan.manage': ['plan.read'],
+  'cake.finance.manage': ['cake.finance.read'],
+  'user.manage': ['user.read'],
+  'customer.manage': ['customer.read'],
+  'role.manage': ['role.read'],
+  'audit.export': ['audit.read'],
+  'audit.verify': ['audit.read'],
+  'audit.retention': ['audit.read'],
+  'settings.design.manage': ['settings.design.read'],
+  'settings.design.publish': ['settings.design.read'],
+  'communication.reply': ['communication.read'],
+  'complaint.manage': ['complaint.read', 'complaint.respond', 'complaint.reopen', 'complaint.export'],
+  'complaint.respond': ['complaint.read'],
+  'complaint.reopen': ['complaint.read'],
+  'complaint.export': ['complaint.read'],
+};
+
+const expandPermissions = (permissions: readonly string[]): Set<string> => {
+  const expanded = new Set(permissions);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const permission of [...expanded]) {
+      for (const implied of IMPLIED_PERMISSIONS[permission] ?? []) {
+        if (!expanded.has(implied)) {
+          expanded.add(implied);
+          changed = true;
+        }
+      }
+    }
+  }
+  return expanded;
+};
+
 const describePermissions = (codes: readonly string[], conjunction: 'y' | 'o'): string => {
   const labels = codes.map((code) => `«${PERMISSION_LABELS.get(code) ?? code}»`);
   if (labels.length <= 1) return labels[0] ?? '';
   return `${labels.slice(0, -1).join(', ')} ${conjunction} ${labels[labels.length - 1]}`;
 };
-
 /* `ApiError.forbidden` no acepta detalles, y el codigo del permiso tiene que
  * llegar al soporte aunque no se le muestre al operario. */
 const forbiddenWithMissing = (message: string, missing: readonly string[]): ApiError =>
@@ -58,10 +119,11 @@ export const requirePermissions =
       return;
     }
 
-    const granted = new Set(req.user.permissions ?? []);
+    const granted = expandPermissions(req.user.permissions ?? []);
     const missing = required.filter((permission) => !granted.has(permission));
 
     if (missing.length > 0) {
+      void audit(req, { action: 'auth.permission.denied', entity: 'permissions', after: { required, missing, path: req.originalUrl }, outcome: 'FAILURE' });
       next(
         forbiddenWithMissing(
           `No tienes permiso para esta acción: te ${missing.length === 1 ? 'falta' : 'faltan'} ${describePermissions(missing, 'y')}. Pídeselo a quien administra los accesos del panel.`,
@@ -88,10 +150,11 @@ export const requireAnyPermission =
       return;
     }
 
-    const granted = new Set(req.user.permissions ?? []);
+    const granted = expandPermissions(req.user.permissions ?? []);
     const hasAny = allowed.some((permission) => granted.has(permission));
 
     if (!hasAny) {
+      void audit(req, { action: 'auth.permission.denied', entity: 'permissions', after: { allowed, path: req.originalUrl }, outcome: 'FAILURE' });
       next(
         forbiddenWithMissing(
           `No tienes permiso para esta acción: necesitas ${describePermissions(allowed, 'o')}. Pídeselo a quien administra los accesos del panel.`,
@@ -152,19 +215,4 @@ export const requireSuperAdmin = async (
   } catch (error) {
     next(error);
   }
-};
-
-/** La identidad propietaria no se delega con roles ni con la marca de superadmin. */
-export const isPlatformOwner = async (userId: number): Promise<boolean> => {
-  const user = await User.findByPk(userId, { attributes: ['id', 'email', 'isSuperAdmin', 'status'] });
-  return Boolean(user?.isSuperAdmin && user.status === USER_STATUS.ACTIVE
-    && user.email?.toLowerCase() === env.ADMIN_EMAIL.toLowerCase());
-};
-
-export const requirePlatformOwner = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
-  if (!req.user) return next(ApiError.unauthorized());
-  try {
-    if (!await isPlatformOwner(req.user.sub)) return next(ApiError.forbidden('Esta liquidación corresponde a la cuenta propietaria de Misky Challay'));
-    next();
-  } catch (error) { next(error); }
 };

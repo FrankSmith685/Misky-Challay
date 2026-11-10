@@ -13,11 +13,13 @@ const csvList = z
 export const listProductsSchema = z.object({
   query: z.object({
     branchId: z.coerce.number().int().positive().optional(),
+    productIds: csvList.transform((value) => value?.map(Number).filter((id) => Number.isInteger(id) && id > 0)),
     audience: z.enum(['RETAIL', 'BUSINESS']).default('RETAIL'),
     categoryId: z.coerce.number().int().positive().optional(),
     search: z.string().max(80).optional(),
     dietaryTags: csvList,
     excludeAllergens: csvList,
+    sort: z.enum(['BEST_SELLERS', 'RECOMMENDED']).default('RECOMMENDED'),
     featured: z
       .enum(['true', 'false'])
       .optional()

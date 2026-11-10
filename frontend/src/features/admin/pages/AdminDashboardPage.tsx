@@ -1,5 +1,6 @@
-import { useCallback, useState } from 'react';
-import { AlertTriangle, BarChart3, Clock, Download, LayoutDashboard, Lock, MapPinned, Percent, RefreshCw, ShoppingBag, TrendingUp, WifiOff, XCircle } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { AlertTriangle, BarChart3, Clock, Download, LayoutDashboard, Lock, MapPinned, Percent, RefreshCw, ScanLine, ShoppingBag, Smartphone, TrendingUp, WalletCards, WifiOff, XCircle } from 'lucide-react';
 import { Card, CardDescription } from '@components/ui/Card';
 import { Button } from '@components/ui/Button';
 import { PageLoader } from '@components/common/PageLoader';
@@ -11,11 +12,28 @@ import { usePolling } from '../hooks/usePolling';
 import { useActiveBranch } from '../hooks/useActiveBranch';
 import { BranchSelector } from '../components/BranchSelector';
 import type { Reports } from '../types';
+import { ROUTES } from '@constants/routes';
+import { usePermissions } from '@hooks/usePermissions';
+import { PERM } from '@constants/permissions';
+import { accessApi, type TeamsOverview } from '../services/access.service';
 
 /** Clases literales: el JIT de Tailwind no ve un `xl:grid-cols-${n}` interpolado. */
 const TILE_COLUMNS: Record<number, string> = {
   2: 'sm:grid-cols-2',
   5: 'sm:grid-cols-2 xl:grid-cols-5',
+  7: 'sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7',
+};
+
+type RangePreset = '7' | '30' | 'month' | 'custom';
+
+const limaDate = (date: Date): string => new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit',
+}).format(date);
+
+const shiftIsoDate = (iso: string, days: number): string => {
+  const date = new Date(`${iso}T12:00:00-05:00`);
+  date.setDate(date.getDate() + days);
+  return limaDate(date);
 };
 
 /**
@@ -28,22 +46,43 @@ const TILE_COLUMNS: Record<number, string> = {
  * algo se ve el fallo con un boton de reintento.
  */
 const AdminDashboardPage = () => {
-  const { branchId, branches, setBranchId, isLoadingBranches, branchesError, reloadBranches } =
-    useActiveBranch();
+  const { can } = usePermissions();
+  const { branchId, branches, setBranchId, setGlobalScope, isLoadingBranches, branchesError, reloadBranches } =
+    useActiveBranch({ allowAll: true });
+  const [rangePreset, setRangePreset] = useState<RangePreset>('30');
+  const today = limaDate(new Date());
+  const [customFrom, setCustomFrom] = useState(() => shiftIsoDate(today, -30));
+  const [customTo, setCustomTo] = useState(today);
+  const reportRange = useMemo(() => {
+    if (rangePreset === '7') return { from: shiftIsoDate(today, -6), to: today };
+    if (rangePreset === 'month') return { from: `${today.slice(0, 8)}01`, to: today };
+    if (rangePreset === 'custom') return { from: customFrom, to: customTo };
+    return { from: shiftIsoDate(today, -29), to: today };
+  }, [customFrom, customTo, rangePreset, today]);
+  const rangeLabel = rangePreset === '7' ? 'Últimos 7 días'
+    : rangePreset === 'month' ? 'Mes actual'
+      : rangePreset === 'custom' ? `${reportRange.from} · ${reportRange.to}`
+        : 'Últimos 30 días';
   const fetcher = useCallback(
-    (signal: AbortSignal) => adminApi.reports(branchId ?? undefined, signal),
-    [branchId],
+    (signal: AbortSignal) => adminApi.reports(branchId ?? undefined, signal, reportRange),
+    [branchId, reportRange],
   );
   const { data, error, isLoading, lastSuccessAt, isStale, refresh } = usePolling<Reports>(
     fetcher,
     30000,
   );
   const [isExporting, setIsExporting] = useState(false);
+  const [operationalOverview, setOperationalOverview] = useState<TeamsOverview | null>(null);
+
+  useEffect(() => {
+    if (!can(PERM.USER_READ)) return;
+    void accessApi.teamsOverview().then(setOperationalOverview).catch(() => setOperationalOverview(null));
+  }, [can]);
 
   const exportReport = async () => {
     setIsExporting(true);
     try {
-      const file = await adminApi.exportReports(branchId ?? undefined);
+      const file = await adminApi.exportReports(branchId ?? undefined, reportRange);
       const url = URL.createObjectURL(file);
       const link = document.createElement('a');
       link.href = url;
@@ -60,15 +99,22 @@ const AdminDashboardPage = () => {
       eyebrow="Vista general"
       icon={LayoutDashboard}
       title="Tu negocio, de un vistazo"
-      description="Rendimiento de los ultimos 30 dias."
+      description={`${branchId === null ? 'Todas las sucursales' : 'Sucursal seleccionada'} · ${rangeLabel}.`}
       action={
         <>
           <BranchSelector
             value={branchId}
             branches={branches}
             onChange={setBranchId}
+            allowAll
+            onSelectAll={setGlobalScope}
             hasError={Boolean(branchesError)}
           />
+          <label className="sr-only" htmlFor="admin-dashboard-range">Periodo del resumen</label>
+          <select id="admin-dashboard-range" aria-label="Periodo del resumen" value={rangePreset} onChange={(event) => setRangePreset(event.target.value as RangePreset)} className="h-10 rounded-field border border-line bg-white px-3 text-sm font-semibold text-ink">
+            <option value="7">7 días</option><option value="30">30 días</option><option value="month">Mes actual</option><option value="custom">Personalizado</option>
+          </select>
+          {rangePreset === 'custom' && <div className="flex items-center gap-1"><input aria-label="Desde" type="date" value={customFrom} max={customTo} onChange={(event) => setCustomFrom(event.target.value)} className="h-10 rounded-field border border-line bg-white px-2 text-xs" /><input aria-label="Hasta" type="date" value={customTo} min={customFrom} max={today} onChange={(event) => setCustomTo(event.target.value)} className="h-10 rounded-field border border-line bg-white px-2 text-xs" /></div>}
           <Button
             variant="outline"
             size="sm"
@@ -129,7 +175,7 @@ const AdminDashboardPage = () => {
             icon: ShoppingBag,
             label: 'Pedidos vendidos',
             value: String(sales.orders),
-            hint: 'Ultimos 30 dias',
+            hint: rangeLabel,
           },
           {
             icon: TrendingUp,
@@ -143,8 +189,20 @@ const AdminDashboardPage = () => {
             value: formatCurrency(sales.discounts),
             hint: `${sales.deliveryShare}% de los pedidos son delivery`,
           },
+          ...(data.platform ? [{
+            icon: WalletCards,
+            label: `Comisión ${Math.round((data.platform?.rate ?? 0.15) * 100)}% pendiente`,
+            value: formatCurrency(data.platform.outstanding),
+            hint: `${formatCurrency(data.platform.accrued)} generada · ${formatCurrency(data.platform.settled)} transferida`,
+          }] : []),
         ]
       : []),
+    {
+      icon: Smartphone,
+      label: 'Pagos por verificar',
+      value: String(data.pendingPayments.count),
+      hint: data.pendingPayments.count ? `${formatCurrency(data.pendingPayments.amount)} en Yape o Plin` : 'Sin transferencias pendientes',
+    },
     {
       icon: Clock,
       label: 'Preparacion promedio',
@@ -165,6 +223,9 @@ const AdminDashboardPage = () => {
   const checkoutStarts = data.experience?.CHECKOUT_STEP ?? 0;
   const completedOrders = data.experience?.ORDER_COMPLETED ?? 0;
   const mobileConversion = checkoutStarts ? Math.min(100, Math.round((completedOrders / checkoutStarts) * 100)) : 0;
+  const arQrOpens = data.experience?.AR_QR_OPEN ?? 0;
+  const arTargetsFound = data.experience?.AR_TARGET_FOUND ?? 0;
+  const arCameraErrors = data.experience?.AR_CAMERA_ERROR ?? 0;
 
   return (
     <div>
@@ -186,6 +247,41 @@ const AdminDashboardPage = () => {
             Reintentar
           </Button>
         </div>
+      )}
+
+      {data.pendingPayments.count > 0 && (
+        <div role="status" className="mb-4 flex flex-wrap items-center gap-3 rounded-card border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <Smartphone className="size-4 shrink-0" />
+          <p className="min-w-0 flex-1"><strong>{data.pendingPayments.count} pago{data.pendingPayments.count === 1 ? '' : 's'} por verificar</strong> por {formatCurrency(data.pendingPayments.amount)} en Yape o Plin.</p>
+          <Link className="font-bold underline underline-offset-2" to={ROUTES.adminDirectPayments}>Revisar pagos</Link>
+        </div>
+      )}
+
+      {operationalOverview && (
+        <Card className="mb-4 border-amber-200 bg-amber-50/45 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-extrabold uppercase tracking-[.14em] text-amber-800">Centro de pendientes</p>
+              <h2 className="mt-1 text-base font-black text-ink">Lo que necesita atención ahora</h2>
+              <p className="mt-1 text-xs text-ink-muted">Indicadores operativos consolidados de todas las sucursales.</p>
+            </div>
+            <Link to={ROUTES.adminTeams} className="text-xs font-bold text-brand-700 underline underline-offset-2">Revisar cobertura</Link>
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+            {[
+              { label: 'Pedidos', value: operationalOverview.metrics.pendingOrders, to: ROUTES.adminOrders },
+              { label: 'Cocina', value: operationalOverview.metrics.openKitchenTickets, to: ROUTES.adminKitchen },
+              { label: 'Repartos sin asignar', value: operationalOverview.metrics.unassignedDeliveries, to: ROUTES.adminDelivery },
+              { label: 'Compras', value: operationalOverview.metrics.pendingPurchases, to: ROUTES.adminProcurement },
+              { label: 'Reclamos', value: operationalOverview.metrics.openComplaints, to: ROUTES.adminComplaints },
+            ].map((item) => (
+              <Link key={item.label} to={item.to} className="rounded-xl border border-amber-200 bg-white px-3 py-2.5 transition hover:border-brand-300 hover:shadow-sm">
+                <span className="text-xs text-ink-muted">{item.label}</span>
+                <strong className="mt-1 block text-xl font-black text-ink">{item.value}</strong>
+              </Link>
+            ))}
+          </div>
+        </Card>
       )}
 
       {!sales && (
@@ -214,7 +310,7 @@ const AdminDashboardPage = () => {
       </div>
 
       <Card className="mt-5 p-5 sm:p-6">
-        <div className="mb-5 flex items-center justify-between"><div><h2 className="text-base font-semibold text-ink">Productos mas vendidos</h2><p className="mt-0.5 text-xs text-ink-muted">Preferencias de tus clientes este mes</p></div><BarChart3 className="size-5 text-brand-500" /></div>
+        <div className="mb-5 flex items-center justify-between"><div><h2 className="text-base font-semibold text-ink">Productos más vendidos</h2><p className="mt-0.5 text-xs text-ink-muted">Preferencias de tus clientes · {rangeLabel}</p></div><BarChart3 className="size-5 text-brand-500" /></div>
 
         {data.topProducts.length === 0 ? (
           <CardDescription>Aun no hay ventas en este periodo.</CardDescription>
@@ -263,6 +359,10 @@ const AdminDashboardPage = () => {
       </div>
 
       <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        <Card className="p-5">
+          <div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-card bg-brand-50 text-brand-700"><ScanLine className="size-5" /></span><div><h2 className="font-bold text-ink">Experiencias AR</h2><p className="text-xs text-ink-muted">Recorrido de la tarjeta QR · {experienceScope}</p></div></div>
+          <div className="mt-4 grid grid-cols-3 gap-3"><div className="rounded-card bg-surface-muted p-3"><p className="text-2xl font-black text-ink">{arQrOpens}</p><p className="text-xs text-ink-muted">QR abiertos</p></div><div className="rounded-card bg-brand-50 p-3"><p className="text-2xl font-black text-brand-800">{arTargetsFound}</p><p className="text-xs text-brand-700">marcadores detectados</p></div><div className="rounded-card bg-red-50 p-3"><p className="text-2xl font-black text-red-800">{arCameraErrors}</p><p className="text-xs text-red-700">errores de cámara</p></div></div>
+        </Card>
         <Card className="p-5">
           <div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-card bg-brand-50 text-brand-700"><MapPinned className="size-5" /></span><div><h2 className="font-bold text-ink">Calidad de cobertura</h2><p className="text-xs text-ink-muted">Validaciones reales del cliente · {experienceScope}</p></div></div>
           <div className="mt-4 grid grid-cols-2 gap-3"><div className="rounded-card bg-brand-50 p-3"><p className="text-2xl font-black text-brand-800">{data.experience?.COVERAGE_SUCCESS ?? 0}</p><p className="text-xs text-brand-700">direcciones cubiertas</p></div><div className="rounded-card bg-amber-50 p-3"><p className="text-2xl font-black text-amber-900">{data.experience?.COVERAGE_FAIL ?? 0}</p><p className="text-xs text-amber-800">fuera de cobertura</p></div></div>

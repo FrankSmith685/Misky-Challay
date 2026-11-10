@@ -27,9 +27,19 @@ const event = (
   action: string,
   note: string,
   transaction: Transaction,
+  options: { requestKey?: string | null; snapshot?: ExperienceScene | null; assignedTo?: number | null } = {},
 ) =>
   ExperienceEvent.create(
-    { projectId: project.id, actorId, action, version: project.version, note },
+    {
+      projectId: project.id,
+      actorId,
+      action,
+      version: project.version,
+      note,
+      requestKey: options.requestKey ?? null,
+      snapshotJson: options.snapshot ?? null,
+      assignedToSnapshot: options.assignedTo ?? null,
+    },
     { transaction },
   );
 export const experienceService = {
@@ -92,6 +102,16 @@ export const experienceService = {
       throw ApiError.badRequest(
         'Compila la tarjeta de reconocimiento con su imagen correspondiente.',
       );
+    const markers = scene.markers ?? [];
+    for (const marker of markers) {
+      const image = assets.find((asset) => asset.id === marker.imageAssetId);
+      const target = assets.find((asset) => asset.id === marker.targetAssetId);
+      const linkedImageIds = markers
+        .filter((entry) => entry.targetAssetId === marker.targetAssetId)
+        .map((entry) => entry.imageAssetId);
+      if (!image || image.kind !== 'IMAGE' || !target || target.kind !== 'TARGET' || !linkedImageIds.includes(target.sourceImageId ?? -1))
+        throw ApiError.badRequest('Cada marcador debe tener una imagen y su archivo .mind correspondiente.');
+    }
     if (
       complete &&
       ((['MODEL', 'COMBINED'].includes(scene.content) && !scene.modelAssetId) ||
@@ -148,10 +168,24 @@ export const experienceService = {
   async transition(
     id: number,
     req: Request,
-    input: { expectedVersion: number; action: 'REVIEW' | 'PUBLISH' | 'PAUSE'; startsAt?: string },
+    input: {
+      expectedVersion: number;
+      action: 'REVIEW' | 'PUBLISH' | 'PAUSE';
+      startsAt?: string;
+      reason?: string;
+      requestKey?: string | null;
+    },
   ) {
     return sequelize.transaction(async (transaction) => {
       const { project, order } = await this.load(id, req, transaction);
+      if (input.requestKey) {
+        const previous = await ExperienceEvent.findOne({
+          where: { projectId: project.id, requestKey: input.requestKey },
+          transaction,
+          order: [['id', 'DESC']],
+        });
+        if (previous) return project;
+      }
       if (project.version !== input.expectedVersion)
         throw ApiError.conflict('La experiencia cambió. Actualiza la pantalla.');
       if (input.action === 'PAUSE') {
@@ -164,7 +198,10 @@ export const experienceService = {
             'Falta verificar el pago requerido o el pedido está cancelado.',
           );
         await this.assets(project.sceneJson, true, project.id);
-        if (!project.sceneJson.videoAssetId)
+        if (
+          !project.sceneJson.videoAssetId &&
+          (project.packageSnapshotJson.mode === 'VIDEO' || project.sceneJson.content !== 'CAKE')
+        )
           throw ApiError.badRequest('Este servicio requiere un video.');
         if (project.packageSnapshotJson.mode === 'AR' && project.sceneJson.content === 'VIDEO')
           throw ApiError.badRequest('El servicio AR requiere una escena 3D además del video.');
@@ -176,7 +213,7 @@ export const experienceService = {
           project.previewExpiresAt = new Date(Date.now() + 7 * 86400000);
         } else {
           if (
-            (!['APPROVED', 'PAUSED'].includes(project.status) &&
+            (!['APPROVED', 'PAUSED', 'EXPIRED'].includes(project.status) &&
               !(
                 project.status === 'PUBLISHED' &&
                 project.expiresAt &&
@@ -209,11 +246,83 @@ export const experienceService = {
         project,
         req.user!.sub,
         input.action,
-        input.action === 'PUBLISH' ? `Vigencia hasta ${project.expiresAt?.toISOString()}` : '',
+        input.action === 'PUBLISH'
+          ? `Vigencia hasta ${project.expiresAt?.toISOString()}${input.reason ? ` · ${input.reason}` : ''}`
+          : input.action === 'PAUSE'
+            ? input.reason || 'Publicación pausada.'
+            : '',
         transaction,
+        { requestKey: input.requestKey, snapshot: project.sceneJson, assignedTo: project.assignedTo },
       );
       if (input.action !== 'PAUSE')
         await this.notify(project, order, input.action === 'PUBLISH', transaction);
+      return project;
+    });
+  },
+  async restore(
+    id: number,
+    req: Request,
+    input: { expectedVersion: number; eventId: number },
+  ) {
+    return sequelize.transaction(async (transaction) => {
+      const { project, order } = await this.load(id, req, transaction);
+      if (project.version !== input.expectedVersion)
+        throw ApiError.conflict('La experiencia cambió. Actualiza la pantalla.');
+      const snapshot = await ExperienceEvent.findOne({
+        where: { id: input.eventId, projectId: project.id },
+        transaction,
+      });
+      if (!snapshot?.snapshotJson) throw ApiError.badRequest('La versión seleccionada no tiene una instantánea recuperable.');
+      await this.assets(snapshot.snapshotJson, false, project.id);
+      project.sceneJson = snapshot.snapshotJson;
+      project.assignedTo = snapshot.assignedToSnapshot;
+      project.status = 'IN_PROGRESS';
+      project.version += 1;
+      project.approvedVersion = null;
+      project.previewToken = null;
+      project.previewExpiresAt = null;
+      project.draftSceneJson = null;
+      project.draftAssignedTo = null;
+      project.draftUpdatedAt = null;
+      await project.save({ transaction });
+      await event(
+        project,
+        req.user!.sub,
+        'RESTORED',
+        `Restaurada la versión ${snapshot.version}.`,
+        transaction,
+        { snapshot: project.sceneJson, assignedTo: project.assignedTo },
+      );
+      return { project, order };
+    });
+  },
+  async rotateToken(
+    id: number,
+    req: Request,
+    input: { expectedVersion: number; requestKey?: string | null },
+  ) {
+    return sequelize.transaction(async (transaction) => {
+      const { project } = await this.load(id, req, transaction);
+      if (input.requestKey) {
+        const previous = await ExperienceEvent.findOne({
+          where: { projectId: project.id, requestKey: input.requestKey },
+          transaction,
+          order: [['id', 'DESC']],
+        });
+        if (previous) return project;
+      }
+      if (project.version !== input.expectedVersion)
+        throw ApiError.conflict('La experiencia cambió. Actualiza la pantalla.');
+      project.publicToken = randomBytes(24).toString('base64url');
+      await project.save({ transaction });
+      await event(
+        project,
+        req.user!.sub,
+        'TOKEN_ROTATED',
+        'Se revocó el enlace QR anterior y se generó uno nuevo.',
+        transaction,
+        { requestKey: input.requestKey, snapshot: project.sceneJson, assignedTo: project.assignedTo },
+      );
       return project;
     });
   },

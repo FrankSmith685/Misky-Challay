@@ -1,7 +1,7 @@
 import { useLiveRefresh } from '@services/realtime';
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { AlertCircle, CheckCircle2, RefreshCw, Smartphone } from 'lucide-react';
+import { AlertCircle, CheckCircle2, FileCheck2, RefreshCw, Smartphone, WalletCards, WifiOff } from 'lucide-react';
 import { PageHeader } from '@components/common/PageHeader';
 import { LoadError } from '@components/common/LoadError';
 import { Button } from '@components/ui/Button';
@@ -12,7 +12,7 @@ import toast from '@components/mui/MuiToast';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PERM } from '@constants/permissions';
 import { ROUTES } from '@constants/routes';
-import { formatCurrency, formatDate } from '@lib/format';
+import { formatCurrency, formatDate, formatRelative } from '@lib/format';
 import { getApiErrorMessage } from '@services/api/client';
 import { DirectPaymentCard } from '@features/checkout/components/DirectPaymentCard';
 import {
@@ -26,19 +26,52 @@ import { BranchSelector } from '../components/BranchSelector';
 import { useActiveBranch } from '../hooks/useActiveBranch';
 import { ORDER_STATUS } from '@features/orders/components/OrderStatusBadge';
 
+type PaymentPeriod = 'all' | '7' | '30' | 'custom';
+
+const limaToday = (): string =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Lima',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+
+const shiftDate = (iso: string, days: number): string => {
+  const date = new Date(`${iso}T12:00:00-05:00`);
+  date.setDate(date.getDate() + days);
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Lima',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+};
+
 const DirectPaymentsPage = () => {
   const [params] = useSearchParams();
   const { can, isSuperAdmin } = usePermissions();
   const confirm = useConfirm();
-  const { branchId, branches, setBranchId, isLoadingBranches, branchesError, reloadBranches } =
-    useActiveBranch();
+  const {
+    branchId,
+    branches,
+    setBranchId,
+    setGlobalScope,
+    isLoadingBranches,
+    branchesError,
+    reloadBranches,
+  } = useActiveBranch({ allowAll: isSuperAdmin });
   const [state, setState] = useState(params.get('pedido') ? '' : 'REVIEW');
   const [provider, setProvider] = useState('');
   const [search, setSearch] = useState(params.get('pedido') ?? '');
+  const [period, setPeriod] = useState<PaymentPeriod>('all');
+  const today = limaToday();
+  const [customFrom, setCustomFrom] = useState(() => shiftDate(today, -29));
+  const [customTo, setCustomTo] = useState(today);
   const [page, setPage] = useState(1);
   const [data, setData] = useState<DirectPaymentList | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [detail, setDetail] = useState<DirectPaymentDetail | null>(null);
   const [busy, setBusy] = useState(false);
   const [version, setVersion] = useState(0);
@@ -50,12 +83,21 @@ const DirectPaymentsPage = () => {
   const [payerName, setPayerName] = useState('');
   const [paidAt, setPaidAt] = useState('');
   const [formError, setFormError] = useState('');
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
+  const hasDataRef = useRef(false);
+  const dateRange = useMemo(() => {
+    if (period === '7') return { from: shiftDate(today, -6), to: today };
+    if (period === '30') return { from: shiftDate(today, -29), to: today };
+    if (period === 'custom') return { from: customFrom, to: customTo };
+    return { from: undefined, to: undefined };
+  }, [customFrom, customTo, period, today]);
   useEffect(() => { const order = params.get('pedido'); if (order) { setSearch(order); setState(''); setPage(1); setDetail(null); } }, [params]);
 
   const load = useCallback(
-    async (signal?: AbortSignal) => {
-      if (!branchId) return;
-      setLoading(true);
+    async (signal?: AbortSignal, background = false) => {
+      if (isLoadingBranches || branchesError) return;
+      if (background && hasDataRef.current) setRefreshing(true);
+      else setLoading(true);
       try {
         const result = await directPaymentsApi.list(
           branchId,
@@ -64,27 +106,31 @@ const DirectPaymentsPage = () => {
             provider: provider || undefined,
             search: search || undefined,
             page,
+            from: dateRange.from,
+            to: dateRange.to,
           },
           signal,
         );
         if (!signal?.aborted) {
           setData(result);
+          setLastUpdatedAt(new Date().toISOString());
+          hasDataRef.current = true;
           setError('');
         }
       } catch (cause) {
         if (!signal?.aborted) setError(getApiErrorMessage(cause));
       } finally {
-        if (!signal?.aborted) setLoading(false);
+        if (!signal?.aborted) { setLoading(false); setRefreshing(false); }
       }
     },
-    [branchId, state, provider, search, page],
+    [branchId, branchesError, dateRange.from, dateRange.to, isLoadingBranches, page, provider, search, state],
   );
-  useLiveRefresh(['payments', 'orders'], () => load(), { intervalMs: 0 });
+  useLiveRefresh(['payments', 'orders'], () => load(undefined, true), { intervalMs: 0 });
   useEffect(() => {
     const controller = new AbortController();
     const timer = window.setTimeout(() => void load(controller.signal), 250);
-    const poll = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void load(controller.signal);
+      const poll = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void load(controller.signal, true);
     }, 15000);
     return () => {
       controller.abort();
@@ -93,6 +139,7 @@ const DirectPaymentsPage = () => {
     };
   }, [load]);
   useEffect(() => {
+    hasDataRef.current = false;
     setData(null);
     setDetail(null);
   }, [branchId]);
@@ -227,6 +274,8 @@ const DirectPaymentsPage = () => {
             value={branchId}
             branches={branches}
             onChange={setBranchId}
+            allowAll={isSuperAdmin}
+            onSelectAll={setGlobalScope}
             hasError={Boolean(branchesError)}
           />
         </div>
@@ -255,9 +304,19 @@ const DirectPaymentsPage = () => {
             }}
           >
             {DIRECT_PAYMENT_LABELS[value]} · {data?.counts[value] ?? '—'}
+            <span className="ml-1 text-xs text-ink-muted">{formatCurrency(data?.amounts[value] ?? 0)}</span>
           </Button>
         ))}
       </div>
+      {data && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-card border border-line bg-white px-4 py-3 text-sm">
+          <span><strong className="text-ink">Vista:</strong> {data.total} pagos · {formatCurrency(data.summary.totalAmount)}</span>
+          {data.summary.overdueCount > 0 && <span className="font-bold text-amber-800">{data.summary.overdueCount} demorados · {formatCurrency(data.summary.overdueAmount)}</span>}
+          <span className="flex items-center gap-1 text-brand-800"><WalletCards className="size-4" /> Comisión {Math.round(data.summary.platformRate * 100)}% registrada: {formatCurrency(data.summary.platformAccrued)}</span>
+          <span className="text-xs text-ink-muted">Por liquidar: {formatCurrency(data.summary.platformOutstanding)} · Transferido: {formatCurrency(data.summary.platformSettled)}</span>
+          {lastUpdatedAt && <span className="ml-auto text-xs text-ink-muted">Actualizado {formatRelative(lastUpdatedAt)}</span>}
+        </div>
+      )}
       <div className="mt-4 grid gap-3 rounded-card border border-line bg-white p-4 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_2fr_auto]">
         <label className="grid gap-1 text-xs font-semibold text-ink-muted">
           Estado
@@ -294,6 +353,29 @@ const DirectPaymentsPage = () => {
             <option value="plin">Plin</option>
           </select>
         </label>
+        <label className="grid gap-1 text-xs font-semibold text-ink-muted">
+          Periodo
+          <select
+            aria-label="Periodo de pagos"
+            className="min-h-11 rounded-field border border-line bg-white px-3 text-sm text-ink"
+            value={period}
+            onChange={(event) => {
+              setPeriod(event.target.value as PaymentPeriod);
+              setPage(1);
+            }}
+          >
+            <option value="all">Todo el historial</option>
+            <option value="7">Últimos 7 días</option>
+            <option value="30">Últimos 30 días</option>
+            <option value="custom">Periodo personalizado</option>
+          </select>
+        </label>
+        {period === 'custom' && (
+          <div className="grid grid-cols-2 gap-2 self-end sm:col-span-2 xl:col-span-1">
+            <label className="grid gap-1 text-xs font-semibold text-ink-muted">Desde<input aria-label="Desde" type="date" value={customFrom} max={customTo} onChange={(event) => { setCustomFrom(event.target.value); setPage(1); }} className="min-h-11 rounded-field border border-line bg-white px-3 text-sm text-ink" /></label>
+            <label className="grid gap-1 text-xs font-semibold text-ink-muted">Hasta<input aria-label="Hasta" type="date" value={customTo} min={customFrom} max={today} onChange={(event) => { setCustomTo(event.target.value); setPage(1); }} className="min-h-11 rounded-field border border-line bg-white px-3 text-sm text-ink" /></label>
+          </div>
+        )}
         <div className="self-end">
           <Input
             label="Buscar pedido o cliente"
@@ -308,7 +390,7 @@ const DirectPaymentsPage = () => {
         <Button
           variant="outline"
           className="self-end"
-          isLoading={loading}
+          isLoading={loading || refreshing}
           leftIcon={<RefreshCw className="size-4" />}
           onClick={() => void load()}
         >
@@ -317,18 +399,24 @@ const DirectPaymentsPage = () => {
       </div>
       {error && (
         <div className="mt-4">
-          <LoadError message={error} onRetry={() => void load()} />
+          {data ? (
+            <div role="status" className="flex flex-wrap items-center gap-3 rounded-card border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <WifiOff className="size-4 shrink-0" />
+              <span className="min-w-0 flex-1">No pudimos actualizar la cola. Mostramos la última consulta disponible.</span>
+              <Button size="sm" variant="outline" onClick={() => void load()}>Reintentar</Button>
+            </div>
+          ) : <LoadError message={error} onRetry={() => void load()} />}
         </div>
       )}
       <div
         className="mt-4 overflow-hidden rounded-card border border-line bg-white"
-        aria-busy={loading || isLoadingBranches}
+        aria-busy={loading || refreshing || isLoadingBranches}
       >
         {!data ? (
           <p className="p-6 text-sm text-ink-muted">
             {loading || isLoadingBranches
               ? 'Cargando pagos…'
-              : 'Selecciona una sede para consultar sus pagos.'}
+              : 'No hay pagos con estos filtros.'}
           </p>
         ) : data.items.length === 0 ? (
           <div className="flex items-center gap-3 p-6 text-sm text-ink-muted">
@@ -350,6 +438,7 @@ const DirectPaymentsPage = () => {
                   <p className="mt-1 text-sm text-ink-muted">
                     {row.contactName} · {PAYMENT_STAGE_LABELS[row.stage]}
                   </p>
+                  <p className="mt-1 text-xs font-semibold text-brand-800">{row.branchName ?? `Sucursal ${row.branchId}`} {row.hasEvidence && <span className="ml-2 inline-flex items-center gap-1 rounded-pill bg-brand-50 px-2 py-0.5 text-brand-800"><FileCheck2 className="size-3" /> Constancia</span>}</p>
                   <p className="mt-1 text-xs text-ink-muted">
                     {row.claim
                       ? `Operación ${row.claim.operationCode} · ${formatDate(row.claim.submittedAt)}`
@@ -361,6 +450,8 @@ const DirectPaymentsPage = () => {
                       Revisión demorada
                     </p>
                   )}
+
+                  {row.claim && row.reviewAgeMinutes > 0 && !row.overdue && <p className="mt-1 text-xs text-ink-muted">Reportado {formatRelative(row.claim.submittedAt)}</p>}
                 </div>
                 <div className="sm:text-right">
                   <p className="font-black text-ink">{formatCurrency(row.amount)}</p>
@@ -415,6 +506,7 @@ const DirectPaymentsPage = () => {
         Se actualiza cada 15 segundos. Una constancia acompaña el reporte; confirma siempre el
         movimiento en la cuenta real del negocio.
       </p>
+      {lastUpdatedAt && <p className="mt-1 text-xs text-ink-muted">Última consulta: {formatDate(lastUpdatedAt)}</p>}
       <Modal
         isOpen={Boolean(detail)}
         onClose={() => {
@@ -439,6 +531,24 @@ const DirectPaymentsPage = () => {
               readOnly
               onUpdate={setDetail}
             />
+            <div className="grid gap-3 rounded-card border border-brand-100 bg-brand-50 p-4 sm:grid-cols-3">
+              <div><p className="text-xs font-semibold uppercase tracking-wide text-brand-700">Importe recibido</p><p className="mt-1 text-lg font-black text-ink">{formatCurrency(detail.amount)}</p></div>
+              <div><p className="text-xs font-semibold uppercase tracking-wide text-brand-700">{detail.stage === 'FULL' ? 'Comisión plataforma' : 'Comisión acumulada del pedido'} ({Math.round(detail.platformCommission.rate * 100)}%)</p><p className="mt-1 text-lg font-black text-ink">{detail.platformCommission.amount == null ? 'Se registra al confirmar' : formatCurrency(detail.platformCommission.amount)}</p></div>
+              <div><p className="text-xs font-semibold uppercase tracking-wide text-brand-700">{detail.stage === 'FULL' ? 'Neto para la sucursal' : 'Saldo tras comisión'}</p><p className="mt-1 text-lg font-black text-ink">{detail.platformCommission.amount == null ? 'Pendiente' : formatCurrency(Math.max(0, detail.amount - detail.platformCommission.amount))}</p></div>
+              <p className="text-xs text-brand-800 sm:col-span-3">{detail.branchName ?? `Sucursal ${detail.branchId}`} · La comisión se calcula con la liquidación real del pedido después de confirmar el ingreso.</p>
+            </div>
+            {detail.claim && ['REVIEW', 'OBSERVED'].includes(detail.state) && (
+              <div className="rounded-card border border-line bg-white p-4">
+                <h3 className="flex items-center gap-2 text-sm font-bold text-ink"><FileCheck2 className="size-4 text-brand-700" /> Checklist de verificación</h3>
+                <ul className="mt-3 grid gap-2 text-sm text-ink-muted sm:grid-cols-2">
+                  <li><strong className="text-ink">Importe:</strong> {formatCurrency(detail.claim.declaredAmount)} declarado · {formatCurrency(detail.amount)} esperado</li>
+                  <li><strong className="text-ink">Operación:</strong> {detail.claim.operationCode}</li>
+                  <li><strong className="text-ink">Pagador:</strong> {detail.claim.payerName ?? detail.contactName ?? 'No indicado'}</li>
+                  <li><strong className="text-ink">Constancia:</strong> {detail.hasEvidence ? 'Disponible para revisar' : 'No adjunta'}</li>
+                  <li className="sm:col-span-2"><strong className="text-ink">Cuenta receptora:</strong> {detail.recipient.recipient} · {detail.recipient.phone}</li>
+                </ul>
+              </div>
+            )}
             {can(PERM.PAYMENT_VERIFY) && ['REVIEW', 'OBSERVED'].includes(detail.state) && (
               <div className="grid gap-2 sm:grid-cols-3">
                 <Button disabled={busy} variant="outline" onClick={() => void review('OBSERVE')}>

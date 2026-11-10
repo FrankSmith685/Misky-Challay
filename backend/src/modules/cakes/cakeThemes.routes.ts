@@ -16,6 +16,7 @@ const id = z.coerce.number().int().positive();
 const query = z.object({ query: z.object({ branchId: id.optional() }) });
 router.get('/', validate(query), asyncHandler(async (req: Request, res: Response) => ok(res, await cakeThemesService.listPublic(req.query.branchId ? Number(req.query.branchId) : undefined))));
 router.get('/admin', authenticate, requirePermissions(PERMISSIONS.CATALOG_PRODUCT_READ), asyncHandler(async (_req: Request, res: Response) => ok(res, await cakeThemesService.listAdmin())));
+router.get('/admin/health', authenticate, requirePermissions(PERMISSIONS.CATALOG_PRODUCT_READ), asyncHandler(async (_req: Request, res: Response) => ok(res, await cakeThemesService.health())));
 router.get('/:slug', validate(z.object({ params: z.object({ slug: z.string().min(1).max(150) }), query: z.object({ branchId: id.optional() }) })), asyncHandler(async (req: Request, res: Response) => ok(res, await cakeThemesService.getPublic(String(req.params.slug), req.query.branchId ? Number(req.query.branchId) : undefined))));
 const draft = z.object({
   productId: id, name: z.string().trim().min(3).max(120), theme: z.string().trim().min(2).max(80), description: z.string().trim().max(2000).default(''),
@@ -48,5 +49,10 @@ router.post('/:themeId/archive', authenticate, requirePermissions(PERMISSIONS.CA
   const row = await cakeThemesService.archive(Number(req.params.themeId), req.body.expectedVersion);
   await audit(req, { action: 'cake.theme.archive', entity: 'cake_themes', entityId: row.id });
   return ok(res, row);
+}));
+router.post('/:themeId/duplicate', authenticate, requirePermissions(PERMISSIONS.CATALOG_PRODUCT_WRITE, PERMISSIONS.CATALOG_CUSTOMIZATION_WRITE), validate(z.object({ params: z.object({ themeId: id }) })), asyncHandler(async (req: Request, res: Response) => {
+  const row = await cakeThemesService.duplicate(Number(req.params.themeId));
+  await audit(req, { action: 'cake.theme.duplicate', entity: 'cake_themes', entityId: row.id, after: { sourceThemeId: Number(req.params.themeId), status: row.isActive } });
+  return created(res, row);
 }));
 export default router;

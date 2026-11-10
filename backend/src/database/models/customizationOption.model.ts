@@ -61,6 +61,7 @@ export class CustomizationOption extends Model<
   declare sortOrder: CreationOptional<number>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
+  declare version: CreationOptional<number>;
 }
 
 CustomizationOption.init(
@@ -95,6 +96,7 @@ CustomizationOption.init(
     sortOrder: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,
+    version: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 1 },
   },
   {
     sequelize,

@@ -14,6 +14,7 @@ import {
   Recipe,
   RecipeItem,
   InventoryItem,
+  Branch,
   ProductCustomizationGroup,
   ProductReview,
   OrderItem,
@@ -49,6 +50,21 @@ const assertFinishedRecipe = async (recipeId: number) => {
 };
 
 export const catalogAdminService = {
+  async health() {
+    const rows = await Product.findAll({
+      attributes: ['id', 'status', 'imageUrl', 'allergensReviewedAt'],
+      include: [{ model: ProductVariant, as: 'variants', attributes: ['id', 'isActive'] }],
+    });
+    return {
+      total: rows.length,
+      active: rows.filter((row) => row.status === PRODUCT_STATUS.ACTIVE).length,
+      drafts: rows.filter((row) => row.status === PRODUCT_STATUS.DRAFT).length,
+      inactive: rows.filter((row) => row.status === PRODUCT_STATUS.INACTIVE).length,
+      withoutImage: rows.filter((row) => !row.imageUrl).length,
+      withoutActiveVariant: rows.filter((row) => !(row.variants ?? []).some((variant) => variant.isActive)).length,
+      pendingAllergenReview: rows.filter((row) => !row.allergensReviewedAt).length,
+    };
+  },
   /** Listado del panel: incluye borradores e inactivos (a diferencia del menu publico). */
   async listProducts(filters: { search?: string; categoryId?: number; status?: string; archived?: boolean }) {
     const where: Record<string, unknown> = {};
@@ -93,6 +109,7 @@ export const catalogAdminService = {
       isFeatured: product.isFeatured,
       imageUrl: product.imageUrl,
       imageAlt: product.imageAlt,
+      version: product.version,
       category: product.get('category') as { id: number; name: string } | undefined,
       cakeProfile: (() => {
         const profile = product.get('cakeProfile') as CakeProductProfile | undefined;
@@ -107,6 +124,7 @@ export const catalogAdminService = {
         servingUnit: variant.servingUnit,
         isDefault: variant.isDefault,
         isActive: variant.isActive,
+        version: variant.version,
       })),
       dietaryTags: ((product.get('dietaryTags') as DietaryTag[] | undefined) ?? []).map((tag) => ({
         id: tag.id,
@@ -133,6 +151,7 @@ export const catalogAdminService = {
     servingUnit?: string;
     description?: string;
     imageUrl?: string | null;
+    imageAlt?: string | null;
     variantName: string;
     basePrice: number;
   }) {
@@ -159,6 +178,7 @@ export const catalogAdminService = {
           // Nace como BORRADOR: publicarlo es un permiso aparte (catalog.product.publish).
           status: PRODUCT_STATUS.DRAFT,
           imageUrl: input.imageUrl ?? null,
+          imageAlt: input.imageAlt?.trim() || input.name.trim(),
           sortOrder: 0,
         },
         { transaction },
@@ -183,6 +203,71 @@ export const catalogAdminService = {
     });
   },
 
+  /** Duplica una ficha como borrador para acelerar altas de productos similares. */
+  async duplicateProduct(productId: number) {
+    return sequelize.transaction(async (transaction) => {
+      const source = await Product.findByPk(productId, {
+        include: [{ model: ProductVariant, as: 'variants' }],
+        transaction,
+      });
+      if (!source) throw ApiError.notFound('Producto no encontrado');
+      const baseSlug = `${source.slug}-copia`;
+      let slug = baseSlug.slice(0, 120);
+      let suffix = 2;
+      while (await Product.findOne({ where: { slug }, paranoid: false, transaction })) {
+        const ending = `-${suffix++}`;
+        slug = `${baseSlug.slice(0, 120 - ending.length)}${ending}`;
+      }
+      const product = await Product.create(
+        {
+          categoryId: source.categoryId,
+          type: source.type,
+          family: source.family,
+          preparationMode: source.preparationMode,
+          name: `${source.name} (copia)`.slice(0, 120),
+          slug,
+          description: source.description,
+          imageUrl: source.imageUrl,
+          imageAlt: source.imageAlt,
+          status: PRODUCT_STATUS.DRAFT,
+          isFeatured: false,
+          sortOrder: source.sortOrder,
+          allergensReviewedAt: null,
+        },
+        { transaction },
+      );
+      for (const [index, variant] of (source.variants ?? []).entries()) {
+        await ProductVariant.create(
+          {
+            productId: product.id,
+            name: variant.name,
+            sku: `${slug.toUpperCase().slice(0, 45)}-V${index + 1}`,
+            basePrice: variant.basePrice,
+            servingSize: variant.servingSize,
+            servingUnit: variant.servingUnit,
+            isDefault: index === 0,
+            isActive: false,
+            sortOrder: variant.sortOrder,
+          },
+          { transaction },
+        );
+      }
+      const sourceProfile = await CakeProductProfile.findByPk(source.id, { transaction });
+      if (sourceProfile) {
+        await CakeProductProfile.create({
+          productId: product.id,
+          saleMode: sourceProfile.saleMode,
+          minLeadHours: sourceProfile.minLeadHours,
+          baseEffortJson: sourceProfile.baseEffortJson,
+          stationOffsetsJson: sourceProfile.stationOffsetsJson,
+          customServingsJson: sourceProfile.customServingsJson,
+          isActive: false,
+        }, { transaction });
+      }
+      return product;
+    });
+  },
+
   async getProductOrFail(productId: number, transaction?: Transaction) {
     const product = await Product.findByPk(productId, { transaction });
     if (!product) throw ApiError.notFound('Producto no encontrado');
@@ -200,9 +285,13 @@ export const catalogAdminService = {
       preparationMode?: PreparationMode;
       isFeatured?: boolean;
       imageUrl?: string | null;
+      imageAlt?: string | null;
+      expectedVersion?: number;
     },
   ) {
     const product = await catalogAdminService.getProductOrFail(productId);
+    if (input.expectedVersion !== undefined && product.version !== input.expectedVersion)
+      throw ApiError.conflict('El producto cambió. Actualiza la ficha antes de guardar.');
     if (((input.family !== undefined && input.family !== product.family) || (input.preparationMode !== undefined && input.preparationMode !== product.preparationMode)) && product.status === PRODUCT_STATUS.ACTIVE) {
       throw ApiError.unprocessable('Retira primero el producto para cambiar su familia o forma de preparación; revisa su receta antes de publicarlo de nuevo');
     }
@@ -228,15 +317,19 @@ export const catalogAdminService = {
     if (input.preparationMode !== undefined) product.preparationMode = input.preparationMode;
     if (input.isFeatured !== undefined) product.isFeatured = input.isFeatured;
     if (input.imageUrl !== undefined) product.imageUrl = input.imageUrl;
+    if (input.imageAlt !== undefined) product.imageAlt = input.imageAlt;
+    product.version += 1;
 
     await product.save();
     return { product, before };
   },
 
   /** Publicar / despublicar. Permiso aparte: no todo el que edita puede publicar. */
-  async changeStatus(productId: number, status: ProductStatus) {
+  async changeStatus(productId: number, status: ProductStatus, expectedVersion?: number) {
     if (status === PRODUCT_STATUS.DRAFT) throw ApiError.conflict('Un producto existente no puede volver a borrador');
     const product = await catalogAdminService.getProductOrFail(productId);
+    if (expectedVersion !== undefined && product.version !== expectedVersion)
+      throw ApiError.conflict('El producto cambió. Actualiza la ficha antes de publicarlo.');
     const before = { status: product.status };
 
     if (status === PRODUCT_STATUS.ACTIVE && !await ProductVariant.count({ where: { productId, isActive: true } })) {
@@ -281,6 +374,7 @@ export const catalogAdminService = {
     }
 
     product.status = status;
+    product.version += 1;
     await product.save();
 
     return { product, before };
@@ -348,10 +442,12 @@ export const catalogAdminService = {
   /** PRECIO: cambio sensible, siempre auditado (RN-021). */
   async updateVariant(
     variantId: number,
-    input: { name?: string; basePrice?: number; servingSize?: number | null; servingUnit?: string; isActive?: boolean },
+    input: { name?: string; basePrice?: number; servingSize?: number | null; servingUnit?: string; isActive?: boolean; expectedVersion?: number },
   ) {
     const variant = await ProductVariant.findByPk(variantId);
     if (!variant) throw ApiError.notFound('Variante no encontrada');
+    if (input.expectedVersion !== undefined && variant.version !== input.expectedVersion)
+      throw ApiError.conflict('La presentación cambió. Actualiza la ficha antes de guardar.');
 
     if ((input.servingSize !== undefined && input.servingSize !== Number(variant.servingSize)) || (input.servingUnit !== undefined && input.servingUnit !== variant.servingUnit)) {
       const product = await catalogAdminService.getProductOrFail(variant.productId);
@@ -392,6 +488,7 @@ export const catalogAdminService = {
     }
     if (input.servingUnit !== undefined) variant.servingUnit = input.servingUnit;
     if (input.isActive !== undefined) variant.isActive = input.isActive;
+    variant.version += 1;
 
     await variant.save();
     if (input.isActive !== undefined && input.isActive !== before.isActive
@@ -569,17 +666,24 @@ export const catalogAdminService = {
    * aparecen aqui no estan retiradas, simplemente nunca se tocaron.
    */
   async listBranchAvailability(productId: number) {
-    const rows = await BranchProductAvailability.findAll({
+    const [rows, branches] = await Promise.all([
+      BranchProductAvailability.findAll({
       where: { productId },
       order: [['branchId', 'ASC']],
+      }),
+      Branch.findAll({ where: { isActive: true }, attributes: ['id', 'name'], order: [['name', 'ASC']] }),
+    ]);
+    const byBranch = new Map(rows.map((row) => [row.branchId, row]));
+    return branches.map((branch) => {
+      const row = byBranch.get(branch.id);
+      return {
+        branchId: branch.id,
+        branchName: branch.name,
+        isAvailable: row?.isAvailable ?? true,
+        unavailableReason: row?.unavailableReason ?? null,
+        updatedAt: row?.updatedAt ?? null,
+      };
     });
-
-    return rows.map((row) => ({
-      branchId: row.branchId,
-      isAvailable: row.isAvailable,
-      unavailableReason: row.unavailableReason,
-      updatedAt: row.updatedAt,
-    }));
   },
 
   // --- Categorias ---
@@ -602,6 +706,7 @@ export const catalogAdminService = {
 
     return categories.map((category) => ({
       ...category.toJSON(),
+      version: category.version,
       productCount: countByCategory.get(category.id) ?? 0,
     }));
   },
@@ -625,9 +730,11 @@ export const catalogAdminService = {
     });
   },
 
-  async updateCategory(categoryId: number, input: { name?: string; isActive?: boolean; sortOrder?: number; imageUrl?: string | null }) {
+  async updateCategory(categoryId: number, input: { name?: string; isActive?: boolean; sortOrder?: number; imageUrl?: string | null; expectedVersion?: number }) {
     const category = await Category.findByPk(categoryId);
     if (!category) throw ApiError.notFound('Categoria no encontrada');
+    if (input.expectedVersion !== undefined && category.version !== input.expectedVersion)
+      throw ApiError.conflict('La categoría cambió. Actualiza la pantalla antes de guardar.');
 
     if (input.name !== undefined) {
       const name = input.name.trim();
@@ -643,6 +750,7 @@ export const catalogAdminService = {
     if (input.isActive !== undefined) category.isActive = input.isActive;
     if (input.sortOrder !== undefined) category.sortOrder = input.sortOrder;
     if (input.imageUrl !== undefined) category.imageUrl = input.imageUrl;
+    category.version += 1;
 
     await category.save();
     return category;

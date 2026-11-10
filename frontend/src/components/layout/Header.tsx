@@ -54,7 +54,9 @@ const NAV_LINKS = [
 ];
 
 const isMainNavActive = (to: string, pathname: string, search: string, customCakeEntry = false) => {
-  if (pathname.startsWith('/tortas/') && (new URLSearchParams(search).has('diseno') || new URLSearchParams(search).get('canal') === 'empresas')) return to === ROUTES.business;
+  const params = new URLSearchParams(search);
+  if (pathname.startsWith('/tortas/') && (params.has('diseno') || params.get('canal') === 'empresas')) return to === ROUTES.business;
+  if (pathname === ROUTES.specialCake || (pathname.startsWith('/tortas/') && params.get('solicitud') === 'especial')) return to === ROUTES.customCake;
   if (to === ROUTES.menu || to === ROUTES.customCake) {
     if (pathname === ROUTES.menu) return to === ROUTES.menu;
     if (pathname === ROUTES.customCake || (pathname.startsWith('/tortas/') && customCakeEntry)) return to === ROUTES.customCake;
@@ -119,6 +121,12 @@ export const Header = () => {
         color: 'text.primary',
         backdropFilter: 'blur(18px)',
         boxShadow: '0 2px 12px rgba(23,50,77,.035)',
+        '&::after': {
+          content: '""',
+          display: 'block',
+          height: 3,
+          background: 'linear-gradient(90deg, var(--color-brand-500), var(--color-accent-500), var(--color-tertiary-600))',
+        },
       }}
     >
       <Container maxWidth="xl">
@@ -202,7 +210,7 @@ export const Header = () => {
               </Box>
             </IconButton>
 
-            {isAuthenticated && <NotificationBell />}
+            {isAuthenticated && <NotificationBell audience={isStaff ? 'STAFF' : 'CUSTOMER'} />}
 
             <UserMenu />
           </Stack>

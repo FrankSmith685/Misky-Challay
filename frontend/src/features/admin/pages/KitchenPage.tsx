@@ -1,7 +1,8 @@
 import { OrderCakeReference } from '@features/cakes/components/OrderCakeReference';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, Banknote, Bell, BellOff, CalendarClock, Clock, Download, Maximize2, Minimize2, MonitorUp, Printer, Radio, RefreshCw, Store, Utensils, WifiOff, Zap } from 'lucide-react';
+import { AlertTriangle, Banknote, Bell, BellOff, CalendarClock, Clock, Download, Maximize2, Minimize2, MonitorUp, PauseCircle, PlayCircle, Printer, Radio, RefreshCw, Store, Utensils, WifiOff, Zap } from 'lucide-react';
+import { useAppSelector } from '@app/hooks';
 import toast from '@components/mui/MuiToast';
 import { Badge } from '@components/ui/Badge';
 import { Button } from '@components/ui/Button';
@@ -34,6 +35,8 @@ import { printInternalReceiptWindow } from '../utils/internalReceiptPrint';
 import { useReceiptSettings } from '@services/businessInfo';
 
 type KitchenAdvanceStatus = 'ACCEPTED' | 'PREPARING' | 'READY' | 'DISPATCHED';
+type KitchenAssignment = { station?: string | null; assignedTo?: number | null };
+const STATIONS = ['GENERAL', 'HORNO', 'DECORACION', 'FRIO', 'DESPACHO'] as const;
 
 const NEXT_STEP: Partial<Record<TicketStatus, { status: KitchenAdvanceStatus; label: string }>> = {
   QUEUED: { status: 'ACCEPTED', label: 'Aceptar' },
@@ -45,8 +48,9 @@ const NEXT_STEP: Partial<Record<TicketStatus, { status: KitchenAdvanceStatus; la
 const COLUMNS: Array<{ status: TicketStatus; title: string; description: string }> = [
   { status: 'QUEUED', title: 'En cola', description: 'Pedidos confirmados que cocina debe aceptar.' },
   { status: 'ACCEPTED', title: 'Aceptados', description: 'Aceptados, pendientes de empezar.' },
-  { status: 'PREPARING', title: 'Preparando', description: 'En elaboración; revisa notas y alérgenos.' },
-  { status: 'READY', title: 'Listos', description: 'Esperan recojo, Reparto o Salón.' },
+  { status: 'PREPARING', title: 'Preparando', description: 'En elaboracion; revisa notas y alergenos.' },
+  { status: 'READY', title: 'Listos', description: 'Esperan recojo, Reparto o Salon.' },
+  { status: 'ON_HOLD', title: 'Incidencias', description: 'Pedidos detenidos hasta resolver un problema.' },
 ];
 
 const stepHelp = (ticket: KitchenTicket): string => {
@@ -54,6 +58,7 @@ const stepHelp = (ticket: KitchenTicket): string => {
   if (ticket.status === 'ACCEPTED') return 'Al empezar, el inventario registra el consumo de insumos. Verifica productos, cambios, notas y alérgenos antes.';
   if (ticket.status === 'PREPARING') return 'Marca listo solo cuando todo esté terminado. El pedido quedará disponible para Reparto, Salón o mostrador según su tipo.';
   if (ticket.order?.deliveryType === 'PICKUP') return 'Entrega el pedido en mostrador antes de confirmar: esta acción lo marca como entregado.';
+  if (ticket.status === 'ON_HOLD') return 'El pedido esta detenido por una incidencia. Resuelve el motivo y reanuda el estado anterior.';
   return ticket.order?.deliveryType === 'DINE_IN'
     ? 'Cocina terminó. Salón debe servir, cobrar si corresponde y cerrar la mesa.'
     : 'Cocina terminó. Reparto confirma el retiro y continúa la entrega.';
@@ -69,6 +74,10 @@ const TicketCard = ({
   ticket,
   onAdvance,
   onCancel,
+  onHold,
+  onResume,
+  onAssign,
+  currentUserId,
   isBusy,
   canOperate,
   canCancel,
@@ -86,6 +95,10 @@ const TicketCard = ({
   ticket: KitchenTicket;
   onAdvance: (ticket: KitchenTicket, status: KitchenAdvanceStatus) => void;
   onCancel: (ticket: KitchenTicket) => void;
+  onHold: (ticket: KitchenTicket) => void;
+  onResume: (ticket: KitchenTicket) => void;
+  onAssign: (ticket: KitchenTicket, input: KitchenAssignment) => void;
+  currentUserId: number | null;
   isBusy: boolean;
   canOperate: boolean;
   canCancel: boolean;
@@ -142,6 +155,18 @@ const TicketCard = ({
             : 'Recojo'}
         {ticket.order?.contactName ? ` · ${ticket.order.contactName}` : ''}
       </p>
+
+      {canOperate && !['DISPATCHED', 'CANCELLED'].includes(ticket.status) && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-field border border-line bg-surface-muted p-2">
+          <select aria-label="Estacion de cocina" value={ticket.station ?? 'GENERAL'} onChange={(event) => onAssign(ticket, { station: event.target.value })} className="min-w-0 flex-1 rounded-field border border-line bg-white px-2 py-1.5 text-xs font-semibold">
+            {STATIONS.map((station) => <option key={station} value={station}>{station}</option>)}
+          </select>
+          <Button size="sm" variant="ghost" disabled={isBusy || ticket.assignedTo === currentUserId} onClick={() => onAssign(ticket, { assignedTo: currentUserId })}>{ticket.assignedTo === currentUserId ? 'Asignado a ti' : 'Tomar ticket'}</Button>
+          {ticket.assignedName && ticket.assignedTo !== currentUserId && <span className="w-full text-xs text-ink-muted">Responsable: {ticket.assignedName}</span>}
+        </div>
+      )}
+      {ticket.status === 'ON_HOLD' && ticket.incidentReason && <p className="mt-2 rounded-card border border-red-200 bg-red-50 p-2 text-sm font-semibold text-red-800"><AlertTriangle className="mr-1 inline size-4" />{ticket.incidentReason}</p>}
+      {ticket.productionTasks && ticket.productionTasks.length > 0 && <p className="mt-2 rounded-card border border-accent-200 bg-accent-50 p-2 text-xs font-semibold text-accent-800">Produccion: {ticket.productionTasks.filter((task) => task.status === 'DONE').length}/{ticket.productionTasks.length} etapas completas{ticket.productionTasks.some((task) => !task.assigned) ? ' · hay etapas sin responsable' : ''}</p>}
 
       <div className="mt-2 flex flex-wrap gap-1.5">
         {ticket.order?.serviceMode === 'SCHEDULED' && (
@@ -258,6 +283,8 @@ const TicketCard = ({
             </Button>
           )}
 
+          {ticket.status === 'ON_HOLD' ? <Button size="lg" disabled={isBusy} onClick={() => onResume(ticket)} leftIcon={<PlayCircle className="size-4" />}>Reanudar ticket</Button> : <Button size="sm" variant="outline" disabled={isBusy} onClick={() => onHold(ticket)} leftIcon={<PauseCircle className="size-4" />}>Registrar incidencia</Button>}
+
           {canCancel && (
             <div className="border-t border-line pt-2">
               <Button
@@ -328,6 +355,7 @@ const ScheduledOrderCard = ({ order, isTarget, branchId }: { order: ScheduledKit
 };
 
 const KitchenPage = () => {
+  const currentUserId = useAppSelector((state) => state.auth.user?.id ?? null);
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedOrderNumber = searchParams.get('pedido');
   const requestedBranchId = Number(searchParams.get('branchId')) || null;
@@ -399,22 +427,26 @@ const KitchenPage = () => {
   const fetcher = useCallback(
     (signal: AbortSignal): Promise<KitchenBoard> => branchId
       ? adminApi.kitchenBoard(branchId, signal)
-      : Promise.resolve({ tickets: [], scheduled: [], stats: { queued: 0, preparing: 0, ready: 0, late: 0, scheduled: 0 } }),
+      : Promise.resolve({ tickets: [], scheduled: [], stats: { queued: 0, preparing: 0, ready: 0, late: 0, scheduled: 0, incidents: 0, escalated: 0, acceptedAvgMinutes: 0, prepAvgMinutes: 0 } }),
     [branchId],
   );
   const { data, error, isLoading, lastSuccessAt, isStale, refresh } = usePolling<KitchenBoard>(fetcher, 30_000);
   const handleRealtimeEvent = useCallback(() => refresh(), [refresh]);
   const realtime = useKitchenRealtime(branchId, handleRealtimeEvent);
+  const printTicket = useCallback((ticket: KitchenTicket) => {
+    printKitchenTicket(ticket);
+    void adminApi.recordKitchenPrint(ticket.id).catch(() => undefined);
+  }, []);
   const handleIncoming = useCallback((incoming: KitchenTicket[]) => {
     incoming.forEach((ticket) => {
-      if (autoPrint) printKitchenTicket(ticket);
+      if (autoPrint) printTicket(ticket);
       void notifyDevice({
         title: `Nuevo pedido ${ticket.order?.orderNumber ?? ''}`.trim(),
         body: `${ticket.order?.deliveryType === 'DINE_IN' ? `Mesa ${ticket.order.diningTable?.code ?? ''}` : ticket.order?.deliveryType === 'PICKUP' ? 'Recojo en local' : 'Delivery'} · ${ticket.order?.items.length ?? 0} productos esperando aceptación`,
         tag: `kitchen-ticket-${ticket.id}`,
       });
     });
-  }, [autoPrint, notifyDevice]);
+  }, [autoPrint, notifyDevice, printTicket]);
   const { isEnabled: isAlertOn, toggle: toggleAlert, freshIds, ring } = useNewOrderAlert(data, handleIncoming);
 
   const queuedCount = data?.stats.queued ?? 0;
@@ -540,6 +572,29 @@ const KitchenPage = () => {
     await runTicketAction(ticket, status);
   };
 
+  const handleHold = async (ticket: KitchenTicket) => {
+    const answer = await confirm({ title: `Registrar incidencia ${ticket.order?.orderNumber ?? ''}`.trim(), message: 'El ticket quedara detenido y no consumira insumos hasta reanudarlo.', confirmLabel: 'Registrar incidencia', cancelLabel: 'Volver', reasonLabel: 'Motivo de la incidencia', reasonRequired: true, reasonMinLength: 3, reasonMaxLength: 500 });
+    if (!answer.confirmed || !answer.reason) return;
+    setBusyId(ticket.id); setActionError(null);
+    try { await adminApi.holdKitchenTicket(ticket.id, answer.reason); refresh(); toast.warning('Incidencia registrada.'); }
+    catch (cause) { const message = getApiErrorMessage(cause); setActionError({ ticketId: ticket.id, message }); toast.error(message); refresh(); }
+    finally { setBusyId(null); }
+  };
+
+  const handleResume = async (ticket: KitchenTicket) => {
+    setBusyId(ticket.id); setActionError(null);
+    try { await adminApi.resumeKitchenTicket(ticket.id); refresh(); toast.success('Ticket reanudado.'); }
+    catch (cause) { const message = getApiErrorMessage(cause); setActionError({ ticketId: ticket.id, message }); toast.error(message); refresh(); }
+    finally { setBusyId(null); }
+  };
+
+  const handleAssign = async (ticket: KitchenTicket, input: KitchenAssignment) => {
+    setBusyId(ticket.id); setActionError(null);
+    try { await adminApi.assignKitchenTicket(ticket.id, input); refresh(); toast.success('Asignacion actualizada.'); }
+    catch (cause) { const message = getApiErrorMessage(cause); setActionError({ ticketId: ticket.id, message }); toast.error(message); refresh(); }
+    finally { setBusyId(null); }
+  };
+
   const handleCancel = async (ticket: KitchenTicket) => {
     const { confirmed, reason } = await confirm({
       title: `Cancelar el pedido ${ticket.order?.orderNumber ?? ''}`.trim(),
@@ -660,9 +715,13 @@ const KitchenPage = () => {
                     canSeeDelivery={can(PERM.DELIVERY_READ) || can(PERM.DELIVERY_ASSIGN) || can(PERM.DELIVERY_OPERATE)}
                     canSeeDining={can(PERM.DINING_READ) || can(PERM.DINING_OPERATE)}
                     waitingMinutes={ticket.createdAt ? Math.max(0, Math.floor((now - new Date(ticket.createdAt).getTime()) / 60_000)) : 0}
-                    onPrint={printKitchenTicket}
+                    onPrint={printTicket}
                     onAdvance={handleAdvance}
                     onCancel={(target) => void handleCancel(target)}
+                    onHold={(target) => void handleHold(target)}
+                    onResume={(target) => void handleResume(target)}
+                    onAssign={(target, input) => void handleAssign(target, input)}
+                    currentUserId={currentUserId}
                   />
                 ))}
               </div>
@@ -708,6 +767,10 @@ const KitchenPage = () => {
                 { label: 'Programados', value: stats.scheduled, tone: stats.scheduled > 0 ? 'accent' : 'neutral' },
                 { label: 'Preparando', value: stats.preparing, tone: 'brand' },
                 { label: 'Listos', value: stats.ready },
+                ...(stats.incidents > 0 ? [{ label: 'Incidencias', value: stats.incidents, tone: 'danger' as const }] : []),
+                ...(stats.escalated > 0 ? [{ label: 'Escaladas', value: stats.escalated, tone: 'accent' as const }] : []),
+                { label: 'Aceptacion media', value: `${stats.acceptedAvgMinutes} min` },
+                { label: 'Preparacion media', value: `${stats.prepAvgMinutes} min` },
                 ...(stats.late > 0
                   ? [{ label: 'Con retraso', value: stats.late, icon: AlertTriangle, tone: 'danger' as const }]
                   : []),
@@ -732,7 +795,7 @@ const KitchenPage = () => {
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
             <span className={cn('inline-flex items-center gap-1.5 rounded-pill px-2.5 py-1 text-xs font-bold', realtime.status === 'connected' ? 'bg-brand-100 text-brand-800' : 'bg-accent-50 text-accent-700')}><Radio className="size-3.5" /> {realtime.status === 'connected' ? 'En vivo' : 'Reconectando'}</span>
-            {stats && <><Badge variant={stats.scheduled ? 'warning' : 'neutral'}>Programados {stats.scheduled}</Badge><Badge variant={stats.queued ? 'warning' : 'neutral'}>En cola {stats.queued}</Badge><Badge variant="brand">Preparando {stats.preparing}</Badge><Badge variant="success">Listos {stats.ready}</Badge>{stats.late > 0 && <Badge variant="danger">Con retraso {stats.late}</Badge>}</>}
+            {stats && <><Badge variant={stats.scheduled ? 'warning' : 'neutral'}>Programados {stats.scheduled}</Badge><Badge variant={stats.queued ? 'warning' : 'neutral'}>En cola {stats.queued}</Badge><Badge variant="brand">Preparando {stats.preparing}</Badge><Badge variant="success">Listos {stats.ready}</Badge>{stats.incidents > 0 && <Badge variant="danger">Incidencias {stats.incidents}</Badge>}{stats.late > 0 && <Badge variant="danger">Con retraso {stats.late}</Badge>}</>}
             <span className="ml-auto text-[11px] font-semibold text-ink-muted">{freshnessLabel}</span>
           </div>
           <details className="mt-2 border-t border-line pt-2 text-xs text-ink-muted">

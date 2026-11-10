@@ -10,7 +10,7 @@ export interface CustomerCase {
     proposal?: string;
     priceDifference?: number;
     additionalBalance?: number;
-    changeSummary?: { scheduledAt?: string; contactName?: string; contactPhone?: string; addressLine?: string; deliveryFee?: number };
+    changeSummary?: { scheduledAt?: string; contactName?: string; contactPhone?: string; addressLine?: string; deliveryFee?: number; cakeDeliveryFee?: number };
     agreements?: Array<{ proposalVersion: number; acceptedAt: string; proposal: string; priceDifference?: number }>;
   };
   messagesJson: Array<{

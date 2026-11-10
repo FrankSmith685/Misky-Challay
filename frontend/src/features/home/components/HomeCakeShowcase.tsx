@@ -47,7 +47,7 @@ export const HomeCakeShowcase = () => (
       </div>
       <div className="grid grid-cols-3 gap-2">
         {[
-          { image: '/images/cakes/vanilla.png', label: 'Clásica' },
+          { image: '/images/cakes/vanilla.svg', label: 'Clásica' },
           { image: '/images/cakes/custom.png', label: 'A tu gusto' },
           { image: '/images/cakes/special.png', label: 'Especial' },
         ].map((cake) => (

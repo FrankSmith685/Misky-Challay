@@ -1,6 +1,17 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { accruedCakeBase, cakeCommissionAmount, cakeLineBase, cakeRefundShare } from '../modules/cakes/cakeCommission.math';
+import { accruedCakeBase, cakeCommissionAmount, cakeLineBase, cakeRefundShare, orderProductBase } from '../modules/cakes/cakeCommission.math';
+
+test('la comision de plataforma incluye los conceptos vendidos y excluye delivery', () => {
+  assert.equal(orderProductBase([
+    { productId: 11, lineTotal: 28, discountTotal: 0 },
+    { productId: 22, lineTotal: 32, discountTotal: 2 },
+    { productId: null, lineTotal: 10, discountTotal: 0 },
+  ], 2), 68);
+  assert.equal(cakeCommissionAmount(orderProductBase([
+    { productId: 11, lineTotal: 28, discountTotal: 0 },
+  ]), 0, 0, 0.15), 4.2);
+});
 
 test('el 15 % corresponde solo a tortas descontadas y excluye otros productos y delivery', () => {
   const cakeBase = cakeLineBase([

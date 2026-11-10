@@ -25,6 +25,7 @@ export class BranchOptionAvailability extends Model<
   declare availableUntil: CreationOptional<Date | null>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
+  declare version: CreationOptional<number>;
 }
 
 BranchOptionAvailability.init(
@@ -38,6 +39,7 @@ BranchOptionAvailability.init(
     availableUntil: { type: DataTypes.DATE, allowNull: true },
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,
+    version: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 1 },
   },
   {
     sequelize,

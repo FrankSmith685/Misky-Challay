@@ -14,6 +14,7 @@ import {
   Gift,
   Star,
   CalendarDays,
+  Bell,
 } from 'lucide-react';
 import { ROUTES } from '@constants/routes';
 import { usePermissions } from '@hooks/usePermissions';
@@ -41,6 +42,7 @@ interface AccountLink {
  * antes salia cortado. */
 const ACCOUNT_LINKS: AccountLink[] = [
   { to: ROUTES.account, label: 'Inicio', icon: Home, section: 'ACTIVIDAD', end: true },
+  { to: ROUTES.accountNotifications, label: 'Notificaciones', icon: Bell, section: 'ACTIVIDAD' },
   { to: ROUTES.accountOrders, label: 'Mis pedidos', icon: ClipboardList, section: 'ACTIVIDAD' },
   { to: ROUTES.accountFavorites, label: 'Mis favoritos', icon: Heart, section: 'ACTIVIDAD' },
   { to: ROUTES.designRequests, label: 'Mis diseños', icon: Gift, section: 'ACTIVIDAD' },

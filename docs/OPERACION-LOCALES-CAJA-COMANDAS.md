@@ -94,3 +94,10 @@ Cada periodo se compara con el periodo inmediatamente anterior y todos los cálc
 ## Puesta en marcha
 
 El esquema requiere aplicar las migraciones pendientes y volver a ejecutar el seeder RBAC para sincronizar los permisos y roles del sistema. El seeder de operaciones crea doce mesas iniciales en la sucursal de demostración; los demás locales pueden configurarlas desde **Salón y comandas**.
+
+## Reparto
+
+- El tablero permite consultar todas las sucursales al superadmin y mantiene las acciones operativas dentro de la sucursal seleccionada.
+- Una entrega fallida permanece en una cola de seguimiento con su motivo y puede reprogramarse después de contactar al cliente.
+- El servidor bloquea asignaciones y avances concurrentes, limita la carga activa de cada repartidor y registra asignaciones, reasignaciones, avances y reintentos en auditoría.
+- Para cerrar una entrega se registra el nombre de quien recibe o una foto de llegada. Los cobros contra entrega muestran el importe pendiente al repartidor y se capturan al confirmar la entrega.

@@ -51,7 +51,7 @@ COPY --from=build /app/package.json ./
 
 # Las imagenes subidas se montan aqui. Es un volumen a proposito: el sistema de
 # archivos del contenedor es efimero y cada despliegue borraria el catalogo.
-RUN mkdir -p /app/backend/uploads && chown -R node:node /app/backend/uploads
+RUN mkdir -p /app/uploads && chown -R node:node /app/uploads
 
 # node:alpine ya trae el usuario `node`. Ejecutar como root dentro del contenedor
 # convierte cualquier ejecucion remota de codigo en control total de la imagen.

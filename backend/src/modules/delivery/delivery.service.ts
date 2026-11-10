@@ -5,6 +5,7 @@ import {
   DeliveryEvidence,
   Driver,
   Order,
+  Payment,
   sequelize,
 } from '@database/models';
 import {
@@ -14,7 +15,8 @@ import {
   type DeliveryStatus,
 } from '@database/models/delivery.model';
 import { DRIVER_STATUS } from '@database/models/driver.model';
-import { DELIVERY_TYPE, ORDER_STATUS } from '@config/constants';
+import { DELIVERY_TYPE, ORDER_STATUS, PAYMENT_STATUS } from '@config/constants';
+import { PAYABLE_TYPE } from '@database/models/payment.model';
 import { ApiError } from '@shared/errors/ApiError';
 import type { BranchScopeCheck } from '@shared/utils/scope';
 import { ordersService } from '@modules/orders/orders.service';
@@ -100,18 +102,14 @@ export const deliveryService = {
    * permitia cerrar el reparto del companero. Un array vacio (cuenta de repartidor
    * sin fila en `drivers`) no devuelve nada, que es justo lo correcto.
    */
-  async board(branchId: number, options: { onlyDriverIds?: number[] } = {}) {
+  async board(branchId: number | undefined, options: { onlyDriverIds?: number[]; includeFailed?: boolean } = {}) {
+    const statuses = options.includeFailed
+      ? [DELIVERY_STATUS.PENDING, DELIVERY_STATUS.ASSIGNED, DELIVERY_STATUS.PICKED_UP, DELIVERY_STATUS.ON_ROUTE, DELIVERY_STATUS.FAILED]
+      : [DELIVERY_STATUS.PENDING, DELIVERY_STATUS.ASSIGNED, DELIVERY_STATUS.PICKED_UP, DELIVERY_STATUS.ON_ROUTE];
     const deliveries = await Delivery.findAll({
       where: {
-        branchId,
-        status: {
-          [Op.in]: [
-            DELIVERY_STATUS.PENDING,
-            DELIVERY_STATUS.ASSIGNED,
-            DELIVERY_STATUS.PICKED_UP,
-            DELIVERY_STATUS.ON_ROUTE,
-          ],
-        },
+        ...(branchId ? { branchId } : {}),
+        status: { [Op.in]: statuses },
         ...(options.onlyDriverIds ? { driverId: { [Op.in]: options.onlyDriverIds } } : {}),
       },
       include: [
@@ -125,6 +123,7 @@ export const deliveryService = {
             'id',
             'orderNumber',
             'status',
+            'scheduledAt',
             'contactName',
             'contactPhone',
             'notes',
@@ -140,14 +139,17 @@ export const deliveryService = {
     });
 
     const photos = deliveries.length ? await DeliveryEvidence.findAll({ where: { deliveryId: deliveries.map((delivery) => delivery.id) }, attributes: ['deliveryId', 'stage'] }) : [];
-    return deliveries.map((delivery) => ({ ...delivery.get({ plain: true }), evidence: photos.filter((photo) => photo.deliveryId === delivery.id).map((photo) => photo.stage) }));
+    const cashPayments = deliveries.length ? await Payment.findAll({ where: { payableType: PAYABLE_TYPE.ORDER, payableId: deliveries.map((delivery) => delivery.orderId), provider: 'cash' }, attributes: ['payableId', 'amount', 'status'] }) : [];
+    const cashByOrder = new Map(cashPayments.map((payment) => [payment.payableId, payment]));
+    return deliveries.map((delivery) => {
+      const payment = cashByOrder.get(delivery.orderId);
+      return { ...delivery.get({ plain: true }), evidence: photos.filter((photo) => photo.deliveryId === delivery.id).map((photo) => photo.stage), cashDue: payment?.status === PAYMENT_STATUS.PENDING ? Number(payment.amount) : null };
+    });
   },
 
-  async listDrivers(branchId: number) {
-    return Driver.findAll({
-      where: { branchId, isActive: true },
-      order: [['fullName', 'ASC']],
-    });
+  async listDrivers(branchId?: number) {
+    const drivers = await Driver.findAll({ where: { ...(branchId ? { branchId } : {}), isActive: true }, order: [['fullName', 'ASC']] });
+    return Promise.all(drivers.map(async (driver) => ({ ...driver.get({ plain: true }), activeDeliveries: await Delivery.count({ where: { driverId: driver.id, status: { [Op.in]: OPEN_FOR_DRIVER } } }) })));
   },
 
   /**
@@ -206,11 +208,16 @@ export const deliveryService = {
     }
 
     return sequelize.transaction(async (transaction) => {
+      const lockedDelivery = await Delivery.findByPk(delivery.id, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!lockedDelivery) throw ApiError.notFound('Reparto no encontrado');
+      if (lockedDelivery.status !== delivery.status || lockedDelivery.driverId !== delivery.driverId) throw ApiError.conflict('El reparto cambió mientras lo asignabas. Actualiza el tablero.');
       const previousDriverId = delivery.driverId;
       const currentDriver = await Driver.findByPk(driverId, { transaction, lock: transaction.LOCK.UPDATE });
       const order = await Order.findByPk(delivery.orderId, { transaction });
       if (!currentDriver?.isActive || currentDriver.status === 'OFFLINE') throw ApiError.unprocessable('El conductor ya no está disponible');
       if (order?.deliveryVehicleType === 'CAR' && currentDriver.vehicleType !== 'CAR') throw ApiError.unprocessable('Esta torta requiere un conductor con auto. No se permite asignar una moto u otro vehículo.');
+      const activeForDriver = await Delivery.count({ where: { driverId, status: { [Op.in]: OPEN_FOR_DRIVER } }, transaction });
+      if (activeForDriver >= Number(currentDriver?.maxActiveDeliveries ?? 3) && delivery.driverId !== driverId) throw ApiError.conflict('El repartidor ya alcanzó su carga máxima de entregas activas');
       delivery.vehicleType = currentDriver.vehicleType;
 
       if (isReassignment) {
@@ -312,6 +319,9 @@ export const deliveryService = {
 
     const run = async (transaction: Transaction) => {
       const now = new Date();
+      const lockedDelivery = await Delivery.findByPk(delivery.id, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!lockedDelivery) throw ApiError.notFound('Reparto no encontrado');
+      if (lockedDelivery.status !== current || lockedDelivery.driverId !== delivery.driverId) throw ApiError.conflict('El reparto cambió mientras se actualizaba. Refresca el tablero.');
       let order: Order | null = null;
       if ([DELIVERY_STATUS.PICKED_UP, DELIVERY_STATUS.ON_ROUTE, DELIVERY_STATUS.DELIVERED].includes(next as 'PICKED_UP' | 'ON_ROUTE' | 'DELIVERED')) {
         order = await Order.findByPk(delivery.orderId, { transaction });
@@ -346,6 +356,8 @@ export const deliveryService = {
       if (next === DELIVERY_STATUS.PICKED_UP) delivery.pickedUpAt = now;
       if (next === DELIVERY_STATUS.DELIVERED) {
         delivery.deliveredAt = now;
+        const arrivalEvidence = await DeliveryEvidence.count({ where: { deliveryId: delivery.id, stage: 'ARRIVAL' }, transaction });
+        if (!options.proof?.recipientName && arrivalEvidence === 0) throw ApiError.unprocessable('Registra el nombre de quien recibe o una foto de entrega antes de cerrar el reparto');
         delivery.proofJson = { ...delivery.proofJson, ...options.proof };
       }
       if (next === DELIVERY_STATUS.FAILED) {
@@ -392,6 +404,30 @@ export const deliveryService = {
     else await sequelize.transaction(run);
 
     return delivery;
+  },
+
+  async retryFailed(deliveryId: number, actorId: number, scope?: BranchScopeCheck, comment?: string) {
+    return sequelize.transaction(async (transaction) => {
+      const delivery = await Delivery.findByPk(deliveryId, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!delivery) throw ApiError.notFound('Reparto no encontrado');
+      scope?.(delivery.branchId);
+      if (delivery.status !== DELIVERY_STATUS.FAILED) throw ApiError.conflict('Solo se pueden reprogramar entregas fallidas');
+      const order = await Order.findByPk(delivery.orderId, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!order || [ORDER_STATUS.CANCELLED, ORDER_STATUS.REFUNDED, ORDER_STATUS.DELIVERED].includes(order.status as 'CANCELLED' | 'REFUNDED' | 'DELIVERED')) throw ApiError.conflict('El pedido ya no admite una nueva entrega');
+      delivery.status = DELIVERY_STATUS.PENDING;
+      delivery.driverId = null;
+      delivery.carrier = DELIVERY_CARRIER.OWN;
+      delivery.externalProvider = null;
+      delivery.externalReference = null;
+      delivery.assignedAt = null;
+      delivery.pickedUpAt = null;
+      delivery.deliveredAt = null;
+      delivery.proofJson = null;
+      delivery.failureReason = null;
+      await delivery.save({ transaction });
+      await DeliveryEvent.create({ deliveryId, fromStatus: DELIVERY_STATUS.FAILED, toStatus: DELIVERY_STATUS.PENDING, actorId, comment: comment?.trim().slice(0, 255) || 'Entrega reprogramada' }, { transaction });
+      return delivery;
+    });
   },
 
   /**

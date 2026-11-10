@@ -411,6 +411,7 @@ export interface CoverageResult {
 }
 
 export interface CheckoutInput {
+  experience?: { packageId: number; expectedVersion: number; brief: string };
   gift?:{recipientName:string;recipientPhone?:string;hidePrices:boolean;message?:string};
   termsAccepted?: boolean;
   termsVersion?: number;
@@ -487,7 +488,11 @@ export interface OrderQuote {
   paymentPlan?: 'FULL' | 'DEPOSIT_BALANCE'; depositAmount?: number; balanceAmount?: number; balanceDueAt?: string | null;
   minimumOrder: number; meetsMinimum: boolean; branchId: number; branchName: string; isOpenNow: boolean;
   etaMinutes: number; demandLevel: 'LOW' | 'MEDIUM' | 'HIGH'; routeDistanceKm?: number;
+  schedulePending?: boolean;
+  requiresScheduledDelivery?: boolean;
+  minimumLeadHours?: number;
   discounts: Array<{ source: string; code: string; description: string; amount: number }>;
+  experience?: { packageId: number; name: string; description: string; price: number; minLeadHours: number; paymentRequirement: 'FULL' | 'DEPOSIT' } | null;
 }
 
 export interface PlacedOrder {

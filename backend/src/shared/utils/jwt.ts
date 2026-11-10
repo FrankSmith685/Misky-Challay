@@ -23,6 +23,8 @@ export interface TokenPayload {
    * para renovar. Asi el logout SI revoca el refresh token.
    */
   tv: number;
+  /** Identificador de la sesion de refresh, cuando existe. */
+  sid?: string;
 }
 
 export const signAccessToken = (payload: TokenPayload): string =>
@@ -31,7 +33,7 @@ export const signAccessToken = (payload: TokenPayload): string =>
     algorithm: ALGORITHM,
   } as SignOptions);
 
-export const signRefreshToken = (payload: Pick<TokenPayload, 'sub' | 'tv'>): string =>
+export const signRefreshToken = (payload: Pick<TokenPayload, 'sub' | 'tv'> & { sid?: string }): string =>
   jwt.sign(payload, env.JWT_REFRESH_SECRET, {
     expiresIn: env.JWT_REFRESH_EXPIRES_IN,
     algorithm: ALGORITHM,
@@ -47,11 +49,11 @@ export const verifyAccessToken = (token: string): TokenPayload => {
   }
 };
 
-export const verifyRefreshToken = (token: string): Pick<TokenPayload, 'sub' | 'tv'> => {
+export const verifyRefreshToken = (token: string): Pick<TokenPayload, 'sub' | 'tv'> & { sid?: string } => {
   try {
     return jwt.verify(token, env.JWT_REFRESH_SECRET, {
       algorithms: [ALGORITHM],
-    }) as unknown as Pick<TokenPayload, 'sub' | 'tv'>;
+    }) as unknown as Pick<TokenPayload, 'sub' | 'tv'> & { sid?: string };
   } catch {
     throw ApiError.unauthorized('Refresh token invalido o expirado');
   }

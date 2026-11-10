@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Camera, Download, ScanLine } from 'lucide-react';
 import { ROUTES } from '@constants/routes';
@@ -7,21 +7,25 @@ import { cakePreviewApi } from '../cakePreview.service';
 import { cakePreviewUrl, isLocalPreviewUrl } from '../utils/cakePreviewLinks';
 import { CAKE_AR_TARGET, cakeArDemo, cakeArPath, type CakeArInput } from '../ar/cakeAr';
 import { createCakeArCard } from '../ar/createCakeArCard';
+import { trackUxEvent } from '@services/analytics';
 
 const CakeCardCamera = lazy(() => import('../components/CakeCardCamera').then((module) => ({ default: module.CakeCardCamera })));
 
 const CakeCardArPage = () => {
   const [params] = useSearchParams();
   const token = params.get('vista') || '';
+  const orderNumber = params.get('pedido') || '';
   const [loaded, setLoaded] = useState<{ token: string; input?: CakeArInput; error?: string } | null>(null);
   const [retry, setRetry] = useState(0);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [downloadError, setDownloadError] = useState('');
   const [expired, setExpired] = useState(false);
+  const cameraAutoOpenKey = useRef('');
   const closeCamera = useCallback(() => setCameraOpen(false), []);
   useEffect(() => {
     document.title = 'Una torta en tu mundo | Misky Challay';
+    void trackUxEvent('AR_QR_OPEN', { source: token ? 'dynamic' : 'stable' });
     setCameraOpen(false);
     if (!token) return;
     let active = true;
@@ -43,8 +47,19 @@ const CakeCardArPage = () => {
   }, [input]);
   const ready = Boolean(input && !expired);
   const url = new URL(cakeArPath(token || undefined), new URL(cakePreviewUrl('card')).origin).toString();
+  const backTo = orderNumber ? ROUTES.accountOrderDetail(orderNumber) : token ? ROUTES.cakePreview(token) : ROUTES.home;
   const local = isLocalPreviewUrl(url);
   const secure = window.isSecureContext && Boolean(navigator.mediaDevices?.getUserMedia);
+  useEffect(() => {
+    if (!token || !ready || !secure) return;
+    const key = `${token}:${retry}`;
+    if (cameraAutoOpenKey.current === key) return;
+    cameraAutoOpenKey.current = key;
+    setCameraOpen(true);
+  }, [ready, retry, secure, token]);
+  useEffect(() => {
+    if (!secure) void trackUxEvent('AR_FALLBACK_3D', { source: token ? 'dynamic' : 'stable' });
+  }, [secure, token]);
   const download = async () => {
     if (!ready || busy) return;
     setBusy(true); setDownloadError('');
@@ -56,10 +71,10 @@ const CakeCardArPage = () => {
   };
   const button = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-field px-4 text-sm font-semibold disabled:opacity-50';
   return <div className="container-shell py-6 sm:py-10">
-    <Link to={token ? ROUTES.cakePreview(token) : ROUTES.customCake} className="inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-brand-700"><ArrowLeft className="size-4" />{token ? 'Volver al visor 3D' : 'Crea tu torta'}</Link>
+    <Link to={backTo} className="inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-brand-700"><ArrowLeft className="size-4" />{orderNumber ? 'Volver a mi pedido' : token ? 'Volver al visor 3D' : 'Crea tu torta'}</Link>
     <div className="mt-5 grid items-center gap-8 rounded-card border border-line bg-white p-5 sm:p-8 lg:grid-cols-[1.05fr_1fr] lg:gap-12">
       <section>
-        <span className="inline-flex items-center gap-2 rounded-pill bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700"><ScanLine className="size-4" /> Experiencia AR · piloto</span>
+        <span className="inline-flex items-center gap-2 rounded-pill bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700"><ScanLine className="size-4" /> Tarjeta AR de tu pedido</span>
         <h1 className="mt-5 text-3xl font-bold leading-tight text-ink sm:text-4xl">Una torta que cobra vida<br /><span className="text-brand-700">en tu mundo.</span></h1>
         <p className="mt-4 max-w-lg text-sm leading-7 text-ink-muted">Escanea el QR, activa la cámara y enfoca la fotografía de nuestra tarjeta. La torta aparecerá sobre ella: acerca el celular y descubre sus lados.</p>
         <ol className="my-6 space-y-3 text-sm text-ink">{['Descarga e imprime la tarjeta en papel mate.', 'Apóyala en una mesa, con buena luz y sin reflejos.', 'Activa la cámara y mantén toda la foto a la vista.'].map((step, index) => <li key={step} className="flex items-center gap-3"><span className="grid size-8 shrink-0 place-items-center rounded-pill bg-brand-50 text-xs font-bold text-brand-700">0{index + 1}</span>{step}</li>)}</ol>

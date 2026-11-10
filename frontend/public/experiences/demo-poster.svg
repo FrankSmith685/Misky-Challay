@@ -1,9 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
-  <defs><linearGradient id="sky" x2="1" y2="1"><stop stop-color="#302337"/><stop offset="1" stop-color="#642e49"/></linearGradient></defs>
+﻿<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <defs>
+    <linearGradient id="sky" x2="1" y2="1"><stop stop-color="#30285f"/><stop offset="1" stop-color="#c47d9e"/></linearGradient>
+    <filter id="shadow"><feGaussianBlur stdDeviation="7"/></filter>
+  </defs>
   <rect width="960" height="540" fill="url(#sky)"/>
-  <g fill="#d7b27c"><circle cx="90" cy="84" r="3"/><circle cx="350" cy="95" r="2"/><circle cx="120" cy="350" r="3"/><circle cx="865" cy="90" r="3"/><circle cx="830" cy="450" r="2"/><circle cx="340" cy="425" r="3"/></g>
-  <ellipse cx="250" cy="415" rx="100" ry="12" fill="#201b28"/><ellipse cx="250" cy="315" rx="62" ry="83" fill="#8ba959"/><ellipse cx="250" cy="220" rx="85" ry="65" fill="#a6bf6b"/>
-  <g fill="#25232b"><ellipse cx="218" cy="220" rx="17" ry="27"/><ellipse cx="282" cy="220" rx="17" ry="27"/></g><g fill="white"><ellipse cx="212" cy="210" rx="5" ry="7"/><ellipse cx="276" cy="210" rx="5" ry="7"/></g>
-  <path d="M305 295L353 250M195 295L155 340" stroke="#a6bf6b" stroke-width="21" stroke-linecap="round"/>
-  <g font-family="Arial,sans-serif"><text x="410" y="200" font-size="37" font-weight="700" fill="#f8eedc">Un saludo de otro planeta</text><text x="410" y="257" font-size="26" fill="#f8eedc">Hoy celebramos contigo.</text><text x="410" y="335" font-size="24" font-weight="700" fill="#e0bf86">Misky Challay</text><text x="410" y="383" font-size="18" fill="#d9c6d0">Demostración · video original sin audio</text></g>
+  <g fill="#f4c36e"><circle cx="90" cy="84" r="3"/><circle cx="350" cy="95" r="2"/><circle cx="120" cy="350" r="3"/><circle cx="865" cy="90" r="3"/><circle cx="830" cy="450" r="2"/><circle cx="340" cy="425" r="3"/></g>
+  <ellipse cx="250" cy="442" rx="155" ry="18" fill="#201b28" opacity=".42" filter="url(#shadow)"/>
+  <ellipse cx="250" cy="425" rx="145" ry="18" fill="#f8eee4"/>
+  <rect x="130" y="325" width="240" height="100" fill="#b15a83"/>
+  <ellipse cx="250" cy="325" rx="120" ry="25" fill="#fffaf2"/>
+  <ellipse cx="250" cy="425" rx="120" ry="25" fill="#b15a83"/>
+  <rect x="170" y="260" width="160" height="68" fill="#d8a06d"/>
+  <ellipse cx="250" cy="260" rx="80" ry="19" fill="#fffaf2"/>
+  <ellipse cx="250" cy="328" rx="80" ry="19" fill="#d8a06d"/>
+  <rect x="243" y="210" width="14" height="52" rx="5" fill="#c89551"/>
+  <ellipse cx="250" cy="207" rx="15" ry="21" fill="#f4b84b"/>
+  <g fill="#f4b84b"><circle cx="180" cy="350" r="7"/><circle cx="220" cy="340" r="6"/><circle cx="280" cy="352" r="7"/><circle cx="320" cy="338" r="6"/></g>
+  <g font-family="Arial,sans-serif"><text x="450" y="180" font-size="40" font-weight="700" fill="#fff5e8">Una torta que cobra vida</text><text x="450" y="240" font-size="26" fill="#f8e8e8">Dedicatoria · video · audio · AR</text><text x="450" y="335" font-size="28" font-weight="700" fill="#f4cf8c">Misky Challay</text><text x="450" y="382" font-size="18" fill="#f0d9e4">Demostración Premium desde tu navegador</text></g>
 </svg>

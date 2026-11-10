@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
-import { ArrowDown, ArrowUp, Ban, BarChart3, CalendarClock, ChevronDown, Copy, ExternalLink, GripVertical, History, ImageIcon, MoreHorizontal, Pencil, Plus, Search, Sliders, Trash2, TrendingUp } from 'lucide-react';
+import { ArrowDown, ArrowUp, Ban, BarChart3, CalendarClock, CheckCircle2, ChevronDown, Copy, Download, ExternalLink, GripVertical, History, ImageIcon, MoreHorizontal, Pencil, Plus, RotateCcw, Search, ShieldCheck, Sliders, Trash2, TrendingUp } from 'lucide-react';
 import toast from '@components/mui/MuiToast';
 import { Card, CardDescription } from '@components/ui/Card';
 import { Button } from '@components/ui/Button';
@@ -12,6 +12,7 @@ import { Modal } from '@components/ui/Modal';
 import { Pagination } from '@components/ui/Pagination';
 import { useConfirm } from '@components/ui/ConfirmDialog';
 import { LoadError } from '@components/common/LoadError';
+import { Alert } from '@components/ui/Alert';
 import { PageLoader } from '@components/common/PageLoader';
 import { PageHeader } from '@components/common/PageHeader';
 import { ROUTES } from '@constants/routes';
@@ -30,6 +31,10 @@ import {
   type BuilderPreset,
   type BuilderAnalytics,
   type BuilderHistoryEntry,
+  type BuilderHealth,
+  type BuilderGovernance,
+  type BuilderRelease,
+  type BuilderCatalogHealthRow,
 } from '../services/commercialAdmin.service';
 
 /**
@@ -136,7 +141,13 @@ const BuilderAdminPage = () => {
   const [presetForm, setPresetForm] = useState(NEW_PRESET);
   const [analytics, setAnalytics] = useState<BuilderAnalytics | null>(null);
   const [history, setHistory] = useState<BuilderHistoryEntry[]>([]);
+  const [health, setHealth] = useState<BuilderHealth | null>(null);
+  const [governance, setGovernance] = useState<BuilderGovernance | null>(null);
+  const [releases, setReleases] = useState<BuilderRelease[]>([]);
+  const [catalogHealth, setCatalogHealth] = useState<BuilderCatalogHealthRow[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [releasesOpen, setReleasesOpen] = useState(false);
+  const [publishAt, setPublishAt] = useState('');
   const [dragging, setDragging] = useState<{ kind: 'group' | 'option' | 'preset'; id: number } | null>(null);
   /* Reglas tecleadas y todavia sin guardar, por paso. Viven fuera de `config`
    * porque cualquier accion de la pantalla termina en `load()`, que reemplaza el
@@ -158,6 +169,11 @@ const BuilderAdminPage = () => {
     setOptionActions(null);
     setAnalytics(null);
     setHistory([]);
+    setHealth(null);
+    setGovernance(null);
+    setReleases([]);
+    setCatalogHealth([]);
+    setPublishAt('');
     setOptionPages({});
     setActiveGroupId(null);
     setActiveVariantId(null);
@@ -174,6 +190,9 @@ const BuilderAdminPage = () => {
       void Promise.all([
         commercialApi.builderAnalytics(id).then(setAnalytics),
         commercialApi.builderHistory(id).then(setHistory),
+        commercialApi.builderHealth(id).then(setHealth),
+        commercialApi.builderGovernance(id).then((state) => { setGovernance(state); setPublishAt(state.draft?.publishAt ? new Date(state.draft.publishAt).toISOString().slice(0, 16) : ''); }),
+        commercialApi.builderCatalogHealth().then(setCatalogHealth),
       ]).catch(() => undefined);
     } catch (error) {
       // Sin config no hay pantalla: el fallo se pinta, no se susurra en un toast
@@ -244,6 +263,87 @@ const BuilderAdminPage = () => {
     } finally {
       setBusy(null);
     }
+  };
+
+  const validateBuilder = async () => {
+    if (!productId) return;
+    setBusy('health');
+    try {
+      setHealth(await commercialApi.builderHealth(productId));
+      toast.success('Validación actualizada');
+    } catch (error) {
+      toast.error(getApiErrorMessage(error));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const saveBuilderDraft = async () => {
+    if (!productId) return;
+    setBusy('draft');
+    try {
+      const result = await commercialApi.saveBuilderDraft(productId, publishAt ? new Date(publishAt).toISOString() : null);
+      setHealth(result.health);
+      setGovernance(await commercialApi.builderGovernance(productId));
+      toast.success(result.publishAt ? 'Borrador guardado y publicación programada' : 'Borrador guardado');
+    } catch (error) {
+      toast.error(getApiErrorMessage(error));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const publishBuilder = async () => {
+    if (!productId) return;
+    setBusy('publish');
+    try {
+      const currentHealth = health ?? await commercialApi.builderHealth(productId);
+      setHealth(currentHealth);
+      if (currentHealth.errors.length) {
+        toast.error('Corrige los errores de validación antes de publicar');
+        return;
+      }
+      if (!(await confirm({ title: 'Publicar constructor', message: 'Esta versión será la que verá el cliente en pedidos nuevos. Los pedidos existentes conservan su snapshot.', confirmLabel: 'Publicar versión' })).confirmed) return;
+      await commercialApi.saveBuilderDraft(productId);
+      const result = await commercialApi.publishBuilder(productId);
+      setGovernance(await commercialApi.builderGovernance(productId));
+      toast.success(`Constructor publicado · versión ${result.version}`);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const loadReleases = async () => {
+    if (!productId) return;
+    setReleasesOpen(true);
+    try { setReleases(await commercialApi.builderReleases(productId)); }
+    catch (error) { toast.error(getApiErrorMessage(error)); }
+  };
+
+  const rollbackRelease = async (release: BuilderRelease) => {
+    if (!productId) return;
+    if (!(await confirm({ title: `Restaurar versión ${release.version}`, message: 'Se publicará una nueva versión con la configuración seleccionada.', confirmLabel: 'Restaurar y publicar' })).confirmed) return;
+    setBusy(`rollback-${release.id}`);
+    try {
+      const result = await commercialApi.rollbackBuilder(productId, release.id);
+      setGovernance(await commercialApi.builderGovernance(productId));
+      setReleases(await commercialApi.builderReleases(productId));
+      toast.success(`Versión ${release.version} restaurada como ${result.version}`);
+    } catch (error) { toast.error(getApiErrorMessage(error)); }
+    finally { setBusy(null); }
+  };
+
+  const exportBuilder = () => {
+    if (!config) return;
+    const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), product: config.product, variants: config.variants, groups: config.groups, presets: config.presets }, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `constructor-${config.product.id}-v${governance?.published?.version ?? 'borrador'}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
   };
   const createGroup = async () => {
     if (!productId) return;
@@ -332,6 +432,7 @@ const BuilderAdminPage = () => {
   const selectedProduct = products.find((product) => product.id === config.product.id);
   const isPastry = Boolean(selectedProduct?.cakeProfile);
   const isCake = isPastry && (!selectedProduct?.family || selectedProduct.family === 'CAKE');
+  const customerPreviewUrl = isPastry && selectedProduct?.slug ? `/tortas/${selectedProduct.slug}?vista=admin` : '/arma-tu-bowl';
   const defaultVariantId = config.variants.find((variant) => variant.isDefault && config.groups.some((group) => group.variantId === variant.id))?.id
     ?? config.variants.find((variant) => config.groups.some((group) => group.variantId === variant.id))?.id
     ?? (config.groups.some((group) => group.variantId === null) ? 'shared' : config.variants[0]?.id);
@@ -523,13 +624,55 @@ const BuilderAdminPage = () => {
             </div>
             <p className="mt-2 max-w-2xl text-xs leading-5 text-ink-muted">Los cambios se aplican a los pedidos nuevos de este producto. Los pedidos anteriores conservan sus elecciones.</p>
           </div>
-          <div className="flex flex-wrap gap-2">{canEdit && <Button size="sm" variant="outline" leftIcon={<History className="size-4" />} onClick={() => setHistoryOpen(true)}>Historial ({history.length})</Button>}{isPastry ? <Button size="sm" variant="outline" component={Link} to={ROUTES.adminCatalog}>Abrir Catálogo</Button> : <Button size="sm" variant="outline" onClick={() => window.open('/arma-tu-bowl', '_blank', 'noopener,noreferrer')}><ExternalLink className="size-4" /> Vista del cliente</Button>}{canEdit && <Button size="sm" leftIcon={<Plus className="size-4" />} onClick={() => { setSection('groups'); setGroupOpen(true); }}>Crear grupo</Button>}</div>
+          <div className="flex flex-wrap gap-2">
+            {canEdit && <Button size="sm" variant="outline" leftIcon={<ShieldCheck className="size-4" />} isLoading={busy === 'health'} onClick={() => void validateBuilder()}>Validar</Button>}
+            {canEdit && <Button size="sm" variant="outline" leftIcon={<Download className="size-4" />} onClick={exportBuilder}>Exportar</Button>}
+            {canEdit && <Button size="sm" variant="outline" leftIcon={<History className="size-4" />} onClick={() => setHistoryOpen(true)}>Historial ({history.length})</Button>}
+            {canEdit && <Button size="sm" variant="outline" leftIcon={<RotateCcw className="size-4" />} onClick={() => void loadReleases()}>Versiones</Button>}
+            {isPastry ? <Button size="sm" variant="outline" component={Link} to={ROUTES.adminCatalog}>Abrir Catálogo</Button> : <Button size="sm" variant="outline" onClick={() => window.open('/arma-tu-bowl', '_blank', 'noopener,noreferrer')}><ExternalLink className="size-4" /> Vista del cliente</Button>}
+            <Button size="sm" variant="outline" onClick={() => window.open(customerPreviewUrl, '_blank', 'noopener,noreferrer')}><ExternalLink className="size-4" /> Previsualizar</Button>
+            {canEdit && <Button size="sm" leftIcon={<Plus className="size-4" />} onClick={() => { setSection('groups'); setGroupOpen(true); }}>Crear grupo</Button>}
+          </div>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-2 border-t border-brand-100 pt-4 text-sm sm:grid-cols-4">{[['Grupos de esta presentación', scopeGroups.length], ['Opciones de esta presentación', scopeOptionCount], ['Recomendaciones', config.presets.length], ['Reglas por sucursal', scheduledRows.length]].map(([label, value]) => <div key={String(label)} className="rounded-xl border border-brand-100 bg-white/80 p-3"><p className="text-xs text-ink-muted">{label}</p><p className="mt-1 text-xl font-black text-ink">{value}</p></div>)}</div>
         {isPastry && <p className="mt-4 rounded-xl border border-brand-100 bg-white/80 p-3 text-xs leading-5 text-ink-muted"><strong className="text-ink">Para este producto:</strong> crea grupos como «Relleno», define sus opciones y revisa precio, insumo y alérgenos. El producto aparecerá al cliente cuando la publiques desde Catálogo.</p>}
       </Card>
 
+      <Card className="border-line p-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="flex items-center gap-2 font-bold text-ink"><ShieldCheck className="size-4 text-brand-600" /> Gobierno de publicación</p>
+            <p className="mt-1 text-xs leading-5 text-ink-muted">Edita la configuración, valida sus dependencias y publica una versión inmutable para los pedidos nuevos.</p>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
+              <span className="rounded-pill bg-surface-muted px-3 py-1">{governance?.published ? `Publicada v${governance.published.version}` : 'Sin versión publicada'}</span>
+              {governance?.draft && <span className="rounded-pill bg-amber-50 px-3 py-1 text-amber-800">{governance.draft.status === 'SCHEDULED' ? 'Publicación programada' : 'Borrador guardado'}</span>}
+              {health && <span className={cn('rounded-pill px-3 py-1', health.status === 'READY' ? 'bg-brand-50 text-brand-700' : health.status === 'WARNINGS' ? 'bg-amber-50 text-amber-800' : 'bg-red-50 text-red-700')}>{health.status === 'READY' ? 'Listo para publicar' : health.status === 'WARNINGS' ? `${health.warnings.length} advertencia(s)` : `${health.errors.length} error(es)`}</span>}
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-ink-muted">Los extras forman el precio del cliente. La comisión configurada de la plataforma se registra en Finanzas y Pagos, nunca se mezcla con este precio.</p>
+          {canEdit && <div className="flex flex-wrap items-end gap-2">
+            <label className="text-xs font-semibold text-ink-muted">Programar (opcional)<input type="datetime-local" value={publishAt} onChange={(event) => setPublishAt(event.target.value)} className="mt-1 block min-h-10 rounded-lg border border-line bg-white px-2 text-sm text-ink" /></label>
+            <Button size="sm" variant="outline" isLoading={busy === 'draft'} onClick={() => void saveBuilderDraft()}>Guardar borrador</Button>
+            <Button size="sm" isLoading={busy === 'publish'} disabled={Boolean(health?.errors.length)} onClick={() => void publishBuilder()}>Publicar</Button>
+          </div>}
+        </div>
+        {health && <div className="mt-4 grid gap-3 border-t border-line pt-4 lg:grid-cols-2">
+          <div><p className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Variantes</p>{health.variantReadiness.map((item) => <div key={item.id} className="flex items-start gap-2 py-1 text-sm"><span className={cn('mt-1 size-2 rounded-full', item.status === 'READY' ? 'bg-brand-600' : 'bg-red-500')} /><span><b>{item.name}</b>{item.issues.length > 0 && <span className="ml-2 text-red-700">{item.issues.join(' · ')}</span>}</span></div>)}</div>
+          <div><p className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Sedes</p>{health.branchReadiness.map((item) => <div key={item.id} className="flex items-center justify-between py-1 text-sm"><span>{item.name}</span><span className={cn('rounded-pill px-2 py-0.5 text-[11px] font-bold', item.status === 'READY' ? 'bg-brand-50 text-brand-700' : 'bg-amber-50 text-amber-800')}>{item.status === 'READY' ? 'Completa' : `${item.unavailableOptions} bloqueada(s)`}</span></div>)}</div>
+        </div>}
+        {health && health.errors.length > 0 && <Alert className="mt-4" variant="danger" title="No se puede publicar todavía">{health.errors.slice(0, 5).map((message) => <p key={message}>{message}</p>)}</Alert>}
+        {health && health.errors.length === 0 && health.warnings.length > 0 && <Alert className="mt-4" variant="warning" title="Revisa estas advertencias">{health.warnings.slice(0, 5).map((message) => <p key={message}>{message}</p>)}</Alert>}
+        {health && health.errors.length === 0 && health.warnings.length === 0 && <Alert className="mt-4" variant="success" title="Configuración lista"><span className="inline-flex items-center gap-1"><CheckCircle2 className="size-4" /> Todas las reglas principales están completas.</span></Alert>}
+      </Card>
+
       {isCake && <Card className="p-4 text-sm text-ink-muted"><strong className="text-ink">Porciones libres:</strong> {config.customServings?.enabled ? `activas de ${config.customServings.minServings} a ${config.customServings.maxServings}; S/ ${config.customServings.pricePerExtraServing} por porción adicional.` : 'pendientes de configurar en la ficha del Catálogo.'} Cada opción puede escalar su precio, insumo y tiempo desde este Constructor.</Card>}
+      {canEdit && catalogHealth.length > 0 && <Card className="p-4">
+        <details>
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-bold text-ink [&::-webkit-details-marker]:hidden"><span className="inline-flex items-center gap-2"><ShieldCheck className="size-4 text-brand-600" /> Matriz de productos personalizables</span><span className="text-xs font-normal text-ink-muted">{catalogHealth.length} producto(s)</span></summary>
+          <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead><tr className="border-b border-line text-xs uppercase tracking-wide text-ink-muted"><th className="px-3 py-2">Producto</th><th className="px-3 py-2">Publicación</th><th className="px-3 py-2">Salud</th><th className="px-3 py-2">Variantes</th><th className="px-3 py-2">Sedes</th></tr></thead><tbody>{catalogHealth.map((row) => <tr key={row.productId} className={cn('border-b border-line/70', row.productId === config.product.id && 'bg-brand-50/50')}><td className="px-3 py-2 font-semibold">{row.productName}</td><td className="px-3 py-2">{row.productStatus === 'ACTIVE' ? 'Publicado' : row.productStatus}</td><td className="px-3 py-2"><span className={cn('rounded-pill px-2 py-0.5 text-xs font-bold', row.status === 'READY' ? 'bg-brand-50 text-brand-700' : row.status === 'WARNINGS' ? 'bg-amber-50 text-amber-800' : 'bg-red-50 text-red-700')}>{row.status === 'READY' ? 'Listo' : row.status === 'WARNINGS' ? `${row.warnings} aviso(s)` : `${row.errors} error(es)`}</span></td><td className="px-3 py-2">{row.variants}</td><td className="px-3 py-2">{row.branches}</td></tr>)}</tbody></table></div>
+        </details>
+      </Card>}
+
       <Card className="p-2"><label className="block px-2 pb-2 text-xs font-bold uppercase tracking-wide text-ink-muted sm:hidden" htmlFor="builder-section-select">Sección de trabajo</label><select id="builder-section-select" value={section} onChange={(event) => setSection(event.target.value as Section)} className="h-11 w-full rounded-lg border border-line bg-white px-3 text-sm font-bold sm:hidden">{SECTIONS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select><div className="hidden flex-wrap gap-2 sm:flex" role="tablist" aria-label="Áreas del constructor">{SECTIONS.map(({ id, label, icon: Icon }) => <button key={id} type="button" role="tab" aria-selected={section === id} onClick={() => setSection(id)} className={cn('flex min-h-11 items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold transition', section === id ? 'bg-brand-700 text-white shadow-sm' : 'text-ink-muted hover:bg-brand-50 hover:text-brand-800')}><Icon className="size-4" />{label}</button>)}</div></Card>
 
       {section === 'analytics' && (analytics ? (
@@ -560,7 +703,7 @@ const BuilderAdminPage = () => {
                 <div className="flex items-start justify-between gap-2"><div><p className="font-bold text-ink">{preset.name}</p><p className="text-xs text-ink-muted">{preset.selections.length} opciones</p></div>{preset.badge && <span className="rounded-pill bg-accent-100 px-2 py-0.5 text-[10px] font-bold text-accent-700">{preset.badge}</span>}</div>
                 {canEdit && <div className="mt-3 flex gap-1">
                   <Button size="sm" variant="ghost" aria-label={`Editar ${preset.name}`} onClick={() => { setEditingPreset(preset); setPresetForm({ code: preset.code, name: preset.name, description: preset.description ?? '', imageUrl: preset.imageUrl ?? '', badge: preset.badge ?? '', isFeatured: preset.isFeatured, isActive: preset.isActive, optionIds: preset.selections.map((item) => item.optionId) }); setPresetOpen(true); }}><Pencil className="size-4" /></Button>
-                  <Button size="sm" variant="ghost" isLoading={busy === `preset-toggle-${preset.id}`} onClick={() => void run(`preset-toggle-${preset.id}`, () => commercialApi.updatePreset(preset.id, { isActive: !preset.isActive }), preset.isActive ? 'Recomendación ocultada' : 'Recomendación publicada')}>{preset.isActive ? 'Ocultar' : 'Publicar'}</Button>
+                  <Button size="sm" variant="ghost" isLoading={busy === `preset-toggle-${preset.id}`} onClick={() => void run(`preset-toggle-${preset.id}`, () => commercialApi.updatePreset(preset.id, { isActive: !preset.isActive, expectedVersion: preset.version }), preset.isActive ? 'Recomendación ocultada' : 'Recomendación publicada')}>{preset.isActive ? 'Ocultar' : 'Publicar'}</Button>
                   <Button
                     size="sm"
                     variant="ghost"
@@ -687,7 +830,7 @@ const BuilderAdminPage = () => {
                   <div className="mt-5 flex flex-col gap-3 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
                     <p className={cn('text-xs leading-5', isRulesDirty(group) ? 'font-semibold text-accent-700' : 'text-ink-muted')}>{isRulesDirty(group) ? 'Tienes cambios pendientes en este grupo.' : 'Los cambios guardados se muestran al cliente en pedidos nuevos.'}</p>
                     {isRulesDirty(group) && <Button size="sm" className="sm:min-w-36" isLoading={busy === `group-${group.id}`} disabled={!groupValid} onClick={() => run(`group-${group.id}`, async () => {
-                      await commercialApi.updateGroup(group.id, { ...draft, name: draft.name.trim() });
+                      await commercialApi.updateGroup(group.id, { ...draft, name: draft.name.trim(), expectedVersion: group.version });
                       setRuleDrafts((current) => { const next = { ...current }; delete next[group.id]; return next; });
                     }, 'Grupo actualizado')}>Guardar cambios</Button>}
                   </div>
@@ -848,6 +991,7 @@ const BuilderAdminPage = () => {
           <MenuItem key="duplicate" disabled={busy !== null} onClick={() => { const option = optionActions.option; setOptionActions(null); void run(`copy-${option.id}`, () => commercialApi.duplicateOption(option.id), 'Opción duplicada como borrador'); }} sx={{ gap: 1.5 }}><Copy className="size-4" /> Duplicar opción</MenuItem>,
           <MenuItem key="schedule" onClick={() => { const option = optionActions.option; setOptionActions(null); setScheduling(option); setScheduleForm({ branchId: config.branches[0]?.id ?? '', isAvailable: true, priceOverride: '', availableFrom: '', availableUntil: '' }); }} sx={{ gap: 1.5 }}><CalendarClock className="size-4" /> Programar disponibilidad</MenuItem>,
           <MenuItem key="incompatible" onClick={() => { setLinking(optionActions.option); setOptionActions(null); }} sx={{ gap: 1.5 }}><Ban className="size-4" /> Revisar combinaciones</MenuItem>,
+          <MenuItem key="impact" disabled={busy !== null} onClick={async () => { const option = optionActions.option; setOptionActions(null); try { const impact = await commercialApi.builderOptionImpact(option.id); toast.success(`${impact.optionName}: ${impact.presetUses} preset(s), ${impact.branchRules} regla(s) por sede y ${impact.historicalOrders} pedido(s) histórico(s).`); } catch (error) { toast.error(getApiErrorMessage(error)); } }} sx={{ gap: 1.5 }}><ShieldCheck className="size-4" /> Ver impacto antes de borrar</MenuItem>,
           <MenuItem key="delete" disabled={busy !== null} onClick={async () => { const option = optionActions.option; setOptionActions(null); const { confirmed } = await confirm({ title: `Eliminar "${option.name}"`, message: 'Se borra del constructor con sus combinaciones prohibidas y su programación por sucursal. Los pedidos anteriores no cambian. Si solo quieres dejar de mostrarla, usa «Ocultar».', confirmLabel: 'Eliminar', tone: 'danger' }); if (confirmed) void run(`del-${option.id}`, () => commercialApi.deleteOption(option.id), 'Opción eliminada'); }} sx={{ gap: 1.5, color: 'error.main', borderTop: '1px solid', borderColor: 'divider', mt: .5, pt: 1 }}><Trash2 className="size-4" /> Eliminar opción</MenuItem>,
         ]}
       </Menu>
@@ -873,7 +1017,7 @@ const BuilderAdminPage = () => {
           <Button className="w-full" isLoading={busy === 'save-preset'} disabled={!presetForm.name || !presetForm.code || presetForm.optionIds.length === 0} onClick={() => void run('save-preset', async () => {
             const input = { name: presetForm.name, description: presetForm.description || null, imageUrl: presetForm.imageUrl || null, badge: presetForm.badge || null, isFeatured: presetForm.isFeatured, isActive: presetForm.isActive, selections: presetForm.optionIds.map((optionId) => ({ optionId, quantity: 1 })) };
             // Al editar no se manda `sortOrder`: lo decide el arrastre, no este formulario.
-            if (editingPreset) await commercialApi.updatePreset(editingPreset.id, input);
+            if (editingPreset) await commercialApi.updatePreset(editingPreset.id, { ...input, expectedVersion: editingPreset.version });
             else await commercialApi.createPreset(config.product.id, { ...input, code: presetForm.code, sortOrder: config.presets.length });
             setPresetOpen(false);
           }, editingPreset ? 'Recomendación actualizada' : 'Recomendación creada')}>Guardar recomendación</Button>
@@ -1089,6 +1233,7 @@ const BuilderAdminPage = () => {
                     // Solo lo que el rol puede tocar: el servidor rechaza el resto
                     // campo por campo, asi que mandar de mas seria un 403 seguro.
                     await commercialApi.updateOption(editingOption.id, {
+                      expectedVersion: editingOption.version,
                       ...(canEditAllergens ? { allergens: allergensForPayload } : {}),
                       ...(canEditTags ? { dietaryTags } : {}),
                     });
@@ -1115,7 +1260,7 @@ const BuilderAdminPage = () => {
                   };
 
                   if (editingOption) {
-                    await commercialApi.updateOption(editingOption.id, payload);
+                    await commercialApi.updateOption(editingOption.id, { ...payload, expectedVersion: editingOption.version });
                   } else if (addingTo) {
                     await commercialApi.createOption(addingTo.id, payload);
                     setGroupQuery('');
@@ -1172,6 +1317,7 @@ const BuilderAdminPage = () => {
               priceOverride: scheduleForm.priceOverride === '' ? null : Number(scheduleForm.priceOverride),
               availableFrom: scheduleForm.availableFrom ? new Date(scheduleForm.availableFrom).toISOString() : null,
               availableUntil: scheduleForm.availableUntil ? new Date(scheduleForm.availableUntil).toISOString() : null,
+              expectedVersion: scheduling.branchAvailability.find((row) => row.branchId === Number(scheduleForm.branchId))?.version,
             }).then(() => setScheduling(null)), 'Disponibilidad programada');
           }}>Guardar programación</Button>
         </div>
@@ -1180,6 +1326,15 @@ const BuilderAdminPage = () => {
       <Modal isOpen={historyOpen} onClose={() => setHistoryOpen(false)} title="Historial del constructor" description="Registro de cambios con responsable y valores anteriores/posteriores." maxWidth="xl">
         <div className="grid max-h-[65vh] gap-3 overflow-y-auto pr-1">
           {history.length ? history.map((entry) => <article key={entry.id} className="rounded-2xl border border-line p-4"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-bold text-ink">{entry.action.replace('builder.', '').replaceAll('_', ' ')}</p><p className="text-xs text-ink-muted">{entry.actor ? `${entry.actor.firstName} ${entry.actor.lastName} · ${entry.actor.email}` : 'Sistema'} · <span title={formatDate(entry.createdAt)}>{formatRelative(entry.createdAt)}</span></p></div><span className="rounded-pill bg-surface-muted px-2 py-1 text-[10px] font-bold text-ink-muted">{entry.entity} #{entry.entityId}</span></div>{(entry.before || entry.after) && <div className="mt-3 grid gap-3 md:grid-cols-2"><div className="rounded-xl bg-red-50/60 p-3"><p className="mb-1 text-[10px] font-bold uppercase text-red-700">Antes</p><pre className="overflow-x-auto whitespace-pre-wrap text-[11px] text-ink-muted">{JSON.stringify(entry.before ?? {}, null, 2)}</pre></div><div className="rounded-xl bg-brand-50 p-3"><p className="mb-1 text-[10px] font-bold uppercase text-brand-700">Después</p><pre className="overflow-x-auto whitespace-pre-wrap text-[11px] text-ink-muted">{JSON.stringify(entry.after ?? {}, null, 2)}</pre></div></div>}</article>) : <p className="rounded-xl border border-dashed border-line p-8 text-center text-sm text-ink-muted">Aún no hay cambios registrados.</p>}
+        </div>
+      </Modal>
+
+      <Modal isOpen={releasesOpen} onClose={() => setReleasesOpen(false)} title="Versiones publicadas" description="Cada restauración crea una versión nueva y conserva el historial." maxWidth="lg">
+        <div className="grid max-h-[55vh] gap-3 overflow-y-auto pr-1">
+          {releases.length ? releases.map((release) => <article key={release.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line p-4">
+            <div><p className="font-bold text-ink">Versión {release.version}</p><p className="text-xs text-ink-muted">Publicada {formatDate(release.publishedAt)}{release.publishedBy ? ` · responsable #${release.publishedBy}` : ''}</p></div>
+            {canEdit && <Button size="sm" variant="outline" leftIcon={<RotateCcw className="size-4" />} isLoading={busy === `rollback-${release.id}`} onClick={() => void rollbackRelease(release)}>Restaurar</Button>}
+          </article>) : <p className="rounded-xl border border-dashed border-line p-8 text-center text-sm text-ink-muted">Todavía no hay versiones publicadas.</p>}
         </div>
       </Modal>
 

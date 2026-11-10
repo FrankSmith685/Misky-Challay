@@ -6,27 +6,39 @@ import {
   BranchSchedule,
   City,
   Coupon,
+  CouponRedemption,
   CoverageZone,
   DeliverySlot,
   District,
+  Order,
   Plan,
   PlanBenefit,
   UserPlan,
   ZoneBranch,
   sequelize,
 } from '@database/models';
-import { DISCOUNT_TYPE, type DiscountType } from '@database/models/coupon.model';
+import {
+  COUPON_STACK_MODE,
+  DISCOUNT_TYPE,
+  type CouponRules,
+  type CouponStackMode,
+  type DiscountType,
+} from '@database/models/coupon.model';
+import { REDEMPTION_STATUS } from '@database/models/couponRedemption.model';
 import { BENEFIT_TYPE, type BenefitType } from '@database/models/planBenefit.model';
 import { USER_PLAN_STATUS } from '@database/models/userPlan.model';
 import type { GeoPoint } from '@database/models/coverageZone.model';
 import { ApiError } from '@shared/errors/ApiError';
+import { round2 } from '@shared/utils/money';
 import {
   addDaysToIsoDate,
   defaultTimeZone,
   zonedDateAt,
   zonedParts,
 } from '@shared/utils/datetime';
-import { assertValidPolygon } from '@modules/geo/geometry';
+import { assertValidPolygon, polygonsOverlap } from '@modules/geo/geometry';
+import { splitTaxFromGross } from '@shared/utils/tax';
+import { settingsService } from '@modules/settings/settings.service';
 
 /**
  * CONFIGURACION COMERCIAL Y DE COBERTURA (M03, M06, M07).
@@ -64,23 +76,65 @@ export const commercialAdminService = {
   // ==========================================================================
   async listCoupons() {
     const coupons = await Coupon.findAll({ order: [['id', 'DESC']] });
+    const redemptions = coupons.length
+      ? await CouponRedemption.findAll({
+        where: { couponId: coupons.map((coupon) => coupon.id) },
+        attributes: ['couponId', 'status', 'amount'],
+        raw: true,
+      })
+      : [];
+    const counts = new Map<number, { reserved: number; confirmed: number; discount: number }>();
+    for (const redemption of redemptions) {
+      const current = counts.get(redemption.couponId) ?? { reserved: 0, confirmed: 0, discount: 0 };
+      if (redemption.status === REDEMPTION_STATUS.RESERVED) current.reserved += 1;
+      if (redemption.status === REDEMPTION_STATUS.CONFIRMED) {
+        current.confirmed += 1;
+        current.discount += Number(redemption.amount);
+      }
+      counts.set(redemption.couponId, current);
+    }
 
-    return coupons.map((coupon) => ({
-      id: coupon.id,
-      code: coupon.code,
-      description: coupon.description,
-      discountType: coupon.discountType,
-      value: Number(coupon.value),
-      minOrderAmount: Number(coupon.minOrderAmount),
-      maxDiscountAmount:
-        coupon.maxDiscountAmount === null ? null : Number(coupon.maxDiscountAmount),
-      validFrom: coupon.validFrom,
-      validUntil: coupon.validUntil,
-      usageLimit: coupon.usageLimit,
-      usageLimitPerUser: coupon.usageLimitPerUser,
-      usedCount: coupon.usedCount,
-      isActive: coupon.isActive,
-    }));
+    return coupons.map((coupon) => {
+      const stats = counts.get(coupon.id) ?? { reserved: 0, confirmed: 0, discount: 0 };
+      const now = new Date();
+      const status = coupon.archivedAt
+        ? 'ARCHIVED'
+        : !coupon.isActive
+          ? 'PAUSED'
+          : coupon.validFrom && now < coupon.validFrom
+            ? 'SCHEDULED'
+            : coupon.validUntil && now > coupon.validUntil
+              ? 'EXPIRED'
+              : coupon.usageLimit !== null && coupon.usedCount >= coupon.usageLimit
+                ? 'EXHAUSTED'
+                : 'ACTIVE';
+      return {
+        status,
+        reservedCount: stats.reserved,
+        confirmedCount: stats.confirmed,
+        discountSpent: coupon.budgetAmount === null ? stats.discount : Number(coupon.budgetUsed),
+        id: coupon.id,
+        code: coupon.code,
+        description: coupon.description,
+        discountType: coupon.discountType,
+        value: Number(coupon.value),
+        minOrderAmount: Number(coupon.minOrderAmount),
+        maxDiscountAmount:
+          coupon.maxDiscountAmount === null ? null : Number(coupon.maxDiscountAmount),
+        validFrom: coupon.validFrom,
+        validUntil: coupon.validUntil,
+        usageLimit: coupon.usageLimit,
+        usageLimitPerUser: coupon.usageLimitPerUser,
+        usedCount: coupon.usedCount,
+        isActive: coupon.isActive,
+        version: coupon.version,
+        rules: coupon.rulesJson ?? {},
+        stackMode: coupon.stackMode,
+        budgetAmount: coupon.budgetAmount === null ? null : Number(coupon.budgetAmount),
+        budgetUsed: Number(coupon.budgetUsed ?? 0),
+        archivedAt: coupon.archivedAt,
+      };
+    });
   },
 
   async createCoupon(input: {
@@ -90,9 +144,13 @@ export const commercialAdminService = {
     value: number;
     minOrderAmount: number;
     maxDiscountAmount?: number | null;
+    validFrom?: string | null;
     validUntil?: string | null;
     usageLimit?: number | null;
     usageLimitPerUser: number;
+    rules?: CouponRules;
+    stackMode?: CouponStackMode;
+    budgetAmount?: number | null;
   }) {
     const code = input.code.trim().toUpperCase();
 
@@ -102,6 +160,26 @@ export const commercialAdminService = {
     if (input.discountType === DISCOUNT_TYPE.PERCENT && (input.value <= 0 || input.value > 100)) {
       throw ApiError.badRequest('El porcentaje debe estar entre 1 y 100');
     }
+    if (input.discountType === DISCOUNT_TYPE.FIXED && input.value <= 0) {
+      throw ApiError.badRequest('El importe fijo debe ser mayor que cero');
+    }
+    if (input.minOrderAmount < 0 || input.usageLimitPerUser < 1) {
+      throw ApiError.badRequest('Los límites del cupón no son válidos');
+    }
+    if (input.maxDiscountAmount !== null && input.maxDiscountAmount !== undefined && input.maxDiscountAmount <= 0) {
+      throw ApiError.badRequest('El tope de descuento debe ser mayor que cero');
+    }
+    if (input.budgetAmount !== null && input.budgetAmount !== undefined && input.budgetAmount <= 0) {
+      throw ApiError.badRequest('El presupuesto debe ser mayor que cero');
+    }
+
+    const validFrom = input.validFrom ? new Date(input.validFrom) : null;
+    const validUntil = input.validUntil ? new Date(input.validUntil) : null;
+    if (validFrom && Number.isNaN(validFrom.getTime())) throw ApiError.badRequest('La fecha de inicio no es válida');
+    if (validUntil && Number.isNaN(validUntil.getTime())) throw ApiError.badRequest('La fecha de vencimiento no es válida');
+    if (validFrom && validUntil && validFrom >= validUntil) {
+      throw ApiError.badRequest('La fecha de inicio debe ser anterior al vencimiento');
+    }
 
     return Coupon.create({
       code,
@@ -110,12 +188,18 @@ export const commercialAdminService = {
       value: input.value,
       minOrderAmount: input.minOrderAmount,
       maxDiscountAmount: input.maxDiscountAmount ?? null,
-      validFrom: null,
-      validUntil: input.validUntil ? new Date(input.validUntil) : null,
+      validFrom,
+      validUntil,
       usageLimit: input.usageLimit ?? null,
       usageLimitPerUser: input.usageLimitPerUser,
       usedCount: 0,
       isActive: true,
+      version: 1,
+      rulesJson: input.rules ?? {},
+      stackMode: input.stackMode ?? COUPON_STACK_MODE.STACKABLE,
+      budgetAmount: input.budgetAmount ?? null,
+      budgetUsed: 0,
+      archivedAt: null,
     });
   },
 
@@ -136,16 +220,32 @@ export const commercialAdminService = {
       minOrderAmount?: number;
       maxDiscountAmount?: number | null;
       usageLimit?: number | null;
+      validFrom?: string | null;
+      rules?: CouponRules;
+      stackMode?: CouponStackMode;
+      budgetAmount?: number | null;
+      expectedVersion?: number;
     },
   ) {
     const coupon = await Coupon.findByPk(couponId);
     if (!coupon) throw ApiError.notFound('Cupon no encontrado');
+    if (input.expectedVersion !== undefined && input.expectedVersion !== coupon.version) {
+      throw ApiError.conflict('El cupón cambió mientras lo editabas. Recarga la campaña e inténtalo otra vez');
+    }
+    if (coupon.archivedAt && input.isActive === true) {
+      throw ApiError.conflict('Un cupón archivado no puede volver a activarse');
+    }
 
     const before = {
       isActive: coupon.isActive,
+      validFrom: coupon.validFrom,
       validUntil: coupon.validUntil,
       value: Number(coupon.value),
       usageLimit: coupon.usageLimit,
+      version: coupon.version,
+      budgetAmount: coupon.budgetAmount,
+      stackMode: coupon.stackMode,
+      rules: coupon.rulesJson,
     };
 
     if (
@@ -154,6 +254,15 @@ export const commercialAdminService = {
       && (input.value <= 0 || input.value > 100)
     ) {
       throw ApiError.badRequest('El porcentaje debe estar entre 1 y 100');
+    }
+    if (input.value !== undefined && coupon.discountType === DISCOUNT_TYPE.FIXED && input.value <= 0) {
+      throw ApiError.badRequest('El importe fijo debe ser mayor que cero');
+    }
+    if (input.minOrderAmount !== undefined && input.minOrderAmount < 0) {
+      throw ApiError.badRequest('El pedido mínimo no puede ser negativo');
+    }
+    if (input.maxDiscountAmount !== undefined && input.maxDiscountAmount !== null && input.maxDiscountAmount <= 0) {
+      throw ApiError.badRequest('El tope de descuento debe ser mayor que cero');
     }
 
     // Un tope por debajo de los canjes ya hechos dejaria el cupon agotado de
@@ -168,15 +277,33 @@ export const commercialAdminService = {
       );
     }
 
+    if (input.stackMode !== undefined && !Object.values(COUPON_STACK_MODE).includes(input.stackMode)) {
+      throw ApiError.badRequest('La política de combinación no es válida');
+    }
+    if (input.budgetAmount !== undefined && input.budgetAmount !== null && input.budgetAmount < Number(coupon.budgetUsed)) {
+      throw ApiError.badRequest('El presupuesto no puede ser menor que lo ya descontado');
+    }
+
+    const nextFrom = input.validFrom === undefined ? coupon.validFrom : input.validFrom ? new Date(input.validFrom) : null;
+    const nextUntil = input.validUntil === undefined ? coupon.validUntil : input.validUntil ? new Date(input.validUntil) : null;
+    if (nextFrom && Number.isNaN(nextFrom.getTime())) throw ApiError.badRequest('La fecha de inicio no es válida');
+    if (nextUntil && Number.isNaN(nextUntil.getTime())) throw ApiError.badRequest('La fecha de vencimiento no es válida');
+    if (nextFrom && nextUntil && nextFrom >= nextUntil) throw ApiError.badRequest('La fecha de inicio debe ser anterior al vencimiento');
+
     if (input.isActive !== undefined) coupon.isActive = input.isActive;
     if (input.description !== undefined) coupon.description = input.description;
     if (input.validUntil !== undefined) {
-      coupon.validUntil = input.validUntil ? new Date(input.validUntil) : null;
+      coupon.validUntil = nextUntil;
     }
+    if (input.validFrom !== undefined) coupon.validFrom = nextFrom;
     if (input.value !== undefined) coupon.value = input.value;
     if (input.minOrderAmount !== undefined) coupon.minOrderAmount = input.minOrderAmount;
     if (input.maxDiscountAmount !== undefined) coupon.maxDiscountAmount = input.maxDiscountAmount;
     if (input.usageLimit !== undefined) coupon.usageLimit = input.usageLimit;
+    if (input.rules !== undefined) coupon.rulesJson = input.rules;
+    if (input.stackMode !== undefined) coupon.stackMode = input.stackMode;
+    if (input.budgetAmount !== undefined) coupon.budgetAmount = input.budgetAmount;
+    coupon.version += 1;
 
     await coupon.save();
     return { coupon, before };
@@ -185,6 +312,75 @@ export const commercialAdminService = {
   // ==========================================================================
   // PLANES (RN-012)
   // ==========================================================================
+  async archiveCoupon(couponId: number, expectedVersion?: number) {
+    const coupon = await Coupon.findByPk(couponId);
+    if (!coupon) throw ApiError.notFound('Cupón no encontrado');
+    if (expectedVersion !== undefined && expectedVersion !== coupon.version) {
+      throw ApiError.conflict('El cupón cambió mientras lo editabas. Recarga la campaña e inténtalo otra vez');
+    }
+    const before = { isActive: coupon.isActive, archivedAt: coupon.archivedAt, version: coupon.version };
+    coupon.isActive = false;
+    coupon.archivedAt = new Date();
+    coupon.version += 1;
+    await coupon.save();
+    return { coupon, before };
+  },
+
+  async couponRedemptions(couponId: number) {
+    const coupon = await Coupon.findByPk(couponId, { attributes: ['id', 'code'] });
+    if (!coupon) throw ApiError.notFound('Cupón no encontrado');
+    const rows = await CouponRedemption.findAll({
+      where: { couponId },
+      include: [{ model: Order, as: 'order', attributes: ['id', 'orderNumber', 'status', 'grandTotal', 'placedAt'] }],
+      order: [['createdAt', 'DESC']],
+      limit: 300,
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      status: row.status,
+      amount: Number(row.amount),
+      userId: row.userId,
+      createdAt: row.createdAt,
+      order: row.order ? {
+        id: row.order.id,
+        orderNumber: row.order.orderNumber,
+        status: row.order.status,
+        grandTotal: Number(row.order.grandTotal),
+        placedAt: row.order.placedAt,
+      } : null,
+    }));
+  },
+
+  async couponMetrics(couponId: number) {
+    const coupon = await Coupon.findByPk(couponId);
+    if (!coupon) throw ApiError.notFound('Cupón no encontrado');
+    const rows = await CouponRedemption.findAll({ where: { couponId }, attributes: ['status', 'amount', 'orderId'], raw: true });
+    const metrics = rows.reduce((acc, row) => {
+      if (row.status === REDEMPTION_STATUS.RESERVED) acc.reserved += 1;
+      if (row.status === REDEMPTION_STATUS.CONFIRMED) {
+        acc.confirmed += 1;
+        acc.discountConfirmed = round2(acc.discountConfirmed + Number(row.amount));
+      }
+      if (row.status === REDEMPTION_STATUS.RELEASED) acc.released += 1;
+      return acc;
+    }, { reserved: 0, confirmed: 0, released: 0, discountConfirmed: 0 });
+    const confirmedOrderIds = rows.filter((row) => row.status === REDEMPTION_STATUS.CONFIRMED).map((row) => row.orderId);
+    const orders = confirmedOrderIds.length
+      ? await Order.findAll({ where: { id: confirmedOrderIds }, attributes: ['grandTotal'], raw: true })
+      : [];
+    const grossSales = round2(orders.reduce((sum, order) => sum + Number(order.grandTotal), 0));
+    return {
+      couponId: coupon.id,
+      code: coupon.code,
+      budgetAmount: coupon.budgetAmount === null ? null : Number(coupon.budgetAmount),
+      budgetUsed: Number(coupon.budgetUsed),
+      budgetRemaining: coupon.budgetAmount === null ? null : round2(Math.max(0, Number(coupon.budgetAmount) - Number(coupon.budgetUsed))),
+      grossSales,
+      averageOrderValue: orders.length ? round2(grossSales / orders.length) : 0,
+      ...metrics,
+    };
+  },
+
   async listPlans() {
     const plans = await Plan.findAll({
       include: [{ model: PlanBenefit, as: 'benefits' }],
@@ -367,7 +563,7 @@ export const commercialAdminService = {
   // COBERTURA: sucursales, zonas, horarios y franjas (M03)
   // ==========================================================================
   async listCoverage() {
-    const [cities, districts, zones, branches, links] = await Promise.all([
+    const [cities, districts, zones, branches, links, slots, drafts, orderImpactRows] = await Promise.all([
       City.findAll({ order: [['name', 'ASC']] }),
       District.findAll({ order: [['name', 'ASC']] }),
       CoverageZone.findAll({ order: [['priority', 'ASC']] }),
@@ -376,7 +572,60 @@ export const commercialAdminService = {
         order: [['name', 'ASC']],
       }),
       ZoneBranch.findAll(),
+      DeliverySlot.findAll({
+        where: { startsAt: { [Op.gte]: new Date() }, isActive: true },
+        order: [['startsAt', 'ASC']],
+        limit: 1000,
+      }),
+      AdminDraft.findAll({
+        where: { scope: 'coverage-zone', status: { [Op.in]: ['DRAFT', 'SCHEDULED'] } },
+        order: [['updatedAt', 'DESC']],
+      }),
+      Order.findAll({
+        where: {
+          coverageZoneId: { [Op.ne]: null },
+          placedAt: { [Op.gte]: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+        },
+        attributes: ['coverageZoneId', 'deliveryFee'],
+        raw: true,
+      }) as Promise<Array<{ coverageZoneId: number | null; deliveryFee: number | string }>>,
     ]);
+
+    const impactByZone = new Map<number, { orders: number; deliveryRevenue: number }>();
+    orderImpactRows.forEach((row) => {
+      if (row.coverageZoneId === null) return;
+      const impact = impactByZone.get(Number(row.coverageZoneId)) ?? { orders: 0, deliveryRevenue: 0 };
+      impact.orders += 1;
+      impact.deliveryRevenue = round2(impact.deliveryRevenue + Number(row.deliveryFee));
+      impactByZone.set(Number(row.coverageZoneId), impact);
+    });
+
+    const now = new Date();
+    const linksByBranch = new Map<number, typeof links>();
+    links.forEach((link) => {
+      const rows = linksByBranch.get(link.branchId) ?? [];
+      rows.push(link);
+      linksByBranch.set(link.branchId, rows);
+    });
+    const slotsByBranch = new Map<number, DeliverySlot[]>();
+    slots.forEach((slot) => {
+      const rows = slotsByBranch.get(slot.branchId) ?? [];
+      rows.push(slot);
+      slotsByBranch.set(slot.branchId, rows);
+    });
+    const activeZones = zones.filter((zone) => zone.isActive && !zone.archivedAt && (!zone.effectiveFrom || zone.effectiveFrom <= now));
+    const overlappingZoneIds = new Set<number>();
+    for (let index = 0; index < activeZones.length; index += 1) {
+      for (let otherIndex = index + 1; otherIndex < activeZones.length; otherIndex += 1) {
+        const first = activeZones[index];
+        const second = activeZones[otherIndex];
+        if (first.cityId === second.cityId && first.polygon && second.polygon && polygonsOverlap(first.polygon, second.polygon)) {
+          overlappingZoneIds.add(first.id);
+          overlappingZoneIds.add(second.id);
+        }
+      }
+    }
+    const uncoveredDistricts = districts.filter((district) => !activeZones.some((zone) => zone.id === district.coverageZoneId));
 
     return {
       cities: cities.map((city) => ({ id: city.id, name: city.name })),
@@ -393,12 +642,27 @@ export const commercialAdminService = {
         cityId: zone.cityId,
         name: zone.name,
         deliveryFee: Number(zone.deliveryFee),
+        cakeDeliveryFee: Number(zone.cakeDeliveryFee),
         extraCoverageKm: Number(zone.extraCoverageKm),
         extraFeePerKm: Number(zone.extraFeePerKm),
         minimumOrder: Number(zone.minimumOrder),
         estimatedMinutes: zone.estimatedMinutes,
         priority: zone.priority,
         isActive: zone.isActive,
+        status: zone.archivedAt
+          ? 'ARCHIVED'
+          : !zone.isActive
+            ? 'PAUSED'
+            : zone.effectiveFrom && zone.effectiveFrom > now
+              ? 'SCHEDULED'
+              : 'ACTIVE',
+        version: zone.version,
+        effectiveFrom: zone.effectiveFrom,
+        archivedAt: zone.archivedAt,
+        hasOverlap: overlappingZoneIds.has(zone.id),
+        districtCount: districts.filter((district) => district.coverageZoneId === zone.id).length,
+        last30DaysOrders: impactByZone.get(zone.id)?.orders ?? 0,
+        last30DaysDeliveryRevenue: impactByZone.get(zone.id)?.deliveryRevenue ?? 0,
         hasPolygon: Array.isArray(zone.polygon) && zone.polygon.length >= 3,
         polygon: zone.polygon,
         branchIds: links
@@ -418,17 +682,97 @@ export const commercialAdminService = {
         acceptsPickup: branch.acceptsPickup,
         acceptsDelivery: branch.acceptsDelivery,
         isActive: branch.isActive,
+        version: branch.version,
+        zoneIds: (linksByBranch.get(branch.id) ?? [])
+          .filter((link) => link.isActive)
+          .sort((a, b) => a.priority - b.priority)
+          .map((link) => link.coverageZoneId),
+        slotSummary: (() => {
+          const upcoming = slotsByBranch.get(branch.id) ?? [];
+          return {
+            upcoming: upcoming.length,
+            capacity: upcoming.reduce((sum, slot) => sum + slot.capacity, 0),
+            reserved: upcoming.reduce((sum, slot) => sum + slot.reservedCount, 0),
+            confirmed: upcoming.reduce((sum, slot) => sum + slot.confirmedCount, 0),
+            available: upcoming.reduce((sum, slot) => sum + slot.availableCount, 0),
+          };
+        })(),
+        health: (() => {
+          const issues: string[] = [];
+          const branchLinks = (linksByBranch.get(branch.id) ?? []).filter((link) => link.isActive);
+          const schedules = (branch.get('schedules') as BranchSchedule[] | undefined) ?? [];
+          if (branch.isActive && branch.acceptsDelivery && branchLinks.length === 0) issues.push('Sin zona asignada');
+          if (branch.isActive && schedules.filter((schedule) => schedule.exceptionDate === null).every((schedule) => schedule.isClosed)) issues.push('Sin horario de atencion');
+          if (branch.isActive && branch.acceptsDelivery && (slotsByBranch.get(branch.id) ?? []).length === 0) issues.push('Sin franjas futuras');
+          if (branch.latitude === null || branch.longitude === null) issues.push('Sin ubicacion GPS');
+          return { status: issues.length ? 'ATTENTION' : 'READY', issues };
+        })(),
         schedules: ((branch.get('schedules') as BranchSchedule[] | undefined) ?? [])
-          .filter((schedule) => schedule.exceptionDate === null)
           .map((schedule) => ({
             id: schedule.id,
             weekday: schedule.weekday,
+            exceptionDate: schedule.exceptionDate,
             opensAt: schedule.opensAt,
             closesAt: schedule.closesAt,
             isClosed: schedule.isClosed,
           }))
-          .sort((a, b) => (a.weekday ?? 0) - (b.weekday ?? 0)),
+          .sort((a, b) => String(a.exceptionDate ?? '').localeCompare(String(b.exceptionDate ?? '')) || (a.weekday ?? 0) - (b.weekday ?? 0)),
       })),
+      stats: {
+        activeZones: activeZones.length,
+        activeBranches: branches.filter((branch) => branch.isActive).length,
+        coveredDistricts: districts.length - uncoveredDistricts.length,
+        uncoveredDistricts: uncoveredDistricts.length,
+        overlappingZones: overlappingZoneIds.size,
+        branchesWithAttention: branches.filter((branch) => {
+          const branchLinks = (linksByBranch.get(branch.id) ?? []).filter((link) => link.isActive);
+          return branch.isActive && branch.acceptsDelivery && (branchLinks.length === 0 || (slotsByBranch.get(branch.id) ?? []).length === 0);
+        }).length,
+      },
+      drafts: drafts.map((draft) => ({
+        id: draft.id,
+        key: draft.key,
+        status: draft.status,
+        publishAt: draft.publishAt,
+        updatedAt: draft.updatedAt,
+        payload: draft.payload,
+      })),
+    };
+  },
+
+  /** Simula el cobro de delivery con la misma regla base del checkout. */
+  async previewCoverageQuote(input: {
+    zoneId: number;
+    subtotal: number;
+    containsCake: boolean;
+    extraDeliveryFee?: number;
+    deliveryType: 'DELIVERY' | 'PICKUP' | 'DINE_IN';
+  }) {
+    const zone = await CoverageZone.findOne({ where: { id: input.zoneId, isActive: true } });
+    if (!zone || zone.archivedAt) throw ApiError.notFound('Zona activa no encontrada');
+    if (!Number.isFinite(input.subtotal) || input.subtotal < 0) throw ApiError.badRequest('El subtotal no es valido');
+    const delivery = input.deliveryType === 'DELIVERY';
+    const cakeDeliveryFee = delivery && input.containsCake ? round2(Number(zone.cakeDeliveryFee ?? 0)) : 0;
+    const deliveryFee = delivery
+      ? round2(Number(zone.deliveryFee) + cakeDeliveryFee + Math.max(0, input.extraDeliveryFee ?? 0))
+      : 0;
+    const minimumOrder = delivery ? Number(zone.minimumOrder) : 0;
+    const total = round2(input.subtotal + deliveryFee);
+    const { taxRate, currency } = await settingsService.getBusinessInfo();
+    const tax = splitTaxFromGross(total, taxRate);
+    return {
+      zone: { id: zone.id, name: zone.name },
+      subtotal: round2(input.subtotal),
+      deliveryFee,
+      cakeDeliveryFee,
+      extraDeliveryFee: round2(Math.max(0, input.extraDeliveryFee ?? 0)),
+      minimumOrder,
+      meetsMinimum: input.subtotal >= minimumOrder,
+      estimatedMinutes: zone.estimatedMinutes,
+      taxableBase: tax.base,
+      taxTotal: tax.tax,
+      total,
+      currency,
     };
   },
 
@@ -498,12 +842,23 @@ export const commercialAdminService = {
       acceptsPickup?: boolean;
       acceptsDelivery?: boolean;
       isActive?: boolean;
+      expectedVersion?: number;
     },
   ) {
     const branch = await Branch.findByPk(branchId);
     if (!branch) throw ApiError.notFound('Sucursal no encontrada');
+    if (input.expectedVersion !== undefined && input.expectedVersion !== branch.version) {
+      throw ApiError.conflict('La sucursal cambio mientras la editabas. Recarga la cobertura e intentalo otra vez');
+    }
+    if (input.districtId !== undefined && input.districtId !== null) {
+      const district = await District.findByPk(input.districtId);
+      if (!district || district.cityId !== branch.cityId) throw ApiError.badRequest('El distrito no pertenece a la ciudad de la sucursal');
+    }
+    const nextLatitude = input.latitude === undefined ? branch.latitude : input.latitude;
+    const nextLongitude = input.longitude === undefined ? branch.longitude : input.longitude;
+    if ((nextLatitude === null) !== (nextLongitude === null)) throw ApiError.badRequest('La sucursal necesita latitud y longitud juntas');
 
-    const before = { prepMinutes: branch.prepMinutes, isActive: branch.isActive };
+    const before = { prepMinutes: branch.prepMinutes, isActive: branch.isActive, version: branch.version };
 
     if (input.name !== undefined) branch.name = input.name;
     if (input.addressLine !== undefined) branch.addressLine = input.addressLine;
@@ -516,6 +871,7 @@ export const commercialAdminService = {
     if (input.acceptsDelivery !== undefined) branch.acceptsDelivery = input.acceptsDelivery;
     if (input.isActive !== undefined) branch.isActive = input.isActive;
 
+    branch.version += 1;
     await branch.save();
     return { branch, before };
   },
@@ -553,16 +909,34 @@ export const commercialAdminService = {
     return schedule;
   },
 
+  async setScheduleException(
+    branchId: number,
+    input: { exceptionDate: string; opensAt: string; closesAt: string; isClosed: boolean },
+  ) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.exceptionDate)) throw ApiError.badRequest('La fecha de excepcion no es valida');
+    if (!input.isClosed && input.opensAt === input.closesAt) throw ApiError.badRequest('La hora de cierre no puede ser igual a la apertura');
+    const branch = await Branch.findByPk(branchId);
+    if (!branch) throw ApiError.notFound('Sucursal no encontrada');
+    const [schedule] = await BranchSchedule.findOrCreate({
+      where: { branchId, exceptionDate: input.exceptionDate },
+      defaults: { branchId, weekday: null, exceptionDate: input.exceptionDate, opensAt: input.opensAt, closesAt: input.closesAt, isClosed: input.isClosed },
+    });
+    await schedule.update({ weekday: null, ...input });
+    return schedule;
+  },
+
   async createZone(input: {
     cityId: number;
     name: string;
     deliveryFee: number;
+    cakeDeliveryFee?: number;
     extraCoverageKm?: number;
     extraFeePerKm?: number;
     minimumOrder?: number;
     estimatedMinutes: number;
     priority: number;
     polygon?: GeoPoint[];
+    effectiveFrom?: string | null;
   }) {
     try { assertValidPolygon(input.polygon); } catch (error) { throw ApiError.badRequest((error as Error).message); }
     const extraCoverageKm = input.extraCoverageKm ?? 0;
@@ -570,16 +944,28 @@ export const commercialAdminService = {
     if ((extraCoverageKm > 0 && extraFeePerKm <= 0) || (extraFeePerKm > 0 && !input.polygon)) {
       throw ApiError.badRequest('La extensión requiere un polígono y un recargo por kilómetro; 0 km significa sin límite');
     }
+    if (input.polygon) {
+      const peers = await CoverageZone.findAll({ where: { cityId: input.cityId, isActive: true } });
+      if (peers.some((peer) => peer.polygon && polygonsOverlap(peer.polygon, input.polygon!))) {
+        throw ApiError.conflict('El poligono se superpone con otra zona activa de la misma ciudad. Ajusta el mapa antes de publicar.');
+      }
+    }
+    const effectiveFrom = input.effectiveFrom ? new Date(input.effectiveFrom) : null;
+    if (effectiveFrom && Number.isNaN(effectiveFrom.getTime())) throw ApiError.badRequest('La fecha de vigencia no es valida');
     return CoverageZone.create({
       cityId: input.cityId,
       name: input.name,
       deliveryFee: input.deliveryFee,
+      cakeDeliveryFee: input.cakeDeliveryFee ?? 0,
       extraCoverageKm: input.extraCoverageKm ?? 0,
       extraFeePerKm: input.extraFeePerKm ?? 0,
       minimumOrder: input.minimumOrder ?? 0,
       estimatedMinutes: input.estimatedMinutes,
       priority: input.priority,
       polygon: input.polygon ?? null,
+      effectiveFrom,
+      version: 1,
+      archivedAt: null,
     });
   },
 
@@ -589,6 +975,7 @@ export const commercialAdminService = {
     input: {
       name?: string;
       deliveryFee?: number;
+      cakeDeliveryFee?: number;
       extraCoverageKm?: number;
       extraFeePerKm?: number;
       minimumOrder?: number;
@@ -596,15 +983,25 @@ export const commercialAdminService = {
       priority?: number;
       isActive?: boolean;
       polygon?: GeoPoint[] | null;
+      expectedVersion?: number;
+      effectiveFrom?: string | null;
+      archivedAt?: string | null;
     },
   ) {
     const zone = await CoverageZone.findByPk(zoneId);
     if (!zone) throw ApiError.notFound('Zona no encontrada');
+    if (input.expectedVersion !== undefined && input.expectedVersion !== zone.version) {
+      throw ApiError.conflict('La zona cambio mientras la editabas. Recarga la cobertura e intentalo otra vez');
+    }
+    if (zone.archivedAt && input.isActive === true) {
+      throw ApiError.conflict('Una zona archivada no puede volver a activarse');
+    }
     try { assertValidPolygon(input.polygon); } catch (error) { throw ApiError.badRequest((error as Error).message); }
 
     const before = {
       name: zone.name,
       deliveryFee: Number(zone.deliveryFee),
+      cakeDeliveryFee: Number(zone.cakeDeliveryFee),
       extraCoverageKm: Number(zone.extraCoverageKm),
       extraFeePerKm: Number(zone.extraFeePerKm),
       minimumOrder: Number(zone.minimumOrder),
@@ -612,10 +1009,23 @@ export const commercialAdminService = {
       priority: zone.priority,
       polygon: zone.polygon,
       isActive: zone.isActive,
+      version: zone.version,
+      effectiveFrom: zone.effectiveFrom,
+      archivedAt: zone.archivedAt,
     };
+
+    const nextPolygon = input.polygon === undefined ? zone.polygon : input.polygon;
+    const polygonChanged = JSON.stringify(nextPolygon) !== JSON.stringify(zone.polygon);
+    if (nextPolygon && polygonChanged && (input.isActive ?? zone.isActive)) {
+      const peers = await CoverageZone.findAll({ where: { cityId: zone.cityId, isActive: true, id: { [Op.ne]: zone.id } } });
+      if (peers.some((peer) => peer.polygon && polygonsOverlap(peer.polygon, nextPolygon))) {
+        throw ApiError.conflict('El poligono se superpone con otra zona activa de la misma ciudad. Ajusta el mapa antes de publicar.');
+      }
+    }
 
     if (input.name !== undefined) zone.name = input.name;
     if (input.deliveryFee !== undefined) zone.deliveryFee = input.deliveryFee;
+    if (input.cakeDeliveryFee !== undefined) zone.cakeDeliveryFee = input.cakeDeliveryFee;
     if (input.extraCoverageKm !== undefined) zone.extraCoverageKm = input.extraCoverageKm;
     if (input.extraFeePerKm !== undefined) zone.extraFeePerKm = input.extraFeePerKm;
     if (input.minimumOrder !== undefined) zone.minimumOrder = input.minimumOrder;
@@ -623,6 +1033,12 @@ export const commercialAdminService = {
     if (input.priority !== undefined) zone.priority = input.priority;
     if (input.isActive !== undefined) zone.isActive = input.isActive;
     if (input.polygon !== undefined) zone.polygon = input.polygon;
+    if (input.effectiveFrom !== undefined) {
+      const effectiveFrom = input.effectiveFrom ? new Date(input.effectiveFrom) : null;
+      if (effectiveFrom && Number.isNaN(effectiveFrom.getTime())) throw ApiError.badRequest('La fecha de vigencia no es valida');
+      zone.effectiveFrom = effectiveFrom;
+    }
+    if (input.archivedAt !== undefined) zone.archivedAt = input.archivedAt ? new Date(input.archivedAt) : null;
 
     const extraCoverageKm = Number(zone.extraCoverageKm);
     const extraFeePerKm = Number(zone.extraFeePerKm);
@@ -630,12 +1046,32 @@ export const commercialAdminService = {
       throw ApiError.badRequest('La extensión requiere un polígono y un recargo por kilómetro; 0 km significa sin límite');
     }
 
+    zone.version += 1;
+    await zone.save();
+    return { zone, before };
+  },
+
+  async archiveZone(zoneId: number, expectedVersion?: number) {
+    const zone = await CoverageZone.findByPk(zoneId);
+    if (!zone) throw ApiError.notFound('Zona no encontrada');
+    if (expectedVersion !== undefined && expectedVersion !== zone.version) {
+      throw ApiError.conflict('La zona cambio mientras la editabas. Recarga la cobertura e intentalo otra vez');
+    }
+    const before = { isActive: zone.isActive, archivedAt: zone.archivedAt, version: zone.version };
+    zone.isActive = false;
+    zone.archivedAt = new Date();
+    zone.version += 1;
     await zone.save();
     return { zone, before };
   },
 
   /** RN-002: que sucursal atiende esa zona. */
   async assignZoneToBranch(zoneId: number, branchId: number, priority: number) {
+    const [zone, branch] = await Promise.all([CoverageZone.findByPk(zoneId), Branch.findByPk(branchId)]);
+    if (!zone || zone.archivedAt) throw ApiError.notFound('Zona no encontrada');
+    if (!branch) throw ApiError.notFound('Sucursal no encontrada');
+    if (zone.cityId !== branch.cityId) throw ApiError.badRequest('La zona y la sucursal deben pertenecer a la misma ciudad');
+    if (priority < 1) throw ApiError.badRequest('La prioridad debe ser mayor que cero');
     const [link] = await ZoneBranch.findOrCreate({
       where: { coverageZoneId: zoneId, branchId },
       defaults: { coverageZoneId: zoneId, branchId, priority },
@@ -649,6 +1085,12 @@ export const commercialAdminService = {
   async setDistrictZone(districtId: number, coverageZoneId: number | null) {
     const district = await District.findByPk(districtId);
     if (!district) throw ApiError.notFound('Distrito no encontrado');
+
+    if (coverageZoneId !== null) {
+      const zone = await CoverageZone.findByPk(coverageZoneId);
+      if (!zone || zone.cityId !== district.cityId) throw ApiError.badRequest('La zona no pertenece a la ciudad del distrito');
+      if (!zone.isActive || zone.archivedAt) throw ApiError.badRequest('No puedes abrir un distrito con una zona apagada o archivada');
+    }
 
     const before = { coverageZoneId: district.coverageZoneId };
 

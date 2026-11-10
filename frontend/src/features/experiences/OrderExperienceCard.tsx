@@ -114,7 +114,7 @@ export function OrderExperienceCard({ orderNumber }: { orderNumber: string }) {
             expiresAt={data.expiresAt}
             url={
               data.publicToken
-                ? `${publicCakeWebOrigin()}/experiencias/${data.publicToken}`
+                ? `${publicCakeWebOrigin()}/experiencias/${data.publicToken}?camera=1`
                 : undefined
             }
           />

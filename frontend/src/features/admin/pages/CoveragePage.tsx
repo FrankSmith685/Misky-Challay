@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
+  Calculator,
   CalendarClock,
   CircleDollarSign,
+  Download,
   History,
   MapPin,
   Moon,
@@ -30,7 +32,7 @@ import { formatCurrency, formatDate } from '@lib/format';
 import { cn } from '@lib/cn';
 import { usePermissions } from '@hooks/usePermissions';
 import { PERM } from '@constants/permissions';
-import { StatusBadge, activeStateMap } from '@components/ui/StatusBadge';
+import { StatusBadge } from '@components/ui/StatusBadge';
 import { AddressAutocomplete } from '@features/geo/components/AddressAutocomplete';
 import { AddressMapPicker } from '@features/geo/components/AddressMapPicker';
 import {
@@ -68,12 +70,13 @@ const WEEKDAYS = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes'
 const EMPTY_ZONE: {
   name: string;
   deliveryFee: string;
+  cakeDeliveryFee: string;
   extraCoverageKm: string;
   extraFeePerKm: string;
   minimumOrder: string;
   estimatedMinutes: string;
   polygon: PolygonPoint[];
-} = { name: '', deliveryFee: '6.90', extraCoverageKm: '0', extraFeePerKm: '0', minimumOrder: '0', estimatedMinutes: '35', polygon: [] };
+} = { name: '', deliveryFee: '6.90', cakeDeliveryFee: '0', extraCoverageKm: '0', extraFeePerKm: '0', minimumOrder: '0', estimatedMinutes: '35', polygon: [] };
 const EMPTY_BRANCH: {
   name: string;
   addressLine: string;
@@ -135,6 +138,9 @@ const AdminCoveragePage = () => {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [publishAt, setPublishAt] = useState('');
   const [districtQuery, setDistrictQuery] = useState('');
+  const [quoteForm, setQuoteForm] = useState({ zoneId: '', subtotal: '50', containsCake: false, extraDeliveryFee: '0', deliveryType: 'DELIVERY' as 'DELIVERY' | 'PICKUP' | 'DINE_IN' });
+  const [quotePreview, setQuotePreview] = useState<Awaited<ReturnType<typeof commercialApi.previewCoverageQuote>> | null>(null);
+  const [exceptionForms, setExceptionForms] = useState<Record<number, { date: string; opensAt: string; closesAt: string; isClosed: boolean }>>({});
 
   const branchOperationalDistrict = data?.districts.find(
     (district) => district.ubigeoCode === branchLocation.districtCode,
@@ -306,22 +312,34 @@ const AdminCoveragePage = () => {
     try {
       const cityId = data?.cities[0]?.id;
       if (!cityId) throw new Error('Primero debe existir una ciudad');
+      const draftKey = editingZoneId === null ? SERVER_ZONE_DRAFT_KEY : `coverage-zone-${editingZoneId}`;
+      const editingZone = editingZoneId === null ? null : data?.zones.find((zone) => zone.id === editingZoneId);
       await commercialApi.saveDraft(
-        SERVER_ZONE_DRAFT_KEY,
+        draftKey,
         'coverage-zone',
         {
+          operation: editingZoneId === null ? 'CREATE' : 'UPDATE',
+          zoneId: editingZoneId,
+          expectedVersion: editingZone?.version,
           ...zoneForm,
           cityId,
           deliveryFee: Number(zoneForm.deliveryFee),
+          cakeDeliveryFee: Number(zoneForm.cakeDeliveryFee),
           extraCoverageKm: Number(zoneForm.extraCoverageKm),
           extraFeePerKm: Number(zoneForm.extraFeePerKm),
           minimumOrder: Number(zoneForm.minimumOrder),
           estimatedMinutes: Number(zoneForm.estimatedMinutes),
           priority: (data?.zones.length ?? 0) + 1,
+          effectiveFrom: publishAt ? new Date(publishAt).toISOString() : null,
         },
         publishAt ? new Date(publishAt).toISOString() : null,
       );
       toast.success(publishAt ? 'Publicación programada' : 'Borrador guardado en el servidor');
+      if (publishAt) {
+        setSetup(null);
+        setEditingZoneId(null);
+        setPublishAt('');
+      }
     } catch (error) {
       toast.error(getApiErrorMessage(error));
     } finally {
@@ -333,12 +351,14 @@ const AdminCoveragePage = () => {
     setZoneForm({
       name: zone.name,
       deliveryFee: String(zone.deliveryFee),
+      cakeDeliveryFee: String(zone.cakeDeliveryFee),
       extraCoverageKm: String(zone.extraCoverageKm),
       extraFeePerKm: String(zone.extraFeePerKm),
       minimumOrder: String(zone.minimumOrder),
       estimatedMinutes: String(zone.estimatedMinutes),
       polygon: zone.polygon ?? [],
     });
+    setPublishAt('');
     setSetup(null);
     setEditingZoneId(zone.id);
   };
@@ -364,21 +384,53 @@ const AdminCoveragePage = () => {
     try {
       if (setup === 'zone' || editingZoneId !== null) {
         if (zoneForm.name.trim().length < 3) throw new Error('Escribe el nombre de la zona');
+        if (publishAt) {
+          const editingZone = editingZoneId === null ? null : data?.zones.find((zone) => zone.id === editingZoneId);
+          await commercialApi.saveDraft(
+            editingZoneId === null ? SERVER_ZONE_DRAFT_KEY : `coverage-zone-${editingZoneId}`,
+            'coverage-zone',
+            {
+              operation: editingZoneId === null ? 'CREATE' : 'UPDATE',
+              zoneId: editingZoneId,
+              expectedVersion: editingZone?.version,
+              cityId,
+              name: zoneForm.name.trim(),
+              deliveryFee: Number(zoneForm.deliveryFee),
+              cakeDeliveryFee: Number(zoneForm.cakeDeliveryFee),
+              extraCoverageKm: Number(zoneForm.extraCoverageKm),
+              extraFeePerKm: Number(zoneForm.extraFeePerKm),
+              minimumOrder: Number(zoneForm.minimumOrder),
+              estimatedMinutes: Number(zoneForm.estimatedMinutes),
+              priority: editingZone?.priority ?? (data?.zones.length ?? 0) + 1,
+              polygon: zoneForm.polygon.length >= 3 ? zoneForm.polygon : undefined,
+              effectiveFrom: new Date(publishAt).toISOString(),
+            },
+            new Date(publishAt).toISOString(),
+          );
+          setSetup(null);
+          setEditingZoneId(null);
+          setPublishAt('');
+          toast.success('Publicacion programada');
+          return;
+        }
         if (editingZoneId !== null) {
           await commercialApi.updateZone(editingZoneId, {
             name: zoneForm.name.trim(),
             deliveryFee: Number(zoneForm.deliveryFee),
+            cakeDeliveryFee: Number(zoneForm.cakeDeliveryFee),
             extraCoverageKm: Number(zoneForm.extraCoverageKm),
             extraFeePerKm: Number(zoneForm.extraFeePerKm),
             minimumOrder: Number(zoneForm.minimumOrder),
             estimatedMinutes: Number(zoneForm.estimatedMinutes),
             polygon: zoneForm.polygon.length >= 3 ? zoneForm.polygon : null,
+            expectedVersion: data?.zones.find((zone) => zone.id === editingZoneId)?.version,
           });
         } else {
           await commercialApi.createZone({
             cityId,
             name: zoneForm.name.trim(),
             deliveryFee: Number(zoneForm.deliveryFee),
+            cakeDeliveryFee: Number(zoneForm.cakeDeliveryFee),
             extraCoverageKm: Number(zoneForm.extraCoverageKm),
             extraFeePerKm: Number(zoneForm.extraFeePerKm),
             minimumOrder: Number(zoneForm.minimumOrder),
@@ -564,8 +616,23 @@ const AdminCoveragePage = () => {
 
     await run(
       `zone-toggle-${zone.id}`,
-      () => commercialApi.updateZone(zone.id, { isActive: !zone.isActive }),
+      () => commercialApi.updateZone(zone.id, { isActive: !zone.isActive, expectedVersion: zone.version }),
       zone.isActive ? 'Zona apagada' : 'Zona activada',
+    );
+  };
+
+  const archiveZone = async (zone: AdminZone) => {
+    const { confirmed } = await confirm({
+      title: `Archivar ${zone.name}`,
+      message: 'La zona dejará de aparecer como operativa, conservará su historial y no podrá volver a activarse.',
+      confirmLabel: 'Archivar zona',
+      tone: 'danger',
+    });
+    if (!confirmed) return;
+    await run(
+      `zone-archive-${zone.id}`,
+      () => commercialApi.archiveZone(zone.id, zone.version),
+      'Zona archivada',
     );
   };
 
@@ -619,6 +686,58 @@ const AdminCoveragePage = () => {
     );
   };
 
+  const runCoverageQuote = () => {
+    if (!quoteForm.zoneId) {
+      toast.error('Elige una zona para simular');
+      return;
+    }
+    void run(
+      'coverage-quote',
+      async () => {
+        const result = await commercialApi.previewCoverageQuote({
+          zoneId: Number(quoteForm.zoneId),
+          subtotal: Number(quoteForm.subtotal),
+          containsCake: quoteForm.containsCake,
+          extraDeliveryFee: Number(quoteForm.extraDeliveryFee),
+          deliveryType: quoteForm.deliveryType,
+        });
+        setQuotePreview(result);
+      },
+      'Simulacion calculada',
+    );
+  };
+
+  const saveException = (branchId: number) => {
+    const form = exceptionForms[branchId] ?? { date: '', opensAt: '10:00', closesAt: '22:00', isClosed: false };
+    if (!form.date) {
+      toast.error('Elige la fecha de la excepcion');
+      return;
+    }
+    void run(
+      `exception-${branchId}`,
+      () => commercialApi.setScheduleException(branchId, { exceptionDate: form.date, opensAt: form.opensAt, closesAt: form.closesAt, isClosed: form.isClosed }),
+      'Excepcion guardada',
+    );
+  };
+
+  const exportCoverage = () => {
+    const quote = (value: unknown) => `"${String(value ?? '').replaceAll('"', '""')}"`;
+    const districtRows = data.districts.map((district) => {
+      const city = data.cities.find((entry) => entry.id === district.cityId);
+      const zone = data.zones.find((entry) => entry.id === district.coverageZoneId);
+      const branches = zone?.branchIds.map((id) => data.branches.find((branch) => branch.id === id)?.name).filter(Boolean).join(' | ') ?? '';
+      return [city?.name, district.name, district.ubigeoCode, zone?.name ?? 'Sin cobertura', zone?.deliveryFee ?? '', zone?.minimumOrder ?? '', zone?.estimatedMinutes ?? '', branches];
+    });
+    const csv = [['Ciudad', 'Distrito', 'UBIGEO', 'Zona', 'Delivery', 'Mínimo', 'ETA (min)', 'Sucursales'], ...districtRows]
+      .map((row) => row.map(quote).join(','))
+      .join('\n');
+    const anchor = document.createElement('a');
+    anchor.href = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }));
+    anchor.download = `cobertura-${new Date().toISOString().slice(0, 10)}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(anchor.href);
+  };
+
   return (
     <div className="grid gap-8">
       <PageHeader
@@ -638,6 +757,9 @@ const AdminCoveragePage = () => {
               onClick={() => setHistoryOpen(true)}
             >
               Historial
+            </Button>
+            <Button variant="ghost" leftIcon={<Download className="size-4" />} onClick={exportCoverage}>
+              Exportar matriz
             </Button>
             {canWrite && (
               <>
@@ -668,6 +790,77 @@ const AdminCoveragePage = () => {
           </Button>
         </div>
       )}
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        {[
+          ['Zonas activas', data.stats.activeZones],
+          ['Sucursales activas', data.stats.activeBranches],
+          ['Distritos cubiertos', data.stats.coveredDistricts],
+          ['Distritos sin cobertura', data.stats.uncoveredDistricts],
+          ['Conflictos de mapa', data.stats.overlappingZones],
+          ['Sucursales con alertas', data.stats.branchesWithAttention],
+        ].map(([label, value]) => (
+          <Card key={String(label)} className="p-4">
+            <p className="text-xs font-bold uppercase tracking-wide text-ink-muted">{label}</p>
+            <p className="mt-1 text-2xl font-black text-ink">{value}</p>
+          </Card>
+        ))}
+      </div>
+
+      {data.drafts.length > 0 && (
+        <Card className="border-accent-200 bg-accent-50/30">
+          <p className="font-black text-ink">Cambios de cobertura pendientes</p>
+          <div className="mt-3 grid gap-2 md:grid-cols-2">
+            {data.drafts.map((draft) => (
+              <div key={draft.id} className="rounded-xl border border-line bg-white p-3 text-sm">
+                <p className="font-semibold text-ink">{String(draft.payload.name ?? 'Zona sin nombre')}</p>
+                <p className="mt-1 text-xs text-ink-muted">{draft.status === 'SCHEDULED' && draft.publishAt ? `Programado para ${formatDate(draft.publishAt)}` : 'Borrador pendiente de publicación'} · Actualizado {formatDate(draft.updatedAt)}</p>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      <Card className="border-brand-200 bg-brand-50/40">
+        <div className="flex items-start gap-3">
+          <Calculator className="mt-1 size-5 shrink-0 text-brand-700" />
+          <div className="min-w-0 flex-1">
+            <p className="font-black text-ink">Simulador de tarifa</p>
+            <p className="text-sm text-ink-muted">Valida el importe que verá el cliente antes de publicar cambios de cobertura.</p>
+            <div className="mt-4 grid gap-3 md:grid-cols-5">
+              <Select
+                id="coverage-quote-zone"
+                label="Zona"
+                size="small"
+                value={quoteForm.zoneId}
+                onChange={(event) => { setQuoteForm((current) => ({ ...current, zoneId: event.target.value })); setQuotePreview(null); }}
+              >
+                <SelectOption value="">Elige una zona</SelectOption>
+                {data.zones.filter((zone) => zone.isActive && zone.status !== 'ARCHIVED').map((zone) => <SelectOption key={zone.id} value={String(zone.id)}>{zone.name}</SelectOption>)}
+              </Select>
+              <Input label="Subtotal (S/)" type="number" min="0" step="0.01" value={quoteForm.subtotal} onChange={(event) => setQuoteForm((current) => ({ ...current, subtotal: event.target.value }))} />
+              <Input label="Recargo adicional (S/)" type="number" min="0" step="0.01" value={quoteForm.extraDeliveryFee} onChange={(event) => setQuoteForm((current) => ({ ...current, extraDeliveryFee: event.target.value }))} />
+              <Select id="coverage-quote-type" label="Servicio" size="small" value={quoteForm.deliveryType} onChange={(event) => setQuoteForm((current) => ({ ...current, deliveryType: event.target.value as typeof current.deliveryType }))}>
+                <SelectOption value="DELIVERY">Delivery</SelectOption><SelectOption value="PICKUP">Recojo</SelectOption><SelectOption value="DINE_IN">Consumo local</SelectOption>
+              </Select>
+              <div className="flex items-end gap-3">
+                <label className="flex h-11 items-center gap-2 text-xs font-semibold text-ink-muted"><input type="checkbox" checked={quoteForm.containsCake} onChange={(event) => setQuoteForm((current) => ({ ...current, containsCake: event.target.checked }))} className="size-4 accent-brand-600" />Contiene torta</label>
+                <Button size="sm" onClick={runCoverageQuote} isLoading={busy === 'coverage-quote'} disabled={busy !== null}>Calcular</Button>
+              </div>
+            </div>
+            {quotePreview && (
+              <div className="mt-4 grid gap-2 rounded-xl border border-brand-200 bg-white p-4 text-sm sm:grid-cols-3">
+                <p>Delivery: <strong>{formatCurrency(quotePreview.deliveryFee)}</strong></p>
+                <p>IGV incluido: <strong>{formatCurrency(quotePreview.taxTotal)}</strong></p>
+                <p>ETA: <strong>{quotePreview.estimatedMinutes} min</strong></p>
+                <p>Mínimo: <strong>{quotePreview.minimumOrder > 0 ? formatCurrency(quotePreview.minimumOrder) : 'Sin mínimo'}</strong></p>
+                <p className={quotePreview.meetsMinimum ? 'text-brand-700' : 'text-red-700'}>{quotePreview.meetsMinimum ? 'Cumple el mínimo' : 'No cumple el mínimo'}</p>
+                <p className="font-black text-brand-800">Total: {formatCurrency(quotePreview.total)}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </Card>
 
       <CoverageOverviewMap zones={data.zones} branches={data.branches} />
 
@@ -701,14 +894,16 @@ const AdminCoveragePage = () => {
                   <p className="font-semibold text-ink">{zone.name}</p>
                   <p className="text-xs text-ink-muted">
                     {zone.hasPolygon ? 'Con poligono' : 'Sin poligono (solo por distrito)'} ·
-                    prioridad {zone.priority}
+                    prioridad {zone.priority} · {zone.districtCount} distrito(s)
                   </p>
+                  <p className="mt-1 text-[11px] text-ink-muted">Últimos 30 días: {zone.last30DaysOrders} pedidos · {formatCurrency(zone.last30DaysDeliveryRevenue)} en delivery</p>
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
                   {dirty && <Badge variant="warning">Sin publicar</Badge>}
+                  {zone.hasOverlap && <Badge variant="danger">Mapa en conflicto</Badge>}
                   <StatusBadge
-                    status={String(zone.isActive)}
-                    map={activeStateMap('Activa', 'Apagada')}
+                    status={zone.status}
+                    map={{ ACTIVE: { label: 'Activa', variant: 'success' }, PAUSED: { label: 'Pausada', variant: 'warning' }, SCHEDULED: { label: 'Programada', variant: 'brand' }, ARCHIVED: { label: 'Archivada', variant: 'neutral' } }}
                   />
                 </div>
               </div>
@@ -721,6 +916,15 @@ const AdminCoveragePage = () => {
                     step="0.10"
                     value={zone.deliveryFee}
                     onChange={(e) => patchZone(zone.id, { deliveryFee: Number(e.target.value) })}
+                  />
+                  <Input
+                    label="Recargo por torta"
+                    type="number"
+                    min="0"
+                    step="0.10"
+                    hint="Se cobra una sola vez por pedido con tortas."
+                    value={zone.cakeDeliveryFee}
+                    onChange={(e) => patchZone(zone.id, { cakeDeliveryFee: Number(e.target.value) })}
                   />
                   <Input
                     label="Mínimo opcional (S/)"
@@ -744,6 +948,7 @@ const AdminCoveragePage = () => {
                 <dl className="mt-3 grid grid-cols-3 gap-2 text-sm">
                   {[
                     { label: 'Delivery', value: formatCurrency(zone.deliveryFee) },
+                    { label: 'Recargo por torta', value: zone.cakeDeliveryFee > 0 ? formatCurrency(zone.cakeDeliveryFee) : 'Sin recargo' },
                     { label: 'Pedido mínimo', value: zone.minimumOrder > 0 ? formatCurrency(zone.minimumOrder) : 'Sin mínimo' },
                     { label: 'Reparto', value: `${zone.estimatedMinutes} min` },
                     { label: 'Fuera de zona', value: zone.extraFeePerKm > 0 ? `${zone.extraCoverageKm > 0 ? `${zone.extraCoverageKm} km` : 'Sin límite'} · ${formatCurrency(zone.extraFeePerKm)}/km` : 'Desactivada' },
@@ -777,10 +982,12 @@ const AdminCoveragePage = () => {
                       () =>
                         commercialApi.updateZone(zone.id, {
                           deliveryFee: zone.deliveryFee,
+                          cakeDeliveryFee: zone.cakeDeliveryFee,
                           extraCoverageKm: zone.extraCoverageKm,
                           extraFeePerKm: zone.extraFeePerKm,
                           minimumOrder: zone.minimumOrder,
                           estimatedMinutes: zone.estimatedMinutes,
+                          expectedVersion: zone.version,
                         }),
                       'Zona actualizada',
                     )
@@ -798,6 +1005,18 @@ const AdminCoveragePage = () => {
                 >
                   {zone.isActive ? 'Apagar' : 'Activar'}
                 </Button>
+                {!zone.archivedAt && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-red-700"
+                    isLoading={busy === `zone-archive-${zone.id}`}
+                    disabled={busy !== null}
+                    onClick={() => void archiveZone(zone)}
+                  >
+                    Archivar
+                  </Button>
+                )}
               </div>
               )}
             </Card>
@@ -932,6 +1151,13 @@ const AdminCoveragePage = () => {
                     {branch.acceptsPickup ? 'acepta recojo' : 'sin recojo'} ·{' '}
                     {branch.acceptsDelivery ? 'acepta delivery' : 'sin delivery'}
                   </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                    <Badge variant={branch.health.status === 'READY' ? 'success' : 'warning'}>
+                      {branch.health.status === 'READY' ? 'Operativa' : 'Revisar configuración'}
+                    </Badge>
+                    <span className="text-ink-muted">Franjas próximas: {branch.slotSummary.upcoming} · Disponibles: {branch.slotSummary.available}</span>
+                  </div>
+                  {branch.health.issues.length > 0 && <p className="mt-1 text-xs font-semibold text-amber-700">{branch.health.issues.join(' · ')}</p>}
                 </div>
 
                 {canWrite && (
@@ -971,6 +1197,7 @@ const AdminCoveragePage = () => {
                   const overnight = crossesMidnight(schedule);
                   const empty = isEmptySchedule(schedule);
                   const dirty = scheduleIsDirty(branch.id, schedule);
+                  const isException = Boolean(schedule.exceptionDate);
 
                   return (
                   <div
@@ -978,14 +1205,14 @@ const AdminCoveragePage = () => {
                     className="flex flex-wrap items-center gap-2 rounded-card border border-line px-3 py-2 text-sm"
                   >
                     <span className="w-24 shrink-0 text-ink-muted">
-                      {WEEKDAYS[schedule.weekday ?? 0]}
+                      {schedule.exceptionDate ? `Excepción ${schedule.exceptionDate}` : WEEKDAYS[schedule.weekday ?? 0]}
                     </span>
 
                     <input
                       type="time"
                       aria-label={`Apertura del ${WEEKDAYS[schedule.weekday ?? 0]}`}
                       value={schedule.opensAt}
-                      disabled={!canWrite || schedule.isClosed}
+                      disabled={!canWrite || schedule.isClosed || isException}
                       onChange={(e) =>
                         patchSchedule(branch.id, schedule.id, { opensAt: e.target.value })
                       }
@@ -996,7 +1223,7 @@ const AdminCoveragePage = () => {
                       type="time"
                       aria-label={`Cierre del ${WEEKDAYS[schedule.weekday ?? 0]}`}
                       value={schedule.closesAt}
-                      disabled={!canWrite || schedule.isClosed}
+                      disabled={!canWrite || schedule.isClosed || isException}
                       onChange={(e) =>
                         patchSchedule(branch.id, schedule.id, { closesAt: e.target.value })
                       }
@@ -1010,7 +1237,7 @@ const AdminCoveragePage = () => {
                       <input
                         type="checkbox"
                         checked={schedule.isClosed}
-                        disabled={!canWrite}
+                        disabled={!canWrite || isException}
                         onChange={(e) =>
                           patchSchedule(branch.id, schedule.id, { isClosed: e.target.checked })
                         }
@@ -1040,7 +1267,7 @@ const AdminCoveragePage = () => {
                         <Button
                           size="sm"
                           variant="ghost"
-                          disabled={!dirty || empty || busy !== null}
+                          disabled={!dirty || empty || isException || busy !== null}
                           isLoading={busy === `sch-${schedule.id}`}
                           onClick={() => saveSchedule(branch.id, schedule)}
                         >
@@ -1052,6 +1279,25 @@ const AdminCoveragePage = () => {
                   );
                 })}
               </div>
+
+              {canWrite && (() => {
+                const exception = exceptionForms[branch.id] ?? { date: '', opensAt: '10:00', closesAt: '22:00', isClosed: false };
+                const patchException = (patch: Partial<typeof exception>) => setExceptionForms((current) => ({ ...current, [branch.id]: { ...exception, ...patch } }));
+                return (
+                  <div className="mt-4 rounded-xl border border-dashed border-line bg-surface-muted/40 p-3">
+                    <p className="text-xs font-black uppercase tracking-wide text-ink-muted">Feriado o cierre especial</p>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-4">
+                      <Input label="Fecha" type="date" value={exception.date} onChange={(event) => patchException({ date: event.target.value })} />
+                      <Input label="Apertura" type="time" value={exception.opensAt} disabled={exception.isClosed} onChange={(event) => patchException({ opensAt: event.target.value })} />
+                      <Input label="Cierre" type="time" value={exception.closesAt} disabled={exception.isClosed} onChange={(event) => patchException({ closesAt: event.target.value })} />
+                      <div className="flex items-end gap-3">
+                        <label className="flex h-11 items-center gap-2 text-xs font-semibold text-ink-muted"><input type="checkbox" checked={exception.isClosed} onChange={(event) => patchException({ isClosed: event.target.checked })} className="size-4 accent-brand-600" />Cerrado</label>
+                        <Button size="sm" variant="outline" isLoading={busy === `exception-${branch.id}`} disabled={busy !== null} onClick={() => saveException(branch.id)}>Guardar</Button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {canWrite && (
               <div className="mt-3 flex items-end gap-2">
@@ -1083,7 +1329,7 @@ const AdminCoveragePage = () => {
                     void run(
                       `branch-${branch.id}`,
                       () =>
-                        commercialApi.updateBranch(branch.id, { prepMinutes: branch.prepMinutes }),
+                        commercialApi.updateBranch(branch.id, { prepMinutes: branch.prepMinutes, expectedVersion: branch.version }),
                       'Sucursal actualizada',
                     )
                   }
@@ -1162,6 +1408,17 @@ const AdminCoveragePage = () => {
                       setZoneForm((form) => ({ ...form, deliveryFee: event.target.value }))
                     }
                   />
+                  <Input
+                    label="Recargo por torta"
+                    type="number"
+                    min="0"
+                    step="0.10"
+                    value={zoneForm.cakeDeliveryFee}
+                    onChange={(event) =>
+                      setZoneForm((form) => ({ ...form, cakeDeliveryFee: event.target.value }))
+                    }
+                    hint="Se suma una sola vez cuando el pedido contiene tortas."
+                  />
                   <Input label="Límite fuera del mapa (km)" type="number" min="0" max="50" step="0.1" value={zoneForm.extraCoverageKm} onChange={(event) => setZoneForm((form) => ({ ...form, extraCoverageKm: event.target.value }))} hint="Distancia en línea recta desde el borde. 0 permite cotizar sin límite si hay tarifa." />
                   <Input label="Recargo por km fuera del mapa" type="number" min="0" step="0.10" value={zoneForm.extraFeePerKm} onChange={(event) => setZoneForm((form) => ({ ...form, extraFeePerKm: event.target.value }))} hint="Se suma al costo base de delivery." />
                   <Input
@@ -1186,7 +1443,7 @@ const AdminCoveragePage = () => {
                     }
                   />
                 </div>
-                {editingZoneId === null && (
+                {(
                   <div className="mt-4 rounded-2xl border border-brand-100 bg-brand-50/60 p-3">
                     <Input
                       label="Publicar automáticamente (opcional)"
@@ -1492,6 +1749,9 @@ const AdminCoveragePage = () => {
                                 ...(typeof before.name === 'string' ? { name: before.name } : {}),
                                 ...(typeof before.deliveryFee === 'number'
                                   ? { deliveryFee: before.deliveryFee }
+                                  : {}),
+                                ...(typeof before.cakeDeliveryFee === 'number'
+                                  ? { cakeDeliveryFee: before.cakeDeliveryFee }
                                   : {}),
                                 ...(typeof before.extraCoverageKm === 'number' ? { extraCoverageKm: before.extraCoverageKm } : {}),
                                 ...(typeof before.extraFeePerKm === 'number' ? { extraFeePerKm: before.extraFeePerKm } : {}),

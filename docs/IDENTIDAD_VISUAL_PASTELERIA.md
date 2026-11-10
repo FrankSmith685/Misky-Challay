@@ -1,14 +1,14 @@
 # Identidad visual de la pastelería
 
-La tienda, la cuenta del cliente y el panel conservan la tipografía, ilustraciones y estructura recuperadas. Comparten la paleta guinda y caramelo de Misky Challay, definida en `frontend/src/theme/tokens.ts` y `frontend/src/styles/index.css`.
+La tienda, la cuenta del cliente y el panel comparten la tipografía, ilustraciones y estructura de Misky Challay. La identidad toma del logotipo un azul brillante, amarillo sol y coral cálido, definidos en `frontend/src/theme/tokens.ts` y `frontend/src/styles/index.css`.
 
 | Uso | Valor por defecto |
 | --- | --- |
-| Acciones principales | Guinda `#8b3d59` |
-| Acentos | Caramelo `#c28a47` |
-| Apoyo | Verde suave `#527363` |
-| Fondo | Crema `#faf6f1` |
-| Texto | Cacao `#352721` |
+| Acciones principales | Azul brillante `#006fb9` |
+| Acentos | Amarillo sol `#ffbd16` |
+| Apoyo | Coral cálido `#f15b3a` |
+| Fondo | Azul niebla `#f5faff` |
+| Texto | Azul tinta `#17324d` |
 | Títulos, formularios y datos | Inter / fuentes sans del sistema |
 
 Los estados de información, éxito, advertencia y error conservan paletas independientes. Los controles mantienen foco visible y las pantallas se adaptan a celular.
@@ -17,7 +17,7 @@ El logo original de Misky Challay se conserva en sus archivos de `/public/brand`
 
 ## Tema y preferencias existentes
 
-El editor sigue disponible en **Administración → Sistema de diseño**. La clave de almacenamiento se conserva. Si la paleta guardada coincide completamente con la anterior combinación azul, naranja y celeste, se actualiza a la paleta guinda y caramelo. Las paletas personalizadas y la combinación guinda ya guardada se conservan.
+El editor sigue disponible en **Administración → Sistema de diseño**. La clave de almacenamiento se conserva. Las preferencias guardadas con la paleta anterior se migran a la nueva identidad; las paletas personalizadas se conservan.
 
 Los controles y tarjetas conservan radios de hasta 5 px. Los neutros, rampas y radios están sincronizados entre MUI y Tailwind. Los títulos mantienen la tipografía sans en negrita en tienda, cuenta, configurador y panel. Se conserva la presentación sin tipografía serif ni marcos en arco.
 

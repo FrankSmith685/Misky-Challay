@@ -11,7 +11,7 @@ Para operar desde Perú se integra Mercado Pago Checkout Pro. Consulta [la guía
 - El backend crea una sesión de Stripe Checkout al confirmar cada pedido online. Envía el importe calculado por el servidor con `price_data` y `product_data`; no hay que crear una ficha de producto por cada torta en el panel de Stripe.
 - Una torta de catálogo se cobra completa. Una torta de diseño especial aprobada genera un cobro del 50 % como anticipo y otro del 50 % como saldo antes de la entrega. Cada cobro tiene su propia sesión y referencia.
 - El cliente vuelve a la aplicación, pero solo el webhook firmado confirma el pago y sus efectos en pedido y producción.
-- La comisión de DulceFlow del 15 % se registra en el módulo de liquidaciones de tortas. Esta integración no hace una transferencia automática del 15 %: el dinero entra íntegramente en la cuenta receptora de la pasarela y la comisión se liquida por separado.
+- La comisión de DulceFlow del 15 % se registra en el módulo de liquidaciones por cada pedido cobrado. Esta integración no hace una transferencia automática del 15 %: el dinero entra íntegramente en la cuenta receptora de la pasarela y la comisión se liquida por separado.
 
 ## Pruebas con Stripe si existe una cuenta elegible
 

@@ -118,6 +118,7 @@ async function priceChange(
     return {
       lines,
       newFee: Number(order.deliveryFee),
+      cakeDeliveryFee: Number(order.cakeDeliveryFee ?? 0),
       delta: 0,
       changes: input,
       destination: null,
@@ -151,10 +152,17 @@ async function priceChange(
     : null;
   if (destination && (!zone || Number(order.subtotal) < Number(zone.minimumOrder)))
     throw ApiError.unprocessable('El pedido no cumple el mínimo de la nueva zona.');
+  const requiresCar = await carTransport.requiresCar(
+    lines.map((line) => line.productId),
+    order.deliveryType,
+  );
+  const cakeDeliveryFee = destination && zone
+    ? requiresCar ? Math.max(0, Number(zone.cakeDeliveryFee ?? 0)) : 0
+    : Number(order.cakeDeliveryFee ?? 0);
   const newFee =
     destination && zone
       ? Math.round(
-          (Number(zone.deliveryFee) + Math.max(0, destination.extraDeliveryFee ?? 0)) * 100,
+          (Number(zone.deliveryFee) + cakeDeliveryFee + Math.max(0, destination.extraDeliveryFee ?? 0)) * 100,
         ) / 100
       : Number(order.deliveryFee);
   const delta = Math.round((newFee - Number(order.deliveryFee)) * 100) / 100;
@@ -186,7 +194,7 @@ async function priceChange(
     throw ApiError.conflict(
       'La franja actual no atiende la nueva dirección. Elige una franja compatible.',
     );
-  return { lines, newFee, delta, changes: input, destination, slots: availability.slots };
+  return { lines, newFee, cakeDeliveryFee, delta, changes: input, destination, slots: availability.slots };
 }
 
 export const customerJourneyService = {
@@ -269,6 +277,7 @@ export const customerJourneyService = {
                   contactPhone: preview.changes.contactPhone ?? order.contactPhone,
                   addressLine: preview.changes.address?.line1 ?? order.addressSnapshotJson?.line1,
                   deliveryFee: preview.newFee,
+                  cakeDeliveryFee: preview.cakeDeliveryFee,
                 }
               : null,
           },
@@ -354,6 +363,7 @@ export const customerJourneyService = {
                 contactPhone: preview.changes.contactPhone ?? order.contactPhone,
                 addressLine: preview.changes.address?.line1 ?? order.addressSnapshotJson?.line1,
                 deliveryFee: preview.newFee,
+                cakeDeliveryFee: preview.cakeDeliveryFee,
               }
             : null,
         };
@@ -402,6 +412,7 @@ export const customerJourneyService = {
             contactPhone: order.contactPhone,
             grandTotal: order.grandTotal,
             deliveryFee: order.deliveryFee,
+            cakeDeliveryFee: order.cakeDeliveryFee,
           };
           const changes = preview.changes;
           if (changes.deliverySlotId && changes.deliverySlotId !== order.deliverySlotId) {
@@ -489,6 +500,7 @@ export const customerJourneyService = {
               if (!order.balanceAmount) order.balancePaidAt = new Date();
             }
           }
+          order.cakeDeliveryFee = preview.cakeDeliveryFee;
           const priorBalance =
             preview.delta > 0
               ? await Payment.findOne({

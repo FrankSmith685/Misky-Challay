@@ -23,6 +23,7 @@ export const engagementController = {
     return ok(res, { summary: result.summary, reviews: result.reviews }, 'Reseñas verificadas', result.meta);
   }),
   pendingReviews: asyncHandler(async (req: Request, res: Response) => ok(res, await engagementService.pendingReviews(userId(req)))),
+  myReviews: asyncHandler(async (req: Request, res: Response) => ok(res, await engagementService.myReviews(userId(req)))),
   createReview: asyncHandler(async (req: Request, res: Response) => created(res, await engagementService.createReview(userId(req), req.body), 'Gracias por compartir tu experiencia')),
   updateReview: asyncHandler(async (req: Request, res: Response) => ok(res, await engagementService.updateReview(userId(req), Number(req.params.reviewId), req.body), 'Reseña actualizada')),
   newsletterStatus: asyncHandler(async (req: Request, res: Response) => ok(res, await engagementService.newsletterStatus(userId(req)))),

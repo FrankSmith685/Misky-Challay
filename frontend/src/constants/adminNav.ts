@@ -87,7 +87,7 @@ export const ADMIN_NAV_GROUPS = [
 export const ADMIN_NAV: AdminNavEntry[] = [
   { to: ROUTES.adminHomeContent, label: 'Contenido del inicio', icon: BookText, anyOf: [], superAdminOnly: true, group: 'CATALOGO' },
   { to: '/admin/experiencias-qr', label: 'Experiencias QR', icon: Images, anyOf: [PERM.EXPERIENCE_READ, PERM.EXPERIENCE_WRITE, PERM.EXPERIENCE_PUBLISH], group: 'CATALOGO' },
-  { to: ROUTES.adminDirectPayments, label: 'Yape y Plin', icon: Smartphone, anyOf: [PERM.PAYMENT_VERIFY, PERM.PAYMENT_REFUND], group: 'VENTAS' },
+  { to: ROUTES.adminDirectPayments, label: 'Yape y Plin', icon: Smartphone, anyOf: [PERM.PAYMENT_READ, PERM.PAYMENT_VERIFY, PERM.PAYMENT_REFUND], group: 'VENTAS' },
   { to: ROUTES.adminCommunications, label: 'Comunicaciones', icon: MessageCircle, anyOf: [PERM.COMMUNICATION_READ, PERM.COMMUNICATION_REPLY], group: 'VENTAS' },
   {
     to: ROUTES.adminDashboard,
@@ -107,6 +107,7 @@ export const ADMIN_NAV: AdminNavEntry[] = [
       PERM.ORDER_CANCEL,
       PERM.PAYMENT_READ,
       PERM.PAYMENT_REFUND,
+      PERM.INVOICE_MANAGE,
     ],
     group: 'VENTAS',
   },
@@ -114,21 +115,21 @@ export const ADMIN_NAV: AdminNavEntry[] = [
     to: ROUTES.adminCash,
     label: 'Caja y rendimiento',
     icon: Banknote,
-    anyOf: [PERM.REPORT_SALES_READ, PERM.PAYMENT_VERIFY],
+    anyOf: [PERM.REPORT_SALES_READ],
     group: 'VENTAS',
   },
   {
     to: ROUTES.adminPos,
     label: 'Punto de venta',
     icon: ShoppingCart,
-    anyOf: [PERM.DINING_OPERATE],
+    anyOf: [PERM.POS_SELL],
     group: 'VENTAS',
   },
   {
     // Compatibilidad con el modulo anterior: se conserva para roles de salon,
     // pero no se ofrece en el menu de Misky Challay.
     to: ROUTES.adminDining,
-    label: 'SalÃ³n y comandas',
+    label: 'Salón y comandas',
     icon: Store,
     anyOf: [PERM.DINING_READ, PERM.DINING_OPERATE],
     group: 'VENTAS',
@@ -145,7 +146,7 @@ export const ADMIN_NAV: AdminNavEntry[] = [
     to: ROUTES.adminCakes,
     label: 'Producción de pastelería',
     icon: ChefHat,
-    anyOf: [PERM.KITCHEN_READ, PERM.KITCHEN_OPERATE, PERM.CATALOG_CUSTOMIZATION_WRITE, PERM.GEO_READ, PERM.GEO_WRITE, PERM.CAKE_FINANCE_READ],
+    anyOf: [PERM.KITCHEN_READ, PERM.KITCHEN_OPERATE, PERM.CATALOG_CUSTOMIZATION_WRITE, PERM.GEO_READ, PERM.GEO_WRITE, PERM.CAKE_FINANCE_READ, PERM.CAKE_FINANCE_MANAGE],
     group: 'PRODUCCION',
   },
   {
@@ -237,7 +238,14 @@ export const ADMIN_NAV: AdminNavEntry[] = [
   },
   {
     to: ROUTES.adminUsers,
-    label: 'Usuarios',
+    label: 'Personal interno',
+    icon: Users,
+    anyOf: [PERM.CUSTOMER_READ, PERM.CUSTOMER_MANAGE],
+    group: 'GOBIERNO',
+  },
+  {
+    to: ROUTES.adminCustomers,
+    label: 'Clientes',
     icon: Users,
     anyOf: [PERM.USER_READ, PERM.USER_MANAGE],
     group: 'GOBIERNO',
@@ -247,6 +255,7 @@ export const ADMIN_NAV: AdminNavEntry[] = [
     label: 'Equipos y accesos',
     icon: Users,
     anyOf: [PERM.USER_READ, PERM.USER_MANAGE, PERM.ROLE_READ, PERM.ROLE_MANAGE],
+    superAdminOnly: true,
     group: 'GOBIERNO',
   },
   {
@@ -254,20 +263,21 @@ export const ADMIN_NAV: AdminNavEntry[] = [
     label: 'Roles y permisos',
     icon: ShieldCheck,
     anyOf: [PERM.ROLE_READ, PERM.ROLE_MANAGE],
+    superAdminOnly: true,
     group: 'GOBIERNO',
   },
   {
     to: ROUTES.adminComplaints,
     label: 'Libro de reclamaciones',
     icon: BookText,
-    anyOf: [PERM.COMPLAINT_MANAGE],
+    anyOf: [PERM.COMPLAINT_READ, PERM.COMPLAINT_MANAGE, PERM.COMPLAINT_RESPOND, PERM.COMPLAINT_EXPORT, PERM.COMPLAINT_REOPEN],
     group: 'GOBIERNO',
   },
   {
     to: ADMIN_AUDIT_PATH,
     label: 'Bitácora',
     icon: ScrollText,
-    anyOf: [PERM.AUDIT_READ],
+    anyOf: [PERM.AUDIT_READ, PERM.AUDIT_EXPORT, PERM.AUDIT_VERIFY, PERM.AUDIT_RETENTION],
     group: 'GOBIERNO',
   },
   {
@@ -282,7 +292,7 @@ export const ADMIN_NAV: AdminNavEntry[] = [
     to: ROUTES.adminDesign,
     label: 'Sistema de diseño',
     icon: Palette,
-    anyOf: [PERM.SETTINGS_MANAGE],
+    anyOf: [PERM.SETTINGS_MANAGE, PERM.SETTINGS_DESIGN_READ, PERM.SETTINGS_DESIGN_MANAGE, PERM.SETTINGS_DESIGN_PUBLISH],
     group: 'GOBIERNO',
   },
 ];

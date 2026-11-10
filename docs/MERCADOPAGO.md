@@ -4,7 +4,7 @@ DulceFlow usa la API de Orders de Mercado Pago para redirigir al cliente a Check
 
 ## Paso a paso desde una cuenta de Mercado Pago creada
 
-1. Inicia sesión en [Mercado Pago Developers](https://www.mercadopago.com.pe/developers/es) con la cuenta peruana que recibirá el dinero. En **Tus integraciones**, crea una aplicación para **Pagos online > Checkout Pro** si todavía no existe. Esta integración cobra en esa cuenta; el 15 % de DulceFlow se liquida por separado.
+1. Inicia sesión en [Mercado Pago Developers](https://www.mercadopago.com.pe/developers/es) con la cuenta peruana que recibirá el dinero. En **Tus integraciones**, crea una aplicación para **Pagos online > Checkout Pro** si todavía no existe. Esta integración cobra en esa cuenta; la comisi?n configurada de DulceFlow (15 % por defecto) se liquida por separado por cada pedido cobrado.
 2. En la aplicación, abre **Datos de integración > Pruebas > Credenciales de prueba** y copia el **Access Token** de prueba. No necesitas la Public Key para este Checkout Pro alojado. Tanto el Access Token de prueba como el productivo pueden empezar con `APP_USR-`: el prefijo no distingue el ambiente.
 3. Primero ejecuta `npm run dev` desde la raíz del proyecto y comprueba que `http://127.0.0.1:5173` abre la tienda. Cambia la contraseña de administrador de ejemplo en **Mi perfil > Actualizar contraseña** y en `ADMIN_PASSWORD` de `backend/.env` para futuros arranques con una base nueva. Después prepara una URL HTTPS pública: si trabajas en Windows, puedes instalar [ngrok](https://ngrok.com/download/windows), autenticarlo siguiendo su panel y ejecutar `ngrok http 127.0.0.1:5173` en otra terminal. Copia la URL HTTPS que aparece, por ejemplo `https://abc.ngrok-free.app`. El túnel apunta al frontend Vite; su proxy `/api` entrega el webhook al backend en el puerto 4000. Usar `127.0.0.1` evita que ngrok resuelva `localhost` a `::1` cuando Vite escucha por IPv4.
 4. En `backend/.env`, configura `FRONTEND_URL` con **esa misma URL HTTPS**. Deja `MERCADOPAGO_ACCESS_TOKEN` y `MERCADOPAGO_WEBHOOK_SECRET` vacías por ahora. **Reinicia** `npm run dev`: Vite permite automáticamente el host exacto de ngrok indicado en `FRONTEND_URL`.
@@ -44,7 +44,7 @@ Reinicia el backend después de editar `.env`. Debe indicar `Pagos: Mercado Pago
 - Los pagos de tipo `ticket` están excluidos para evitar que un pago offline se complete después de vencer la reserva de producción.
 - El reembolso se solicita por la API de Orders y queda registrado en DulceFlow con responsable y motivo.
 
-El 15 % de comisión de DulceFlow se calcula y gestiona en **Liquidaciones de tortas**. Checkout Pro acredita el cobro en la cuenta de Mercado Pago conectada; esta integración no hace un reparto automático del 15 %. Para repartir el dinero automáticamente se necesita una integración de marketplace y la autorización de las cuentas participantes, que es un flujo distinto.
+El 15 % de comisión de DulceFlow se calcula y gestiona en **Liquidaciones** para cada pedido cobrado. Checkout Pro acredita el cobro en la cuenta de Mercado Pago conectada; esta integración no hace un reparto automático del 15 %. Para repartir el dinero automáticamente se necesita una integración de marketplace y la autorización de las cuentas participantes, que es un flujo distinto.
 
 ## Comprobación antes de publicar
 

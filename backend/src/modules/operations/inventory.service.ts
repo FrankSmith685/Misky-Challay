@@ -11,7 +11,12 @@ import {
   CustomizationOption,
   InventoryItem,
   InventoryMovement,
+  InventoryTransfer,
+  InventoryTransferItem,
+  InventoryCountSession,
+  InventoryCountItem,
   InventoryLot,
+  Branch,
   MediaAsset,
   Order,
   OrderItem,
@@ -25,6 +30,8 @@ import {
   sequelize,
 } from '@database/models';
 import { MOVEMENT_TYPE, type MovementType } from '@database/models/inventoryMovement.model';
+import { INVENTORY_TRANSFER_STATUS } from '@database/models/inventoryTransfer.model';
+import { INVENTORY_COUNT_STATUS } from '@database/models/inventoryCount.model';
 import { INVENTORY_LOT_STATUS } from '@database/models/procurement.model';
 import { logger } from '@config/logger';
 import { ApiError } from '@shared/errors/ApiError';
@@ -32,6 +39,7 @@ import { refreshCakesUsingInventoryItem } from '@modules/catalog/cakeAllergens.s
 import { zonedParts } from '@shared/utils/datetime';
 import { resolveCakeCustomServings } from '@modules/cakes/cakeCustomServings';
 import { resolveCakeTheme } from '@modules/cakes/cakeThemeRules';
+import type { BranchScopeCheck } from '@shared/utils/scope';
 
 /** Cuanto de cada insumo necesita un pedido. */
 export type Requirement = Map<number, number>;
@@ -167,7 +175,7 @@ const writeMovement = async (
   stock: BranchInventory,
   type: MovementType,
   quantity: number,
-  context: { orderId?: number | null; actorId?: number | null; reason?: string; lotId?: number | null; purchaseOrderId?: number | null; unitCost?: number | null; totalCost?: number | null },
+  context: { orderId?: number | null; actorId?: number | null; reason?: string; lotId?: number | null; purchaseOrderId?: number | null; unitCost?: number | null; totalCost?: number | null; idempotencyKey?: string | null },
   transaction: Transaction,
 ): Promise<void> => {
   await InventoryMovement.create(
@@ -185,6 +193,7 @@ const writeMovement = async (
       purchaseOrderId: context.purchaseOrderId ?? null,
       unitCost: context.unitCost ?? null,
       totalCost: context.totalCost ?? null,
+      idempotencyKey: context.idempotencyKey ?? null,
     },
     { transaction },
   );
@@ -238,6 +247,20 @@ const recalculateAverageCost = async (stock: BranchInventory, transaction: Trans
   const quantity = lots.reduce((sum, lot) => sum + Number(lot.quantityAvailable), 0);
   const value = lots.reduce((sum, lot) => sum + Number(lot.quantityAvailable) * Number(lot.unitCost), 0);
   stock.averageUnitCost = quantity > 0 ? Math.round((value / quantity) * 10000) / 10000 : stock.averageUnitCost;
+};
+
+type GlobalStockAccumulator = {
+  onHand: number;
+  reserved: number;
+  available: number;
+  stockValue: number;
+  consumedLast7Days: number;
+  averageDailyUsage: number;
+  minLevel: number;
+  averageUnitCost: number;
+  branchCount: number;
+  branches: string[];
+  [key: string]: unknown;
 };
 
 /**
@@ -344,6 +367,7 @@ export const inventoryService = {
     purchaseOrderId?: number | null;
     actorId: number;
     reason?: string;
+    idempotencyKey?: string;
   }, existingTransaction?: Transaction) {
     if (!Number.isFinite(input.quantity) || input.quantity <= 0) throw ApiError.badRequest('La cantidad recibida debe ser mayor que cero');
     if (!Number.isFinite(input.unitCost) || input.unitCost < 0) throw ApiError.badRequest('El costo unitario no puede ser negativo');
@@ -368,6 +392,7 @@ export const inventoryService = {
         purchaseOrderId: input.purchaseOrderId ?? null,
         unitCost: input.unitCost,
         totalCost: round2(input.quantity * input.unitCost),
+        idempotencyKey: input.idempotencyKey,
       }, transaction);
       await syncOptionAvailability(input.branchId, input.inventoryItemId, transaction);
       return stock;
@@ -563,7 +588,7 @@ export const inventoryService = {
         InventoryLot.findOne({ where: { inventoryItemId: item.id, quantityAvailable: { [Op.gt]: 0 } }, transaction }),
         RecipeItem.findOne({ where: { inventoryItemId: item.id }, transaction }),
         CustomizationOption.findOne({ where: { inventoryItemId: item.id }, transaction }),
-        PurchaseOrderItem.findOne({ where: { inventoryItemId: item.id }, include: [{ model: PurchaseOrder, as: 'purchaseOrder', required: true, where: { status: { [Op.in]: ['DRAFT', 'ORDERED', 'PARTIALLY_RECEIVED'] } } }], transaction }),
+        PurchaseOrderItem.findOne({ where: { inventoryItemId: item.id }, include: [{ model: PurchaseOrder, as: 'purchaseOrder', required: true, where: { status: { [Op.in]: ['DRAFT', 'APPROVED', 'ORDERED', 'PARTIALLY_RECEIVED'] } } }], transaction }),
       ]);
       if (stock) throw ApiError.conflict('Antes de archivar, deja el stock físico y reservado en cero en todas las cocinas');
       if (lot) throw ApiError.conflict('El insumo tiene lotes con saldo; ciérralos antes de archivarlo');
@@ -713,8 +738,8 @@ export const inventoryService = {
     const shortages: Array<{ item: string; missing: number; unit: string }> = [];
 
     for (const [inventoryItemId, totalRequired] of requirements) {
-      // Una comanda de salÃ³n puede crecer mientras cocina aÃºn no la prepara.
-      // Solo reservamos el delta: repetir la operaciÃ³n sigue siendo idempotente.
+      // Una comanda de salón puede crecer mientras cocina aún no la prepara.
+      // Solo reservamos el delta: repetir la operación sigue siendo idempotente.
       const quantity = round2(Math.max(0, totalRequired - (alreadyReserved.get(inventoryItemId) ?? 0)));
       if (quantity <= 0) continue;
       const [stock] = await BranchInventory.findOrCreate({
@@ -975,6 +1000,7 @@ export const inventoryService = {
     expectedReserved?: number;
     actorId: number;
     reason: string;
+    idempotencyKey?: string;
   }) {
     if (!Number.isFinite(input.quantity) || Math.abs(input.quantity * 100 - Math.round(input.quantity * 100)) > 0.000001) {
       throw ApiError.badRequest('La cantidad debe tener como máximo dos decimales');
@@ -1002,6 +1028,20 @@ export const inventoryService = {
         lock: transaction.LOCK.UPDATE,
       });
 
+      if (input.idempotencyKey) {
+        const previous = await InventoryMovement.findOne({
+          where: { branchId: input.branchId, idempotencyKey: input.idempotencyKey },
+          transaction,
+          lock: transaction.LOCK.UPDATE,
+        });
+        if (previous) {
+          if (previous.inventoryItemId !== input.inventoryItemId || previous.type !== input.type) {
+            throw ApiError.conflict('La clave de reintento ya fue usada para otro movimiento');
+          }
+          return stock;
+        }
+      }
+
       const current = Number(stock.onHand);
 
       if ((input.expectedOnHand !== undefined && round2(input.expectedOnHand) !== round2(current))
@@ -1020,7 +1060,7 @@ export const inventoryService = {
         stock.averageUnitCost = round4(((current * previousCost) + (input.quantity * unitCost)) / Math.max(Number(stock.onHand), 1));
         await stock.save({ transaction });
         await writeMovement(stock, input.type, input.quantity, {
-          actorId: input.actorId, reason: input.reason, unitCost, totalCost: round2(input.quantity * unitCost),
+          actorId: input.actorId, reason: input.reason, unitCost, totalCost: round2(input.quantity * unitCost), idempotencyKey: input.idempotencyKey,
         }, transaction);
       } else if (input.type === MOVEMENT_TYPE.ADJUSTMENT || input.type === MOVEMENT_TYPE.WASTE) {
         // El ajuste llega con signo; la merma llega positiva. Ambos deben dejar
@@ -1036,6 +1076,7 @@ export const inventoryService = {
           // La salida manual también agota lotes FIFO. De otro modo un lote
           // seguiría apareciendo disponible después de haberlo mermado físicamente.
           const allocations = await allocateLots(stock.branchId, stock.inventoryItemId, reduction, transaction, true);
+          let movementRecorded = false;
           for (const allocation of allocations) {
             stock.onHand = round2(Number(stock.onHand) - allocation.quantity);
             await stock.save({ transaction });
@@ -1043,8 +1084,9 @@ export const inventoryService = {
             removedValue += allocation.quantity * unitCost;
             await writeMovement(stock, input.type, input.type === MOVEMENT_TYPE.WASTE ? allocation.quantity : -allocation.quantity, {
               actorId: input.actorId, reason: input.reason, lotId: allocation.lotId,
-              unitCost, totalCost: round2(allocation.quantity * unitCost),
+              unitCost, totalCost: round2(allocation.quantity * unitCost), idempotencyKey: movementRecorded ? null : input.idempotencyKey,
             }, transaction);
+            movementRecorded = true;
           }
           // Conservar en el promedio el stock sin lote (entradas manuales o
           // saldos iniciales). Recalcular solo desde los lotes lo valoraría mal.
@@ -1057,7 +1099,7 @@ export const inventoryService = {
           await stock.save({ transaction });
           const unitCost = Number(stock.averageUnitCost || item.unitCost || 0);
           await writeMovement(stock, input.type, input.quantity, {
-            actorId: input.actorId, reason: input.reason, unitCost, totalCost: round2(input.quantity * unitCost),
+            actorId: input.actorId, reason: input.reason, unitCost, totalCost: round2(input.quantity * unitCost), idempotencyKey: input.idempotencyKey,
           }, transaction);
         }
       } else {
@@ -1067,6 +1109,230 @@ export const inventoryService = {
       await syncOptionAvailability(input.branchId, input.inventoryItemId, transaction);
       return stock;
     });
+  },
+
+  async createTransfer(input: {
+    sourceBranchId: number;
+    destinationBranchId: number;
+    notes?: string | null;
+    actorId: number;
+    items: Array<{ inventoryItemId: number; quantity: number }>;
+  }) {
+    if (input.sourceBranchId === input.destinationBranchId) throw ApiError.badRequest('La sucursal de origen y destino deben ser distintas');
+    if (!input.items.length) throw ApiError.badRequest('Agrega al menos un insumo a la transferencia');
+    const distinct = new Set(input.items.map((line) => line.inventoryItemId));
+    if (distinct.size !== input.items.length || input.items.some((line) => !(line.quantity > 0))) throw ApiError.badRequest('No repitas insumos y usa cantidades mayores que cero');
+    const [source, destination, items] = await Promise.all([
+      Branch.findByPk(input.sourceBranchId), Branch.findByPk(input.destinationBranchId), InventoryItem.findAll({ where: { id: [...distinct], isActive: true } }),
+    ]);
+    if (!source?.isActive || !destination?.isActive) throw ApiError.notFound('Sucursal de transferencia no encontrada');
+    if (items.length !== distinct.size) throw ApiError.notFound('Uno de los insumos no existe o está archivado');
+    return sequelize.transaction(async (transaction) => {
+      const transfer = await InventoryTransfer.create({
+        transferNumber: `TR-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        sourceBranchId: input.sourceBranchId, destinationBranchId: input.destinationBranchId,
+        status: INVENTORY_TRANSFER_STATUS.REQUESTED, requestedBy: input.actorId, requestedAt: new Date(), notes: input.notes?.trim() || null,
+      }, { transaction });
+      await InventoryTransferItem.bulkCreate(input.items.map((line) => ({ transferId: transfer.id, inventoryItemId: line.inventoryItemId, quantityRequested: round2(line.quantity), quantityShipped: 0, quantityReceived: 0, unitCost: 0 })), { transaction });
+      return this.getTransfer(transfer.id, undefined, transaction);
+    });
+  },
+
+  async getTransfer(id: number, branchId?: number, transaction?: Transaction) {
+    const transfer = await InventoryTransfer.findOne({
+      where: branchId ? { id, [Op.or]: [{ sourceBranchId: branchId }, { destinationBranchId: branchId }] } : { id },
+      include: [
+        { model: Branch, as: 'sourceBranch', attributes: ['id', 'name'] },
+        { model: Branch, as: 'destinationBranch', attributes: ['id', 'name'] },
+        { model: InventoryTransferItem, as: 'items', include: [{ model: InventoryItem, as: 'item', attributes: ['id', 'code', 'name', 'unit'] }] },
+      ], transaction,
+    });
+    if (!transfer) throw ApiError.notFound('Transferencia no encontrada');
+    const source = transfer.get('sourceBranch') as Branch | undefined;
+    const destination = transfer.get('destinationBranch') as Branch | undefined;
+    const items = (transfer.get('items') as InventoryTransferItem[] | undefined) ?? [];
+    return {
+      id: transfer.id, transferNumber: transfer.transferNumber, sourceBranch: source ? { id: source.id, name: source.name } : null,
+      destinationBranch: destination ? { id: destination.id, name: destination.name } : null, status: transfer.status,
+      notes: transfer.notes, requestedAt: transfer.requestedAt, approvedAt: transfer.approvedAt, shippedAt: transfer.shippedAt, receivedAt: transfer.receivedAt,
+      items: items.map((line) => ({ id: line.id, inventoryItemId: line.inventoryItemId, item: line.item ? { id: line.item.id, code: line.item.code, name: line.item.name, unit: line.item.unit } : null, quantityRequested: Number(line.quantityRequested), quantityShipped: Number(line.quantityShipped), quantityReceived: Number(line.quantityReceived), unitCost: Number(line.unitCost) })),
+    };
+  },
+
+  async listTransfers(branchId?: number) {
+    const rows = await InventoryTransfer.findAll({
+      where: branchId ? { [Op.or]: [{ sourceBranchId: branchId }, { destinationBranchId: branchId }] } : undefined,
+      order: [['id', 'DESC']], limit: 100,
+      include: [
+        { model: Branch, as: 'sourceBranch', attributes: ['id', 'name'] },
+        { model: Branch, as: 'destinationBranch', attributes: ['id', 'name'] },
+        { model: InventoryTransferItem, as: 'items', include: [{ model: InventoryItem, as: 'item', attributes: ['id', 'code', 'name', 'unit'] }] },
+      ],
+    });
+    return Promise.all(rows.map((row) => this.getTransfer(row.id, branchId)));
+  },
+
+  async approveTransfer(id: number, actorId: number, scopeCheck?: BranchScopeCheck) {
+    return sequelize.transaction(async (transaction) => {
+      const transfer = await InventoryTransfer.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!transfer) throw ApiError.notFound('Transferencia no encontrada');
+      scopeCheck?.(transfer.sourceBranchId); scopeCheck?.(transfer.destinationBranchId);
+      if (transfer.status !== INVENTORY_TRANSFER_STATUS.REQUESTED) throw ApiError.conflict('La transferencia ya no está pendiente de aprobación');
+      transfer.status = INVENTORY_TRANSFER_STATUS.APPROVED; transfer.approvedBy = actorId; transfer.approvedAt = new Date(); await transfer.save({ transaction });
+      return this.getTransfer(id, undefined, transaction);
+    });
+  },
+
+  async shipTransfer(id: number, actorId: number, scopeCheck?: BranchScopeCheck) {
+    return sequelize.transaction(async (transaction) => {
+      const transfer = await InventoryTransfer.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!transfer) throw ApiError.notFound('Transferencia no encontrada');
+      scopeCheck?.(transfer.sourceBranchId);
+      if (transfer.status !== INVENTORY_TRANSFER_STATUS.APPROVED) throw ApiError.conflict('La transferencia debe aprobarse antes de despacharla');
+      const lines = await InventoryTransferItem.findAll({ where: { transferId: id }, transaction, lock: transaction.LOCK.UPDATE });
+      for (const line of lines) {
+        const stock = await BranchInventory.findOne({ where: { branchId: transfer.sourceBranchId, inventoryItemId: line.inventoryItemId }, transaction, lock: transaction.LOCK.UPDATE });
+        if (!stock || stock.available < Number(line.quantityRequested)) throw ApiError.unprocessable(`No hay disponible suficiente para el insumo ${line.inventoryItemId}`);
+        const allocations = await allocateLots(transfer.sourceBranchId, line.inventoryItemId, Number(line.quantityRequested), transaction);
+        let weightedCost = 0;
+        for (const allocation of allocations) {
+          const unitCost = allocation.lotId ? allocation.unitCost : Number(stock.averageUnitCost);
+          stock.onHand = round2(Number(stock.onHand) - allocation.quantity); await stock.save({ transaction });
+          weightedCost += allocation.quantity * unitCost;
+          await writeMovement(stock, MOVEMENT_TYPE.TRANSFER_OUT, allocation.quantity, { actorId, reason: `Transferencia ${transfer.transferNumber}`, lotId: allocation.lotId, unitCost, totalCost: round2(allocation.quantity * unitCost) }, transaction);
+        }
+        line.quantityShipped = Number(line.quantityRequested); line.unitCost = round4(weightedCost / Math.max(Number(line.quantityShipped), 1)); await line.save({ transaction });
+        await recalculateAverageCost(stock, transaction); await stock.save({ transaction });
+        await syncOptionAvailability(transfer.sourceBranchId, line.inventoryItemId, transaction);
+      }
+      transfer.status = INVENTORY_TRANSFER_STATUS.IN_TRANSIT; transfer.shippedBy = actorId; transfer.shippedAt = new Date(); await transfer.save({ transaction });
+      return this.getTransfer(id, undefined, transaction);
+    });
+  },
+
+  async receiveTransfer(id: number, actorId: number, scopeCheck?: BranchScopeCheck) {
+    return sequelize.transaction(async (transaction) => {
+      const transfer = await InventoryTransfer.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!transfer) throw ApiError.notFound('Transferencia no encontrada');
+      scopeCheck?.(transfer.destinationBranchId);
+      if (transfer.status !== INVENTORY_TRANSFER_STATUS.IN_TRANSIT) throw ApiError.conflict('La transferencia no está en tránsito');
+      const lines = await InventoryTransferItem.findAll({ where: { transferId: id }, transaction, lock: transaction.LOCK.UPDATE });
+      for (const line of lines) {
+        const quantity = round2(Number(line.quantityShipped) - Number(line.quantityReceived));
+        if (quantity <= 0) continue;
+        const [stock] = await BranchInventory.findOrCreate({ where: { branchId: transfer.destinationBranchId, inventoryItemId: line.inventoryItemId }, defaults: { branchId: transfer.destinationBranchId, inventoryItemId: line.inventoryItemId, onHand: 0, reserved: 0, averageUnitCost: Number(line.unitCost) }, transaction, lock: transaction.LOCK.UPDATE });
+        const oldOnHand = Number(stock.onHand); const unitCost = Number(line.unitCost);
+        stock.onHand = round2(oldOnHand + quantity); stock.averageUnitCost = round4(((oldOnHand * Number(stock.averageUnitCost || unitCost)) + quantity * unitCost) / Math.max(Number(stock.onHand), 1)); await stock.save({ transaction });
+        const lot = await InventoryLot.create({ branchId: transfer.destinationBranchId, inventoryItemId: line.inventoryItemId, lotCode: `${transfer.transferNumber}-${line.inventoryItemId}`, receivedAt: new Date(), expiresAt: null, quantityReceived: quantity, quantityAvailable: quantity, unitCost, status: INVENTORY_LOT_STATUS.ACTIVE }, { transaction });
+        await writeMovement(stock, MOVEMENT_TYPE.TRANSFER_IN, quantity, { actorId, reason: `Recepción de ${transfer.transferNumber}`, lotId: lot.id, unitCost, totalCost: round2(quantity * unitCost) }, transaction);
+        line.quantityReceived = Number(line.quantityShipped); await line.save({ transaction }); await syncOptionAvailability(transfer.destinationBranchId, line.inventoryItemId, transaction);
+      }
+      transfer.status = INVENTORY_TRANSFER_STATUS.RECEIVED; transfer.receivedBy = actorId; transfer.receivedAt = new Date(); await transfer.save({ transaction });
+      return this.getTransfer(id, undefined, transaction);
+    });
+  },
+
+  async cancelTransfer(id: number, reason: string, actorId: number, scopeCheck?: BranchScopeCheck) {
+    return sequelize.transaction(async (transaction) => {
+      const transfer = await InventoryTransfer.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!transfer) throw ApiError.notFound('Transferencia no encontrada');
+      scopeCheck?.(transfer.sourceBranchId); scopeCheck?.(transfer.destinationBranchId);
+      if ([INVENTORY_TRANSFER_STATUS.IN_TRANSIT, INVENTORY_TRANSFER_STATUS.RECEIVED].includes(transfer.status as 'IN_TRANSIT' | 'RECEIVED')) throw ApiError.conflict('Una transferencia despachada no puede cancelarse');
+      transfer.status = INVENTORY_TRANSFER_STATUS.CANCELLED; transfer.notes = [transfer.notes, `Cancelada: ${reason}`, `Por usuario #${actorId}`].filter(Boolean).join(' · '); await transfer.save({ transaction });
+      return this.getTransfer(id, undefined, transaction);
+    });
+  },
+
+  async startCount(input: { branchId: number; name: string; actorId: number; inventoryItemIds?: number[]; notes?: string | null }) {
+    return sequelize.transaction(async (transaction) => {
+      const rows = await BranchInventory.findAll({ where: { branchId: input.branchId, ...(input.inventoryItemIds?.length ? { inventoryItemId: input.inventoryItemIds } : {}) }, include: [{ model: InventoryItem, as: 'item', where: { isActive: true }, required: true }], transaction, lock: transaction.LOCK.UPDATE });
+      if (!rows.length) throw ApiError.badRequest('No hay insumos activos para contar en esta sucursal');
+      const session = await InventoryCountSession.create({ branchId: input.branchId, name: input.name.trim(), status: INVENTORY_COUNT_STATUS.OPEN, startedBy: input.actorId, startedAt: new Date(), notes: input.notes?.trim() || null }, { transaction });
+      await InventoryCountItem.bulkCreate(rows.map((row) => ({ sessionId: session.id, inventoryItemId: row.inventoryItemId, expectedOnHand: Number(row.onHand), countedOnHand: null, variance: null })), { transaction });
+      return this.getCount(session.id, transaction);
+    });
+  },
+
+  async getCount(id: number, transaction?: Transaction) {
+    const session = await InventoryCountSession.findByPk(id, { include: [{ model: Branch, as: 'branch', attributes: ['id', 'name'] }, { model: InventoryCountItem, as: 'items', include: [{ model: InventoryItem, as: 'item', attributes: ['id', 'code', 'name', 'unit'] }] }], transaction });
+    if (!session) throw ApiError.notFound('Conteo no encontrado');
+    const branch = session.get('branch') as Branch | undefined; const items = (session.get('items') as InventoryCountItem[] | undefined) ?? [];
+    return { id: session.id, branch: branch ? { id: branch.id, name: branch.name } : null, name: session.name, status: session.status, startedAt: session.startedAt, submittedAt: session.submittedAt, approvedAt: session.approvedAt, notes: session.notes, items: items.map((item) => ({ id: item.id, inventoryItemId: item.inventoryItemId, item: item.item ? { id: item.item.id, code: item.item.code, name: item.item.name, unit: item.item.unit } : null, expectedOnHand: Number(item.expectedOnHand), countedOnHand: item.countedOnHand == null ? null : Number(item.countedOnHand), variance: item.variance == null ? null : Number(item.variance) })) };
+  },
+
+  async listCounts(branchId?: number) {
+    const rows = await InventoryCountSession.findAll({ where: branchId ? { branchId } : undefined, order: [['id', 'DESC']], limit: 100 });
+    return Promise.all(rows.map((row) => this.getCount(row.id)));
+  },
+
+  async updateCountItem(sessionId: number, itemId: number, countedOnHand: number, scopeCheck?: BranchScopeCheck) {
+    if (!Number.isFinite(countedOnHand) || countedOnHand < 0) throw ApiError.badRequest('El conteo no puede ser negativo');
+    const item = await InventoryCountItem.findOne({ where: { id: itemId, sessionId }, include: [{ model: InventoryCountSession, as: 'session' }] });
+    if (!item) throw ApiError.notFound('Línea de conteo no encontrada');
+    const session = item.get('session') as InventoryCountSession | undefined;
+    if (!session || session.status !== INVENTORY_COUNT_STATUS.OPEN) throw ApiError.conflict('El conteo ya no está abierto');
+    scopeCheck?.(session.branchId);
+    item.countedOnHand = round2(countedOnHand); item.variance = round2(countedOnHand - Number(item.expectedOnHand)); await item.save();
+    return this.getCount(sessionId);
+  },
+
+  async submitCount(sessionId: number, actorId: number, scopeCheck?: BranchScopeCheck) {
+    return sequelize.transaction(async (transaction) => {
+      const session = await InventoryCountSession.findByPk(sessionId, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!session || session.status !== INVENTORY_COUNT_STATUS.OPEN) throw ApiError.conflict('El conteo ya no está abierto');
+      scopeCheck?.(session.branchId);
+      const items = await InventoryCountItem.findAll({ where: { sessionId }, transaction, lock: transaction.LOCK.UPDATE });
+      if (items.some((item) => item.countedOnHand == null)) throw ApiError.badRequest('Completa todos los conteos antes de enviar a aprobación');
+      session.status = INVENTORY_COUNT_STATUS.SUBMITTED; session.submittedBy = actorId; session.submittedAt = new Date(); await session.save({ transaction });
+      return this.getCount(sessionId, transaction);
+    });
+  },
+
+  async approveCount(sessionId: number, actorId: number, scopeCheck?: BranchScopeCheck) {
+    return sequelize.transaction(async (transaction) => {
+      const session = await InventoryCountSession.findByPk(sessionId, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!session || session.status !== INVENTORY_COUNT_STATUS.SUBMITTED) throw ApiError.conflict('El conteo no está pendiente de aprobación');
+      scopeCheck?.(session.branchId);
+      const items = await InventoryCountItem.findAll({ where: { sessionId }, transaction, lock: transaction.LOCK.UPDATE });
+      for (const count of items) {
+        const stock = await BranchInventory.findOne({ where: { branchId: session.branchId, inventoryItemId: count.inventoryItemId }, transaction, lock: transaction.LOCK.UPDATE });
+        if (!stock) throw ApiError.notFound(`No existe stock para el insumo ${count.inventoryItemId}`);
+        const current = Number(stock.onHand); const variance = round2(Number(count.countedOnHand) - current);
+        if (round2(current) !== round2(Number(count.expectedOnHand))) throw ApiError.conflict('El inventario cambió durante el conteo. Crea un nuevo conteo para conservar la trazabilidad.');
+        if (variance < 0 && Math.abs(variance) > round2(stock.available)) throw ApiError.unprocessable(`El conteo dejaría reservas sin respaldo en el insumo ${count.inventoryItemId}`);
+        if (variance !== 0) {
+          if (variance < 0) {
+            const fallbackCost = Number(stock.averageUnitCost || 0);
+            const allocations = await allocateLots(session.branchId, count.inventoryItemId, Math.abs(variance), transaction, true);
+            let removedValue = 0;
+            for (const allocation of allocations) {
+              const unitCost = allocation.lotId ? allocation.unitCost : fallbackCost;
+              stock.onHand = round2(Number(stock.onHand) - allocation.quantity); await stock.save({ transaction });
+              removedValue += allocation.quantity * unitCost;
+              await writeMovement(stock, MOVEMENT_TYPE.ADJUSTMENT, -allocation.quantity, { actorId, reason: `Ajuste aprobado por conteo #${session.id}`, lotId: allocation.lotId, unitCost, totalCost: round2(allocation.quantity * unitCost) }, transaction);
+            }
+            stock.averageUnitCost = Number(stock.onHand) > 0 ? round4(Math.max(0, (current * fallbackCost - removedValue) / Number(stock.onHand))) : fallbackCost;
+            await stock.save({ transaction });
+          } else {
+            stock.onHand = round2(current + variance); await stock.save({ transaction });
+            const unitCost = Number(stock.averageUnitCost || 0);
+            await writeMovement(stock, MOVEMENT_TYPE.ADJUSTMENT, variance, { actorId, reason: `Ajuste aprobado por conteo #${session.id}`, unitCost, totalCost: round2(variance * unitCost) }, transaction);
+          }
+          await syncOptionAvailability(session.branchId, count.inventoryItemId, transaction);
+        }
+        count.variance = variance; await count.save({ transaction });
+      }
+      session.status = INVENTORY_COUNT_STATUS.APPROVED; session.approvedBy = actorId; session.approvedAt = new Date(); await session.save({ transaction });
+      return this.getCount(sessionId, transaction);
+    });
+  },
+
+  async cancelCount(sessionId: number, scopeCheck?: BranchScopeCheck) {
+    const session = await InventoryCountSession.findByPk(sessionId);
+    if (!session) throw ApiError.notFound('Conteo no encontrado');
+    scopeCheck?.(session.branchId);
+    if (session.status === INVENTORY_COUNT_STATUS.APPROVED) throw ApiError.conflict('Un conteo aprobado no se puede cancelar');
+    session.status = INVENTORY_COUNT_STATUS.CANCELLED; await session.save(); return this.getCount(sessionId);
   },
 
   /** Stock de una sucursal, con aviso de los insumos bajo el minimo. */
@@ -1178,10 +1444,48 @@ export const inventoryService = {
     });
   },
 
-  async listMovements(branchId: number, inventoryItemId?: number, limit = 30) {
+  /** Resumen consolidado para el superadmin: suma sucursales sin habilitar mutaciones globales. */
+  async listGlobalStock() {
+    const branches = await Branch.findAll({ where: { isActive: true }, attributes: ['id', 'name'], order: [['name', 'ASC']] });
+    const byItem = new Map<number, GlobalStockAccumulator>();
+    for (const branch of branches) {
+      const rows = await inventoryService.listStock(branch.id);
+      for (const row of rows) {
+        const current = byItem.get(row.inventoryItemId);
+        if (!current) {
+          byItem.set(row.inventoryItemId, { ...row, branchCount: 1, branches: [branch.name] });
+          continue;
+        }
+        current.onHand = round2(current.onHand + row.onHand);
+        current.reserved = round2(current.reserved + row.reserved);
+        current.available = round2(current.available + row.available);
+        current.stockValue = round2(current.stockValue + row.stockValue);
+        current.consumedLast7Days = round2(current.consumedLast7Days + row.consumedLast7Days);
+        current.averageDailyUsage = round2(current.averageDailyUsage + row.averageDailyUsage);
+        current.branchCount += 1;
+        current.branches.push(branch.name);
+      }
+    }
+    return [...byItem.values()].map((row) => ({
+      ...row,
+      averageUnitCost: row.onHand > 0 ? round4(row.stockValue / row.onHand) : row.averageUnitCost,
+      available: round2(row.onHand - row.reserved),
+      stockStatus: row.available <= 0 ? 'OUT' : row.available <= row.minLevel * 0.5 || (row.averageDailyUsage > 0 && row.available / row.averageDailyUsage <= 1) ? 'CRITICAL' : row.available <= row.minLevel || (row.averageDailyUsage > 0 && row.available / row.averageDailyUsage <= 3) ? 'LOW' : 'HEALTHY',
+      isLow: row.available <= row.minLevel || (row.averageDailyUsage > 0 && row.available / row.averageDailyUsage <= 3),
+      daysRemaining: row.averageDailyUsage > 0 ? round2(row.available / row.averageDailyUsage) : null,
+      targetLevel: round2(Math.max(row.minLevel * 2, row.averageDailyUsage * 7, row.available <= 0 ? 1 : 0)),
+      suggestedPurchase: round2(Math.max(0, Math.max(row.minLevel * 2, row.averageDailyUsage * 7, row.available <= 0 ? 1 : 0) - row.available)),
+    }));
+  },
+
+  async listMovements(branchId: number | undefined, inventoryItemId?: number, limit = 30, filters: { type?: MovementType; from?: string; to?: string } = {}) {
+    const createdAt = filters.from || filters.to ? {
+      ...(filters.from ? { [Op.gte]: new Date(`${filters.from}T00:00:00Z`) } : {}),
+      ...(filters.to ? { [Op.lte]: new Date(`${filters.to}T23:59:59Z`) } : {}),
+    } : undefined;
     const rows = await InventoryMovement.findAll({
-      where: { branchId, ...(inventoryItemId ? { inventoryItemId } : {}) },
-      include: [{ model: InventoryItem, as: 'item', attributes: ['name', 'code', 'unit'] }],
+      where: { ...(branchId ? { branchId } : {}), ...(inventoryItemId ? { inventoryItemId } : {}), ...(filters.type ? { type: filters.type } : {}), ...(createdAt ? { createdAt } : {}) },
+      include: [{ model: InventoryItem, as: 'item', attributes: ['name', 'code', 'unit'] }, { model: Branch, as: 'branch', attributes: ['id', 'name'] }],
       order: [['id', 'DESC']],
       limit,
     });
@@ -1192,8 +1496,10 @@ export const inventoryService = {
     const actorNames = new Map(actors.map((actor) => [actor.id, actor.fullName || `Usuario #${actor.id}`]));
     return rows.map((row) => {
       const item = row.get('item') as InventoryItem | undefined;
+      const branch = row.get('branch') as Branch | undefined;
       return {
         id: row.id, inventoryItemId: row.inventoryItemId,
+        branchId: row.branchId, branchName: branch?.name ?? null,
         itemName: item?.name ?? `Insumo #${row.inventoryItemId}`,
         unit: item?.unit ?? '', type: row.type, quantity: Number(row.quantity),
         onHandAfter: Number(row.onHandAfter), reservedAfter: Number(row.reservedAfter),

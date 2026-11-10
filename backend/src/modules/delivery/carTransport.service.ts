@@ -47,7 +47,7 @@ export const carTransport = {
       }
     });
   },
-  async updateDriver(id: number, branchId: number, input: { vehicleType: VehicleType; vehicle?: string | null; status?: 'AVAILABLE' | 'BUSY' | 'OFFLINE' }) {
+  async updateDriver(id: number, branchId: number, input: { vehicleType: VehicleType; vehicle?: string | null; status?: 'AVAILABLE' | 'BUSY' | 'OFFLINE'; maxActiveDeliveries?: number }) {
     return sequelize.transaction(async (transaction) => {
       const driver = await Driver.findOne({ where: { id, branchId, isActive: true }, transaction, lock: transaction.LOCK.UPDATE });
       if (!driver) throw ApiError.notFound('Conductor no encontrado');
@@ -61,6 +61,7 @@ export const carTransport = {
       driver.vehicleType = input.vehicleType;
       if (input.vehicle !== undefined) driver.vehicle = input.vehicle;
       if (input.status !== undefined) driver.status = input.status;
+      if (input.maxActiveDeliveries !== undefined) driver.maxActiveDeliveries = input.maxActiveDeliveries;
       await driver.save({ transaction });
       return driver;
     });

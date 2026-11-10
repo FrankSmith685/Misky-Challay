@@ -101,7 +101,7 @@ import { getDoc } from '../designSystem/componentDocs';
  * FUNDAMENTOS
  * ========================================================================== */
 const PRINCIPLES = [
-  { icon: Boxes, title: 'Material, con tu marca', text: 'Componentes de MUI con un tema propio: rosa profundo, caramelo y verde suave, títulos editoriales y superficies cálidas.' },
+  { icon: Boxes, title: 'Material, con tu marca', text: 'Componentes de MUI con un tema propio: azul brillante, amarillo sol y coral cálido, títulos editoriales y superficies limpias.' },
   { icon: Palette, title: 'Tema gestionable', text: 'El look sale de theme/. Desde la seccion Tema cambias primary, secondary o tertiary y se actualiza toda la app.' },
   { icon: ShieldCheck, title: 'Accesible', text: 'MUI trae foco, teclado y ARIA de fabrica en dialogos, menus y formularios.' },
   { icon: Feather, title: 'Consistente', text: 'Mismos colores, radios y tipografia que el resto de la app.' },
@@ -151,7 +151,7 @@ const ThemeSection: FC = () => (
   <div>
     <SectionHeader
       title="Tema"
-      description="Cambia los colores de marca (primary, secondary, tertiary) y el radio de bordes. Los cambios se ven al instante en TODOS los componentes y se guardan en este navegador."
+      description="Edita un borrador del tema, valida contraste, previsualiza cambios y publícalos con versión y auditoría para toda la aplicación."
     />
     <ThemeEditor />
   </div>

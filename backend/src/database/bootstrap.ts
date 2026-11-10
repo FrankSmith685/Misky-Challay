@@ -44,14 +44,14 @@ const ensureDatabaseExists = async (): Promise<void> => {
 };
 
 /**
- * Compatibilidad para bases de desarrollo creadas antes del QR de salÃ³n.
+ * Compatibilidad para bases de desarrollo creadas antes del QR de salón.
  *
  * `sequelize.sync({ alter: true })` agrega un UUID NOT NULL como `''` a cada
- * fila existente y acto seguido intenta crear su Ã­ndice Ãºnico. El Ã­ndice falla
- * porque todas las mesas comparten ese valor vacÃ­o. La columna del modelo se
- * mantiene nullable durante el alter (varios NULL sÃ­ son vÃ¡lidos en un UNIQUE)
- * y aquÃ­ convertimos NULL/vacÃ­os en UUID reales. Se ejecuta dos veces: antes,
- * para reparar un arranque parcial, y despuÃ©s, para completar una columna nueva.
+ * fila existente y acto seguido intenta crear su índice único. El índice falla
+ * porque todas las mesas comparten ese valor vacío. La columna del modelo se
+ * mantiene nullable durante el alter (varios NULL sí son válidos en un UNIQUE)
+ * y aquí convertimos NULL/vacíos en UUID reales. Se ejecuta dos veces: antes,
+ * para reparar un arranque parcial, y después, para completar una columna nueva.
  */
 const repairDiningQrTokens = async (): Promise<void> => {
   const [tables] = await sequelize.query("SHOW TABLES LIKE 'dining_tables'");
@@ -66,7 +66,7 @@ const repairDiningQrTokens = async (): Promise<void> => {
   const changed = typeof metadata === 'object' && metadata && 'affectedRows' in metadata
     ? Number((metadata as { affectedRows: number }).affectedRows)
     : 0;
-  if (changed > 0) logger.info(`QR de salÃ³n reparados: ${changed} mesa(s)`);
+  if (changed > 0) logger.info(`QR de salón reparados: ${changed} mesa(s)`);
 };
 
 /**

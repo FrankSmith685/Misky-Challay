@@ -1,4 +1,4 @@
-import { Bike, Clock3, MapPin, ShoppingBag, Store } from 'lucide-react';
+import { Bike, Clock3, MapPin, Phone, ShoppingBag, Store } from 'lucide-react';
 import { Card } from '@components/ui/Card';
 import type { Branch } from '../types';
 
@@ -48,6 +48,18 @@ export const BranchCard = ({ branch }: BranchCardProps) => (
             </span>
           </div>
         </div>
+      </div>
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-xs">
+        <span className="text-ink-muted">Horario disponible al programar tu pedido</span>
+        {branch.phone && (
+          <a
+            href={`tel:${branch.phone.replace(/[^\d+]/g, '')}`}
+            className="inline-flex items-center gap-1.5 font-bold text-brand-700 hover:text-brand-900"
+          >
+            <Phone className="size-3.5" aria-hidden="true" />
+            Llamar al local
+          </a>
+        )}
       </div>
     </div>
   </Card>

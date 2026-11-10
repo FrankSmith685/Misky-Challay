@@ -1,4 +1,4 @@
-import { Op, type WhereOptions } from 'sequelize';
+import { col, fn, Op, type WhereOptions } from 'sequelize';
 import {
   Allergen,
   CakeProductProfile,
@@ -11,17 +11,22 @@ import {
   InventoryItem,
   Recipe,
   RecipeItem,
+  Order,
+  OrderItem,
 } from '@database/models';
+import { ORDER_STATUS } from '@config/constants';
 import { PRODUCT_STATUS, type ProductFamily, type PreparationMode } from '@database/models/product.model';
 import { ApiError } from '@shared/errors/ApiError';
 
 export interface CatalogFilters {
   branchId?: number;
+  productIds?: number[];
   categoryId?: number;
   search?: string;
   dietaryTags?: string[];
   excludeAllergens?: string[];
   featured?: boolean;
+  sort?: 'BEST_SELLERS' | 'RECOMMENDED';
   /** Canal de publicación. Sin filtro se conserva el catálogo para operaciones internas. */
   audience?: 'RETAIL' | 'BUSINESS';
 }
@@ -36,6 +41,7 @@ export interface ProductListItem {
   preparationMode: PreparationMode;
   minLeadHours: number;
   categoryId: number;
+  categoryName: string | null;
   imageUrl: string | null;
   categoryImageUrl: string | null;
   isFeatured: boolean;
@@ -48,6 +54,8 @@ export interface ProductListItem {
   allergens: string[];
   isAvailable: boolean;
   cakeSaleMode: 'STANDARD' | 'SEMI_CUSTOM' | 'ADVANCED';
+  /** Unidades vendidas en pedidos confirmados; solo se usa para ordenar la portada. */
+  salesCount: number;
 }
 
 const pickDefaultVariant = (variants: ProductVariant[]): ProductVariant | undefined =>
@@ -90,8 +98,24 @@ export const catalogService = {
     const profiles = await CakeProductProfile.findAll({ where: { isActive: true, saleMode: { [Op.ne]: 'ADVANCED' } }, attributes: ['productId'] });
     const products = await Product.findAll({ where: { id: { [Op.in]: profiles.map((profile) => profile.productId) }, status: PRODUCT_STATUS.ACTIVE, allergensReviewedAt: { [Op.ne]: null } }, attributes: ['categoryId'] });
     const categoryIds = [...new Set(products.map((product) => product.categoryId))];
+    const relevantIds = new Set(categoryIds);
+    let pendingParentIds = categoryIds;
+    while (pendingParentIds.length) {
+      const parents = await Category.findAll({
+        where: { isActive: true, id: { [Op.in]: pendingParentIds } },
+        attributes: ['id', 'parentId'],
+      });
+      const nextParentIds: number[] = [];
+      parents.forEach((category) => {
+        if (category.parentId && !relevantIds.has(category.parentId)) {
+          relevantIds.add(category.parentId);
+          nextParentIds.push(category.parentId);
+        }
+      });
+      pendingParentIds = nextParentIds;
+    }
     return Category.findAll({
-      where: { isActive: true, id: { [Op.in]: categoryIds } },
+      where: { isActive: true, id: { [Op.in]: [...relevantIds] } },
       order: [
         ['sortOrder', 'ASC'],
         ['name', 'ASC'],
@@ -115,6 +139,7 @@ export const catalogService = {
     const where: WhereOptions = { status: PRODUCT_STATUS.ACTIVE, allergensReviewedAt: { [Op.ne]: null } };
 
     if (filters.categoryId) Object.assign(where, { categoryId: filters.categoryId });
+    if (filters.productIds?.length) Object.assign(where, { id: { [Op.in]: filters.productIds } });
     if (filters.featured) Object.assign(where, { isFeatured: true });
     if (filters.search) {
       Object.assign(where, {
@@ -122,6 +147,39 @@ export const catalogService = {
           { name: { [Op.like]: `%${filters.search}%` } },
           { description: { [Op.like]: `%${filters.search}%` } },
         ],
+      });
+    }
+
+    const salesByProduct = new Map<number, number>();
+    if (filters.sort === 'BEST_SELLERS') {
+      const soldStatuses = [
+        ORDER_STATUS.CONFIRMED,
+        ORDER_STATUS.PREPARING,
+        ORDER_STATUS.READY,
+        ORDER_STATUS.OUT_FOR_DELIVERY,
+        ORDER_STATUS.DELIVERED,
+      ];
+      const soldRows = await OrderItem.findAll({
+        attributes: ['productId', [fn('SUM', col('OrderItem.quantity')), 'units']],
+        where: { itemKind: 'PRODUCT', productId: { [Op.not]: null } },
+        include: [{
+          model: Order,
+          as: 'order',
+          attributes: [],
+          required: true,
+          where: {
+            status: { [Op.in]: soldStatuses },
+            ...(filters.branchId ? { branchId: filters.branchId } : {}),
+          },
+        }],
+        group: ['product_id'],
+        order: [[fn('SUM', col('OrderItem.quantity')), 'DESC']],
+        raw: true,
+      }) as unknown as Array<{ productId: number | string; units: number | string }>;
+      soldRows.forEach((row) => {
+        const productId = Number(row.productId);
+        const units = Number(row.units);
+        if (productId > 0 && units > 0) salesByProduct.set(productId, units);
       });
     }
 
@@ -150,7 +208,7 @@ export const catalogService = {
       const variant = pickDefaultVariant(variants);
       const tags = (product.get('dietaryTags') as DietaryTag[] | undefined) ?? [];
       const allergens = (product.get('allergens') as Allergen[] | undefined) ?? [];
-      const category = product.get('category') as { imageUrl: string | null } | undefined;
+      const category = product.get('category') as { imageUrl: string | null; name?: string } | undefined;
 
       return {
         id: product.id,
@@ -162,6 +220,7 @@ export const catalogService = {
         preparationMode: product.preparationMode,
         minLeadHours: (product.get('cakeProfile') as CakeProductProfile).minLeadHours,
         categoryId: product.categoryId,
+        categoryName: category?.name ?? null,
         imageUrl: product.imageUrl,
         categoryImageUrl: category?.imageUrl ?? null,
         isFeatured: product.isFeatured,
@@ -175,11 +234,12 @@ export const catalogService = {
         allergens: allergens.map((allergen) => allergen.code),
         isAvailable: !unavailableIds.has(product.id) && readyAvailability.get(product.id) !== false,
         cakeSaleMode: (product.get('cakeProfile') as CakeProductProfile).saleMode,
+        salesCount: salesByProduct.get(product.id) ?? 0,
       };
     });
 
     // Filtros dietarios (se resuelven sobre el resultado ya cargado).
-    return items.filter((item) => {
+    const filtered = items.filter((item) => {
       if (filters.audience === 'RETAIL' && item.cakeSaleMode === 'ADVANCED') return false;
       if (filters.audience === 'BUSINESS' && item.cakeSaleMode !== 'ADVANCED') return false;
       if (filters.dietaryTags?.length) {
@@ -194,6 +254,21 @@ export const catalogService = {
 
       return true;
     });
+
+    if (filters.productIds?.length) {
+      const order = new Map(filters.productIds.map((id, index) => [id, index]));
+      filtered.sort((left, right) => (order.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (order.get(right.id) ?? Number.MAX_SAFE_INTEGER));
+    }
+
+    if (filters.sort === 'BEST_SELLERS') {
+      const hasSales = salesByProduct.size > 0;
+      filtered.sort((left, right) => {
+        if (hasSales) return right.salesCount - left.salesCount || Number(right.isFeatured) - Number(left.isFeatured);
+        return Number(right.isFeatured) - Number(left.isFeatured);
+      });
+    }
+
+    return filtered;
   },
 
   /** Ficha completa: variantes, alergenos y etiquetas. */

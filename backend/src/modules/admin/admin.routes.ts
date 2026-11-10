@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { authenticate } from '@middlewares/auth.middleware';
-import { requireAnyPermission, requirePermissions, requirePlatformOwner, requireSuperAdmin } from '@middlewares/rbac.middleware';
+import { requireAnyPermission, requirePermissions, requireSuperAdmin } from '@middlewares/rbac.middleware';
 import { validate } from '@middlewares/validate.middleware';
 import { PERMISSIONS } from '@config/constants';
 import { adminController } from './admin.controller';
@@ -35,8 +35,10 @@ router.get(
         // 60 y no 30: la busqueda ya no es solo el numero de pedido, tambien el
         // nombre del cliente, y un nombre completo peruano pasa de 30 caracteres.
         search: z.string().max(60).optional(),
-        from: z.string().optional(),
-        to: z.string().optional(),
+        source: z.enum(['WEB', 'POS']).optional(),
+        deliveryType: z.enum(['DELIVERY', 'PICKUP', 'DINE_IN']).optional(),
+        from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inicial inválida').optional(),
+        to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha final inválida').optional(),
         page: z.coerce.number().int().min(1).optional(),
         pageSize: z.coerce.number().int().min(1).max(50).optional(),
       }),
@@ -110,6 +112,43 @@ router.post(
   adminController.updateOrderStatus,
 );
 
+const cashScopePermission = requireAnyPermission(PERMISSIONS.REPORT_SALES_READ, PERMISSIONS.PAYMENT_VERIFY);
+
+router.get(
+  '/cash/summary',
+  cashScopePermission,
+  validate(z.object({ query: z.object({ branchId: z.coerce.number().int().positive().optional(), from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inicial inválida').optional(), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha final inválida').optional() }) })),
+  adminController.cashSummary,
+);
+
+router.get(
+  '/cash/sessions/:id',
+  cashScopePermission,
+  validate(z.object({ params: z.object({ id: z.coerce.number().int().positive() }) })),
+  adminController.cashSessionDetail,
+);
+
+router.post(
+  '/cash/sessions',
+  requirePermissions(PERMISSIONS.PAYMENT_VERIFY),
+  validate(z.object({ body: z.object({ branchId: z.coerce.number().int().positive(), businessDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), openingFloat: z.coerce.number().min(0).multipleOf(0.01) }) })),
+  adminController.openCashSession,
+);
+
+router.post(
+  '/cash/sessions/:id/movements',
+  requirePermissions(PERMISSIONS.PAYMENT_VERIFY),
+  validate(z.object({ params: z.object({ id: z.coerce.number().int().positive() }), body: z.object({ type: z.enum(['EXPENSE', 'CASH_IN', 'CASH_OUT', 'ADJUSTMENT']), amount: z.coerce.number().multipleOf(0.01), reason: z.string().trim().min(3).max(255) }) })),
+  adminController.recordCashMovement,
+);
+
+router.post(
+  '/cash/sessions/:id/close',
+  requirePermissions(PERMISSIONS.PAYMENT_VERIFY),
+  validate(z.object({ params: z.object({ id: z.coerce.number().int().positive() }), body: z.object({ declaredCash: z.coerce.number().min(0).multipleOf(0.01), notes: z.string().trim().max(500).optional() }) })),
+  adminController.closeCashSession,
+);
+
 /**
  * El Resumen es el aterrizaje diario del Administrador de sucursal, que tiene
  * `report.operations.read` y NO `report.sales.read`: exigir solo el segundo le
@@ -123,8 +162,8 @@ router.get(
     z.object({
       query: z.object({
         branchId: z.coerce.number().int().positive().optional(),
-        from: z.string().optional(),
-        to: z.string().optional(),
+        from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inicial inválida').optional(),
+        to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha final inválida').optional(),
       }),
     }),
   ),
@@ -138,8 +177,8 @@ router.get(
     z.object({
       query: z.object({
         branchId: z.coerce.number().int().positive().optional(),
-        from: z.string().optional(),
-        to: z.string().optional(),
+        from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inicial inválida').optional(),
+        to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha final inválida').optional(),
       }),
     }),
   ),
@@ -155,16 +194,39 @@ router.get(
 
 router.patch(
   '/cake-commissions/:id/adjustment',
-  requirePlatformOwner,
+  requireSuperAdmin,
   validate(z.object({ params: z.object({ id: z.coerce.number().int().positive() }), body: z.object({ adjustmentAmount: z.coerce.number().min(-100000).max(100000), notes: z.string().trim().max(500).optional() }) })),
   adminController.adjustCakeCommission,
 );
 
 router.post(
   '/cake-commissions/:id/liquidate',
-  requirePlatformOwner,
+  requireSuperAdmin,
   validate(z.object({ params: z.object({ id: z.coerce.number().int().positive() }), body: z.object({ reference: z.string().trim().min(3).max(120), amount: z.coerce.number().positive().max(1000000).optional(), notes: z.string().trim().max(500).optional() }) })),
   adminController.liquidateCakeCommission,
+);
+
+router.get(
+  '/audit-logs/summary',
+  requirePermissions(PERMISSIONS.AUDIT_READ),
+  adminController.auditSummary,
+);
+
+router.get(
+  '/audit-logs/integrity',
+  requirePermissions(PERMISSIONS.AUDIT_VERIFY),
+  adminController.auditIntegrity,
+);
+
+router.get(
+  '/audit-logs/export',
+  requirePermissions(PERMISSIONS.AUDIT_EXPORT),
+  validate(z.object({ query: z.object({
+    entity: z.string().max(60).optional(), actorId: z.coerce.number().int().positive().optional(), action: z.string().max(80).optional(),
+    entityId: z.string().max(40).optional(), severity: z.enum(['INFO', 'WARNING', 'CRITICAL']).optional(), outcome: z.enum(['SUCCESS', 'FAILURE']).optional(),
+    correlationId: z.string().max(60).optional(), search: z.string().max(120).optional(), from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), reason: z.string().trim().min(10).max(500),
+  }).refine((value) => { const days = (Date.parse(value.to) - Date.parse(value.from)) / 86_400_000; return days >= 0 && days <= 366; }, 'El rango debe ser de hasta 366 dias') })),
+  adminController.auditExport,
 );
 
 router.get(
@@ -175,6 +237,14 @@ router.get(
       query: z.object({
         entity: z.string().max(60).optional(),
         actorId: z.coerce.number().int().positive().optional(),
+        action: z.string().max(80).optional(),
+        entityId: z.string().max(40).optional(),
+        severity: z.enum(['INFO', 'WARNING', 'CRITICAL']).optional(),
+        outcome: z.enum(['SUCCESS', 'FAILURE']).optional(),
+        correlationId: z.string().max(60).optional(),
+        search: z.string().max(120).optional(),
+        from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
         page: z.coerce.number().int().min(1).optional(),
         pageSize: z.coerce.number().int().min(1).max(50).optional(),
       }),

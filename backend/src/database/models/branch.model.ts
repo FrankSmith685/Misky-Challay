@@ -27,6 +27,8 @@ export class Branch extends Model<InferAttributes<Branch>, InferCreationAttribut
   declare carDeliveryInstructions: CreationOptional<string>;
   declare defaultCarCapacity: CreationOptional<number>;
   declare isActive: CreationOptional<boolean>;
+  /** Version de concurrencia optimista para cambios operativos. */
+  declare version: CreationOptional<number>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
   declare deletedAt: CreationOptional<Date | null>;
@@ -52,6 +54,7 @@ Branch.init(
     carDeliveryInstructions: { type: DataTypes.STRING(1000), allowNull: false, defaultValue: 'Transportar la torta en su caja, sobre una superficie nivelada y antideslizante. Mantenerla protegida del calor y evitar movimientos bruscos.' },
     defaultCarCapacity: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 10 },
     isActive: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    version: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 1 },
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,
     deletedAt: DataTypes.DATE,

@@ -5,6 +5,9 @@ import {
   CakeProductProfile,
   BuilderPreset,
   BuilderPresetItem,
+  BuilderRelease,
+  AdminDraft,
+  OrderItemCustomization,
   CustomizationGroup,
   CustomizationOption,
   InventoryItem,
@@ -108,7 +111,7 @@ export const customizationAdminService = {
     if (!product) throw ApiError.notFound('Producto no encontrado');
     const variants = await ProductVariant.findAll({
       where: { productId },
-      attributes: ['id', 'name', 'servingSize', 'servingUnit', 'isDefault', 'isActive'],
+      attributes: ['id', 'name', 'basePrice', 'servingSize', 'servingUnit', 'isDefault', 'isActive', 'version'],
       order: [['sortOrder', 'ASC'], ['id', 'ASC']],
     });
 
@@ -166,9 +169,12 @@ export const customizationAdminService = {
             link.maxSelectionOverride !== null ||
             link.freeQuantityOverride !== null,
           sortOrder: link.sortOrder,
+          version: group.version,
+          linkVersion: link.version,
           options: (group.options ?? [])
             .map((option) => ({
               id: option.id,
+              version: option.version,
               name: option.name,
               description: option.description,
               imageUrl: option.imageUrl,
@@ -189,6 +195,7 @@ export const customizationAdminService = {
                 .filter((row) => row.optionId === option.id)
                 .map((row) => ({
                   branchId: row.branchId,
+                  version: row.version,
                   isAvailable: row.isAvailable,
                   priceOverride: row.priceOverride === null ? null : Number(row.priceOverride),
                   availableFrom: row.availableFrom,
@@ -210,14 +217,16 @@ export const customizationAdminService = {
 
     return {
       customServings: (await CakeProductProfile.findByPk(productId))?.customServingsJson ?? null,
-      product: { id: product.id, name: product.name, type: product.type },
+      product: { id: product.id, name: product.name, type: product.type, status: product.status, version: product.version },
       variants: variants.map((variant) => ({
         id: variant.id,
         name: variant.name,
+        basePrice: Number(variant.basePrice),
         servingSize: variant.servingSize === null ? null : Number(variant.servingSize),
         servingUnit: variant.servingUnit,
         isDefault: variant.isDefault,
         isActive: variant.isActive,
+        version: variant.version,
       })),
       groups,
       inventoryItems: inventoryItems.map((item) => ({
@@ -228,6 +237,7 @@ export const customizationAdminService = {
       branches: branches.map((branch) => ({ id: branch.id, name: branch.name })),
       presets: presets.map((preset) => ({
         id: preset.id,
+        version: preset.version,
         code: preset.code,
         name: preset.name,
         description: preset.description,
@@ -239,6 +249,192 @@ export const customizationAdminService = {
         selections: (preset.items ?? []).map((item) => ({ optionId: item.optionId, quantity: item.quantity })),
       })),
     };
+  },
+
+  /** Estado operativo que el superadmin debe resolver antes de publicar. */
+  async health(productId: number) {
+    const config = await this.getConfig(productId);
+    const errors: string[] = [];
+    const warnings: string[] = [];
+    if (config.product.status !== 'ACTIVE') errors.push('El producto no está publicado en el catálogo.');
+    const activeOptionIds = new Set(
+      config.groups.flatMap((group) => group.options.filter((option) => option.status === OPTION_STATUS.ACTIVE).map((option) => option.id)),
+    );
+    const inventoryIds = new Set(config.inventoryItems.map((item) => item.id));
+
+    for (const group of config.groups) {
+      const active = group.options.filter((option) => option.status === OPTION_STATUS.ACTIVE);
+      if (group.maxSelection < group.minSelection) errors.push(`El grupo «${group.name}» tiene un máximo menor que su mínimo.`);
+      if (active.length < group.minSelection) errors.push(`El grupo «${group.name}» exige ${group.minSelection} opción(es), pero solo tiene ${active.length} activa(s).`);
+      if (group.freeQuantity > group.maxSelection) errors.push(`El grupo «${group.name}» tiene más unidades incluidas que su máximo.`);
+      if (active.length === 0 && group.minSelection > 0) errors.push(`El grupo obligatorio «${group.name}» no tiene opciones activas.`);
+      for (const option of group.options) {
+        if (option.inventoryItemId !== null && (!inventoryIds.has(option.inventoryItemId) || option.consumptionQuantity <= 0)) {
+          errors.push(`La opción «${option.name}» necesita un insumo activo y una cantidad de consumo positiva.`);
+        }
+      }
+    }
+
+    for (const preset of config.presets.filter((item) => item.isActive)) {
+      const invalid = preset.selections.filter((selection) => !activeOptionIds.has(selection.optionId));
+      if (invalid.length) errors.push(`La recomendación «${preset.name}» contiene opciones inactivas o eliminadas.`);
+    }
+
+    const activeVariants = config.variants.filter((variant) => variant.isActive);
+    if (activeVariants.length === 0) errors.push('El producto no tiene ninguna presentación activa.');
+    for (const variant of activeVariants) {
+      const groups = config.groups.filter((group) => group.variantId === null || group.variantId === variant.id);
+      if (groups.some((group) => group.options.length === 0)) warnings.push(`La presentación «${variant.name}» tiene un grupo sin opciones.`);
+      if (groups.length === 0) warnings.push(`La presentación «${variant.name}» no tiene grupos configurados.`);
+    }
+
+    const variantReadiness = activeVariants.map((variant) => {
+      const groups = config.groups.filter((group) => group.variantId === null || group.variantId === variant.id);
+      const variantErrors = groups
+        .filter((group) => group.minSelection > group.options.filter((option) => option.status === OPTION_STATUS.ACTIVE).length)
+        .map((group) => `Falta completar «${group.name}»`);
+      return { id: variant.id, name: variant.name, status: variantErrors.length ? 'ERRORS' as const : 'READY' as const, issues: variantErrors };
+    });
+
+    const branchReadiness = config.branches.map((branch) => {
+      const unavailable = config.groups.flatMap((group) => group.options).filter((option) => {
+        const row = option.branchAvailability.find((entry) => entry.branchId === branch.id);
+        return row && !row.isAvailable;
+      }).length;
+      return { id: branch.id, name: branch.name, status: unavailable ? 'WARNINGS' as const : 'READY' as const, unavailableOptions: unavailable };
+    });
+
+    return {
+      productId,
+      status: errors.length ? 'ERRORS' : warnings.length ? 'WARNINGS' : 'READY',
+      errors,
+      warnings,
+      variantReadiness,
+      branchReadiness,
+      checkedAt: new Date().toISOString(),
+    };
+  },
+
+  async catalogHealth() {
+    const products = await Product.findAll({ where: { type: 'CUSTOMIZABLE' }, attributes: ['id', 'name', 'status'], order: [['name', 'ASC']] });
+    const rows = await Promise.all(products.map(async (product) => {
+      const result = await this.health(product.id);
+      return {
+        productId: product.id,
+        productName: product.name,
+        productStatus: product.status,
+        status: result.status,
+        errors: result.errors.length,
+        warnings: result.warnings.length,
+        variants: result.variantReadiness.length,
+        branches: result.branchReadiness.length,
+      };
+    }));
+    return rows;
+  },
+
+  async governance(productId: number) {
+    const [draft, published] = await Promise.all([
+      AdminDraft.findOne({ where: { key: `builder:${productId}`, status: ['DRAFT', 'SCHEDULED'] } }),
+      BuilderRelease.findOne({ where: { productId }, order: [['version', 'DESC']] }),
+    ]);
+    const payload = draft?.payload as { baseVersion?: number } | undefined;
+    return {
+      draft: draft ? { id: draft.id, status: draft.status, publishAt: draft.publishAt, updatedAt: draft.updatedAt, baseVersion: payload?.baseVersion ?? null } : null,
+      published: published ? { id: published.id, version: published.version, publishedAt: published.publishedAt, publishedBy: published.publishedBy } : null,
+    };
+  },
+
+  async optionImpact(optionId: number) {
+    const option = await CustomizationOption.findByPk(optionId, { attributes: ['id', 'name', 'groupId', 'status'] });
+    if (!option) throw ApiError.notFound('Opción no encontrada');
+    const [presetUses, branchRules, incompatibilities, historicalOrders] = await Promise.all([
+      BuilderPresetItem.count({ where: { optionId } }),
+      BranchOptionAvailability.count({ where: { optionId } }),
+      OptionIncompatibility.count({ where: { [Op.or]: [{ optionId }, { incompatibleOptionId: optionId }] } }),
+      OrderItemCustomization.count({ where: { optionId } }),
+    ]);
+    return {
+      optionId: option.id,
+      optionName: option.name,
+      status: option.status,
+      presetUses,
+      branchRules,
+      incompatibilities,
+      historicalOrders,
+      canDelete: presetUses === 0,
+    };
+  },
+
+  async saveDraft(productId: number, ownerUserId: number, publishAt?: string | null) {
+    const [snapshot, health] = await Promise.all([this.getConfig(productId), this.health(productId)]);
+    const date = publishAt ? new Date(publishAt) : null;
+    if (date && Number.isNaN(date.getTime())) throw ApiError.badRequest('La fecha de publicación no es válida');
+    const [draft] = await AdminDraft.findOrCreate({
+      where: { key: `builder:${productId}` },
+      defaults: {
+        key: `builder:${productId}`,
+        scope: 'builder',
+        ownerUserId,
+        payload: { productId, baseVersion: snapshot.product.version, snapshot, health },
+        publishAt: date,
+        status: date ? 'SCHEDULED' : 'DRAFT',
+        errorMessage: null,
+      },
+    });
+    await draft.update({
+      ownerUserId,
+      payload: { productId, baseVersion: snapshot.product.version, snapshot, health },
+      publishAt: date,
+      status: date ? 'SCHEDULED' : 'DRAFT',
+      errorMessage: null,
+    });
+    return { id: draft.id, status: draft.status, publishAt: draft.publishAt, health };
+  },
+
+  async publishDraft(productId: number, actorId: number, idempotencyKey?: string | null) {
+    const health = await this.health(productId);
+    if (health.errors.length) throw ApiError.unprocessable('Corrige los errores del constructor antes de publicar', health);
+    return sequelize.transaction(async (transaction) => {
+      if (idempotencyKey) {
+        const existing = await BuilderRelease.findOne({ where: { idempotencyKey }, transaction, lock: transaction.LOCK.UPDATE });
+        if (existing) return { id: existing.id, version: existing.version, publishedAt: existing.publishedAt, idempotent: true };
+      }
+      const draft = await AdminDraft.findOne({ where: { key: `builder:${productId}`, status: ['DRAFT', 'SCHEDULED'] }, transaction, lock: transaction.LOCK.UPDATE });
+      const snapshot = (draft?.payload as { snapshot?: Record<string, unknown> } | undefined)?.snapshot ?? await this.getConfig(productId);
+      const latest = await BuilderRelease.findOne({ where: { productId }, order: [['version', 'DESC']], transaction, lock: transaction.LOCK.UPDATE });
+      const release = await BuilderRelease.create({
+        productId,
+        version: (latest?.version ?? 0) + 1,
+        snapshotJson: snapshot,
+        publishedBy: actorId,
+        publishedAt: new Date(),
+        idempotencyKey: idempotencyKey ?? null,
+      }, { transaction });
+      if (draft) await draft.update({ status: 'PUBLISHED', publishAt: null }, { transaction });
+      return { id: release.id, version: release.version, publishedAt: release.publishedAt, idempotent: false };
+    });
+  },
+
+  async releases(productId: number, limit = 30) {
+    const rows = await BuilderRelease.findAll({ where: { productId }, order: [['version', 'DESC']], limit });
+    return rows.map((row) => ({ id: row.id, version: row.version, publishedAt: row.publishedAt, publishedBy: row.publishedBy }));
+  },
+
+  async rollback(productId: number, releaseId: number, actorId: number, idempotencyKey?: string | null) {
+    const source = await BuilderRelease.findOne({ where: { id: releaseId, productId } });
+    if (!source) throw ApiError.notFound('Versión del constructor no encontrada');
+    const latest = await BuilderRelease.findOne({ where: { productId }, order: [['version', 'DESC']] });
+    const release = await BuilderRelease.create({
+      productId,
+      version: (latest?.version ?? 0) + 1,
+      snapshotJson: source.snapshotJson,
+      publishedBy: actorId,
+      publishedAt: new Date(),
+      idempotencyKey: idempotencyKey ?? null,
+    });
+    await AdminDraft.destroy({ where: { key: `builder:${productId}` } });
+    return { id: release.id, version: release.version, publishedAt: release.publishedAt, restoredFrom: source.version };
   },
 
   /** Crea un paso nuevo y lo engancha al producto. */
@@ -324,10 +520,14 @@ export const customizationAdminService = {
       maxSelection?: number;
       freeQuantity?: number;
       sortOrder?: number;
+      expectedVersion?: number;
     },
   ) {
     const group = await CustomizationGroup.findByPk(groupId);
     if (!group) throw ApiError.notFound('Paso no encontrado');
+    if (input.expectedVersion !== undefined && group.version !== input.expectedVersion) {
+      throw ApiError.conflict('Este paso cambió mientras lo editabas. Recarga la configuración antes de guardar.', { expectedVersion: input.expectedVersion, currentVersion: group.version });
+    }
 
     const before = {
       minSelection: group.minSelection,
@@ -348,6 +548,7 @@ export const customizationAdminService = {
     if (input.freeQuantity !== undefined) group.freeQuantity = input.freeQuantity;
     if (input.sortOrder !== undefined) group.sortOrder = input.sortOrder;
 
+    group.version = (group.version ?? 1) + 1;
     await group.save();
     if (input.sortOrder !== undefined) {
       await ProductCustomizationGroup.update(
@@ -460,10 +661,14 @@ export const customizationAdminService = {
       status?: OptionStatus;
       inventoryItemId?: number | null;
       consumptionQuantity?: number;
+      expectedVersion?: number;
     },
   ) {
     const option = await CustomizationOption.findByPk(optionId);
     if (!option) throw ApiError.notFound('Opcion no encontrada');
+    if (input.expectedVersion !== undefined && option.version !== input.expectedVersion) {
+      throw ApiError.conflict('Esta opción cambió mientras la editabas. Recarga la configuración antes de guardar.', { expectedVersion: input.expectedVersion, currentVersion: option.version });
+    }
 
     const before = {
       priceDelta: Number(option.priceDelta),
@@ -508,6 +713,7 @@ export const customizationAdminService = {
       || input.inventoryItemId !== undefined || input.consumptionQuantity !== undefined
       || input.status !== undefined;
     await sequelize.transaction(async (transaction) => {
+      option.version = (option.version ?? 1) + 1;
       await option.save({ transaction });
       if (ingredientsChanged) await invalidateCakeFoodReviewForGroup(option.groupId, transaction);
     });
@@ -671,7 +877,14 @@ export const customizationAdminService = {
   },
 
   async bulkUpdateOptions(optionIds: number[], input: { status?: OptionStatus }) {
-    if (input.status) await CustomizationOption.update({ status: input.status }, { where: { id: optionIds } });
+    if (input.status) {
+      const options = await CustomizationOption.findAll({ where: { id: optionIds } });
+      await sequelize.transaction(async (transaction) => {
+        for (const option of options) {
+          await option.update({ status: input.status, version: (option.version ?? 1) + 1 }, { transaction });
+        }
+      });
+    }
     return { updated: optionIds.length };
   },
 
@@ -681,16 +894,21 @@ export const customizationAdminService = {
     priceOverride?: number | null;
     availableFrom?: Date | null;
     availableUntil?: Date | null;
+    expectedVersion?: number;
   }) {
     const [row] = await BranchOptionAvailability.findOrCreate({
       where: { branchId: input.branchId, optionId },
       defaults: { branchId: input.branchId, optionId, isAvailable: input.isAvailable },
     });
+    if (input.expectedVersion !== undefined && row.version !== input.expectedVersion) {
+      throw ApiError.conflict('La disponibilidad de esta opción cambió mientras la editabas. Recarga la configuración.', { expectedVersion: input.expectedVersion, currentVersion: row.version });
+    }
     await row.update({
       isAvailable: input.isAvailable,
       priceOverride: input.priceOverride ?? null,
       availableFrom: input.availableFrom ?? null,
       availableUntil: input.availableUntil ?? null,
+      version: (row.version ?? 1) + 1,
     });
     return row;
   },
@@ -737,11 +955,16 @@ export const customizationAdminService = {
     isActive?: boolean;
     sortOrder?: number;
     selections?: Array<{ optionId: number; quantity: number }>;
+    expectedVersion?: number;
   }) {
     const preset = await BuilderPreset.findByPk(presetId);
     if (!preset) throw ApiError.notFound('Recomendacion no encontrada');
+    if (input.expectedVersion !== undefined && preset.version !== input.expectedVersion) {
+      throw ApiError.conflict('Esta recomendación cambió mientras la editabas. Recarga la configuración.', { expectedVersion: input.expectedVersion, currentVersion: preset.version });
+    }
     return sequelize.transaction(async (transaction) => {
-      await preset.update(input, { transaction });
+      const { expectedVersion: _expectedVersion, selections: _selections, ...fields } = input;
+      await preset.update({ ...fields, version: (preset.version ?? 1) + 1 }, { transaction });
       if (input.selections) {
         await BuilderPresetItem.destroy({ where: { presetId }, transaction });
         await BuilderPresetItem.bulkCreate(input.selections.map((entry, index) => ({

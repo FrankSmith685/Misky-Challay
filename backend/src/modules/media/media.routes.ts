@@ -8,17 +8,18 @@ import { validate } from '@middlewares/validate.middleware';
 import { ok } from '@shared/http/ApiResponse';
 import { asyncHandler } from '@shared/utils/asyncHandler';
 import { mediaController } from './media.controller';
-import { mediaService } from './media.service';
+import { MEDIA_CATEGORIES, mediaService } from './media.service';
 import { fluxImageService } from './fluxImage.service';
 
 const listQuery = z.object({
   query: z.object({
-    category: z.string().min(1).max(40).optional(),
+    category: z.enum(MEDIA_CATEGORIES).optional(),
     includeDeleted: z.enum(['true', 'false']).optional(),
     page: z.coerce.number().int().positive().max(10_000).optional(),
     limit: z.coerce.number().int().min(1).max(100).optional(),
     search: z.string().max(120).optional(),
     sort: z.enum(['recent', 'name']).optional(),
+    reviewStatus: z.enum(['APPROVED', 'DRAFT', 'ARCHIVED']).optional(),
   }),
 });
 
@@ -53,6 +54,7 @@ router.get(
       limit: query.limit,
       search: query.search,
       sort: query.sort,
+      reviewStatus: query.reviewStatus,
     });
     return ok(res, items, 'OK', {
       page,
@@ -63,6 +65,7 @@ router.get(
   }),
 );
 router.get('/generation-status', canUseMedia, (_req, res) => ok(res, { configured: fluxImageService.isConfigured() }));
+router.get('/health', canManageMedia, mediaController.health);
 router.post(
   '/generate',
   canUseMedia,
@@ -81,7 +84,9 @@ router.post(
     mimeType: z.enum(['image/webp', 'image/jpeg', 'image/png']),
     dataUrl: z.string().min(20).max(7_500_000),
     altText: z.string().max(180).nullable().optional(),
-    category: z.string().min(2).max(40).optional(),
+    category: z.enum(MEDIA_CATEGORIES).optional(),
+    sourceType: z.enum(['UPLOAD', 'AI', 'PROFILE']).optional(),
+    sourcePrompt: z.string().max(1500).nullable().optional(),
   }) })),
   mediaController.upload,
 );
@@ -91,7 +96,7 @@ router.post(
   validate(z.object({ body: z.object({
     sourceUrl: z.string().url().max(2_048),
     altText: z.string().max(180).nullable().optional(),
-    category: z.string().min(2).max(40).optional(),
+    category: z.enum(MEDIA_CATEGORIES).optional(),
   }) })),
   mediaController.importFromUrl,
 );
@@ -100,10 +105,14 @@ router.patch(
   canManageMedia,
   validate(z.object({
     params: z.object({ id: z.coerce.number().int().positive() }),
-    body: z.object({ altText: z.string().max(180).nullable().optional(), category: z.string().min(2).max(40).optional() }),
+    body: z.object({ altText: z.string().max(180).nullable().optional(), category: z.enum(MEDIA_CATEGORIES).optional(), reviewStatus: z.enum(['APPROVED', 'DRAFT', 'ARCHIVED']).optional() }),
   })),
   mediaController.update,
 );
+router.patch('/:id/status', canManageMedia, validate(z.object({
+  params: z.object({ id: z.coerce.number().int().positive() }),
+  body: z.object({ reviewStatus: z.enum(['APPROVED', 'DRAFT', 'ARCHIVED']) }),
+})), mediaController.setStatus);
 router.delete('/:id', canManageMedia, validate(z.object({ params: z.object({ id: z.coerce.number().int().positive() }) })), mediaController.remove);
 router.post('/:id/restore', canManageMedia, validate(z.object({ params: z.object({ id: z.coerce.number().int().positive() }) })), mediaController.restore);
 router.post('/:id/replace', canManageMedia, validate(z.object({

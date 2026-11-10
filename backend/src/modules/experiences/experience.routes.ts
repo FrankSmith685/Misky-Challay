@@ -6,7 +6,7 @@ import rateLimit from 'express-rate-limit';
 import { authenticate } from '@middlewares/auth.middleware';
 import { requireAnyPermission, requirePermissions } from '@middlewares/rbac.middleware';
 import { PERMISSIONS as P } from '@config/constants';
-import { sequelize, Order, User } from '@database/models';
+import { sequelize, Order, User, Branch } from '@database/models';
 import {
   ExperienceAsset,
   ExperienceEvent,
@@ -34,9 +34,19 @@ const version = z.number().int().positive();
 const read = requireAnyPermission(P.EXPERIENCE_READ, P.EXPERIENCE_WRITE, P.EXPERIENCE_PUBLISH);
 const write = requirePermissions(P.EXPERIENCE_WRITE);
 const globalOnly = (req: import('express').Request) => {
-  if (!req.user?.isSuperAdmin && req.user?.branchIds?.length)
-    throw ApiError.forbidden('La configuración de servicios y archivos requiere alcance global.');
+  if (!req.user?.isSuperAdmin)
+    throw ApiError.forbidden('La configuración global de experiencias requiere una cuenta superadmin.');
 };
+const requestKey = (req: import('express').Request, scope: string) => {
+  const value = req.header('Idempotency-Key')?.trim();
+  return value ? `${scope}:${value.slice(0, 120)}` : null;
+};
+const publicRead = rateLimit({
+  windowMs: 60_000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 const binary = (res: Response, asset: ExperienceAsset, range?: string) => {
   const bytes = asset.bytes;
   res.set({
@@ -61,6 +71,16 @@ const binary = (res: Response, asset: ExperienceAsset, range?: string) => {
   }
   res.send(bytes);
 };
+const campaign = async () => {
+  const pack = await ExperiencePackage.findOne({
+    where: { isActive: true, mode: 'AR', price: { [Op.gt]: 0 } },
+    order: [['sortOrder', 'ASC'], ['id', 'ASC']],
+  });
+  if (!pack?.templateId) throw ApiError.notFound('La experiencia AR estable todavía no está publicada.');
+  const template = await ExperienceTemplate.findOne({ where: { id: pack.templateId, isActive: true } });
+  if (!template) throw ApiError.notFound('La experiencia AR estable todavía no está publicada.');
+  return { pack, template };
+};
 router.use((_req, res, next) => {
   res.set('Cache-Control', 'no-store');
   next();
@@ -81,7 +101,31 @@ router.get(
   ),
 );
 router.get(
+  '/public/campaign',
+  publicRead,
+  asyncHandler(async (_req, res) => {
+    const { pack, template } = await campaign();
+    return ok(res, {
+      scene: template.sceneJson,
+      campaign: { packageId: pack.id, packageName: pack.name, templateId: template.id, version: template.version },
+    });
+  }),
+);
+router.get(
+  '/public/campaign/assets/:id',
+  publicRead,
+  asyncHandler(async (req, res) => {
+    const { template } = await campaign();
+    const assetId = id(req.params.id);
+    if (!sceneAssetIds(template.sceneJson).includes(assetId)) throw ApiError.notFound();
+    const asset = await ExperienceAsset.findOne({ where: { id: assetId, projectId: null } });
+    if (!asset) throw ApiError.notFound();
+    binary(res, asset, req.headers.range);
+  }),
+);
+router.get(
   '/public/:token',
+  publicRead,
   asyncHandler(async (req, res) => {
     const project = await service.public(
       z
@@ -94,6 +138,7 @@ router.get(
 );
 router.get(
   '/public/:token/assets/:id',
+  publicRead,
   asyncHandler(async (req, res) => {
     const project = await service.public(
       z
@@ -200,8 +245,15 @@ router.post(
   asyncHandler(async (req, res) => {
     globalOnly(req);
     const input = packageSchema.parse(req.body);
-    if (input.templateId && !(await ExperienceTemplate.findByPk(input.templateId)))
+    const template = input.templateId ? await ExperienceTemplate.findByPk(input.templateId) : null;
+    if (input.templateId && !template)
       throw ApiError.badRequest('Plantilla no encontrada.');
+    if (input.isActive && !template)
+      throw ApiError.badRequest('Un servicio activo necesita una plantilla publicada.');
+    if (input.isActive && template && !template.isActive)
+      throw ApiError.badRequest('La plantilla seleccionada está inactiva. Actívala antes de ofrecer el servicio.');
+    if (template && input.mode === 'AR' && template.sceneJson.content === 'VIDEO')
+      throw ApiError.badRequest('Una plantilla de solo video no puede ofrecerse como servicio AR.');
     const pack = await sequelize.transaction(async (transaction) => {
       if (!req.body.id) return ExperiencePackage.create(input, { transaction });
       const existing = await ExperiencePackage.findByPk(id(req.body.id), {
@@ -233,6 +285,13 @@ router.post(
       })
       .parse(req.body);
     await service.assets(input.sceneJson);
+    const activePackages = await ExperiencePackage.findAll({
+      where: { templateId: req.body.id ? id(req.body.id) : -1, isActive: true },
+    });
+    if (activePackages.length && !input.isActive)
+      throw ApiError.conflict('No puedes desactivar una plantilla usada por un servicio activo.');
+    if (activePackages.some((pack) => pack.mode === 'AR') && input.sceneJson.content === 'VIDEO')
+      throw ApiError.badRequest('La plantilla no es compatible con el servicio AR activo.');
     const template = await sequelize.transaction(async (transaction) => {
       if (!req.body.id) return ExperienceTemplate.create(input, { transaction });
       const old = await ExperienceTemplate.findByPk(id(req.body.id), {
@@ -270,13 +329,34 @@ router.post(
       !(await ExperienceAsset.findOne({ where: { id: sourceImageId, kind: 'IMAGE', projectId } }))
     )
       throw ApiError.badRequest('Sube primero la imagen de la tarjeta.');
+    const sha256 = createHash('sha256').update(req.body).digest('hex');
+    const duplicate = await ExperienceAsset.findOne({
+      where: { kind, projectId, sha256, sourceImageId },
+      order: [['id', 'ASC']],
+    });
+    if (duplicate)
+      return ok(res, {
+        id: duplicate.id,
+        kind: duplicate.kind,
+        name: duplicate.name,
+        size: duplicate.size,
+        sourceImageId: duplicate.sourceImageId,
+      });
+    const quotaBytes = (projectId ? 100 : 500) * 1024 * 1024;
+    const usedBytes = Number(
+      (await ExperienceAsset.sum('size', { where: { projectId } })) || 0,
+    );
+    if (usedBytes + req.body.length > quotaBytes)
+      throw ApiError.badRequest(
+        `Se alcanzó la cuota de archivos para ${projectId ? 'este trabajo' : 'la biblioteca global'}.`,
+      );
     const asset = await ExperienceAsset.create({
       kind,
       mime,
       name: z.string().trim().min(1).max(150).parse(req.query.name),
       bytes: req.body,
       size: req.body.length,
-      sha256: createHash('sha256').update(req.body).digest('hex'),
+      sha256,
       createdBy: req.user!.sub,
       sourceImageId,
       projectId,
@@ -299,23 +379,54 @@ router.get(
   '/admin/projects',
   read,
   asyncHandler(async (req, res) => {
+    const query = z
+      .object({
+        branchId: z.coerce.number().int().positive().optional(),
+        status: z.string().trim().max(30).optional(),
+        from: z.string().datetime().optional(),
+        to: z.string().datetime().optional(),
+        page: z.coerce.number().int().min(1).default(1),
+        pageSize: z.coerce.number().int().min(1).max(100).default(50),
+      })
+      .parse(req.query);
     const scope =
       !req.user?.isSuperAdmin && req.user?.branchIds?.length
         ? { branchId: { [Op.in]: req.user.branchIds } }
         : {};
-    const projects = await ExperienceProject.findAll({
+    if (query.branchId && !req.user?.isSuperAdmin && !req.user?.branchIds?.includes(query.branchId))
+      throw ApiError.forbidden('No tienes acceso a esa sucursal.');
+    const projectWhere: Record<string, unknown> = {
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.from || query.to
+        ? {
+            createdAt: {
+              ...(query.from ? { [Op.gte]: new Date(query.from) } : {}),
+              ...(query.to ? { [Op.lte]: new Date(query.to) } : {}),
+            },
+          }
+        : {}),
+    };
+    const result = await ExperienceProject.findAndCountAll({
+      where: projectWhere,
       include: [
         {
           model: Order,
           as: 'order',
           attributes: ['orderNumber', 'branchId', 'status', 'depositPaidAt', 'balancePaidAt'],
-          where: scope,
+          where: { ...scope, ...(query.branchId ? { branchId: query.branchId } : {}) },
+          include: [{ model: Branch, as: 'branch', attributes: ['id', 'name'] }],
         },
       ],
       order: [['id', 'DESC']],
-      limit: 200,
+      limit: query.pageSize,
+      offset: (query.page - 1) * query.pageSize,
     });
-    return ok(res, projects);
+    res.set({
+      'X-Total-Count': String(result.count),
+      'X-Page': String(query.page),
+      'X-Page-Size': String(query.pageSize),
+    });
+    return ok(res, result.rows);
   }),
 );
 router.get(
@@ -332,6 +443,7 @@ router.get(
       project,
       order: {
         orderNumber: order.orderNumber,
+        branchId: order.branchId,
         status: order.status,
         depositPaidAt: order.depositPaidAt,
         balancePaidAt: order.balancePaidAt,
@@ -365,7 +477,7 @@ router.get(
   }),
 );
 router.post(
-  '/admin/projects/:id',
+  '/admin/projects/:id/draft',
   write,
   asyncHandler(async (req, res) => {
     const input = z
@@ -377,6 +489,60 @@ router.post(
       .parse(req.body);
     const project = await sequelize.transaction(async (transaction) => {
       const { project, order } = await service.load(id(req.params.id), req, transaction);
+      if (project.version !== input.expectedVersion)
+        throw ApiError.conflict('La experiencia cambió. Actualiza la pantalla.');
+      await service.assets(input.scene, false, project.id);
+      if (
+        input.assignedTo &&
+        !(await staffAudienceService.userIds(order.branchId, P.EXPERIENCE_WRITE)).includes(input.assignedTo)
+      )
+        throw ApiError.badRequest('El responsable necesita acceso de creación en esta sede.');
+      await project.update(
+        { draftSceneJson: input.scene, draftAssignedTo: input.assignedTo, draftUpdatedAt: new Date() },
+        { transaction },
+      );
+      return project;
+    });
+    return ok(res, project);
+  }),
+);
+router.delete(
+  '/admin/projects/:id/draft',
+  write,
+  asyncHandler(async (req, res) => {
+    const project = await sequelize.transaction(async (transaction) => {
+      const { project } = await service.load(id(req.params.id), req, transaction);
+      await project.update(
+        { draftSceneJson: null, draftAssignedTo: null, draftUpdatedAt: null },
+        { transaction },
+      );
+      return project;
+    });
+    return ok(res, project);
+  }),
+);
+router.post(
+  '/admin/projects/:id',
+  write,
+  asyncHandler(async (req, res) => {
+    const input = z
+      .object({
+        expectedVersion: version,
+        scene: sceneSchema,
+        assignedTo: z.number().int().positive().nullable().default(null),
+      })
+      .parse(req.body);
+    const key = requestKey(req, `project:${req.params.id}:save`);
+    const project = await sequelize.transaction(async (transaction) => {
+      const { project, order } = await service.load(id(req.params.id), req, transaction);
+      if (key) {
+        const previous = await ExperienceEvent.findOne({
+          where: { projectId: project.id, requestKey: key },
+          transaction,
+          order: [['id', 'DESC']],
+        });
+        if (previous) return project;
+      }
       await service.assets(input.scene, false, project.id);
       if (
         input.assignedTo &&
@@ -396,6 +562,9 @@ router.post(
           approvedVersion: null,
           previewToken: null,
           previewExpiresAt: null,
+          draftSceneJson: null,
+          draftAssignedTo: null,
+          draftUpdatedAt: null,
         },
         { transaction },
       );
@@ -406,6 +575,9 @@ router.post(
           version: project.version,
           action: 'EDITED',
           note: 'Nueva versión; requiere aprobación.',
+          snapshotJson: input.scene,
+          assignedToSnapshot: input.assignedTo,
+          requestKey: key,
         },
         { transaction },
       );
@@ -427,15 +599,17 @@ router.post(
         expectedVersion: version,
         action: z.enum(['REVIEW', 'PUBLISH', 'PAUSE']),
         startsAt: z.string().datetime().optional(),
+        reason: z.string().trim().max(500).optional(),
       })
       .parse(req.body);
+    const key = requestKey(req, `project:${req.params.id}:action:${input.action}`);
     const permission = input.action === 'REVIEW' ? P.EXPERIENCE_WRITE : P.EXPERIENCE_PUBLISH;
     requirePermissions(permission)(req, res, (error) =>
       error
         ? next(error)
         : void (async () => {
             try {
-              const project = await service.transition(id(req.params.id), req, input);
+              const project = await service.transition(id(req.params.id), req, { ...input, requestKey: key });
               await audit(req, {
                 action: `EXPERIENCE_${input.action}`,
                 entity: 'ExperienceProject',
@@ -447,6 +621,39 @@ router.post(
             }
           })(),
     );
+  }),
+);
+router.post(
+  '/admin/projects/:id/restore',
+  write,
+  asyncHandler(async (req, res) => {
+    const input = z
+      .object({ expectedVersion: version, eventId: z.coerce.number().int().positive() })
+      .parse(req.body);
+    const { project } = await service.restore(id(req.params.id), req, input);
+    await audit(req, {
+      action: 'EXPERIENCE_RESTORE',
+      entity: 'ExperienceProject',
+      entityId: project.id,
+    });
+    return ok(res, project);
+  }),
+);
+router.post(
+  '/admin/projects/:id/rotate-token',
+  requirePermissions(P.EXPERIENCE_PUBLISH),
+  asyncHandler(async (req, res) => {
+    const input = z.object({ expectedVersion: version }).parse(req.body);
+    const project = await service.rotateToken(id(req.params.id), req, {
+      ...input,
+      requestKey: requestKey(req, `project:${req.params.id}:rotate-token`),
+    });
+    await audit(req, {
+      action: 'EXPERIENCE_TOKEN_ROTATE',
+      entity: 'ExperienceProject',
+      entityId: project.id,
+    });
+    return ok(res, project);
   }),
 );
 export default router;

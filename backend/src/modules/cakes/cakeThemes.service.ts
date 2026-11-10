@@ -1,5 +1,5 @@
 import { Op } from 'sequelize';
-import { Allergen, CakeTheme, Product, ProductVariant, CakeProductProfile, MediaAsset, BranchInventory, sequelize } from '@database/models';
+import { Allergen, CakeTheme, Product, ProductVariant, CakeProductProfile, MediaAsset, BranchInventory, Branch, CakeDesignRequest, sequelize } from '@database/models';
 import type { CakeThemeRule } from '@database/models/cakeTheme.model';
 import { ApiError } from '@shared/errors/ApiError';
 import { catalogService } from '@modules/catalog/catalog.service';
@@ -15,6 +15,30 @@ const slugify = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036
 
 export const cakeThemesService = {
   async listAdmin() { return CakeTheme.findAll({ order: [['sortOrder', 'ASC'], ['name', 'ASC']] }); },
+  async health() {
+    const [themes, branches, requestCounts] = await Promise.all([
+      CakeTheme.findAll({ order: [['sortOrder', 'ASC'], ['name', 'ASC']] }),
+      Branch.findAll({ where: { isActive: true }, attributes: ['id', 'name'], order: [['name', 'ASC']] }),
+      Promise.all(['SUBMITTED', 'QUOTED', 'ACCEPTED', 'REJECTED'].map(async (status) => [status, await CakeDesignRequest.count({ where: { status } })] as const)),
+    ]);
+    const output = [];
+    for (const theme of themes) {
+      const [product, profile, variants] = await Promise.all([
+        Product.findByPk(theme.productId),
+        CakeProductProfile.findByPk(theme.productId),
+        ProductVariant.findAll({ where: { productId: theme.productId, isActive: true } }),
+      ]);
+      const rules = theme.variantRulesJson ?? [];
+      const materialIds = [...new Set(rules.flatMap((rule) => rule.materials.map((line) => line.inventoryItemId)))];
+      const stock = branches.length && materialIds.length ? await BranchInventory.findAll({ where: { branchId: branches.map((branch) => branch.id), inventoryItemId: materialIds } }) : [];
+      const branchHealth = branches.map((branch) => {
+        const missing = materialIds.filter((inventoryItemId) => Number(stock.find((row) => row.branchId === branch.id && row.inventoryItemId === inventoryItemId)?.available ?? 0) <= 0);
+        return { id: branch.id, name: branch.name, available: missing.length === 0, missingMaterialCount: missing.length };
+      });
+      output.push({ themeId: theme.id, productId: theme.productId, productName: product?.name ?? 'Base no encontrada', published: theme.isActive, ready: Boolean(product?.status === 'ACTIVE' && product.allergensReviewedAt && profile?.isActive && theme.imageUrlsJson.length && (theme.saleMode === 'QUOTE' || (rules.length && variants.length))), baseReady: Boolean(product?.status === 'ACTIVE' && product.allergensReviewedAt && profile?.isActive), imageCount: theme.imageUrlsJson.length, activeVariantCount: variants.length, materialCount: materialIds.length, branchHealth });
+    }
+    return { themes: output, quoteRequests: Object.fromEntries(requestCounts) };
+  },
 
   async save(input: CakeThemeDraft, id?: number, expectedVersion?: number) {
     const [product, profile, variants] = await Promise.all([
@@ -64,6 +88,29 @@ export const cakeThemesService = {
       if (!row) throw ApiError.notFound('Diseño no encontrado');
       if (row.version !== expectedVersion) throw ApiError.conflict('El diseño cambió. Recarga para continuar');
       await row.update({ isActive: false, version: row.version + 1 }, { transaction });
+      return row;
+    });
+  },
+  async duplicate(id: number) {
+    return sequelize.transaction(async (transaction) => {
+      const source = await CakeTheme.findByPk(id, { transaction });
+      if (!source) throw ApiError.notFound('Diseño no encontrado');
+      const stem = slugify(`${source.name}-copia`);
+      const row = await CakeTheme.create({
+        productId: source.productId,
+        name: `${source.name} (copia)`.slice(0, 120),
+        slug: `${stem}-${Date.now().toString(36)}`,
+        theme: source.theme,
+        description: source.description,
+        imageUrlsJson: [...source.imageUrlsJson],
+        saleMode: source.saleMode,
+        minLeadHours: source.minLeadHours,
+        minServings: source.minServings,
+        maxServings: source.maxServings,
+        variantRulesJson: JSON.parse(JSON.stringify(source.variantRulesJson)),
+        isActive: false,
+        sortOrder: source.sortOrder,
+      }, { transaction });
       return row;
     });
   },

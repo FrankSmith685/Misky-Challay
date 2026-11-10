@@ -18,7 +18,7 @@ const stations: Array<[Station, string]> = [
   ['FILLING', 'Relleno'], ['DECORATING', 'Decoración'], ['QA', 'Calidad'], ['DISPATCH', 'Despacho'],
 ];
 const field = 'mt-1 w-full rounded-lg border border-line bg-white p-2 font-normal';
-const statusLabels: Record<string, string> = { ACCEPTED: 'Aceptada', REJECTED: 'Rechazada', QUOTED: 'Cotizada', PENDING: 'Pendiente', PROPOSED: 'Propuesta', SUPERSEDED: 'Reemplazada' };
+const statusLabels: Record<string, string> = { ACCEPTED: 'Aceptada', REJECTED: 'Rechazada', QUOTED: 'Cotizada', PENDING: 'Pendiente', SUBMITTED: 'Pendiente', PROPOSED: 'Propuesta', SUPERSEDED: 'Reemplazada', EXPIRED: 'Vencida' };
 const defaultTerms = 'El precio incluye la elaboración del diseño y acabado descritos. Los cambios posteriores requieren una nueva cotización.';
 const defaultEffort = (): Partial<Record<Station, number>> => ({ DESIGN: 30, BAKING: 60, COOLING: 30, FILLING: 30, DECORATING: 60, QA: 15, DISPATCH: 15 });
 const PAGE_SIZE = 6;

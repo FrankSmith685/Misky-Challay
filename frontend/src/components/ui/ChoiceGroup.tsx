@@ -19,7 +19,7 @@ interface ChoiceGroupProps<T extends string | number> {
   /** 'segment' = segmentos de ancho igual (default); 'pill' = píldoras; 'tile' = tarjetas. */
   variant?: Variant;
   /** Solo para 'tile': número de columnas. */
-  columns?: 1 | 2 | 3;
+  columns?: 1 | 2 | 3 | 4;
   ariaLabel?: string;
   className?: string;
 }
@@ -30,7 +30,7 @@ const CONTAINER: Record<Variant, string> = {
   tile: 'grid gap-2',
 };
 
-const COLUMNS: Record<number, string> = { 1: 'grid-cols-1', 2: 'grid-cols-2', 3: 'grid-cols-3' };
+const COLUMNS: Record<number, string> = { 1: 'grid-cols-1', 2: 'grid-cols-2', 3: 'grid-cols-3', 4: 'grid-cols-4' };
 
 /**
  * `min-w-0` en las variantes que reparten el ancho (segment y tile).

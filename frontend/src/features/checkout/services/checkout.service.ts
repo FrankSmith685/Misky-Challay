@@ -5,7 +5,7 @@ import type { CheckoutInput, OrderQuote, OrderWithPayment, PlacedOrder } from '.
 import { announceOrderChanged } from '@features/orders/orderChanged';
 
 export const checkoutApi = {
-  async availability(input: CheckoutInput): Promise<{ branchId: number; slots: import('@features/geo/types').DeliverySlot[]; reasons: Array<{ code: string; message: string }> }> {
+  async availability(input: CheckoutInput): Promise<{ branchId: number; slots: import('@features/geo/types').DeliverySlot[]; reasons: Array<{ code: string; message: string }>; leadHours: number }> {
     const { data } = await api.post('/checkout/availability', { ...input, serviceMode: 'ASAP', deliverySlotId: undefined, couponCode: undefined, useWallet: false });
     return data.data;
   },

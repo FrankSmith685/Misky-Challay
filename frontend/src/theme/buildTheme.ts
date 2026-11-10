@@ -12,6 +12,7 @@ import { SURFACE, rampsFromTokens, type ThemeTokens } from './tokens';
 export const buildTheme = (tokens: ThemeTokens): Theme => {
   const { primary, secondary, tertiary, radius } = tokens;
   const safeRadius = Math.min(5, Math.max(0, radius));
+  const compact = tokens.density === 'compact';
   const ramp = rampsFromTokens(tokens);
   const successRamp = rampFromHex('#167653');
   const infoRamp = rampFromHex('#376a91');
@@ -53,7 +54,8 @@ export const buildTheme = (tokens: ThemeTokens): Theme => {
       divider: SURFACE.line,
     },
     typography: {
-      fontFamily: "'Inter', ui-sans-serif, system-ui, sans-serif",
+      fontFamily: tokens.fontFamily === 'serif' ? 'Georgia, Cambria, serif' : tokens.fontFamily === 'system' ? 'ui-sans-serif, system-ui, sans-serif' : "'Inter', ui-sans-serif, system-ui, sans-serif",
+      fontSize: tokens.baseFontSize,
       h1: { fontWeight: 850, letterSpacing: '-0.04em', lineHeight: 1.08 },
       h2: { fontWeight: 820, letterSpacing: '-0.035em', lineHeight: 1.14 },
       h3: { fontWeight: 800, letterSpacing: '-0.025em', lineHeight: 1.2 },
@@ -70,7 +72,7 @@ export const buildTheme = (tokens: ThemeTokens): Theme => {
         defaultProps: { disableElevation: true, disableRipple: false, size: 'medium' },
         styleOverrides: {
           root: {
-            minHeight: 44,
+            minHeight: compact ? 40 : 44,
             borderRadius: safeRadius,
             letterSpacing: 0,
             paddingInline: 20,
@@ -135,8 +137,8 @@ export const buildTheme = (tokens: ThemeTokens): Theme => {
       MuiCardContent: {
         styleOverrides: {
           root: {
-            padding: 24,
-            '&:last-child': { paddingBottom: 24 },
+            padding: compact ? 20 : 24,
+            '&:last-child': { paddingBottom: compact ? 20 : 24 },
             '@media (max-width: 600px)': {
               padding: 20,
               '&:last-child': { paddingBottom: 20 },
@@ -274,7 +276,7 @@ export const buildTheme = (tokens: ThemeTokens): Theme => {
             },
           },
           thumb: { width: 16, height: 16, boxShadow: '0 2px 5px rgba(23,50,77,.25)' },
-          track: { borderRadius: safeRadius, opacity: 1, backgroundColor: '#b7c8d8' },
+          track: { borderRadius: safeRadius, opacity: 1, backgroundColor: '#b5cfe2' },
         },
       },
       MuiSelect: {

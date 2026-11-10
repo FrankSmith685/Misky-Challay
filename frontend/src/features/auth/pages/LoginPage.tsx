@@ -22,6 +22,7 @@ const loginSchema = z.object({
     .min(1, 'Ingresa tu correo electrónico')
     .email('Ingresa un correo electrónico válido'),
   password: z.string().min(1, 'Ingresa tu contraseña'),
+  mfaCode: z.string().regex(/^(\d{6}|[A-Fa-f0-9]{10})$/, 'Ingresa el código MFA').optional().or(z.literal('')),
 });
 
 type LoginForm = z.infer<typeof loginSchema>;
@@ -46,19 +47,19 @@ const LoginPage = () => {
     resolver: zodResolver(loginSchema),
     mode: 'onSubmit',
     reValidateMode: 'onChange',
-    defaultValues: { email: '', password: '' },
+    defaultValues: { email: '', password: '', mfaCode: '' },
   });
 
   const onSubmit = async (values: LoginForm) => {
     setSubmitError('');
-    const result = await dispatch(login(values));
+    const result = await dispatch(login({ ...values, mfaCode: values.mfaCode || undefined }));
 
     if (login.fulfilled.match(result)) {
       toast.success('Bienvenido de vuelta');
 
       const user = result.payload.user;
       const isStaff = user.isSuperAdmin || user.permissions.length > 0;
-      navigate(resolveAfterAuthPath(from, isStaff, resolveStaffAccess(user).to, store.getState().cart.items.length > 0), { replace: true });
+      navigate(user.mustChangePassword ? ROUTES.accountProfile : resolveAfterAuthPath(from, isStaff, resolveStaffAccess(user).to, store.getState().cart.items.length > 0), { replace: true });
       return;
     }
 
@@ -135,6 +136,8 @@ const LoginPage = () => {
             </div>
           </div>
 
+          {submitError.toLocaleLowerCase().includes('mfa') && <Input label="Codigo MFA" inputMode="numeric" autoComplete="one-time-code" error={errors.mfaCode?.message} hint="Escribe el codigo de tu aplicacion autenticadora" {...register('mfaCode')} />}
+
           <Button
             type="submit"
             size="lg"
@@ -157,5 +160,4 @@ const LoginPage = () => {
     </AuthShell>
   );
 };
-
 export default LoginPage;

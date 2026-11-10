@@ -1,10 +1,65 @@
-import bcrypt from 'bcryptjs';
+﻿import bcrypt from 'bcryptjs';
 import { env } from '@config/env';
 import { logger } from '@config/logger';
 import { PERMISSIONS, PERMISSION_CATALOG, ROLES, USER_STATUS } from '@config/constants';
+import { TEAM_DEFINITIONS } from '@config/teamDefinitions';
 import { Permission, Role, User, UserRole, RolePermission } from '../models';
+import { Team } from '../models';
 
 const P = PERMISSIONS;
+
+/**
+ * El administrador opera el negocio, pero no gobierna la plataforma. Los
+ * permisos de usuarios internos, roles, configuracion global, comision y
+ * auditoria avanzada quedan reservados al superadmin.
+ */
+const ADMIN_OPERATIONAL_PERMISSIONS: string[] = [
+  P.CATALOG_PRODUCT_READ,
+  P.CATALOG_PRODUCT_WRITE,
+  P.CATALOG_CATEGORY_WRITE,
+  P.CATALOG_AVAILABILITY_WRITE,
+  P.CATALOG_CUSTOMIZATION_WRITE,
+  P.ALLERGEN_WRITE,
+  P.DIETARY_TAG_WRITE,
+  P.GEO_READ,
+  P.ORDER_READ,
+  P.ORDER_UPDATE_STATUS,
+  P.ORDER_CANCEL,
+  P.EXPERIENCE_READ,
+  P.EXPERIENCE_WRITE,
+  P.EXPERIENCE_PUBLISH,
+  P.KITCHEN_READ,
+  P.KITCHEN_OPERATE,
+  P.DINING_READ,
+  P.DINING_OPERATE,
+  P.POS_SELL,
+  P.INVENTORY_READ,
+  P.INVENTORY_MANAGE,
+  P.PROCUREMENT_READ,
+  P.PROCUREMENT_MANAGE,
+  P.DELIVERY_READ,
+  P.DELIVERY_ASSIGN,
+  P.DELIVERY_OPERATE,
+  P.PAYMENT_READ,
+  P.PAYMENT_VERIFY,
+  P.INVOICE_MANAGE,
+  P.PAYMENT_REFUND,
+  P.PLAN_READ,
+  P.PROMOTION_MANAGE,
+  P.REPORT_SALES_READ,
+  P.REPORT_OPERATIONS_READ,
+  P.CAKE_FINANCE_READ,
+  P.COMMUNICATION_READ,
+  P.COMMUNICATION_REPLY,
+  P.CUSTOMER_READ,
+  P.CUSTOMER_MANAGE,
+  P.USER_READ,
+  P.USER_MANAGE,
+  P.COMPLAINT_READ,
+  P.COMPLAINT_RESPOND,
+  P.COMPLAINT_REOPEN,
+  P.AUDIT_READ,
+];
 
 /**
  * ROLES DEL SISTEMA
@@ -48,7 +103,7 @@ const ROLE_DEFINITIONS: Array<{
     code: ROLES.CASHIER,
     name: 'Cajero',
     description: 'Cobra y cierra mesas, consulta ventas y pagos de su local.',
-    permissions: [P.DINING_READ, P.DINING_OPERATE, P.ORDER_READ, P.PAYMENT_READ, P.PAYMENT_VERIFY, P.INVOICE_MANAGE, P.REPORT_SALES_READ],
+    permissions: [P.DINING_READ, P.DINING_OPERATE, P.POS_SELL, P.ORDER_READ, P.PAYMENT_READ, P.PAYMENT_VERIFY, P.INVOICE_MANAGE, P.REPORT_SALES_READ],
   },
   {
     code: ROLES.DISPATCHER,
@@ -81,6 +136,13 @@ const ROLE_DEFINITIONS: Array<{
       // Quien atiende al consumidor tiene que poder responderle: el reclamo corre
       // con plazo legal y hasta ahora solo el administrador general podia contestarlo.
       P.COMPLAINT_MANAGE,
+      P.COMPLAINT_READ,
+      P.COMPLAINT_RESPOND,
+      P.COMPLAINT_EXPORT,
+      P.COMPLAINT_REOPEN,
+      P.AUDIT_READ,
+      P.AUDIT_EXPORT,
+      P.AUDIT_VERIFY,
     ],
   },
   {
@@ -108,6 +170,7 @@ const ROLE_DEFINITIONS: Array<{
       P.KITCHEN_OPERATE,
       P.DINING_READ,
       P.DINING_OPERATE,
+      P.POS_SELL,
       P.DELIVERY_READ,
       P.DELIVERY_ASSIGN,
       P.DELIVERY_OPERATE,
@@ -129,8 +192,8 @@ const ROLE_DEFINITIONS: Array<{
   {
     code: ROLES.ADMIN,
     name: 'Administrador general',
-    description: 'Operacion completa, catalogo, promociones, reportes y usuarios.',
-    permissions: Object.values(P),
+    description: 'Opera pedidos, ventas, produccion, catalogo y clientes; el gobierno global queda en el superadmin.',
+    permissions: ADMIN_OPERATIONAL_PERMISSIONS,
   },
   {
     code: ROLES.AUDITOR,
@@ -219,6 +282,26 @@ export const seedRbac = async (): Promise<void> => {
         defaults: { roleId: role.id, permissionId },
       });
     }
+  }
+
+  // 2b) Estaciones operativas iniciales. El superadmin puede editarlas desde
+  // el panel sin alterar los permisos de los roles.
+  for (const definition of TEAM_DEFINITIONS) {
+    await Team.findOrCreate({
+      where: { key: definition.key },
+      defaults: {
+        key: definition.key,
+        name: definition.name,
+        description: definition.description,
+        route: definition.route,
+        icon: definition.icon,
+        roleCodes: [...definition.roleCodes],
+        branchRequired: definition.branchRequired,
+        minimumPerBranch: definition.minimumPerBranch,
+        sortOrder: definition.sortOrder,
+        isActive: true,
+      },
+    });
   }
 
   // 3) Superadmin inicial. Es una MARCA, no un rol: se salta la verificacion de

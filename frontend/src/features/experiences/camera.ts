@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { Controller } from '../../vendor/mindar/mindar-image.prod.js';
 import { CAKE_AR_COMPILED_TARGET, type CakeArStatus } from '../cakes/ar/cakeAr';
 import { createExperienceObject, type SceneMedia } from './scene';
@@ -13,6 +14,8 @@ let renderer: THREE.WebGLRenderer | undefined;
 let controller: Controller | undefined;
 let object: Awaited<ReturnType<typeof createExperienceObject>> | undefined;
 let resizeObserver: ResizeObserver | undefined;
+let adjustPlacement: ((action: string, value?: number) => void) | undefined;
+let pointerCleanup: (() => void) | undefined;
 let stopped = false;
 let started = false;
 const alive = () => {
@@ -27,6 +30,9 @@ const stop = () => {
   controller?.stopProcessVideo();
   controller?.worker.terminate();
   object?.dispose();
+  adjustPlacement = undefined;
+  pointerCleanup?.();
+  pointerCleanup = undefined;
   resizeObserver?.disconnect();
   renderer?.dispose();
   renderer?.forceContextLoss();
@@ -38,6 +44,15 @@ const start = async ({ snapshot, media, expiresAt }: CakeArInput) => {
     throw new Error('Esta vista compartida venció. Solicita un enlace nuevo.');
   if (!isSecureContext || !navigator.mediaDevices?.getUserMedia)
     throw new Error('Abre la web con HTTPS para usar la cámara.');
+  const mobile = matchMedia('(max-width: 640px)').matches || (navigator.hardwareConcurrency ?? 8) <= 4;
+  const targetSources = (media.targets?.filter(Boolean) ?? []).length
+    ? media.targets!.filter(Boolean)
+    : [media.target ?? CAKE_AR_COMPILED_TARGET];
+  const targetBuffersPromise = Promise.all(targetSources.map(async (targetSource) => {
+    const response = await fetch(targetSource, { signal: abort.signal });
+    if (!response.ok) throw new Error('No se pudo cargar la tarjeta. Vuelve a intentarlo.');
+    return response.arrayBuffer();
+  }));
   notify('loading');
   const container = document.getElementById('camera')!;
   const video = document.createElement('video');
@@ -61,63 +76,145 @@ const start = async ({ snapshot, media, expiresAt }: CakeArInput) => {
   video.height = video.videoHeight;
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera();
-  renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  const appearance = Object.assign({
+    exposure: 1,
+    ambientIntensity: 1.8,
+    keyIntensity: 2.3,
+    environment: 'ROOM' as const,
+    toneMapping: 'ACES' as const,
+  } as ExperienceScene['appearance'], snapshot.appearance ?? {});
+  renderer = new THREE.WebGLRenderer({ alpha: true, antialias: !mobile, premultipliedAlpha: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, mobile ? 1.25 : 1.75));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = appearance.toneMapping === 'NONE' ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = appearance.exposure;
+  renderer.shadowMap.enabled = !mobile;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   container.append(renderer.domElement);
-  scene.add(new THREE.HemisphereLight(0xfff8ee, 0xa39487, 2.5));
-  const light = new THREE.DirectionalLight(0xffffff, 2.5);
+  if (appearance.environment === 'ROOM' && !mobile) {
+    const environment = new RoomEnvironment();
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(environment, 0.04).texture;
+    environment.dispose();
+    pmrem.dispose();
+  }
+  scene.add(new THREE.HemisphereLight(0xfff8ee, 0xa39487, appearance.ambientIntensity));
+  const light = new THREE.DirectionalLight(0xffffff, appearance.keyIntensity);
   light.position.set(1, 2, 3);
+  light.castShadow = true;
+  light.shadow.mapSize.set(1024, 1024);
+  light.shadow.camera.near = 0.01;
+  light.shadow.camera.far = 5;
+  light.shadow.bias = -0.0002;
   scene.add(light);
-  const anchor = new THREE.Group();
-  anchor.matrixAutoUpdate = false;
-  anchor.visible = false;
-  scene.add(anchor);
+  scene.add(new THREE.DirectionalLight(0xffe9d2, 0.55));
+  const anchors: THREE.Group[] = [];
+  const targetPosts: THREE.Matrix4[] = [];
+  const detectedTargets = new Set<number>();
   let lastFound = false;
   let everFound = false;
-  const post = new THREE.Matrix4();
   controller = new Controller({
     inputWidth: video.videoWidth,
     inputHeight: video.videoHeight,
-    maxTrack: 1,
-    warmupTolerance: 5,
-    missTolerance: 8,
+    maxTrack: targetSources.length,
+    warmupTolerance: 3,
+    missTolerance: 6,
     filterMinCF: 0.001,
-    filterBeta: 1000,
+    filterBeta: 500,
     onUpdate: ({ type, targetIndex, worldMatrix }) => {
-      if (stopped || type !== 'updateMatrix' || targetIndex !== 0) return;
+      if (stopped || type !== 'updateMatrix') return;
+      const anchor = anchors[targetIndex];
+      const targetPost = targetPosts[targetIndex];
+      if (!anchor || !targetPost) return;
       const found = worldMatrix !== null;
       anchor.visible = found;
-      if (worldMatrix) anchor.matrix.fromArray(worldMatrix).multiply(post);
-      if (found !== lastFound) {
-        notify(found ? 'found' : 'lost');
-        everFound ||= found;
-        lastFound = found;
+      if (worldMatrix) anchor.matrix.fromArray(worldMatrix).multiply(targetPost);
+      if (found) detectedTargets.add(targetIndex);
+      else detectedTargets.delete(targetIndex);
+      const anyFound = detectedTargets.size > 0;
+      if (anyFound !== lastFound) {
+        notify(anyFound ? 'found' : 'lost');
+        everFound ||= anyFound;
+        lastFound = anyFound;
       } else if (!everFound) notify('scanning');
     },
   });
   // Fetch ourselves: the upstream addImageTargets wrapper does not reject HTTP failures.
-  const response = await fetch(media.target ?? CAKE_AR_COMPILED_TARGET, { signal: abort.signal });
-  if (!response.ok) throw new Error('No se pudo cargar la tarjeta. Vuelve a intentarlo.');
-  const { dimensions } = controller.addImageTargetsFromBuffer(await response.arrayBuffer());
-  if (dimensions.length !== 1) throw new Error('La tarjeta de reconocimiento no es válida.');
+  const targetBuffers = await targetBuffersPromise;
+  const dimensions: Array<[number, number]> = [];
+  for (const targetBuffer of targetBuffers) {
+    const result = controller.addImageTargetsFromBuffer(targetBuffer);
+    result.dimensions.forEach((dimension) => dimensions.push([dimension[0], dimension[1]]));
+  }
+  if (!dimensions.length) throw new Error('La tarjeta de reconocimiento no es valida.');
   alive();
-  const [width, height] = dimensions[0];
-  post.compose(
-    new THREE.Vector3(width / 2, height / 2, 0),
-    new THREE.Quaternion(),
-    new THREE.Vector3(width, width, width),
-  );
+  dimensions.forEach(([width, height]) => {
+    const anchor = new THREE.Group();
+    anchor.matrixAutoUpdate = false;
+    anchor.visible = false;
+    scene.add(anchor);
+    anchors.push(anchor);
+    targetPosts.push(new THREE.Matrix4().compose(
+      new THREE.Vector3(width / 2, height / 2, 0),
+      new THREE.Quaternion(),
+      new THREE.Vector3(width, width, width),
+    ));
+  });
   object = await createExperienceObject(snapshot, media);
   if (stopped) {
     object.dispose();
     return;
   }
-  const placement = new THREE.Group();
-  placement.rotation.x = Math.PI / 2;
-  placement.scale.setScalar(0.35);
-  placement.add(object.root);
-  anchor.add(placement);
+  const placements: THREE.Group[] = [];
+  const basePlacementScale = snapshot.content === 'CAKE' ? 0.24 : 0.32;
+  // The target is the vertical XY plane. Keeping the cake Y-up prevents the
+  // previous quarter-turn from presenting only its top as a flat disc.
+  anchors.forEach((anchor, index) => {
+    const placement = new THREE.Group();
+    placement.rotation.set(0, 0, 0);
+    placement.scale.setScalar(basePlacementScale);
+    placement.position.z = 0.12;
+    placement.add(index === 0 ? object!.root : object!.root.clone(true));
+    anchor.add(placement);
+    placements.push(placement);
+  });
+  let userScale = 1;
+  let userRotation = 0;
+  const applyPlacement = () => {
+    placements.forEach((placement) => {
+      placement.scale.setScalar(basePlacementScale * userScale);
+      placement.rotation.y = THREE.MathUtils.degToRad(userRotation);
+    });
+  };
+  adjustPlacement = (action, value) => {
+    if (action === 'scale') userScale = THREE.MathUtils.clamp(userScale + (value ?? 0), 0.65, 1.55);
+    if (action === 'rotate') userRotation = (userRotation + (value ?? 0) + 540) % 360 - 180;
+    if (action === 'reset') { userScale = 1; userRotation = 0; }
+    applyPlacement();
+  };
+  let pointerX: number | null = null;
+  const onPointerDown = (event: PointerEvent) => {
+    pointerX = event.clientX;
+    (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+  };
+  const onPointerMove = (event: PointerEvent) => {
+    if (pointerX === null) return;
+    const delta = event.clientX - pointerX;
+    if (Math.abs(delta) < 0.5) return;
+    adjustPlacement?.('rotate', delta * 1.1);
+    pointerX = event.clientX;
+  };
+  const onPointerEnd = () => { pointerX = null; };
+  container.addEventListener('pointerdown', onPointerDown);
+  container.addEventListener('pointermove', onPointerMove);
+  container.addEventListener('pointerup', onPointerEnd);
+  container.addEventListener('pointercancel', onPointerEnd);
+  pointerCleanup = () => {
+    container.removeEventListener('pointerdown', onPointerDown);
+    container.removeEventListener('pointermove', onPointerMove);
+    container.removeEventListener('pointerup', onPointerEnd);
+    container.removeEventListener('pointercancel', onPointerEnd);
+  };
   const resize = () => {
     if (!renderer || !controller) return;
     video.width = video.videoWidth;
@@ -202,12 +299,14 @@ window.addEventListener('message', (event) => {
   if (
     event.source !== parent ||
     event.origin !== location.origin ||
-    event.data?.channel !== CAKE_AR_CHANNEL ||
-    started
+    event.data?.channel !== CAKE_AR_CHANNEL
   )
     return;
-  if (event.data.action !== 'start' || !event.data.input?.snapshot) return;
-  started = true;
-  void start(event.data.input as CakeArInput).catch(fail);
+  if (event.data.action === 'start' && !started && event.data.input?.snapshot) {
+    started = true;
+    void start(event.data.input as CakeArInput).catch(fail);
+    return;
+  }
+  if (started) adjustPlacement?.(event.data.action, Number(event.data.value));
 });
 parent.postMessage({ channel: CAKE_AR_CHANNEL, ready: true }, location.origin);
