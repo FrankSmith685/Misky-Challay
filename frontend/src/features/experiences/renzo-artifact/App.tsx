@@ -10,7 +10,6 @@ import { AnimatedPlayer } from './components/AnimatedPlayer';
 import { TimelineControls } from './components/TimelineControls';
 import { GalleryComparison } from './components/GalleryComparison';
 import { MemoryCardModal } from './components/MemoryCardModal';
-import { VideoExporter } from './components/VideoExporter';
 import { soundtrack } from './services/soundtrack';
 import { Sparkles, Heart, Gift, Play, Music } from 'lucide-react';
 
@@ -267,9 +266,6 @@ export default function App() {
             </div>
           </div>
         </section>
-
-        {/* Video Exporter & Sharing Banner */}
-        <VideoExporter scenes={SCENES} onOpenCard={() => setIsCardOpen(true)} />
 
         {/* Story Chapters & Side-by-Side Comparison */}
         <section id="capitulos">
