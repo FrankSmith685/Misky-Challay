@@ -49,10 +49,15 @@
         try {
           const key = 'verde-bowl:theme-cache-v5';
           if (localStorage.getItem(key) === 'done') return;
+          const legacyThemeKeys = [
+            'vb.theme.tokens.v1',
+            'vb.theme.tokens.v2',
+            'vb.theme.tokens.v3',
+          ];
+          const hasLegacyTheme = legacyThemeKeys.some((legacyKey) => localStorage.getItem(legacyKey) !== null);
           localStorage.setItem(key, 'done');
-          localStorage.removeItem('vb.theme.tokens.v1');
-          localStorage.removeItem('vb.theme.tokens.v2');
-          localStorage.removeItem('vb.theme.tokens.v3');
+          legacyThemeKeys.forEach((legacyKey) => localStorage.removeItem(legacyKey));
+          if (!hasLegacyTheme) return;
         } catch {
           return;
         }
