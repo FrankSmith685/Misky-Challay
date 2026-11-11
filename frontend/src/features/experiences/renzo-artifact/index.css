@@ -37,3 +37,79 @@
 .animate-float-dust {
   animation: float-mote 6s ease-in-out infinite;
 }
+
+/* Misky Challay storefront theme: the artifact remains expressive while using
+ * the same light surface, blue brand scale and readable ink as the rest of the
+ * public site. The source artifact uses stone/amber utilities, so these scoped
+ * overrides avoid changing the application's global palette. */
+.renzo-artifact {
+  background: var(--color-surface-muted);
+  color: var(--color-ink);
+}
+
+.renzo-artifact .bg-watercolor-paper {
+  background-color: var(--color-surface-muted);
+  background-image: radial-gradient(var(--color-brand-100) 0.75px, transparent 0.75px),
+    radial-gradient(var(--color-brand-100) 0.75px, var(--color-surface-muted) 0.75px);
+}
+
+.renzo-artifact .vignette-cinematic {
+  box-shadow: inset 0 0 80px color-mix(in srgb, var(--color-brand-900) 12%, transparent);
+}
+
+.renzo-artifact [class*="bg-stone-950"] { background-color: var(--color-surface) !important; }
+.renzo-artifact [class*="bg-stone-900"] { background-color: var(--color-brand-50) !important; }
+.renzo-artifact [class*="bg-stone-800"] { background-color: var(--color-brand-100) !important; }
+.renzo-artifact [class*="bg-stone-700"] { background-color: var(--color-brand-200) !important; }
+.renzo-artifact [class*="border-stone-"] { border-color: var(--color-line) !important; }
+
+.renzo-artifact [class*="text-stone-50"],
+.renzo-artifact [class*="text-stone-100"],
+.renzo-artifact [class*="text-stone-200"],
+.renzo-artifact [class*="text-stone-300"],
+.renzo-artifact [class*="text-stone-700"],
+.renzo-artifact [class*="text-stone-800"],
+.renzo-artifact [class*="text-stone-900"],
+.renzo-artifact [class*="text-stone-950"] { color: var(--color-ink) !important; }
+.renzo-artifact [class*="text-stone-400"],
+.renzo-artifact [class*="text-stone-500"],
+.renzo-artifact [class*="text-stone-600"] { color: var(--color-ink-muted) !important; }
+
+.renzo-artifact [class*="bg-amber-50"],
+.renzo-artifact [class*="bg-amber-100"] { background-color: var(--color-brand-50) !important; }
+.renzo-artifact [class*="bg-amber-200"],
+.renzo-artifact [class*="bg-amber-300"] { background-color: var(--color-brand-100) !important; }
+.renzo-artifact [class*="bg-amber-400"],
+.renzo-artifact [class*="bg-amber-500"] { background-color: var(--color-brand-600) !important; }
+.renzo-artifact [class*="bg-amber-600"],
+.renzo-artifact [class*="bg-amber-700"],
+.renzo-artifact [class*="bg-amber-950"] { background-color: var(--color-brand-800) !important; }
+.renzo-artifact [class*="text-amber-"] { color: var(--color-brand-700) !important; }
+.renzo-artifact [class*="border-amber-"] { border-color: var(--color-brand-200) !important; }
+.renzo-artifact [class*="from-amber-"] { --tw-gradient-from: var(--color-brand-600) var(--tw-gradient-from-position) !important; }
+.renzo-artifact [class*="to-amber-"] { --tw-gradient-to: var(--color-brand-800) var(--tw-gradient-to-position) !important; }
+.renzo-artifact [class*="via-amber-"] {
+  --tw-gradient-stops: var(--tw-gradient-from), var(--color-brand-200) var(--tw-gradient-via-position), var(--tw-gradient-to) !important;
+}
+
+/* Replace the artifact's cinematic stone gradients with the storefront's
+ * pale-blue surfaces so no section falls back to a black or charcoal panel. */
+.renzo-artifact [class*="from-stone-"] {
+  --tw-gradient-from: var(--color-brand-50) var(--tw-gradient-from-position) !important;
+}
+.renzo-artifact [class*="via-stone-"] {
+  --tw-gradient-stops: var(--tw-gradient-from), var(--color-surface) var(--tw-gradient-via-position), var(--tw-gradient-to) !important;
+}
+.renzo-artifact [class*="to-stone-"] {
+  --tw-gradient-to: var(--color-surface) var(--tw-gradient-to-position) !important;
+}
+.renzo-artifact [class*="via-rose-"] {
+  --tw-gradient-stops: var(--tw-gradient-from), var(--color-brand-100) var(--tw-gradient-via-position), var(--tw-gradient-to) !important;
+}
+
+.renzo-artifact [class*="bg-rose-"],
+.renzo-artifact [class*="bg-orange-"] { background-color: var(--color-brand-100) !important; }
+.renzo-artifact [class*="text-rose-"],
+.renzo-artifact [class*="text-orange-"] { color: var(--color-brand-700) !important; }
+.renzo-artifact [class*="border-rose-"],
+.renzo-artifact [class*="border-orange-"] { border-color: var(--color-brand-200) !important; }
