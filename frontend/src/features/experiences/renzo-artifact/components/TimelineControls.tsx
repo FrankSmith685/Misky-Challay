@@ -88,7 +88,7 @@ export const TimelineControls: React.FC<TimelineControlsProps> = ({
         <div className="flex w-full items-center justify-between gap-3 sm:w-auto sm:justify-start">
           <button
             onClick={onTogglePlay}
-            className="p-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-stone-950 font-semibold transition-all shadow-md flex items-center justify-center"
+            className="p-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 active:scale-95 text-white font-semibold transition-all shadow-md flex items-center justify-center"
             title={isPlaying ? 'Pausar (Espacio)' : 'Reproducir (Espacio)'}
           >
             {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
@@ -183,7 +183,7 @@ export const TimelineControls: React.FC<TimelineControlsProps> = ({
               step="0.05"
               value={isMuted ? 0 : volume}
               onChange={(e) => onChangeVolume(parseFloat(e.target.value))}
-              className="w-16 h-1.5 bg-stone-800 rounded-lg accent-amber-400 cursor-pointer"
+              className="w-16 h-1.5 bg-stone-800 rounded-lg accent-brand-600 cursor-pointer"
               title="Volumen de banda sonora acústica"
             />
           </div>
@@ -192,21 +192,21 @@ export const TimelineControls: React.FC<TimelineControlsProps> = ({
           <div className="hidden lg:flex items-center bg-stone-950 p-0.5 rounded-lg border border-stone-800 text-[11px] font-mono">
             <button
               onClick={() => onChangeAspectRatio('16:9')}
-              className={`px-2 py-0.5 rounded ${aspectRatio === '16:9' ? 'bg-stone-800 text-amber-200' : 'text-stone-400'}`}
+              className={`px-2 py-0.5 rounded ${aspectRatio === '16:9' ? 'bg-brand-700 text-white' : 'text-ink-muted'}`}
               title="16:9 Panorámico Estándar"
             >
               16:9
             </button>
             <button
               onClick={() => onChangeAspectRatio('9:16')}
-              className={`px-2 py-0.5 rounded ${aspectRatio === '9:16' ? 'bg-stone-800 text-amber-200' : 'text-stone-400'}`}
+              className={`px-2 py-0.5 rounded ${aspectRatio === '9:16' ? 'bg-brand-700 text-white' : 'text-ink-muted'}`}
               title="9:16 Vertical para Historias de WhatsApp / Instagram"
             >
               9:16
             </button>
             <button
               onClick={() => onChangeAspectRatio('cinema')}
-              className={`px-2 py-0.5 rounded ${aspectRatio === 'cinema' ? 'bg-stone-800 text-amber-200' : 'text-stone-400'}`}
+              className={`px-2 py-0.5 rounded ${aspectRatio === 'cinema' ? 'bg-brand-700 text-white' : 'text-ink-muted'}`}
               title="2.39:1 Cinema Scope"
             >
               2.39:1

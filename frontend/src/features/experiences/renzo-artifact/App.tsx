@@ -160,8 +160,8 @@ export default function App() {
               />
             </div>
             <span>Misky Challay</span>
-            <span className="text-amber-500 font-normal">·</span>
-            <span className="hidden font-sans-ui text-xs font-semibold text-amber-300/90 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 sm:inline">
+            <span className="text-brand-600 font-normal">·</span>
+            <span className="hidden font-sans-ui text-xs font-semibold text-brand-700 bg-brand-50 px-2 py-0.5 rounded-full border border-brand-200 sm:inline">
               Pasteler-IA
             </span>
           </a>
@@ -186,7 +186,7 @@ export default function App() {
           <div className="flex items-center gap-3 shrink-0">
             <button
               onClick={() => setIsCardOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-stone-950 bg-amber-400 hover:bg-amber-300 rounded-xl transition-all shadow-md active:scale-95 whitespace-nowrap shrink-0"
+              className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-xl transition-all shadow-md active:scale-95 whitespace-nowrap shrink-0"
             >
               <Gift className="w-4 h-4" />
               <span className="hidden sm:inline">Tarjeta &amp; Pastel</span>
@@ -364,7 +364,7 @@ export default function App() {
             <div className="pt-2 flex flex-wrap items-center gap-4">
               <button
                 onClick={() => setIsCardOpen(true)}
-                className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-bold transition-all shadow-md active:scale-95 flex items-center gap-2"
+                className="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold transition-all shadow-md active:scale-95 flex items-center gap-2"
               >
                 <Gift className="w-4 h-4" />
                 <span>Ver y Personalizar Carta de Cumpleaños</span>

@@ -74,7 +74,7 @@ export const GalleryComparison: React.FC<GalleryComparisonProps> = ({
                     referrerPolicy="no-referrer"
                     className="w-full h-full object-cover rounded"
                   />
-                  <div className="absolute -top-2 -left-2 bg-amber-500 text-stone-950 text-[9px] font-bold px-1.5 py-0.5 rounded-full shadow">
+                  <div className="absolute -top-2 -left-2 bg-brand-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full shadow">
                     Original
                   </div>
                 </div>
@@ -82,19 +82,19 @@ export const GalleryComparison: React.FC<GalleryComparisonProps> = ({
                 {/* Quick Jump Overlay Button */}
                 <button
                   onClick={() => onSelectScene(scene.startTime)}
-                  className="absolute inset-0 bg-stone-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 text-white font-medium text-xs backdrop-blur-[2px]"
+                  className="absolute inset-0 bg-brand-900/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 text-white font-medium text-xs backdrop-blur-[2px]"
                 >
-                  <div className="p-2.5 rounded-full bg-amber-500 text-stone-950 font-bold shadow-lg transform group-hover:scale-110 transition-transform">
+                  <div className="p-2.5 rounded-full bg-brand-600 text-white font-bold shadow-lg transform group-hover:scale-110 transition-transform">
                     <Play className="w-4 h-4 fill-current ml-0.5" />
                   </div>
-                  <span className="bg-stone-900/90 px-3 py-1.5 rounded-lg border border-amber-400/30">
+                  <span className="bg-brand-900/90 px-3 py-1.5 rounded-lg border border-brand-200/60 text-white">
                     Reproducir Escena
                   </span>
                 </button>
 
                 {/* Timestamp Pill */}
-                <div className="absolute top-2.5 left-2.5 bg-stone-950/80 backdrop-blur-md px-2 py-1 rounded text-[11px] font-mono text-amber-200 border border-amber-500/30 flex items-center gap-1">
-                  <Clock className="w-3 h-3 text-amber-400" />
+                <div className="absolute top-2.5 left-2.5 bg-brand-900/85 backdrop-blur-md px-2 py-1 rounded text-[11px] font-mono text-white border border-brand-200/60 flex items-center gap-1">
+                  <Clock className="w-3 h-3 text-brand-100" />
                   <span>{scene.startTime}s - {scene.endTime}s</span>
                 </div>
               </div>

@@ -123,7 +123,7 @@ export const AnimatedPlayer: React.FC<AnimatedPlayerProps> = ({
                       transition: fpsMode === 24 ? 'transform 41ms linear' : 'transform 16ms linear',
                     }}
                   />
-                  <div className="absolute top-3 left-3 bg-stone-900/80 backdrop-blur-md px-2.5 py-1 rounded text-[11px] font-medium text-amber-200 border border-amber-500/30">
+                  <div className="absolute top-3 left-3 bg-brand-900/80 backdrop-blur-md px-2.5 py-1 rounded text-[11px] font-medium text-white border border-brand-200/60">
                     Acuarela Ghibli
                   </div>
                 </div>
@@ -140,7 +140,7 @@ export const AnimatedPlayer: React.FC<AnimatedPlayerProps> = ({
                       transition: fpsMode === 24 ? 'transform 41ms linear' : 'transform 16ms linear',
                     }}
                   />
-                  <div className="absolute top-3 right-3 bg-stone-900/80 backdrop-blur-md px-2.5 py-1 rounded text-[11px] font-medium text-amber-200 border border-amber-500/30">
+                  <div className="absolute top-3 right-3 bg-brand-900/80 backdrop-blur-md px-2.5 py-1 rounded text-[11px] font-medium text-white border border-brand-200/60">
                     Memoria Real
                   </div>
                 </div>
@@ -221,7 +221,7 @@ export const AnimatedPlayer: React.FC<AnimatedPlayerProps> = ({
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center pointer-events-none px-6 text-center">
           {/* Subtle dark backdrop glow to ensure maximum readability */}
           <div
-            className="absolute inset-0 bg-gradient-to-t from-stone-950/60 via-stone-900/35 to-stone-950/40 backdrop-blur-[1px] transition-opacity duration-1000"
+            className="absolute inset-0 bg-gradient-to-t from-brand-900/70 via-brand-900/40 to-brand-900/10 backdrop-blur-[1px] transition-opacity duration-1000"
             style={{ opacity: Math.max(typographyState.opacity1, typographyState.opacity2) * 0.85 }}
           />
 
@@ -234,12 +234,12 @@ export const AnimatedPlayer: React.FC<AnimatedPlayerProps> = ({
                 transform: `translateY(${(1 - typographyState.opacity1) * 15}px)`,
               }}
             >
-              <div className="inline-flex items-center gap-2 mb-1 text-amber-200/90 text-xs sm:text-sm tracking-widest uppercase font-semibold">
-                <Heart className="w-3.5 h-3.5 fill-amber-300 text-amber-300" />
+              <div className="inline-flex items-center gap-2 mb-1 text-brand-100 text-xs sm:text-sm tracking-widest uppercase font-semibold">
+                <Heart className="w-3.5 h-3.5 fill-brand-200 text-brand-100" />
                 <span>Un mensaje del corazón</span>
-                <Heart className="w-3.5 h-3.5 fill-amber-300 text-amber-300" />
+                <Heart className="w-3.5 h-3.5 fill-brand-200 text-brand-100" />
               </div>
-              <h2 className="font-handwriting text-3xl sm:text-5xl md:text-6xl text-amber-50 drop-shadow-[0_4px_16px_rgba(0,0,0,0.8)] font-bold tracking-wide leading-tight">
+              <h2 className="font-handwriting text-3xl sm:text-5xl md:text-6xl text-white drop-shadow-[0_4px_16px_rgba(0,0,0,0.8)] font-bold tracking-wide leading-tight">
                 “El mejor regalo es tener una gran familia”
               </h2>
             </div>
@@ -256,20 +256,20 @@ export const AnimatedPlayer: React.FC<AnimatedPlayerProps> = ({
                 }}
               >
                 <div className="relative inline-block">
-                  <h1 className="font-handwriting text-4xl sm:text-6xl md:text-7xl font-bold bg-gradient-to-r from-amber-200 via-amber-100 to-amber-300 bg-clip-text text-transparent drop-shadow-[0_4px_24px_rgba(251,191,36,0.5)]">
+                  <h1 className="font-handwriting text-4xl sm:text-6xl md:text-7xl font-bold bg-gradient-to-r from-brand-100 via-white to-brand-200 bg-clip-text text-transparent drop-shadow-[0_4px_24px_rgba(31,72,111,0.5)]">
                     ¡Feliz Cumpleaños, Renzo!
                   </h1>
-                  <Sparkles className="absolute -top-3 -right-6 w-6 h-6 text-amber-300 animate-pulse" />
-                  <Sparkles className="absolute -bottom-2 -left-6 w-5 h-5 text-amber-400 animate-pulse delay-300" />
+                  <Sparkles className="absolute -top-3 -right-6 w-6 h-6 text-brand-100 animate-pulse" />
+                  <Sparkles className="absolute -bottom-2 -left-6 w-5 h-5 text-brand-200 animate-pulse delay-300" />
                 </div>
-                <p className="mt-3 text-amber-100/90 text-sm sm:text-base font-medium max-w-lg mx-auto font-sans-ui drop-shadow-md">
+                <p className="mt-3 text-brand-50 text-sm sm:text-base font-medium max-w-lg mx-auto font-sans-ui drop-shadow-md">
                   Hoy celebramos tu vida, tu entrega y el infinito amor que compartes con nosotros cada día.
                 </p>
 
                 {/* Misky Challay Digital Bakery Concept Outro Logo Badge (fades in at 8.6s) */}
                 {currentTime >= 8.5 && (
                   <div
-                    className="mt-6 inline-flex items-center gap-3.5 bg-stone-950/85 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-amber-400/50 shadow-2xl transition-all duration-700 transform"
+                    className="mt-6 inline-flex items-center gap-3.5 bg-brand-900/85 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-brand-200/60 shadow-2xl transition-all duration-700 transform"
                     style={{
                       opacity: Math.min(1, (currentTime - 8.5) / 0.8),
                       transform: `translateY(${(1 - Math.min(1, (currentTime - 8.5) / 0.8)) * 10}px)`,
@@ -284,13 +284,13 @@ export const AnimatedPlayer: React.FC<AnimatedPlayerProps> = ({
                     </div>
                     <div className="text-left font-sans-ui">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-brand-100">
                           Experiencia Conceptual
                         </span>
                         <span className="text-stone-500 text-[10px]">·</span>
-                        <span className="text-[10px] text-amber-100/80 font-medium">Pasteler-IA Artesanal</span>
+                        <span className="text-[10px] text-brand-50 font-medium">Pasteler-IA Artesanal</span>
                       </div>
-                      <p className="text-[11px] text-stone-300 font-medium">
+                      <p className="text-[11px] text-brand-100 font-medium">
                         Endulzando momentos únicos con arte & tecnología
                       </p>
                     </div>
@@ -307,7 +307,7 @@ export const AnimatedPlayer: React.FC<AnimatedPlayerProps> = ({
         className="absolute inset-0 z-15 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
         aria-label={isPlaying ? 'Pausar video' : 'Reproducir video'}
       >
-        <div className="bg-stone-950/70 hover:bg-stone-950/90 backdrop-blur-md p-4 rounded-full border border-amber-400/40 text-amber-200 shadow-2xl transform group-hover:scale-105 transition-all">
+        <div className="bg-brand-900/75 hover:bg-brand-900/90 backdrop-blur-md p-4 rounded-full border border-brand-200/60 text-white shadow-2xl transform group-hover:scale-105 transition-all">
           {isPlaying ? (
             <svg className="w-8 h-8 fill-current" viewBox="0 0 24 24">
               <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />

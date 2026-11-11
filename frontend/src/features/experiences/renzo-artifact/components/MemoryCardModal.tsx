@@ -30,19 +30,19 @@ export const MemoryCardModal: React.FC<MemoryCardModalProps> = ({ isOpen, onClos
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-stone-950/80 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-brand-900/80 backdrop-blur-md animate-in fade-in duration-200">
       <div className="relative w-full max-w-2xl bg-amber-50 text-stone-900 rounded-3xl shadow-2xl border-4 border-amber-200/80 overflow-hidden flex flex-col max-h-[92vh]">
         {/* Top Decorative Bar */}
-        <div className="bg-gradient-to-r from-amber-800 via-amber-700 to-amber-900 text-amber-100 px-6 py-4 flex items-center justify-between shadow-md">
+        <div className="bg-brand-800 text-white px-6 py-4 flex items-center justify-between shadow-md">
           <div className="flex items-center gap-2">
-            <Heart className="w-5 h-5 fill-amber-300 text-amber-300 animate-pulse" />
+            <Heart className="w-5 h-5 fill-brand-200 text-brand-100 animate-pulse" />
             <h3 className="font-serif-display text-lg font-bold tracking-wide">
               Tarjeta de Dedicatoria Especial
             </h3>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-full text-amber-200 hover:text-white hover:bg-amber-600/50 transition-colors"
+            className="p-1 rounded-full text-white hover:text-brand-100 hover:bg-brand-700 transition-colors"
             title="Cerrar"
           >
             <X className="w-5 h-5" />
