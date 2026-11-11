@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { MenuItem, TextField } from '@mui/material';
 import { Link } from 'react-router-dom';
-import { ArrowUpRight, CheckCircle2, Sparkles } from 'lucide-react';
+import { ArrowUpRight, CheckCircle2, Play, QrCode, Sparkles } from 'lucide-react';
 import { Alert } from '@components/ui/Alert';
 import './experiences.css';
 import { FormSection } from '@components/ui/FormSection';
@@ -67,6 +67,32 @@ export function ExperienceCheckout({
           >
             Ver demostración QR
             <ArrowUpRight size={13} className="ml-1" />
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            component={Link}
+            to="/experiencias/demo-video"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Ver demostración de video horizontal"
+            className="w-full sm:w-auto"
+          >
+            Ver demo de video
+            <Play size={13} className="ml-1" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            component={Link}
+            to="/experiencias/renzo-qr"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Ver QR del artefacto interactivo de Renzo"
+            className="w-full sm:w-auto"
+          >
+            Ver QR del artefacto
+            <QrCode size={13} className="ml-1" />
           </Button>
         </div>
         <TextField

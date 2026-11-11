@@ -20,6 +20,8 @@ export function ExperienceServiceEditor({
   editable: boolean;
   busy: boolean;
 }) {
+  const selectedTemplate = templates.find((template) => template.id === value.templateId);
+  const activeServiceReady = Boolean(value.templateId && selectedTemplate?.isActive);
   const field = <K extends keyof ExperiencePackage>(key: K, next: ExperiencePackage[K]) =>
     onChange({ ...value, [key]: next });
   return (
@@ -150,12 +152,17 @@ export function ExperienceServiceEditor({
             ))}
           </FormGrid>
         </div>
-        <details className="exp-settings">
+        <details className="exp-settings" open={value.isActive && !activeServiceReady}>
           <summary>
             <Settings2 size={15} />
             Plantilla y orden de presentación
           </summary>
           <div className="pt-5">
+            {value.isActive && !activeServiceReady && (
+              <p className="mb-4 rounded-field border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
+                Para activar este servicio, selecciona una plantilla disponible y guarda primero la plantilla.
+              </p>
+            )}
             <FormGrid>
               <TextField
                 select
@@ -197,7 +204,12 @@ export function ExperienceServiceEditor({
       </fieldset>
       {editable && (
         <div className="mt-6 flex flex-wrap items-center justify-end gap-3 border-t border-line pt-5">
-          <Button leftIcon={<Save size={16} />} isLoading={busy} onClick={onSave}>
+          <Button
+            leftIcon={<Save size={16} />}
+            isLoading={busy}
+            disabled={value.isActive && !activeServiceReady}
+            onClick={onSave}
+          >
             Guardar servicio
           </Button>
         </div>

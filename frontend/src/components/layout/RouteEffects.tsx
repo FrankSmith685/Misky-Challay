@@ -11,6 +11,8 @@ const FALLBACK_CONTENT = defaultStorefront();
 
 /** Titulo por ruta exacta. Se indexa por las constantes para que no se separen del router. */
 const EXACT_TITLES: Record<string, string> = {
+  '/experiencias/renzo': 'Experiencia web de Renzo',
+  '/experiencias/renzo-qr': 'QR de la experiencia de Renzo',
   [ROUTES.business]: 'Para empresas',
   [ROUTES.howToOrder]: 'Cómo hacer tu pedido',
   [ROUTES.adminHomeContent]: 'Contenido del inicio',

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, BarChart3, Clock, Download, LayoutDashboard, Lock, MapPinned, Percent, RefreshCw, ScanLine, ShoppingBag, Smartphone, TrendingUp, WalletCards, WifiOff, XCircle } from 'lucide-react';
+import { AlertTriangle, BarChart3, Clock, Download, LayoutDashboard, Lock, MapPinned, Percent, Play, RefreshCw, ScanLine, ShoppingBag, Smartphone, TrendingUp, WalletCards, WifiOff, XCircle } from 'lucide-react';
 import { Card, CardDescription } from '@components/ui/Card';
 import { Button } from '@components/ui/Button';
 import { PageLoader } from '@components/common/PageLoader';
@@ -226,6 +226,11 @@ const AdminDashboardPage = () => {
   const arQrOpens = data.experience?.AR_QR_OPEN ?? 0;
   const arTargetsFound = data.experience?.AR_TARGET_FOUND ?? 0;
   const arCameraErrors = data.experience?.AR_CAMERA_ERROR ?? 0;
+  const videoQrOpens = data.experience?.VIDEO_QR_OPEN ?? 0;
+  const videoPlays = data.experience?.VIDEO_PLAY ?? 0;
+  const videoHalfway = data.experience?.VIDEO_PROGRESS ?? 0;
+  const videoCompletes = data.experience?.VIDEO_COMPLETE ?? 0;
+  const videoShares = data.experience?.VIDEO_SHARE ?? 0;
 
   return (
     <div>
@@ -362,6 +367,11 @@ const AdminDashboardPage = () => {
         <Card className="p-5">
           <div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-card bg-brand-50 text-brand-700"><ScanLine className="size-5" /></span><div><h2 className="font-bold text-ink">Experiencias AR</h2><p className="text-xs text-ink-muted">Recorrido de la tarjeta QR · {experienceScope}</p></div></div>
           <div className="mt-4 grid grid-cols-3 gap-3"><div className="rounded-card bg-surface-muted p-3"><p className="text-2xl font-black text-ink">{arQrOpens}</p><p className="text-xs text-ink-muted">QR abiertos</p></div><div className="rounded-card bg-brand-50 p-3"><p className="text-2xl font-black text-brand-800">{arTargetsFound}</p><p className="text-xs text-brand-700">marcadores detectados</p></div><div className="rounded-card bg-red-50 p-3"><p className="text-2xl font-black text-red-800">{arCameraErrors}</p><p className="text-xs text-red-700">errores de cámara</p></div></div>
+        </Card>
+        <Card className="p-5">
+          <div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-card bg-accent-50 text-accent-700"><Play className="size-5" /></span><div><h2 className="font-bold text-ink">Experiencias de video</h2><p className="text-xs text-ink-muted">Piloto horizontal con QR · {experienceScope}</p></div></div>
+          <div className="mt-4 grid grid-cols-2 gap-3 xl:grid-cols-4"><div className="rounded-card bg-surface-muted p-3"><p className="text-2xl font-black text-ink">{videoQrOpens}</p><p className="text-xs text-ink-muted">QR abiertos</p></div><div className="rounded-card bg-accent-50 p-3"><p className="text-2xl font-black text-accent-800">{videoPlays}</p><p className="text-xs text-accent-700">reproducciones</p></div><div className="rounded-card bg-brand-50 p-3"><p className="text-2xl font-black text-brand-800">{videoHalfway}</p><p className="text-xs text-brand-700">hitos de progreso</p></div><div className="rounded-card bg-emerald-50 p-3"><p className="text-2xl font-black text-emerald-800">{videoCompletes}</p><p className="text-xs text-emerald-700">completados</p></div></div>
+          <p className="mt-3 text-xs text-ink-muted">Compartidos: <strong className="text-ink">{videoShares}</strong>. El progreso registra los hitos 25/50/75/90 %.</p>
         </Card>
         <Card className="p-5">
           <div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-card bg-brand-50 text-brand-700"><MapPinned className="size-5" /></span><div><h2 className="font-bold text-ink">Calidad de cobertura</h2><p className="text-xs text-ink-muted">Validaciones reales del cliente · {experienceScope}</p></div></div>

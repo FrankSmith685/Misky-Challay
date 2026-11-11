@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -10,12 +10,13 @@ import {
   QrCode,
   RefreshCw,
   ScanLine,
+  Share2,
   Sparkles,
 } from 'lucide-react';
 import { ExperienceEmpty } from './ExperienceUI';
 import { Button } from '@components/ui/Button';
 import { publicCakeWebOrigin } from '../cakes/utils/cakePreviewLinks';
-import { demoScene, experiencesApi, type ExperienceScene } from './experiences.service';
+import { demoScene, demoVideoScene, experiencesApi, type ExperienceScene } from './experiences.service';
 import { useExperienceMedia } from './useExperienceMedia';
 import { ExperienceViewer } from './ExperienceViewer';
 import { ExperienceCamera } from './ExperienceCamera';
@@ -24,7 +25,8 @@ import { trackUxEvent } from '@services/analytics';
 export default function ExperiencePage() {
   const { token } = useParams();
   const [searchParams] = useSearchParams();
-  const demo = token === 'demo';
+  const videoDemo = token === 'demo-video';
+  const demo = token === 'demo' || videoDemo;
   const cameraRequested = searchParams.get('camera') === '1';
   const [cameraOpen, setCameraOpen] = useState(false);
   const cameraAutoOpenKey = useRef('');
@@ -35,8 +37,8 @@ export default function ExperiencePage() {
     expiresAt?: string;
   } | null>(null);
   const [error, setError] = useState('');
+  const trackedOpenKey = useRef('');
   useEffect(() => {
-    void trackUxEvent('AR_QR_OPEN', { source: demo ? 'demo' : 'shared' });
     let active = true;
     setError('');
     const refresh = () => {
@@ -67,18 +69,34 @@ export default function ExperiencePage() {
       clearInterval(timer);
     };
   }, [demo, token]);
-  const current = demo
-    ? { scene: demoScene, expiresAt: undefined }
-    : data?.key === token
-      ? data
-      : null;
+  const current = useMemo(
+    () =>
+      demo
+        ? { scene: videoDemo ? demoVideoScene : demoScene, expiresAt: undefined }
+        : data?.key === token
+          ? data
+          : null,
+    [data, demo, token, videoDemo],
+  );
+  useEffect(() => {
+    if (!current) return;
+    const key = `${demo ? 'demo' : token ?? 'shared'}:${current.scene.content}`;
+    if (trackedOpenKey.current === key) return;
+    trackedOpenKey.current = key;
+    const metadata = {
+      source: videoDemo ? 'demo-video' : demo ? 'demo' : 'shared',
+      content: current.scene.content,
+    } as const;
+    if (current.scene.content === 'VIDEO') void trackUxEvent('VIDEO_QR_OPEN', metadata);
+    else void trackUxEvent('AR_QR_OPEN', metadata);
+  }, [current, demo, token, videoDemo]);
   const {
     media,
     loading,
     error: mediaError,
   } = useExperienceMedia(current?.scene ?? null, `/experiences/public/${token}`, demo);
   const cameraAvailable = window.isSecureContext && Boolean(navigator.mediaDevices?.getUserMedia);
-  const cameraTargetKey = current ? (token ?? 'demo') : '';
+  const cameraTargetKey = current && current.scene.content !== 'VIDEO' ? (token ?? 'demo') : '';
   useEffect(() => {
     if (!cameraRequested) {
       cameraAutoOpenKey.current = '';
@@ -109,15 +127,21 @@ export default function ExperiencePage() {
         <header className="exp-hero mb-7 flex items-center justify-between gap-6">
           <div className="max-w-2xl">
             <p className="exp-kicker mb-3">
-              {demo ? 'Demostración QR · Misky Challay' : 'Una experiencia para tu celebración'}
+              {demo
+                ? videoDemo
+                  ? 'Demostración de video QR · Misky Challay'
+                  : 'Demostración QR · Misky Challay'
+                : 'Una experiencia para tu celebración'}
             </p>
             <h1 className="text-3xl font-extrabold leading-tight sm:text-4xl">
-              {demo ? 'Una torta que cobra vida' : 'Tu experiencia personalizada'}
+              {videoDemo ? 'Un video horizontal para tu celebración' : demo ? 'Una torta que cobra vida' : 'Tu experiencia personalizada'}
             </h1>
             <p className="mt-3 max-w-xl text-sm leading-7 text-white/75">
-              {demo
-                ? 'Una torta 3D, una dedicatoria y un saludo especial. Todo desde una tarjeta con QR.'
-                : 'Abre tu dedicatoria, disfruta cada detalle y comparte este recuerdo con quienes celebran contigo.'}
+              {videoDemo
+                ? 'Escanea el QR, toca reproducir y disfruta un saludo preparado para acompañar tu celebración.'
+                : demo
+                  ? 'Una torta 3D, una dedicatoria y un saludo especial. Todo desde una tarjeta con QR.'
+                  : 'Abre tu dedicatoria, disfruta cada detalle y comparte este recuerdo con quienes celebran contigo.'}
             </p>
             <div className="mt-5 flex flex-wrap gap-2">
               {[
@@ -160,11 +184,18 @@ export default function ExperiencePage() {
           </div>
         )}
         <ol className="mb-7 grid gap-3 sm:grid-cols-3" aria-label="Cómo funciona la experiencia QR">
-          {[
-            { icon: QrCode, title: 'Escanea el QR', text: 'Abre esta experiencia desde tu celular.' },
-            { icon: Camera, title: 'Activa la cámara', text: 'Solo la necesitas para probar AR.' },
-            { icon: ScanLine, title: 'Enfoca y descubre', text: 'La escena aparece sobre tu tarjeta.' },
-          ].map(({ icon: Icon, title, text }) => (
+          {(current?.scene.content === 'VIDEO'
+            ? [
+                { icon: QrCode, title: 'Escanea el QR', text: 'Abre el video desde tu celular.' },
+                { icon: Play, title: 'Toca reproducir', text: 'El video se adapta a la pantalla.' },
+                { icon: Share2, title: 'Comparte el recuerdo', text: 'Guarda o comparte el enlace.' },
+              ]
+            : [
+                { icon: QrCode, title: 'Escanea el QR', text: 'Abre esta experiencia desde tu celular.' },
+                { icon: Camera, title: 'Activa la cámara', text: 'Solo la necesitas para probar AR.' },
+                { icon: ScanLine, title: 'Enfoca y descubre', text: 'La escena aparece sobre tu tarjeta.' },
+              ]
+          ).map(({ icon: Icon, title, text }) => (
             <li key={title} className="flex items-start gap-3 rounded-card border border-line bg-white p-4">
               <span className="grid size-9 shrink-0 place-items-center rounded-field bg-brand-50 text-brand-700"><Icon className="size-4" aria-hidden="true" /></span>
               <span><strong className="block text-sm text-ink">{title}</strong><span className="mt-1 block text-xs leading-5 text-ink-muted">{text}</span></span>

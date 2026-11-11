@@ -511,7 +511,7 @@ export interface Reports {
   };
   quality: { cancelled: number; cancellationRate: number };
   operations: { avgPrepMinutes: number; ticketsMeasured: number };
-  experience: Partial<Record<'COVERAGE_SUCCESS' | 'COVERAGE_FAIL' | 'COVERAGE_ERROR' | 'CHECKOUT_START' | 'CHECKOUT_ERROR' | 'PAYMENT_REDIRECT' | 'APP_OPEN' | 'MENU_VIEW' | 'PRODUCT_VIEW' | 'FAVORITE_ADD' | 'FAVORITE_REMOVE' | 'CART_ADD' | 'CHECKOUT_STEP' | 'ORDER_COMPLETED' | 'REVIEW_SUBMITTED' | 'RECOMMENDATION_OPEN' | 'AR_QR_OPEN' | 'AR_CAMERA_REQUEST' | 'AR_CAMERA_READY' | 'AR_TARGET_FOUND' | 'AR_TARGET_LOST' | 'AR_CAMERA_ERROR' | 'AR_FALLBACK_3D', number>>;
+  experience: Partial<Record<'COVERAGE_SUCCESS' | 'COVERAGE_FAIL' | 'COVERAGE_ERROR' | 'CHECKOUT_START' | 'CHECKOUT_ERROR' | 'PAYMENT_REDIRECT' | 'APP_OPEN' | 'MENU_VIEW' | 'PRODUCT_VIEW' | 'FAVORITE_ADD' | 'FAVORITE_REMOVE' | 'CART_ADD' | 'CHECKOUT_STEP' | 'ORDER_COMPLETED' | 'REVIEW_SUBMITTED' | 'RECOMMENDATION_OPEN' | 'AR_QR_OPEN' | 'AR_CAMERA_REQUEST' | 'AR_CAMERA_READY' | 'AR_TARGET_FOUND' | 'AR_TARGET_LOST' | 'AR_CAMERA_ERROR' | 'AR_FALLBACK_3D' | 'VIDEO_QR_OPEN' | 'VIDEO_PLAY' | 'VIDEO_PROGRESS' | 'VIDEO_COMPLETE' | 'VIDEO_SHARE' | 'VIDEO_ERROR', number>>;
   pendingPayments: { count: number; amount: number };
   platform?: { rate: number; accrued: number; settled: number; outstanding: number };
   topProducts: Array<{ name: string; units: number; revenue: number }>;

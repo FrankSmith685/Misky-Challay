@@ -1,6 +1,8 @@
 import { lazy as lazyExperience } from 'react';
 const ExperiencePage = lazyExperience(() => import('@features/experiences/ExperiencePage'));
 const ExperienceStudioPage = lazyExperience(() => import('@features/experiences/ExperienceStudioPage'));
+const RenzoArtifactPage = lazyExperience(() => import('@features/experiences/RenzoArtifactPage'));
+const RenzoArtifactQrPage = lazyExperience(() => import('@features/experiences/RenzoArtifactQrPage'));
 import { lazy, Suspense } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { ROUTES } from '@constants/routes';
@@ -131,6 +133,8 @@ export const router = createBrowserRouter([
       { path: ROUTES.home, element: withSuspense(<HomePage />) },
       { path: ROUTES.howToOrder, element: withSuspense(<HowToOrderPage />) },
       { path: ROUTES.menu, element: withSuspense(<MenuPage />) },
+      { path: '/experiencias/renzo', element: withSuspense(<RenzoArtifactPage />) },
+      { path: '/experiencias/renzo-qr', element: withSuspense(<RenzoArtifactQrPage />) },
       { path: '/experiencias/:token', element: withSuspense(<ExperiencePage />) },
       { path: ROUTES.business, element: withSuspense(<BusinessPage />) },
       { path: ROUTES.customCake, element: withSuspense(<CustomCakeEntryPage />) },

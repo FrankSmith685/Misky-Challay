@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@components/ui/Button';
 import toast from '@components/mui/MuiToast';
+import { trackUxEvent } from '@services/analytics';
 import { CAKE_AR_TARGET } from '../cakes/ar/cakeAr';
 import { createCakeArCard } from '../cakes/ar/createCakeArCard';
 import type { ExperienceScene } from './experiences.service';
@@ -82,8 +83,39 @@ export function ExperienceViewer({
   const [copied, setCopied] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const videoMetrics = useRef<{
+    source: string;
+    played: boolean;
+    completed: boolean;
+    progress: Set<number>;
+  }>({ source: '', played: false, completed: false, progress: new Set() });
   const layers = scene.layers ?? [];
   const qrSettings = useMemo(() => scene.qr ?? { dark: '#003a60', light: '#ffffff', frame: 'LIGHT' as const, label: 'Escanea y descubre', logo: 'BRAND' as const, background: 'SOFT' as const }, [scene.qr]);
+  useEffect(() => {
+    videoMetrics.current = { source: media.video ?? '', played: false, completed: false, progress: new Set() };
+  }, [media.video]);
+  const videoMetadata = () => ({ mode, content: scene.content });
+  const onVideoPlay = () => {
+    if (!media.video || videoMetrics.current.source !== media.video || videoMetrics.current.played) return;
+    videoMetrics.current.played = true;
+    void trackUxEvent('VIDEO_PLAY', videoMetadata());
+  };
+  const onVideoTimeUpdate = () => {
+    const video = videoRef.current;
+    if (!video || !Number.isFinite(video.duration) || video.duration <= 0) return;
+    const percent = Math.round((video.currentTime / video.duration) * 100);
+    for (const checkpoint of [25, 50, 75, 90]) {
+      if (percent < checkpoint || videoMetrics.current.progress.has(checkpoint)) continue;
+      videoMetrics.current.progress.add(checkpoint);
+      void trackUxEvent('VIDEO_PROGRESS', { ...videoMetadata(), percent: checkpoint });
+    }
+  };
+  const onVideoEnded = () => {
+    if (!media.video || videoMetrics.current.completed) return;
+    videoMetrics.current.completed = true;
+    void trackUxEvent('VIDEO_COMPLETE', videoMetadata());
+  };
+  const onVideoError = () => void trackUxEvent('VIDEO_ERROR', videoMetadata());
   const runLayerAction = async (action: NonNullable<(typeof layers)[number]>['action']) => {
     if (action === 'PLAY_VIDEO') {
       if (!videoRef.current) return toast('Este saludo todavía no tiene un video cargado.');
@@ -101,6 +133,7 @@ export function ExperienceViewer({
           await navigator.clipboard.writeText(url);
           toast.success('Enlace copiado');
         }
+        if (media.video) void trackUxEvent('VIDEO_SHARE', videoMetadata());
       } catch {
         // El usuario puede cerrar el diálogo nativo de compartir sin completar la acción.
       }
@@ -235,7 +268,16 @@ export function ExperienceViewer({
                 src={media.video}
                 className="block aspect-video w-full bg-brand-900 object-contain"
                 aria-label="Video personalizado"
+                onPlay={onVideoPlay}
+                onTimeUpdate={onVideoTimeUpdate}
+                onEnded={onVideoEnded}
+                onError={onVideoError}
               />
+              {mode === 'VIDEO' && (
+                <p className="mt-3 text-center text-xs leading-5 text-ink-muted">
+                  Video horizontal · gira el teléfono o usa pantalla completa para verlo con comodidad.
+                </p>
+              )}
             </ExperiencePanel>
           )}
           <section className="exp-dedication">
@@ -395,6 +437,7 @@ export function ExperienceViewer({
                     await navigator.clipboard.writeText(url);
                     setCopied(true);
                     toast.success('Enlace copiado');
+                    if (media.video) void trackUxEvent('VIDEO_SHARE', videoMetadata());
                   } catch {
                     toast.error('No se pudo copiar el enlace.');
                   }

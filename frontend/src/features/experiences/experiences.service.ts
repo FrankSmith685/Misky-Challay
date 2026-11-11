@@ -111,6 +111,12 @@ export const demoScene: ExperienceScene = {
     },
   ],
 };
+export const demoVideoScene: ExperienceScene = {
+  ...demoScene,
+  content: 'VIDEO',
+  title: 'Un saludo horizontal para tu celebración',
+  message: 'Un video corto, una dedicatoria y un recuerdo para compartir después de la torta.',
+};
 export interface ExperiencePackage {
   id: number;
   version: number;
