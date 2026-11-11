@@ -361,7 +361,7 @@ export default function App() {
               Esta animación celebra tu entrega, tu ternura como papá y el amor infinito de nuestra familia.
             </p>
 
-            <div className="hidden pt-2 flex flex-wrap items-center gap-4">
+            <div className="!hidden pt-2 flex flex-wrap items-center gap-4">
               <button
                 onClick={() => setIsCardOpen(true)}
                 className="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold transition-all shadow-md active:scale-95 flex items-center gap-2"
