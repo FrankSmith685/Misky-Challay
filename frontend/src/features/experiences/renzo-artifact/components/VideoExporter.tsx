@@ -286,7 +286,7 @@ export const VideoExporter: React.FC<VideoExporterProps> = ({ scenes, onOpenCard
         <div className="flex w-full flex-col items-stretch gap-2.5 sm:w-auto sm:flex-row sm:items-center">
           <button
             onClick={onOpenCard}
-            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-semibold transition-all shadow-sm"
+            className="flex items-center justify-center gap-2 rounded-xl border border-brand-700 bg-brand-700 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-brand-800"
           >
             <Sparkles className="w-4 h-4" />
             <span>Ver Tarjeta & Mensaje</span>
@@ -295,7 +295,7 @@ export const VideoExporter: React.FC<VideoExporterProps> = ({ scenes, onOpenCard
           <button
             onClick={handleRecordVideo}
             disabled={isExporting}
-            className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 text-xs font-bold transition-all shadow-md active:scale-95 disabled:opacity-50"
+            className="flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-5 py-2.5 text-xs font-bold text-white shadow-md transition-all hover:bg-brand-700 active:scale-95 disabled:opacity-50"
           >
             {isExporting ? (
               <>
