@@ -11,10 +11,11 @@ interface SelectProps extends Omit<TextFieldProps, 'select' | 'error' | 'helperT
 
 const selectAppearance: SxProps<Theme> = {
   '& .MuiOutlinedInput-root': {
-    minHeight: 52,
+    minHeight: 44,
     borderRadius: 'var(--radius-field)',
     backgroundColor: 'var(--color-surface)',
   },
+  '& .MuiOutlinedInput-root.MuiInputBase-sizeSmall': { minHeight: 44 },
   '& .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--color-line)' },
   '& .MuiSelect-select': { display: 'flex', alignItems: 'center' },
   '& .MuiSelect-icon': { right: 14, fontSize: 20, color: 'var(--color-ink-muted)' },

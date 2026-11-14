@@ -19,7 +19,7 @@ export const ProductCardSkeleton = () => (
 
 /** Cuadrícula de skeletons con la misma forma que la grilla de productos. */
 export const ProductGridSkeleton = ({ count = 8 }: { count?: number }) => (
-  <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:gap-6">
+  <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3 xl:gap-6">
     {Array.from({ length: count }).map((_, index) => (
       <ProductCardSkeleton key={index} />
     ))}

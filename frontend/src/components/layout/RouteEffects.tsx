@@ -86,7 +86,7 @@ const resolveTitle = (pathname: string, search = ''): string => {
 /**
  * Efectos al cambiar de ruta:
  *  - Pone el titulo del navegador (pestañas, historial y lo que se comparte).
- *  - Sube el scroll (no aterrizar a mitad de la nueva pantalla).
+ *  - Sube el scroll al cambiar de pantalla; los filtros de la misma ruta conservan la posicion.
  *  - Mueve el foco al contenido principal (navegación por teclado / lectores).
  *  - Anuncia la página nueva por una región aria-live.
  */
@@ -96,9 +96,14 @@ export const RouteEffects = () => {
   const seoContent = pathname === ROUTES.home || pathname === ROUTES.howToOrder ? content : FALLBACK_CONTENT;
   const [announcement, setAnnouncement] = useState('');
   const isFirstRender = useRef(true);
+  const previousPathname = useRef(pathname);
 
   useEffect(() => {
-    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    const pathnameChanged = previousPathname.current !== pathname;
+    previousPathname.current = pathname;
+    if (pathnameChanged || isFirstRender.current) {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    }
 
     // En la carga inicial no robamos el foco del navegador.
     if (isFirstRender.current) {

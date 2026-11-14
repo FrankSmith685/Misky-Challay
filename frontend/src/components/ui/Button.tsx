@@ -12,6 +12,7 @@ interface ButtonProps extends Omit<MuiButtonProps, 'variant' | 'size' | 'color' 
   leftIcon?: ReactNode;
   component?: ElementType;
   to?: string;
+  state?: unknown;
   target?: string;
   rel?: string;
 }

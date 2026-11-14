@@ -33,13 +33,39 @@ export const MenuHero = ({
       <div className="pointer-events-none absolute -right-32 -top-28 size-[26rem] rounded-full bg-accent-100/70 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-40 left-[34%] size-[22rem] rounded-full bg-tertiary-50 blur-3xl" />
 
-      <div className="container-shell relative grid items-center gap-10 py-10 sm:py-14 lg:grid-cols-[1.05fr_.95fr] lg:gap-16 lg:py-16">
+      <div className="container-shell relative py-6 lg:hidden">
+        <p className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-[.18em] text-brand-700">
+          <span className="h-px w-7 bg-accent-500" aria-hidden="true" />
+          {customView ? 'Diseño acompañado' : 'Catálogo Misky Challay'}
+        </p>
+        <h1 id="catalog-title" className="mt-3 max-w-[20rem] text-[clamp(1.9rem,9vw,2.5rem)] font-black leading-[1.02] tracking-[-.05em] text-ink">
+          {customView ? 'Diseña una torta que se sienta tuya.' : 'Elige algo rico para hoy.'}
+        </h1>
+        <p className="mt-3 max-w-xl text-sm leading-6 text-ink-muted">
+          {customView ? 'Elige sabores, rellenos y detalles para crear tu torta.' : 'Busca una opción, revisa el precio y elige cómo recibirla.'}
+        </p>
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          <Button component="a" href="#catalogo" size="md" className="w-full">Ver productos</Button>
+          <Button
+            component={Link}
+            to={customView ? ROUTES.menu : ROUTES.menuMode('CUSTOM')}
+            size="md"
+            variant="outline"
+            className="w-full"
+            leftIcon={<WandSparkles size={16} />}
+          >
+            Crea tu torta
+          </Button>
+        </div>
+      </div>
+
+      <div className="container-shell relative hidden items-center gap-10 py-10 sm:py-14 lg:grid lg:grid-cols-[1.05fr_.95fr] lg:gap-16 lg:py-16">
         <div className="max-w-2xl">
           <p className="inline-flex items-center gap-2 text-[11px] font-black uppercase tracking-[.18em] text-brand-700">
             <span className="h-px w-8 bg-accent-500" aria-hidden="true" />
             {customView ? 'Diseño acompañado' : 'Catálogo Misky Challay'}
           </p>
-          <h1 id="catalog-title" className="mt-4 max-w-3xl text-[clamp(2.35rem,5vw,4.75rem)] font-black leading-[.98] tracking-[-.055em] text-ink">
+          <h1 className="mt-4 max-w-3xl text-[clamp(2.35rem,5vw,4.75rem)] font-black leading-[.98] tracking-[-.055em] text-ink">
             {customView ? 'Diseña una torta que se sienta tuya.' : 'Dulces momentos para compartir.'}
           </h1>
           <p className="mt-5 max-w-xl text-base leading-8 text-ink-muted sm:text-lg">

@@ -23,6 +23,8 @@ import {
   packageSchema,
   sceneSchema,
   sceneAssetIds,
+  artifactTemplateSchema,
+  artifactAssetIds,
   validateAsset,
   publicExperienceAvailable,
 } from './experience.logic';
@@ -119,6 +121,35 @@ router.get(
     const assetId = id(req.params.id);
     if (!sceneAssetIds(template.sceneJson).includes(assetId)) throw ApiError.notFound();
     const asset = await ExperienceAsset.findOne({ where: { id: assetId, projectId: null } });
+    if (!asset) throw ApiError.notFound();
+    binary(res, asset, req.headers.range);
+  }),
+);
+router.get(
+  '/public/artifacts/:slug',
+  publicRead,
+  asyncHandler(async (req, res) => {
+    const slug = z.string().regex(/^[a-z0-9-]{1,80}$/).parse(req.params.slug);
+    const template = await ExperienceTemplate.findOne({
+      where: { artifactSlug: slug, isActive: true },
+      attributes: ['id', 'name', 'version', 'artifactSlug', 'artifactJson'],
+    });
+    if (!template) throw ApiError.notFound('La plantilla pública no está disponible.');
+    return ok(res, {
+      template: { id: template.id, name: template.name, version: template.version, slug: template.artifactSlug },
+      artifact: template.artifactJson,
+      assetIds: artifactAssetIds(template.artifactJson),
+    });
+  }),
+);
+router.get(
+  '/public/artifacts/:slug/assets/:id',
+  publicRead,
+  asyncHandler(async (req, res) => {
+    const slug = z.string().regex(/^[a-z0-9-]{1,80}$/).parse(req.params.slug);
+    const template = await ExperienceTemplate.findOne({ where: { artifactSlug: slug, isActive: true } });
+    if (!template || !artifactAssetIds(template.artifactJson).includes(id(req.params.id))) throw ApiError.notFound();
+    const asset = await ExperienceAsset.findOne({ where: { id: id(req.params.id), projectId: null } });
     if (!asset) throw ApiError.notFound();
     binary(res, asset, req.headers.range);
   }),
@@ -282,9 +313,22 @@ router.post(
         name: z.string().trim().min(3).max(100),
         sceneJson: sceneSchema,
         isActive: z.boolean(),
+        artifactSlug: z.string().trim().regex(/^[a-z0-9-]{1,80}$/).nullable().optional().default(null),
+        artifactJson: artifactTemplateSchema.nullable().optional().default(null),
       })
       .parse(req.body);
     await service.assets(input.sceneJson);
+    const artifactIds = artifactAssetIds(input.artifactJson);
+    if (artifactIds.length) {
+      const count = await ExperienceAsset.count({ where: { id: { [Op.in]: artifactIds }, projectId: null } });
+      if (count !== artifactIds.length) throw ApiError.badRequest('Una imagen de la plantilla no pertenece a la biblioteca global.');
+    }
+    if (input.artifactSlug) {
+      const duplicate = await ExperienceTemplate.findOne({
+        where: { artifactSlug: input.artifactSlug, ...(req.body.id ? { id: { [Op.ne]: id(req.body.id) } } : {}) },
+      });
+      if (duplicate) throw ApiError.conflict('Ya existe una plantilla con ese slug público.');
+    }
     const activePackages = await ExperiencePackage.findAll({
       where: { templateId: req.body.id ? id(req.body.id) : -1, isActive: true },
     });

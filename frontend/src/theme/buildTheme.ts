@@ -225,7 +225,7 @@ export const buildTheme = (tokens: ThemeTokens): Theme => {
       MuiOutlinedInput: {
         styleOverrides: {
           root: {
-            minHeight: 52,
+            minHeight: 44,
             borderRadius: safeRadius,
             backgroundColor: '#ffffff',
             transition: 'border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease',
@@ -240,7 +240,7 @@ export const buildTheme = (tokens: ThemeTokens): Theme => {
             '&.Mui-disabled': { backgroundColor: SURFACE.muted },
           },
           notchedOutline: { borderColor: SURFACE.line },
-          input: { padding: '14px 16px' },
+          input: { padding: '10px 12px' },
         },
       },
       MuiFormLabel: {

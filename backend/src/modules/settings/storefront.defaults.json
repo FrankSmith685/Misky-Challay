@@ -1,26 +1,20 @@
 {
   "hero": {
-    "eyebrow": "Pastelería Misky Challay",
-    "title": "Tortas personalizadas para tus celebraciones",
-    "description": "Elige una receta o crea tu combinación de tamaño, bizcocho y relleno. Revisa el precio y programa tu entrega o recojo antes de pagar.",
+    "eyebrow": "Promoción especial",
+    "title": "15% de descuento en turrones premium",
+    "description": "Compra ahora y disfruta una selección especial de turrones premium.",
     "primaryLabel": "Personalizar mi torta",
     "secondaryLabel": "Ver catálogo",
-    "imageUrl": "/images/cakes/custom.png",
-    "imageAlt": "Torta personalizada de Misky Challay",
+    "imageUrl": "/images/promotions/promo-turrones-15-descuento.jpg",
+    "imageAlt": "Promoción de 15% de descuento en turrones premium Misky Challay",
     "slides": [
       {
-        "eyebrow": "Un detalle para recordar",
-        "title": "Haz que la ocasión tenga tu sello",
-        "description": "Añade complementos e indicaciones para convertir una idea en un momento especial.",
-        "imageUrl": "/images/cakes/special.png",
-        "imageAlt": "Torta especial decorada para una celebración"
-      },
-      {
-        "eyebrow": "Tecnología que acompaña tu celebración",
-        "title": "Una experiencia dulce que también se comparte",
-        "description": "Descubre cómo una torta puede conectar diseño, tecnología y un recuerdo especial.",
-        "imageUrl": "/brand/misky-challay-tech-web.webp",
-        "imageAlt": "Misky Challay, pastelería artesanal con IA y realidad aumentada"
+        "enabled": true,
+        "eyebrow": "Oferta para compartir",
+        "title": "35% de descuento por la segunda torta",
+        "description": "Aprovecha la promoción en cualquier categoría y celebra con más sabor.",
+        "imageUrl": "/images/promotions/promo-segunda-torta-35.jpg",
+        "imageAlt": "Promoción de 35% de descuento por la segunda torta en cualquier categoría"
       }
     ],
     "primaryAction": "custom",

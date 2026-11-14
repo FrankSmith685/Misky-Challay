@@ -26,6 +26,7 @@ import { MenuHero } from '../components/MenuHero';
 import { ProductCard } from '../components/ProductCard';
 import { ProductGridSkeleton } from '../components/ProductCardSkeleton';
 import { catalogApi } from '../services/catalog.service';
+import { categoryImage } from '../categoryImage';
 import { productImage } from '../productImage';
 import type { Category, Product } from '../types';
 import type { ProductFamily } from '../pastry';
@@ -274,6 +275,7 @@ const MenuPage = () => {
   const extraFilterCount = Number(categoryId !== null) + Number(preparation !== '') + Number(sugarFree);
   const selectedLocation = branchId ? (deliveryType === 'PICKUP' ? pickupBranch?.name : address?.line1) : undefined;
   const sectionLabel = selectedCategory?.name ?? FAMILY_LABELS[activeFamily];
+  const allCategoryImage = categoryRoots[0] ? categoryImage(categoryRoots[0]) : null;
 
   if (businessRedirect) return <Navigate to={ROUTES.business} replace />;
 
@@ -286,8 +288,8 @@ const MenuPage = () => {
         minimumCakePrice={minimumCakePrice}
       />
 
-      <div id="catalogo" className="container-shell scroll-mt-24 py-8 sm:py-12">
-        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
+      <div id="catalogo" className="container-shell scroll-mt-24 py-5 sm:py-12">
+        <div className="hidden flex-col justify-between gap-4 lg:flex lg:flex-row lg:items-end">
           <div>
             <p className="text-[11px] font-black uppercase tracking-[.16em] text-brand-700">Explora a tu ritmo</p>
             <h2 className="mt-2 text-2xl font-black tracking-tight text-ink sm:text-3xl">¿Qué te provoca hoy?</h2>
@@ -296,7 +298,48 @@ const MenuPage = () => {
           <BranchPrompt onChooseLocation={openLocationModal} selectedLocation={selectedLocation} />
         </div>
 
-        <nav aria-label="Categorías principales" className="mt-8 rounded-[28px] border border-[#e9e1d6] bg-[#fffdfa] p-4 shadow-[0_14px_40px_rgba(57,39,27,0.08)] sm:p-6">
+        <div className="lg:hidden rounded-[24px] border border-brand-100 bg-gradient-to-br from-brand-50/80 via-white to-accent-50/50 p-3.5 shadow-[0_10px_28px_rgba(31,72,111,0.07)]">
+          <div className="flex items-end justify-between gap-3 px-1">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[.16em] text-brand-700">Explora el menú</p>
+              <h2 className="mt-1 text-[1.45rem] font-black tracking-[-.03em] text-ink">Compra a tu ritmo</h2>
+            </div>
+            <span className="shrink-0 rounded-full border border-brand-100 bg-white/85 px-2.5 py-1 text-[11px] font-bold text-brand-700 shadow-sm">
+              {loading ? '...' : `${availableProductCount} opciones`}
+            </span>
+          </div>
+          <div className="mt-3 grid grid-cols-3 gap-2" aria-label="Categorías rápidas">
+            <button
+              type="button"
+              aria-pressed={activeRootId === null}
+              onClick={() => chooseCategory(null)}
+              className={`group relative flex h-[74px] min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-xl border px-1.5 text-center transition ${activeRootId === null ? 'border-brand-800 bg-brand-800 text-white shadow-[0_7px_16px_rgba(31,72,111,0.2)]' : 'border-brand-100 bg-white/90 text-ink hover:border-brand-300'}`}
+            >
+              {allCategoryImage && <img src={allCategoryImage} alt="" loading="lazy" className="size-7 rounded-full border-2 border-white/80 object-cover shadow-sm" />}
+              <span className="text-[11px] font-black leading-none">Todo</span>
+              <span className={`text-[9px] leading-none ${activeRootId === null ? 'text-brand-100' : 'text-ink-muted'}`}>{products.length} productos</span>
+            </button>
+            {categoryRoots.map((category) => {
+              const active = activeRootId === category.id;
+              const count = categoryCounts.get(category.id) ?? 0;
+              const image = categoryImage(category);
+              return (
+                <button
+                  key={category.id}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => chooseCategory(active ? null : category.id)}
+                  className={`group relative flex h-[74px] min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-xl border px-1.5 text-center transition ${active ? 'border-brand-800 bg-brand-800 text-white shadow-[0_7px_16px_rgba(31,72,111,0.2)]' : 'border-brand-100 bg-white/90 text-ink hover:border-brand-300'}`}
+                >
+                  {image && <img src={image} alt="" loading="lazy" className="size-7 rounded-full border-2 border-white/80 object-cover shadow-sm transition duration-300 group-hover:scale-105" />}
+                  <span className="line-clamp-2 max-w-full text-[11px] font-black leading-[1.05]">{category.name}</span>
+                  <span className={`text-[9px] leading-none ${active ? 'text-brand-100' : 'text-ink-muted'}`}>{count} productos</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <nav aria-label="Categorías principales" className="mt-8 hidden rounded-[28px] border border-[#e9e1d6] bg-[#fffdfa] p-4 shadow-[0_14px_40px_rgba(57,39,27,0.08)] sm:p-6 lg:block">
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
@@ -313,12 +356,12 @@ const MenuPage = () => {
             </span>
           </div>
 
-          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+          <div className="mt-6 -mx-1 flex snap-x gap-3 overflow-x-auto px-1 pb-2 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 sm:pb-0 xl:grid-cols-6">
             <button
               type="button"
               aria-pressed={activeRootId === null}
               onClick={() => chooseCategory(null)}
-              className={`group relative min-h-[136px] overflow-hidden rounded-2xl border p-4 text-left transition duration-200 ${activeRootId === null ? 'border-brand-800 bg-brand-800 text-white shadow-[0_10px_24px_rgba(31,72,111,0.22)]' : 'border-[#e8e0d5] bg-white text-ink hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-e2'}`}
+              className={`group relative min-h-[124px] min-w-[148px] snap-start overflow-hidden rounded-2xl border p-3.5 text-left transition duration-200 sm:min-h-[136px] sm:min-w-0 sm:p-4 ${activeRootId === null ? 'border-brand-800 bg-brand-800 text-white shadow-[0_10px_24px_rgba(31,72,111,0.22)]' : 'border-[#e8e0d5] bg-white text-ink hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-e2'}`}
             >
               {spotlightProduct && (spotlightProduct.imageUrl ?? spotlightProduct.categoryImageUrl) && (
                 <span className="absolute right-3 top-3 size-12 overflow-hidden rounded-full border-4 border-white/70 opacity-90 shadow-sm">
@@ -328,14 +371,14 @@ const MenuPage = () => {
               <span className={`relative grid size-9 place-items-center rounded-xl ${activeRootId === null ? 'bg-white/15 text-accent-200' : 'bg-brand-50 text-brand-700'}`}>
                 <UtensilsCrossed className="size-4.5" aria-hidden="true" />
               </span>
-              <span className="relative mt-5 block text-sm font-black leading-tight">Todo el menú</span>
-              <span className={`relative mt-2 block text-[11px] leading-4 ${activeRootId === null ? 'text-brand-100' : 'text-ink-muted'}`}>{loading ? 'Cargando opciones' : `${products.length} productos`}</span>
+              <span className="relative mt-4 block min-h-[2.25rem] text-[14px] font-black leading-[1.15] sm:mt-5">Todo el menú</span>
+              <span className={`relative mt-1.5 block text-[12px] leading-4 ${activeRootId === null ? 'text-brand-100' : 'text-ink-muted'}`}>{loading ? 'Cargando opciones' : `${products.length} productos`}</span>
             </button>
 
             {categoryRoots.map((category) => {
               const active = activeRootId === category.id;
               const highlight = categoryHighlights.get(category.id) ?? products.find((product) => descendantIds(category.id, categories).has(product.categoryId));
-              const highlightImage = category.imageUrl ?? (highlight ? productImage(highlight) : null);
+              const highlightImage = categoryImage(category) ?? (highlight ? productImage(highlight) : null);
               const Icon = category.slug.includes('torta') ? CakeSlice : category.slug.includes('post') ? Cookie : Sparkles;
               const count = categoryCounts.get(category.id) ?? 0;
               return (
@@ -344,7 +387,7 @@ const MenuPage = () => {
                   type="button"
                   aria-pressed={active}
                   onClick={() => chooseCategory(active ? null : category.id)}
-                  className={`group relative min-h-[136px] overflow-hidden rounded-2xl border p-4 text-left transition duration-200 ${active ? 'border-brand-800 bg-brand-800 text-white shadow-[0_10px_24px_rgba(31,72,111,0.22)]' : 'border-[#e8e0d5] bg-white text-ink hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-e2'}`}
+                  className={`group relative min-h-[124px] min-w-[148px] snap-start overflow-hidden rounded-2xl border p-3.5 text-left transition duration-200 sm:min-h-[136px] sm:min-w-0 sm:p-4 ${active ? 'border-brand-800 bg-brand-800 text-white shadow-[0_10px_24px_rgba(31,72,111,0.22)]' : 'border-[#e8e0d5] bg-white text-ink hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-e2'}`}
                 >
                   {highlightImage && (
                     <span className="absolute right-3 top-3 size-12 overflow-hidden rounded-full border-4 border-white/70 opacity-90 shadow-sm">
@@ -354,8 +397,8 @@ const MenuPage = () => {
                   <span className={`relative grid size-9 place-items-center rounded-xl ${active ? 'bg-white/15 text-accent-200' : 'bg-brand-50 text-brand-700 group-hover:bg-accent-50 group-hover:text-accent-700'}`}>
                     <Icon className="size-4.5" aria-hidden="true" />
                   </span>
-                  <span className="relative mt-5 block truncate text-sm font-black leading-tight">{category.name}</span>
-                  <span className={`relative mt-2 block text-[11px] leading-4 ${active ? 'text-brand-100' : 'text-ink-muted'}`}>{count} producto{count === 1 ? '' : 's'}</span>
+                  <span className="relative mt-4 line-clamp-2 min-h-[2.25rem] text-[14px] font-black leading-[1.15] sm:mt-5">{category.name}</span>
+                  <span className={`relative mt-1.5 block text-[12px] leading-4 ${active ? 'text-brand-100' : 'text-ink-muted'}`}>{count} producto{count === 1 ? '' : 's'}</span>
                 </button>
               );
             })}
@@ -366,16 +409,16 @@ const MenuPage = () => {
               <p className="text-sm font-black text-ink">¿Buscas algo especial?</p>
               <p className="mt-0.5 text-xs text-ink-muted">Personaliza una torta o elige una opción lista para entregar.</p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Button component={Link} to={ROUTES.menuMode('CUSTOM')} size="sm" variant="outline" leftIcon={<WandSparkles size={15} />}>Diseña tu torta</Button>
-              <Button component={Link} to={ROUTES.menuMode('STANDARD')} size="sm" variant="ghost" leftIcon={<Clock3 size={15} />}>Ver tortas listas</Button>
+            <div className="grid gap-2 sm:flex sm:flex-wrap">
+              <Button component={Link} to={ROUTES.menuMode('CUSTOM')} size="sm" variant="outline" leftIcon={<WandSparkles size={15} />} className="w-full sm:w-auto">Diseña tu torta</Button>
+              <Button component={Link} to={ROUTES.menuMode('STANDARD')} size="sm" variant="ghost" leftIcon={<Clock3 size={15} />} className="w-full sm:w-auto">Ver tortas listas</Button>
             </div>
           </div>
         </nav>
 
-        <section className="sticky top-16 z-20 mt-8 rounded-card border border-line bg-white shadow-e2 lg:top-[72px]" aria-label="Buscar y filtrar productos">
-          <div className="p-4 sm:p-6">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center">
+        <section className="relative z-20 mt-4 rounded-card border border-line bg-white shadow-e2 lg:mt-8" aria-label="Buscar y filtrar productos">
+          <div className="p-3 sm:p-6">
+            <div className="flex items-center gap-2">
               <Input
                 type="search"
                 aria-label="Buscar producto"
@@ -383,8 +426,9 @@ const MenuPage = () => {
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Busca por nombre, sabor o ingrediente"
                 startAdornment={<Search className="size-4.5 text-ink-muted" />}
+                className="min-w-0 flex-1"
               />
-              <div className="flex gap-2">
+              <div className="flex shrink-0 gap-2">
                 <Button
                   variant={filtersOpen ? 'primary' : 'outline'}
                   aria-expanded={filtersOpen}
@@ -392,11 +436,11 @@ const MenuPage = () => {
                   onClick={() => setFiltersOpen((open) => !open)}
                   leftIcon={<SlidersHorizontal className="size-4" />}
                   className="shrink-0"
-                  sx={{ minHeight: 52 }}
+                  sx={{ minHeight: 44 }}
                 >
                   Filtros{extraFilterCount > 0 ? ` (${extraFilterCount})` : ''}<ChevronDown className={`ml-1 size-4 transition-transform ${filtersOpen ? 'rotate-180' : ''}`} />
                 </Button>
-                {hasFilters && <button type="button" onClick={clearFilters} className="min-h-11 whitespace-nowrap rounded-field px-3 text-sm font-bold text-brand-700 underline underline-offset-4">Limpiar</button>}
+                {hasFilters && <button type="button" onClick={clearFilters} className="inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-field border border-transparent px-3 text-sm font-bold text-brand-700 transition hover:border-brand-200 hover:bg-brand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600">Limpiar</button>}
               </div>
             </div>
 
@@ -450,7 +494,7 @@ const MenuPage = () => {
 
         {collection === '24H' && <p role="note" className="mt-5 rounded-xl border border-accent-200 bg-accent-50 px-4 py-3 text-sm leading-6 text-accent-900"><strong>Pide con al menos 24 horas de anticipación.</strong> Confirmaremos la fecha según la capacidad del taller.</p>}
 
-        <div className="mb-6 mt-10 flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-end sm:justify-between">
+        <div className="mb-6 mt-7 flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-end sm:justify-between lg:mt-10">
           <div>
             <p className="text-[11px] font-black uppercase tracking-[.14em] text-brand-700">{sectionLabel}</p>
             <h2 className="mt-1.5 text-2xl font-black tracking-tight text-ink" aria-live="polite">
@@ -460,7 +504,7 @@ const MenuPage = () => {
           </div>
           {refreshing && <span className="text-xs font-semibold text-brand-700" role="status">Actualizando disponibilidad…</span>}
           <div className="w-full sm:w-56">
-            <Select label="Ordenar" value={sort} onChange={(event) => setSort(event.target.value as SortMode)}>
+            <Select label="Ordenar" size="small" value={sort} onChange={(event) => setSort(event.target.value as SortMode)}>
               <SelectOption value="FEATURED">Recomendados</SelectOption>
               <SelectOption value="BEST_SELLERS">Más vendidos</SelectOption>
               <SelectOption value="PRICE">Menor precio</SelectOption>
@@ -478,7 +522,7 @@ const MenuPage = () => {
           <div role="status" aria-label="Cargando el catálogo"><ProductGridSkeleton count={6} /></div>
         ) : resultCount ? (
           <>
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:gap-6">
+            <div className={`grid gap-5 md:grid-cols-2 ${resultCount < 3 ? 'xl:grid-cols-2' : 'xl:grid-cols-3'} xl:gap-6`}>
               {visibleProducts.map((product) => <ProductCard key={product.id} product={product} />)}
             </div>
             {visible.length > visibleProducts.length && (

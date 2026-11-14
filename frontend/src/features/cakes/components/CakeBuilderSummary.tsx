@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState } from 'react';
-import { AlertTriangle, Box, CalendarDays, Check, ChevronDown, ChevronRight, ClipboardList, Loader2, Pencil, RotateCcw, ShoppingBag } from 'lucide-react';
+import { Box, CalendarDays, Check, ChevronRight, ClipboardList, Loader2, Pencil, RotateCcw, ShoppingBag } from 'lucide-react';
 import { Button } from '@components/ui/Button';
 import { Modal } from '@components/ui/Modal';
 import { formatCurrency, formatDate } from '@lib/format';
@@ -24,7 +24,6 @@ interface CakeBuilderSummaryProps {
   sizeLabel: string;
   servings: number | null;
   groups: CakeSummaryGroup[];
-  possibleAllergens: string[];
   quote: QuoteResult | null;
   pricePreview: CakePricePreview | null;
   isQuoting: boolean;
@@ -49,7 +48,7 @@ interface CakeBuilderSummaryProps {
   onThreeDOpenChange?: (open: boolean) => void;
 }
 
-export const CakeBuilderSummary = ({ isCake = true, quantity = 1, servingUnit = 'porciones', hasSinglePresentation = false, productName, productImage, sizeLabel, servings, groups, possibleAllergens, quote, pricePreview, isQuoting, validationMessage, selectedSlot, readyToAdd, finalStep, personalizing = false, continueLabel, continueDisabled, mobileExpanded, deliveryType, onToggleMobile, onAddToCart, onReset, onContinue, onEditSize, onEditGroup, visual, threeD, threeDOpen, onThreeDOpenChange }: CakeBuilderSummaryProps) => {
+export const CakeBuilderSummary = ({ isCake = true, quantity = 1, servingUnit = 'porciones', hasSinglePresentation = false, productName, productImage, sizeLabel, servings, groups, quote, pricePreview, isQuoting, validationMessage, selectedSlot, readyToAdd, finalStep, personalizing = false, continueLabel, continueDisabled, mobileExpanded, deliveryType, onToggleMobile, onAddToCart, onReset, onContinue, onEditSize, onEditGroup, visual, threeD, threeDOpen, onThreeDOpenChange }: CakeBuilderSummaryProps) => {
   const total = quote?.lineTotal ?? pricePreview?.lineTotal ?? null;
   const basePrice = quote?.basePrice ?? pricePreview?.basePrice ?? null;
   const priceTheme = quote?.theme ?? pricePreview?.theme ?? null;
@@ -106,10 +105,6 @@ export const CakeBuilderSummary = ({ isCake = true, quantity = 1, servingUnit = 
         </div>
         {total !== null && <button type="button" onClick={onToggleMobile} aria-haspopup="dialog" className="mt-2 flex min-h-8 items-center gap-1 text-[11px] font-medium text-brand-700">Ver desglose del precio<ChevronRight className="size-3" /></button>}
 
-        {possibleAllergens.length > 0 && <p className="mt-3 rounded-card border border-amber-100 bg-amber-50/70 p-3 text-[11px] leading-5 text-amber-950">
-          <span className="font-semibold">Alérgenos según tus opciones:</span> {possibleAllergens.join(', ')}. Puede existir contacto cruzado.
-        </p>}
-
         {validationMessage && <p role="alert" className="mt-3 rounded-card bg-red-50 p-3 text-xs leading-5 text-red-800">{validationMessage}</p>}
         {personalizing && groups.length > 0 && <section aria-label="Progreso de tu personalización" className="mt-3 border-t border-line pt-3">
           <div className="mb-1 flex flex-wrap items-center justify-between gap-1 text-[11px]"><h3 className="font-semibold text-ink">Tu combinación</h3><p role="status" className="text-brand-700">{completed} de {requiredGroups.length} obligatorios</p></div>
@@ -150,9 +145,6 @@ export const CakeBuilderSummary = ({ isCake = true, quantity = 1, servingUnit = 
         </button>)}</div>
       </section>}
       {selectedSlot && <div className="flex items-start gap-2 rounded-card bg-surface-muted p-3 text-xs leading-5 text-ink-muted"><CalendarDays className="mt-0.5 size-4 shrink-0 text-brand-700" /><div><p className="font-semibold text-ink">{deliveryType === 'PICKUP' ? 'Recojo programado' : 'Entrega programada'}</p><p>{formatDate(selectedSlot.startsAt)}</p></div></div>}
-      <div className="overflow-hidden rounded-card border border-line">
-        <details className="group bg-surface-muted/50 px-4"><summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 text-xs font-medium text-ink"><AlertTriangle className="size-3.5 shrink-0 text-amber-700" />Información de alérgenos<ChevronDown className="ml-auto size-3.5 shrink-0 text-ink-muted transition-transform group-open:rotate-180" /></summary><div className="pb-4 text-xs leading-5 text-ink-muted"><p>{possibleAllergens.length ? `Según tus opciones, puede incluir: ${possibleAllergens.join(', ')}.` : 'No se declararon alérgenos de la lista revisada.'}</p><p className="mt-2">Si tienes una alergia, consulta al equipo antes de pedir. No se garantiza ausencia de contacto cruzado.</p></div></details>
-      </div>
     </div>
   </Modal></>;
 };

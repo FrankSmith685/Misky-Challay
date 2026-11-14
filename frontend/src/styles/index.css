@@ -5,8 +5,41 @@
 @import 'tailwindcss';
 
 :root {
+  /* Escala pública: desktop 100%, tablet 93.75% y móvil 87.5%. Los campos
+     móviles conservan un mínimo de 16px solo para evitar el zoom de iOS. */
   --content-max-width: 96rem;
   --content-gutter: 1.125rem;
+  --responsive-font-scale: 1;
+  --public-field-label-size: .9375rem;
+  --public-field-text-size: 1rem;
+  --public-field-height: 48px;
+  --public-textarea-height: 120px;
+  --public-button-text-size: 1rem;
+  --public-button-height: 48px;
+}
+
+@media (max-width: 639px) {
+  :root {
+    --responsive-font-scale: .875;
+    --public-field-label-size: .875rem;
+    --public-field-text-size: 16px;
+    --public-field-height: 44px;
+    --public-textarea-height: 112px;
+    --public-button-text-size: 1rem;
+    --public-button-height: 44px;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1023px) {
+  :root {
+    --responsive-font-scale: .9375;
+    --public-field-label-size: .875rem;
+    --public-field-text-size: .9375rem;
+    --public-field-height: 44px;
+    --public-textarea-height: 108px;
+    --public-button-text-size: 1rem;
+    --public-button-height: 44px;
+  }
 }
 
 @media (min-width: 640px) {
@@ -107,12 +140,13 @@
   html {
     scroll-behavior: smooth;
     scroll-padding-top: 7rem;
+    font-size: calc(var(--text-base-size, 16px) * var(--responsive-font-scale, 1));
   }
 
   body {
     @apply bg-surface-muted text-ink antialiased;
     font-family: var(--font-sans);
-    font-size: var(--text-base-size, 16px);
+    font-size: 1rem;
     min-width: 320px;
     overflow-x: hidden;
   }
@@ -211,6 +245,20 @@
 }
 
 img { max-width: 100%; }
+
+/* El header cambia a navegación completa en el breakpoint lg de MUI (1200px).
+   Mantener el logo centrado hasta ese mismo punto evita que se desplace en
+   tablets grandes donde todavía se muestra el menú compacto. */
+@media (min-width: 1200px) {
+  .public-header-logo {
+    position: relative !important;
+    left: auto !important;
+    top: auto !important;
+    z-index: auto !important;
+    transform: none !important;
+    translate: none !important;
+  }
+}
 
 /* Los paneles de datos siguen siendo utilizables en pantallas estrechas. */
 .admin-shell { min-width: 0; overflow-x: clip; }
@@ -332,6 +380,39 @@ img { max-width: 100%; }
   border-color: var(--color-line);
   border-radius: var(--radius-field);
   background-color: var(--color-surface);
+}
+
+/* Escala común de los campos MUI en todas las vistas públicas. Sin esta regla,
+   los labels de Input/Textarea conservan 16px aunque el resto del formulario
+   use la escala compacta de la interfaz, sobre todo en tablet. */
+.public-shell main .MuiInputLabel-root {
+  font-size: var(--public-field-label-size);
+  line-height: 1.25;
+}
+
+.public-shell main .MuiInputLabel-shrink {
+  /* MUI ya aplica scale(.75) al label flotante. Mantener el mismo tamaño base
+     evita reducirlo dos veces y dejarlo ilegible en desktop y tablet. */
+  font-size: var(--public-field-label-size);
+}
+
+.public-shell main .MuiOutlinedInput-root {
+  min-height: var(--public-field-height);
+}
+
+.public-shell main .MuiOutlinedInput-root.MuiInputBase-multiline {
+  min-height: var(--public-textarea-height);
+}
+
+.public-shell main .MuiOutlinedInput-input,
+.public-shell main .MuiInputBase-inputMultiline {
+  font-size: var(--public-field-text-size);
+  line-height: 1.5;
+}
+
+.public-shell main .MuiButton-root {
+  font-size: var(--public-button-text-size);
+  min-height: var(--public-button-height);
 }
 
 /* iOS acerca la pagina cuando enfoca un campo de menos de 16px, y al salir no la

@@ -870,12 +870,12 @@ export const ProductEditor = ({ product, meta, onClose, onSaved, onToggleStatus,
 
         {canEditProduct && availabilityBlock}
 
-        {/* --- Alergenos --- */}
+        {/* --- Control interno de ingredientes --- */}
         {!isCakeProduct && (canEditAllergens ? (
           <FormSection
             id="product-allergens"
-            title={isCustomCake ? 'Revisión de alérgenos del constructor' : 'Alérgenos de esta torta'}
-            description={isCustomCake ? 'El sistema consolida los alérgenos declarados en las opciones activas. Aquí revisas la receta base y confirmas el resultado antes de publicar.' : 'Declara los alérgenos que pueden aparecer en la receta antes de ofrecer la torta.'}
+            title={isCustomCake ? 'Revisión interna de ingredientes' : 'Ingredientes de esta torta'}
+            description={isCustomCake ? 'El sistema consolida la ficha de ingredientes de las opciones activas. Aquí revisas la receta base y confirmas el resultado antes de publicar.' : 'Registra los ingredientes relevantes de la receta antes de ofrecer la torta.'}
             icon={TriangleAlert}
           >
             {isCustomCake && <div className="mb-4 rounded-card border border-brand-200 bg-brand-50/55 p-3 text-sm leading-5 text-brand-900">
@@ -930,8 +930,8 @@ export const ProductEditor = ({ product, meta, onClose, onSaved, onToggleStatus,
         ) : (
           <FormSection
             id="product-allergens"
-            title={isCustomCake ? 'Alérgenos consolidados de la torta' : 'Alérgenos declarados de esta torta'}
-            description={isCustomCake ? 'Solo lectura: resultado consolidado de la receta y de las opciones activas del Constructor.' : 'Solo lectura: alérgenos declarados tras revisar la receta.'}
+            title={isCustomCake ? 'Revisión interna de ingredientes' : 'Ingredientes de esta torta'}
+            description={isCustomCake ? 'El sistema consolida la ficha de ingredientes de las opciones activas. Aquí revisas la receta base y confirmas el resultado antes de publicar.' : 'Registra los ingredientes relevantes de la receta antes de ofrecer la torta.'}
             icon={TriangleAlert}
           >
             {meta.allergens.length === 0 && !product.allergensReviewedAt && <p className="mb-3 rounded-card bg-amber-50 p-3 text-sm text-amber-900">Faltan las opciones de alérgenos. Pide a una persona con permiso para revisarlos que cargue las opciones básicas en esta ficha.</p>}

@@ -2,7 +2,6 @@ import {
   Bike,
   CheckCircle2,
   Clock3,
-  LockKeyhole,
   MapPin,
   Navigation,
   PackageCheck,
@@ -21,7 +20,7 @@ interface CoverageResultCardProps {
   addressLabel?: string;
   /** Se esta guardando la direccion en la libreta del cliente. */
   isConfirming?: boolean;
-  /** Usar/guardar una dirección requiere una cuenta identificada. */
+  /** Identifica si la dirección podrá guardarse en la libreta del cliente. */
   isAuthenticated?: boolean;
   onConfirm: () => void;
   onPickup: () => void;
@@ -137,11 +136,11 @@ export const CoverageResultCard = ({
 
           <div className="grid min-w-0 grid-cols-1 gap-3">
             {!isAuthenticated && (
-              <div className="flex items-start gap-2.5 rounded-card border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs leading-5 text-amber-900">
-                <LockKeyhole className="mt-0.5 size-4 shrink-0" />
+              <div className="flex items-start gap-2.5 rounded-card border border-brand-200 bg-brand-50 px-3.5 py-3 text-xs leading-5 text-brand-900">
+                <MapPin className="mt-0.5 size-4 shrink-0" />
                 <span>
-                  <strong className="block">Podemos entregar en tu dirección</strong>
-                  Inicia sesión para guardar esta dirección y asociarla a tus pedidos.
+                  <strong className="block">Dirección lista para tu pedido</strong>
+                  La usaremos ahora y no la guardaremos en una cuenta.
                 </span>
               </div>
             )}
@@ -151,12 +150,11 @@ export const CoverageResultCard = ({
               sx={{ whiteSpace: 'normal' }}
               size="lg"
               isLoading={isConfirming}
-              leftIcon={!isAuthenticated ? <LockKeyhole className="size-4" /> : undefined}
               onClick={onConfirm}
             >
               {isAuthenticated
                 ? onContinue ? 'Guardar y continuar al catálogo' : 'Guardar y usar esta dirección'
-                : 'Ingresar para usar esta dirección'}
+                : 'Usar esta dirección'}
             </Button>
             <button
               type="button"
@@ -211,10 +209,9 @@ export const CoverageResultCard = ({
             <Button
               className="w-full"
               variant="outline"
-              leftIcon={!isAuthenticated ? <LockKeyhole className="size-4" /> : undefined}
               onClick={onPickup}
             >
-              {isAuthenticated ? 'Elegir recojo en este local' : 'Ingresar para elegir este local'}
+              Elegir recojo en este local
             </Button>
           </div>
         </div>

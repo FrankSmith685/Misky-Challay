@@ -54,7 +54,7 @@ const CartPage = () => {
   const [confirmClear, setConfirmClear] = useState(false);
   const { items, subtotal } = useAppSelector((state) => state.cart);
   const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated);
-  const { address, branchId, deliveryType, pickupBranch, serviceMode, openLocationModal } = useAppState();
+  const { address, deliveryType, pickupBranch, serviceMode, hasCoverage, openLocationModal } = useAppState();
   const { pending, dismiss: dismissPending, recoveryError, retryRecovery } = usePendingOrder();
   const { balance, isLoading: isBalanceLoading } = useWalletBalance();
   /** Ultima linea quitada, para poder devolverla a su sitio. */
@@ -65,9 +65,7 @@ const CartPage = () => {
   );
   /** Saldo que merece mostrarse: del cliente identificado y mayor que cero. */
   const walletBalance = isAuthenticated && balance != null && balance > 0 ? balance : null;
-  const hasDestination = deliveryType === 'PICKUP'
-    ? Boolean(branchId && pickupBranch)
-    : Boolean(branchId && address);
+  const hasDestination = hasCoverage;
   const destinationLabel = deliveryType === 'PICKUP'
     ? pickupBranch?.name
     : address?.line1;
@@ -133,23 +131,22 @@ const CartPage = () => {
     </div>
   );
 
-  /**
-   * El checkout exige sesion. Se avisa AQUI, antes de dar el paso: llegar al
-   * checkout y ser rebotado a la pantalla de acceso sin explicacion se lee como
-   * un error de la tienda, no como un requisito.
-   */
+  /** El carrito abre checkout para que el visitante revise y complete su destino. */
   const proceed = () => {
-    if (!isAuthenticated) {
-      // Al identificarse vuelve al checkout: el carrito y la direccion se conservan.
-      navigate(ROUTES.login, { state: { from: ROUTES.checkout } });
-      return;
-    }
     navigate(ROUTES.checkout);
   };
 
   const ctaLabel = isAuthenticated
       ? 'Continuar al checkout'
-      : 'Inicia sesión para continuar';
+      : 'Revisar pedido';
+
+  const destinationSummary = deliveryType === 'PICKUP'
+    ? pickupBranch
+      ? `${pickupBranch.name} · ${pickupBranch.addressLine}`
+      : 'Elige el taller donde recogerás tu pedido.'
+    : address
+      ? [address.label, address.line1].filter(Boolean).join(' · ')
+      : 'Elige una dirección para calcular cobertura y delivery.';
 
   const destinationCard = (
     <section aria-labelledby="cart-destination-title" className="rounded-card border border-line bg-white p-4 shadow-e2 sm:p-5">
@@ -342,14 +339,60 @@ const CartPage = () => {
               </div>
 
               <div className="grid gap-4 p-5">
+                <section aria-label="Detalle de entrega" className="rounded-card border border-line bg-surface-muted/65 p-3.5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-start gap-2.5">
+                      <span className="grid size-8 shrink-0 place-items-center rounded-card bg-white text-brand-700 ring-1 ring-line">
+                        {deliveryType === 'PICKUP' ? <Store className="size-4" /> : <MapPin className="size-4" />}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-extrabold uppercase tracking-[.12em] text-brand-700">
+                          {deliveryType === 'PICKUP' ? 'Recojo en taller' : 'Delivery a domicilio'}
+                        </p>
+                        <p className="mt-1 break-words text-sm font-bold leading-5 text-ink">
+                          {hasDestination ? destinationSummary : 'Destino pendiente'}
+                        </p>
+                        {hasDestination && address?.reference && deliveryType === 'DELIVERY' && (
+                          <p className="mt-1 break-words text-xs leading-5 text-ink-muted">
+                            Referencia: {address.reference}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <Button type="button" size="sm" variant="outline" className="shrink-0" onClick={openLocationModal}>
+                      {hasDestination ? 'Cambiar' : 'Elegir'}
+                    </Button>
+                  </div>
+                  <p className="mt-3 border-t border-line pt-3 text-xs leading-5 text-ink-muted">
+                    {hasDestination
+                      ? 'Validaremos cobertura, disponibilidad y costo exacto al revisar el checkout.'
+                      : 'Puedes elegir tu destino ahora o hacerlo dentro del checkout.'}
+                  </p>
+                </section>
+
+                <section aria-label="Productos del pedido" className="border-b border-line pb-4">
+                  <p className="mb-2 text-[10px] font-extrabold uppercase tracking-[.12em] text-brand-700">
+                    Productos
+                  </p>
+                  <ul className="grid gap-2.5 text-sm">
+                    {items.map((item) => (
+                      <li key={item.id} className="flex min-w-0 items-start justify-between gap-3">
+                        <span className="min-w-0 text-ink-muted">
+                          <span className="font-semibold text-ink">{item.quantity}× {item.name}</span>
+                          {item.variantName && <span className="block text-xs leading-5">{item.variantName}</span>}
+                        </span>
+                        <span className="shrink-0 font-semibold text-ink">{formatCurrency(item.lineTotal)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+
                 <PriceBreakdown
                   lines={[
                     { label: 'Subtotal de productos', value: formatCurrency(subtotal) },
                     {
-                      label: hasDestination
-                        ? deliveryType === 'PICKUP' ? 'Recojo en taller' : 'Delivery a domicilio'
-                        : 'Entrega o recojo',
-                      value: hasDestination ? 'Se confirma en checkout' : 'Elegir en checkout',
+                      label: deliveryType === 'PICKUP' ? 'Recojo en taller' : 'Delivery a domicilio',
+                      value: hasDestination ? 'Destino seleccionado' : 'Pendiente de elegir',
                     },
                     {
                       label: 'Promociones y saldo',
@@ -382,15 +425,8 @@ const CartPage = () => {
 
                 {!isAuthenticated && (
                   <Callout tone="info" size="sm" icon={LogIn}>
-                    Para confirmar el pedido necesitas tu cuenta. Así conservas tu carrito,
-                    guardas tus direcciones y puedes seguir el estado del pedido.
-                    <Link
-                      to={ROUTES.register}
-                      state={{ from: ROUTES.checkout }}
-                      className="mt-1 block font-bold underline underline-offset-2"
-                    >
-                      Crear una cuenta en un minuto
-                    </Link>
+                    Puedes revisar tu pedido y elegir cómo recibirlo sin crear una cuenta.
+                    Te pediremos iniciar sesión justo antes de confirmar el pago.
                   </Callout>
                 )}
 
@@ -417,7 +453,7 @@ const CartPage = () => {
 
       <StickyActionBar label={`${totalUnits} ${totalUnits === 1 ? 'producto' : 'productos'} · Subtotal referencial`} value={formatCurrency(subtotal)} maxWidth="6xl">
         <Button size="lg" onClick={proceed}>
-          {isAuthenticated ? 'Continuar' : 'Iniciar sesión'}
+          {isAuthenticated ? 'Continuar' : 'Revisar pedido'}
         </Button>
       </StickyActionBar>
 

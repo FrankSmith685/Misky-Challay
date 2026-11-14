@@ -1,5 +1,4 @@
 import { useDesignRepeat } from '../hooks/useDesignRepeat';
-import { allergenLabel } from '@lib/allergens';
 import { Input } from '@components/ui/Input';
 import { CakeAvailabilityNotice } from '../components/CakeAvailabilityNotice';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -33,6 +32,7 @@ import type { ProductDetail } from '@features/catalog/types';
 import type { DeliverySlot } from '@features/geo/types';
 import { geoApi } from '@features/geo/services/geo.service';
 import { Button } from '@components/ui/Button';
+import { StickyActionBar } from '@components/ui/StickyActionBar';
 import { Textarea } from '@components/ui/Textarea';
 import { formatCurrency } from '@lib/format';
 import { getApiErrorMessage } from '@services/api/client';
@@ -1181,7 +1181,7 @@ const CakePage = () => {
             {!specialRequest && theme?.saleMode !== 'QUOTE' && (
               <section
                 id="cake-configurator"
-                className="cake-surface scroll-mt-24 overflow-hidden"
+                className="cake-surface scroll-mt-28 overflow-hidden"
                 aria-label="Configura tu pedido"
               >
                 <nav
@@ -1202,7 +1202,7 @@ const CakePage = () => {
                         aria-current={step === index ? 'step' : undefined}
                         data-complete={completed}
                         onClick={() => goToStep(index)}
-                        className="cake-step-button flex min-h-18 min-w-0 flex-col items-center justify-center gap-1.5 px-2 py-3 text-[11px] sm:flex-row sm:gap-3 sm:px-4 sm:text-sm"
+                        className="cake-step-button flex min-h-16 min-w-0 flex-col items-center justify-center gap-1 px-1.5 py-2 text-[10px] sm:min-h-18 sm:flex-row sm:gap-3 sm:px-4 sm:py-3 sm:text-sm"
                       >
                         <span className="cake-step-number grid size-7 shrink-0 place-items-center rounded-full text-[10px] font-semibold">
                           {completed ? <Check className="size-3.5" /> : `0${stepNumber + 1}`}
@@ -1224,7 +1224,7 @@ const CakePage = () => {
                   })}
                 </nav>
 
-                <div key={step} className="cake-step-panel p-5 sm:p-7">
+                <div key={step} className="cake-step-panel p-4 sm:p-7">
                   <div className="mb-6">
                     <p className="cake-section-eyebrow">
                       Paso {visibleSteps.findIndex((entry) => entry.index === step) + 1} de{' '}
@@ -1660,22 +1660,6 @@ const CakePage = () => {
               threeD={threeD}
               threeDOpen={threeDOpen}
               onThreeDOpenChange={setThreeDOpen}
-              possibleAllergens={[
-                ...new Set([
-                  ...product.allergens.map((allergen) => allergen.name),
-                  ...(theme?.allergenNames ?? []),
-                  ...groups.flatMap((group) =>
-                    group.options
-                      .filter((option) =>
-                        (builder.selections ?? []).some(
-                          (selection) => selection.optionId === option.id,
-                        ),
-                      )
-                      .flatMap((option) => option.allergens)
-                      .map(allergenLabel),
-                  ),
-                ]),
-              ]}
               quote={validatedQuote}
               pricePreview={pricePreview}
               isQuoting={builder.isQuoting}
@@ -1700,22 +1684,19 @@ const CakePage = () => {
       )}
 
       {!isAdvanced && !manualQuoteOpen && (
-        <div
-          data-cake-mobile-actions
-          className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white/95 px-4 pb-[max(12px,env(safe-area-inset-bottom))] pt-3 shadow-e3 backdrop-blur lg:hidden"
-        >
-          <div className="mx-auto flex max-w-2xl items-center justify-between gap-3">
+        <StickyActionBar hideFrom="lg" maxWidth="2xl">
+          <div data-cake-mobile-actions className="flex w-full items-center justify-between gap-2.5">
             <button
               type="button"
               onClick={showSummary}
               aria-label={isCake ? 'Ver el detalle de tu torta' : 'Ver el detalle de tu pedido'}
-              className="min-w-0 text-left"
+              className="min-w-0 flex-1 text-left"
             >
-              <span className="flex items-center gap-1 text-[10px] text-ink-muted">
+              <span className="flex items-center gap-1 text-[10px] leading-tight text-ink-muted">
                 {validatedQuote ? 'Total de tu pedido' : 'Precio actual'}
                 <ChevronUp className="size-3" />
               </span>
-              <span className="cake-price mt-0.5 block text-xl font-semibold text-ink">
+              <span className="cake-price mt-0.5 block truncate text-xl font-semibold leading-tight text-ink">
                 {validatedQuote
                   ? formatCurrency(validatedQuote.lineTotal)
                   : pricePreview
@@ -1725,16 +1706,17 @@ const CakePage = () => {
             </button>
             <Button
               size="sm"
+              className="shrink-0"
               sx={{ whiteSpace: 'normal', maxWidth: '65%' }}
               aria-label={continueLabel}
               disabled={continueDisabled || builder.isQuoting}
               onClick={continueToNext}
             >
               {mobileContinueLabel}
-              <ChevronRight className="ml-1 size-4" />
+              <ChevronRight className="ml-1 size-4 shrink-0" />
             </Button>
           </div>
-        </div>
+        </StickyActionBar>
       )}
     </div>
   );

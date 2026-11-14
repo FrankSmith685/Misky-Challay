@@ -48,6 +48,7 @@ import {
   ExperienceStatus,
 } from './ExperienceUI';
 import { ExperienceServiceEditor } from './ExperienceServiceEditor';
+import { ArtifactTemplateEditor } from './ArtifactTemplateEditor';
 import { Alert } from '@components/ui/Alert';
 import { Input } from '@components/ui/Input';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -72,6 +73,7 @@ import { ExperienceViewer } from './ExperienceViewer';
 import { publicCakeWebOrigin } from '../cakes/utils/cakePreviewLinks';
 import { useActiveBranch } from '@features/admin/hooks/useActiveBranch';
 import { BranchSelector } from '@features/admin/components/BranchSelector';
+import { toArtifactConfig } from './renzo-artifact/data/template';
 
 const blankPackage: ExperiencePackage = {
   id: 0,
@@ -1161,6 +1163,8 @@ export default function ExperienceStudioPage() {
                           name: 'Nueva plantilla',
                           isActive: true,
                           sceneJson: demoScene,
+                          artifactSlug: null,
+                          artifactJson: null,
                         });
                         setPreview(null);
                       }}
@@ -1183,16 +1187,55 @@ export default function ExperienceStudioPage() {
                     disabled={!write || busy || editorBusy}
                     onChange={(e) => setTemplate({ ...template, name: e.target.value })}
                   />
+                  <div className="mt-4 flex flex-wrap items-start gap-3">
+                    <TextField
+                      label="Slug público (opcional)"
+                      value={template.artifactSlug ?? ''}
+                      disabled={!write || busy || editorBusy}
+                      helperText="Actívalo para gestionar una experiencia pública de video con tarjeta y QR."
+                      onChange={(e) => setTemplate({
+                        ...template,
+                        artifactSlug: e.target.value.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || null,
+                        artifactJson: e.target.value.trim() ? (template.artifactJson ?? toArtifactConfig()) : null,
+                      })}
+                    />
+                    {write && template.id > 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={busy || editorBusy}
+                        onClick={() => setTemplate({
+                          ...template,
+                          id: 0,
+                          version: 1,
+                          name: `${template.name} copia`,
+                          isActive: false,
+                          artifactSlug: template.artifactSlug ? `${template.artifactSlug}-copia` : null,
+                        })}
+                      >
+                        Duplicar plantilla
+                      </Button>
+                    )}
+                  </div>
                   <div className="mt-6">
                     {write ? (
                       <fieldset disabled={busy || editorBusy}>
-                        <SceneEditor
-                          value={template.sceneJson}
-                          onChange={(sceneJson) => setTemplate({ ...template, sceneJson })}
-                          assets={config.assets}
-                          onUploaded={uploaded}
-                          onBusyChange={setEditorBusy}
-                        />
+                        {template.artifactSlug ? (
+                          <ArtifactTemplateEditor
+                            value={template.artifactJson ?? toArtifactConfig()}
+                            onChange={(artifactJson) => setTemplate({ ...template, artifactJson })}
+                            onUploaded={uploaded}
+                            onBusyChange={setEditorBusy}
+                          />
+                        ) : (
+                          <SceneEditor
+                            value={template.sceneJson}
+                            onChange={(sceneJson) => setTemplate({ ...template, sceneJson })}
+                            assets={config.assets}
+                            onUploaded={uploaded}
+                            onBusyChange={setEditorBusy}
+                          />
+                        )}
                         <FormControlLabel
                           className="mt-5"
                           control={
@@ -1223,6 +1266,18 @@ export default function ExperienceStudioPage() {
                     >
                       Previsualizar plantilla
                     </Button>
+                    {template.artifactSlug && (
+                      <Button
+                        component="a"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        variant="outline"
+                        leftIcon={<ArrowUpRight size={15} />}
+                        href={template.artifactSlug === 'renzo' ? '/experiencias/renzo' : `/experiencias/plantillas/${template.artifactSlug}`}
+                      >
+                        Abrir experiencia pública
+                      </Button>
+                    )}
                     {write && (
                       <Button
                         leftIcon={<Save size={15} />}
@@ -1235,6 +1290,8 @@ export default function ExperienceStudioPage() {
                                 ...template,
                                 id: template.id || undefined,
                                 expectedVersion: template.version,
+                                artifactSlug: template.artifactSlug ?? null,
+                                artifactJson: template.artifactSlug ? (template.artifactJson ?? toArtifactConfig()) : null,
                               }),
                             );
                           }, 'Plantilla guardada')

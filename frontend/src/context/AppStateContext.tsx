@@ -174,7 +174,10 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
       hasCoverage:
         state.deliveryType === 'PICKUP'
           ? state.branchId !== null && state.pickupBranch?.id === state.branchId
-          : state.branchId !== null && !!state.address,
+          : state.branchId !== null
+            && !!state.address
+            && state.address.latitude != null
+            && state.address.longitude != null,
       setCity: (cityId) => patch({ cityId, branchId: null, pickupBranch: null }),
       setAddress: (address) => patch({ address }),
       setBranch: (branchId) => setState((current) => ({

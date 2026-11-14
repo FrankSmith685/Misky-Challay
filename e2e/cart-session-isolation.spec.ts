@@ -215,36 +215,27 @@ test('cambiar de cuenta en otra pestaña no hereda datos del cliente anterior', 
   await other.close();
 });
 
-test('un error de contraseña no elimina la selección hecha como visitante', async ({ page }) => {
-  const { requests, failLogin } = await setup(page, { authenticated: false, tokens: false });
-  failLogin();
+test('un visitante conserva su carrito al entrar a checkout', async ({ page }) => {
+  const { requests } = await setup(page, { authenticated: false, tokens: false });
   await page.goto('/carrito');
-  await page.getByRole('button', { name: 'Inicia sesión para continuar' }).click();
-  await page.getByLabel('Correo electrónico').fill('cliente@example.test');
-  await page.getByLabel('Contraseña', { exact: true }).fill('incorrect-password');
-  await page.getByRole('button', { name: 'Ingresar a mi cuenta' }).click();
-  await expect(page.getByRole('alert')).toContainText('Credenciales incorrectas');
+  await page.getByRole('button', { name: 'Revisar pedido' }).click();
+  await expect(page).toHaveURL(/\/checkout$/);
   expect(requests).not.toContain('/auth/refresh');
   await page.goto('/carrito');
   await expect(page.getByText(privateName, { exact: true })).toBeVisible();
 });
 
-test('la selección nueva del visitante se conserva al identificarse', async ({ page }) => {
+test('la selección nueva del visitante se conserva al revisar checkout', async ({ page }) => {
   await setup(page, { authenticated: false, tokens: false });
   await page.goto('/carrito');
   await expect(page.getByText(privateName, { exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByText(privateName, { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Inicia sesión para continuar' }).click();
-  await page.getByLabel('Correo electrónico').fill(user.email);
-  await page.getByLabel('Contraseña', { exact: true }).fill('correct-password');
-  await page.getByRole('button', { name: 'Ingresar a mi cuenta' }).click();
-  await expect(page.getByRole('button', { name: 'Mi cuenta · Cliente Uno' })).toBeVisible();
+  await page.getByRole('button', { name: 'Revisar pedido' }).click();
   await expect(page).toHaveURL(/\/checkout$/);
   await expect(page.getByRole('heading', { name: 'Finaliza tu pedido', exact: true })).toBeVisible();
   await page.goto('/carrito');
   await expect(page.getByText(privateName, { exact: true })).toBeVisible();
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('verde-bowl:state')!).ownerUserId)).toBe(user.id);
 });
 
 for (const width of [1440, 390]) {

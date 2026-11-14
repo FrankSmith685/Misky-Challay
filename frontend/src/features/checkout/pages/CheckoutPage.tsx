@@ -6,7 +6,7 @@ import { useCheckoutTerms } from '@services/checkoutTerms';
 import { ExperienceCheckout } from '@features/experiences/ExperienceCheckout';
 import { describeCakeVisualDesign } from '@features/cakes/utils/cakeVisualDesign';
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
   Banknote,
@@ -112,13 +112,14 @@ interface QuoteState {
  */
 const CheckoutPage = () => {
   const navigate = useNavigate();
+  const routeLocation = useLocation();
   const dispatch = useAppDispatch();
   const { items } = useAppSelector((state) => state.cart);
   const user = useAppSelector((state) => state.auth.user);
   const { terms, error: termsLoadError, refresh: refreshTerms } = useCheckoutTerms();
-  const [consent, setConsent] = useState<{ version: number; userId: number } | null>(null);
+  const [consent, setConsent] = useState<{ version: number; userId: number | null } | null>(null);
   const [termsIssue, setTermsIssue] = useState('');
-  const termsAccepted = Boolean(terms && consent?.version === terms.version && consent?.userId === user?.id);
+  const termsAccepted = Boolean(terms && consent?.version === terms.version && consent?.userId === (user?.id ?? null));
   useEffect(() => { setConsent(null); setTermsIssue(''); }, [user?.id]);
   const {
     address,
@@ -599,6 +600,11 @@ const CheckoutPage = () => {
 
   const handlePay = async () => {
     if (purchaseAttempt) { await submitPurchase(purchaseAttempt); return; }
+    if (!user) {
+      toast('Inicia sesión para confirmar y pagar. Conservaremos tu carrito y dirección.');
+      navigate(ROUTES.login, { state: { from: `${routeLocation.pathname}${routeLocation.search}` } });
+      return;
+    }
     if (!terms || termsLoadError || !termsAccepted) {
       setTermsIssue(termsLoadError ? 'No pudimos cargar las condiciones. Reintenta para continuar.' : 'Acepta los términos y condiciones antes de confirmar el pedido.');
       document.getElementById('checkout-terms')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -645,9 +651,7 @@ const CheckoutPage = () => {
       return;
     }
 
-
     try {
-      if (!user) return;
       const attempt = beginCheckoutAttempt(user.id, placeInput, items);
       setPurchaseAttempt(attempt);
       await submitPurchase(attempt);
@@ -813,6 +817,13 @@ const CheckoutPage = () => {
   const paymentLabel = quote?.grandTotal === 0 ? 'Con mi saldo' : payingCash ? 'Efectivo al recibir' : payingMobile ? selectedLocal.name : onlineLabel;
   const cakeDeliveryFee = quote?.cakeDeliveryFee ?? 0;
   const baseDeliveryFee = quote ? Math.max(0, quote.deliveryFee - cakeDeliveryFee) : 0;
+  const destinationSummary = deliveryType === 'PICKUP'
+    ? pickupBranch
+      ? `${pickupBranch.name} · ${pickupBranch.addressLine}`
+      : 'Local de recojo pendiente'
+    : address
+      ? [address.label, address.line1].filter(Boolean).join(' · ')
+      : 'Dirección de entrega pendiente';
 
   const summaryLines: SummaryLine[] = quote
     ? [
@@ -927,6 +938,11 @@ const CheckoutPage = () => {
                       totalValue={formatCurrency(quote.grandTotal)}
                       note={schedulePending ? 'Elige fecha y horario para confirmar disponibilidad.' : undefined}
                     />
+                    <div className="mt-4 rounded-card border border-line bg-surface-muted/60 p-3 text-xs leading-5">
+                      <p className="font-bold text-ink">{deliveryType === 'PICKUP' ? 'Recojo en taller' : 'Dirección de entrega'}</p>
+                      <p className="mt-1 break-words text-ink-muted">{destinationSummary}</p>
+                      {deliveryType === 'DELIVERY' && address?.reference && <p className="mt-1 break-words text-ink-muted">Referencia: {address.reference}</p>}
+                    </div>
                     {serviceMode === 'ASAP' && !hasCake && !branchClosed && <p className="mt-3 flex items-center gap-1.5 text-xs text-ink-muted">
                       <Clock3 className="size-3.5 shrink-0" />
                       {deliveryType === 'DELIVERY'
@@ -983,6 +999,7 @@ const CheckoutPage = () => {
               onReferenceChange={(reference) => { if (address) setAddress({ ...address, reference }); }}
               onDelivery={selectDelivery}
               onPickup={selectPickup}
+              onCoverageInvalid={() => setBranch(null)}
               onChangeAddress={() => { setAddress(null); setBranch(null); }}
               onChangePickup={() => setBranch(null)}
               onOpenMap={openLocationModal}
@@ -1082,7 +1099,7 @@ const CheckoutPage = () => {
           <FormSection
             id="checkout-contact"
             title="Datos de contacto"
-            description="Los tomamos de tu cuenta y solo los usaremos para coordinar este pedido."
+            description={user ? 'Los tomamos de tu cuenta y solo los usaremos para coordinar este pedido.' : 'Completa estos datos para coordinar la entrega. Solo pediremos iniciar sesión cuando confirmes el pago.'}
             icon={UserRound}
           >
             <FormGrid>
@@ -1339,6 +1356,12 @@ const CheckoutPage = () => {
               ))}
             </ul>
 
+            <div className="rounded-card border border-line bg-surface-muted/60 p-3 text-xs leading-5">
+              <p className="font-bold text-ink">{deliveryType === 'PICKUP' ? 'Recojo en taller' : 'Dirección de entrega'}</p>
+              <p className="mt-1 break-words text-ink-muted">{destinationSummary}</p>
+              {deliveryType === 'DELIVERY' && address?.reference && <p className="mt-1 break-words text-ink-muted">Referencia: {address.reference}</p>}
+            </div>
+
             {/* Region viva: cada recotizacion cambiaba el importe en silencio. */}
             {(quote || isFirstQuote) && (
               <div ref={breakdownRef} className="border-t border-line pt-4" aria-live="polite" aria-busy={isQuoting}>
@@ -1427,7 +1450,7 @@ const CheckoutPage = () => {
             <section id="checkout-terms" className="rounded-card border border-line bg-surface-muted p-4 text-sm" aria-label="Aceptación de condiciones">
               {terms && !termsLoadError ? <>
                 <label className="flex cursor-pointer items-start gap-3 leading-6">
-                  <input id="checkout-terms-checkbox" type="checkbox" className="mt-1.5 size-4 shrink-0 accent-brand-700" checked={termsAccepted} disabled={isPaying} aria-describedby={termsIssue ? 'checkout-terms-error' : undefined} onChange={(event) => { setConsent(event.target.checked && user ? { version: terms.version, userId: user.id } : null); setTermsIssue(''); }} />
+                  <input id="checkout-terms-checkbox" type="checkbox" className="mt-1.5 size-4 shrink-0 accent-brand-700" checked={termsAccepted} disabled={isPaying} aria-describedby={termsIssue ? 'checkout-terms-error' : undefined} onChange={(event) => { setConsent(event.target.checked ? { version: terms.version, userId: user?.id ?? null } : null); setTermsIssue(''); }} />
                   <span>{terms.acceptanceLabel}</span>
                 </label>
                 <Link className="mt-2 inline-block font-semibold text-brand-700 underline underline-offset-2" to={ROUTES.terms} target="_blank" rel="noopener noreferrer">Leer {terms.title} · versión {terms.version}</Link>

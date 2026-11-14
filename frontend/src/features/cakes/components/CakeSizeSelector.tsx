@@ -74,7 +74,7 @@ export const CakeSizeSelector = ({
               onClick={() => onVariantChange(variant.id)}
               className="cake-size-card"
             >
-              <span className="flex w-full items-start justify-between gap-3">
+              <span className="flex w-full items-start justify-between gap-2">
                 <span className="cake-size-art">
                   {isCake ? (
                     <CakeSizeIllustration
@@ -96,7 +96,7 @@ export const CakeSizeSelector = ({
                   {selected && <Check className="size-3.5" strokeWidth={3} />}
                 </span>
               </span>
-              <span className="mt-3 text-base font-semibold text-ink">
+              <span className="mt-2 block text-sm font-bold leading-5 text-ink sm:mt-3 sm:text-base">
                 {guide
                   ? `${guide.diameterCm} cm`
                   : isCake
@@ -104,24 +104,24 @@ export const CakeSizeSelector = ({
                     : variant.name}
               </span>
               {guide && (
-                <span className="mt-0.5 text-[11px] text-ink-muted">
+                <span className="mt-0.5 block text-[10px] leading-4 text-ink-muted sm:text-[11px]">
                   {cakeSizeName(variant.name)}
                 </span>
               )}
-              <span className="mt-auto flex w-full flex-wrap items-end justify-between gap-x-2 gap-y-2 border-t border-line pt-3">
+              <span className="mt-auto w-full border-t border-line pt-2.5 sm:pt-3">
                 <span className="flex items-baseline gap-1">
-                  <span className="cake-price text-2xl font-semibold leading-none text-ink">
+                  <span className="cake-size-value cake-price text-[22px] font-semibold leading-none text-ink sm:text-2xl">
                     {guide
                       ? `${guide.minServings}–${guide.maxServings}`
                       : variant.servingSize || '—'}
                   </span>
-                  <span className="text-[11px] text-ink-muted">
+                  <span className="text-[10px] text-ink-muted sm:text-[11px]">
                     {variant.servingUnit ?? 'porciones'}
                   </span>
                 </span>
-                <span className="text-right">
-                  <span className="block text-[10px] text-ink-muted">Desde</span>
-                  <span className="cake-price block text-sm font-semibold whitespace-nowrap text-ink">
+                <span className="mt-1 flex items-baseline justify-between gap-2">
+                  <span className="text-[10px] text-ink-muted">Desde</span>
+                  <span className="cake-size-price cake-price text-sm font-bold whitespace-nowrap text-ink">
                     {formatCurrency(variant.basePrice)}
                   </span>
                 </span>

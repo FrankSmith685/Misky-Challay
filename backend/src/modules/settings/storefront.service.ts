@@ -8,8 +8,91 @@ export const STOREFRONT_DRAFT_KEY = 'storefront:global';
 
 type DraftPayload = { content: StorefrontContent; baseVersion: number };
 
+/**
+ * Corrige textos publicados por versiones antiguas que reemplazaron algunos
+ * caracteres acentuados por `?` al guardar el JSON de la portada. Se aplica al
+ * leer para que una portada existente no siga mostrando texto dañado mientras
+ * se actualiza desde el editor.
+ */
+const repairLegacyText = (value: unknown): unknown => {
+  if (typeof value === 'string') {
+    const replacements: Array<[RegExp, string]> = [
+      [/m\?s/g, 'más'],
+      [/M\?s/g, 'Más'],
+      [/a\?ade/g, 'añade'],
+      [/A\?ade/g, 'Añade'],
+      [/d\?nde/g, 'dónde'],
+      [/D\?nde/g, 'Dónde'],
+      [/c\?mo/g, 'cómo'],
+      [/C\?mo/g, 'Cómo'],
+      [/tama\?o/g, 'tamaño'],
+      [/Tama\?o/g, 'Tamaño'],
+      [/opci\?n/g, 'opción'],
+      [/Opci\?n/g, 'Opción'],
+      [/selecci\?n/g, 'selección'],
+      [/Selecci\?n/g, 'Selección'],
+      [/celebraci\?n/g, 'celebración'],
+      [/Celebraci\?n/g, 'Celebración'],
+      [/combinaci\?n/g, 'combinación'],
+      [/Combinaci\?n/g, 'Combinación'],
+      [/orientaci\?n/g, 'orientación'],
+      [/Orientaci\?n/g, 'Orientación'],
+      [/preparaci\?n/g, 'preparación'],
+      [/Preparaci\?n/g, 'Preparación'],
+    ];
+    return replacements.reduce((text, [pattern, replacement]) => text.replace(pattern, replacement), value);
+  }
+  if (Array.isArray(value)) return value.map(repairLegacyText);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, repairLegacyText(entry)]));
+  }
+  return value;
+};
+
+const LEGACY_PROMO_REPLACEMENTS: Record<string, StorefrontContent['hero']['slides'][number]> = {
+  '/images/promotions/promo-celebracion-familiar.png': {
+    enabled: true,
+    eyebrow: 'Promoción especial',
+    title: '15% de descuento en turrones premium',
+    description: 'Compra ahora y disfruta una selección especial de turrones premium.',
+    imageUrl: '/images/promotions/promo-turrones-15-descuento.jpg',
+    imageAlt: 'Promoción de 15% de descuento en turrones premium Misky Challay',
+  },
+  '/images/promotions/promo-torta-regalo.png': {
+    enabled: true,
+    eyebrow: 'Oferta para compartir',
+    title: '35% de descuento por la segunda torta',
+    description: 'Aprovecha la promoción en cualquier categoría y celebra con más sabor.',
+    imageUrl: '/images/promotions/promo-segunda-torta-35.jpg',
+    imageAlt: 'Promoción de 35% de descuento por la segunda torta en cualquier categoría',
+  },
+};
+
+const parseContent = (value: unknown): StorefrontContent => {
+  const parsed = storefrontSchema.parse(repairLegacyText(value));
+  const slides = parsed.hero.slides.map((slide) => {
+    const replacement = LEGACY_PROMO_REPLACEMENTS[slide.imageUrl];
+    return replacement ? { ...replacement, enabled: slide.enabled } : slide;
+  });
+  const normalized = slides.every((slide, index) => slide === parsed.hero.slides[index])
+    ? parsed
+    : { ...parsed, hero: { ...parsed.hero, slides } };
+  const firstPromo = LEGACY_PROMO_REPLACEMENTS['/images/promotions/promo-celebracion-familiar.png'];
+  if (normalized.hero.imageUrl === '/images/promotions/promo-torta-artesanal.png' && normalized.hero.slides.some((slide) => slide.imageUrl === firstPromo.imageUrl)) {
+    return {
+      ...normalized,
+      hero: {
+        ...normalized.hero,
+        ...firstPromo,
+        slides: normalized.hero.slides.filter((slide) => slide.imageUrl !== firstPromo.imageUrl),
+      },
+    };
+  }
+  return normalized;
+};
+
 const dto = (row: StorefrontSetting | null) => ({
-  content: row ? storefrontSchema.parse(row.contentJson) : defaultStorefront(),
+  content: row ? parseContent(row.contentJson) : defaultStorefront(),
   version: row?.version ?? 0,
   updatedAt: row?.updatedAt?.toISOString() ?? null,
 });

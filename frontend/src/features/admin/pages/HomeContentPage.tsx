@@ -349,6 +349,13 @@ const HomeContentPage = () => {
       [next.sections[index], next.sections[target]] = [next.sections[target], next.sections[index]];
     });
 
+  const moveHeroSlide = (index: number, delta: number) =>
+    update((next) => {
+      const target = index + delta;
+      if (target < 0 || target >= next.hero.slides.length) return;
+      [next.hero.slides[index], next.hero.slides[target]] = [next.hero.slides[target], next.hero.slides[index]];
+    });
+
   if (loading) return <PageLoader />;
   if (!draft || !saved)
     return (
@@ -621,6 +628,8 @@ const HomeContentPage = () => {
                     label="Imagen de presentación"
                     category="marketing"
                     layout="stacked"
+                    aspect={16 / 9}
+                    hint="Usa una imagen panorámica 16:9 para conservar el encuadre en desktop y móvil."
                     value={draft.hero.imageUrl}
                     altText={draft.hero.imageAlt}
                     onChange={({ url, altText }) =>
@@ -642,17 +651,33 @@ const HomeContentPage = () => {
                     }
                   />
                   <div className="space-y-4 border-t border-line pt-5">
-                    <div className="flex items-center justify-between gap-3">
-                      <div><p className="text-sm font-semibold text-ink">Diapositivas adicionales</p><p className="text-xs text-ink-muted">Edita las imágenes y textos del carrusel. Máximo 4.</p></div>
-                      <Button type="button" variant="outline" size="sm" disabled={draft.hero.slides.length >= 4} onClick={() => update((next) => { next.hero.slides.push({ eyebrow: '', title: '', description: '', imageUrl: next.hero.imageUrl, imageAlt: next.hero.imageAlt }); })}><Plus className="mr-1 size-4" />Agregar</Button>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div><p className="text-sm font-semibold text-ink">Promociones del carrusel</p><p className="text-xs text-ink-muted">Ordena, oculta o elimina las imágenes. Máximo 4 promociones adicionales.</p></div>
+                      <Button type="button" variant="outline" size="sm" disabled={draft.hero.slides.length >= 4} onClick={() => update((next) => { next.hero.slides.push({ enabled: true, eyebrow: '', title: '', description: '', imageUrl: next.hero.imageUrl, imageAlt: next.hero.imageAlt }); })}><Plus className="mr-1 size-4" />Agregar promoción</Button>
                     </div>
                     {draft.hero.slides.map((slide, i) => (
                       <article key={i} className="space-y-4 rounded-card border border-line bg-surface-muted/40 p-4">
-                        <div className="flex items-center justify-between gap-3"><span className="text-xs font-bold uppercase tracking-wide text-brand-700">Diapositiva {i + 2}</span><Button type="button" variant="ghost" size="sm" disabled={draft.hero.slides.length <= 1} onClick={() => update((next) => { next.hero.slides.splice(i, 1); })}><Trash2 className="size-4" /></Button></div>
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <span className="text-xs font-bold uppercase tracking-wide text-brand-700">Promoción {i + 1}</span>
+                            <p className="mt-1 text-xs text-ink-muted">{slide.enabled === false ? 'Oculta en la portada' : 'Visible en la portada'}</p>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Button type="button" variant="ghost" size="sm" aria-label={`Subir promoción ${i + 1}`} title="Subir" disabled={i === 0} onClick={() => moveHeroSlide(i, -1)}><ArrowUp className="size-4" /></Button>
+                            <Button type="button" variant="ghost" size="sm" aria-label={`Bajar promoción ${i + 1}`} title="Bajar" disabled={i === draft.hero.slides.length - 1} onClick={() => moveHeroSlide(i, 1)}><ArrowDown className="size-4" /></Button>
+                            <Button type="button" variant="ghost" size="sm" aria-label={`Eliminar promoción ${i + 1}`} title="Eliminar" disabled={draft.hero.slides.length <= 1} onClick={() => update((next) => { next.hero.slides.splice(i, 1); })}><Trash2 className="size-4" /></Button>
+                          </div>
+                        </div>
+                        <Switch
+                          checked={slide.enabled !== false}
+                          label={slide.enabled === false ? 'Promoción pausada' : 'Promoción activa'}
+                          description="Puedes ocultarla sin perder sus textos ni su imagen."
+                          onChange={(enabled) => update((next) => { next.hero.slides[i].enabled = enabled; })}
+                        />
                         <Input label="Texto superior" value={slide.eyebrow} maxLength={70} required onChange={(e) => update((next) => { next.hero.slides[i].eyebrow = e.target.value; })} />
                         <Input label="Título" value={slide.title} maxLength={130} required onChange={(e) => update((next) => { next.hero.slides[i].title = e.target.value; })} />
                         <Textarea label="Descripción" value={slide.description} maxLength={500} rows={2} required onChange={(e) => update((next) => { next.hero.slides[i].description = e.target.value; })} />
-                        <MediaPicker label="Imagen" category="marketing" layout="stacked" value={slide.imageUrl} altText={slide.imageAlt} onChange={({ url, altText }) => update((next) => { next.hero.slides[i].imageUrl = url; next.hero.slides[i].imageAlt = altText; })} />
+                        <MediaPicker label="Imagen" category="marketing" layout="stacked" aspect={16 / 9} hint="Formato recomendado: banner panorámico 16:9 para desktop y móvil." value={slide.imageUrl} altText={slide.imageAlt} onChange={({ url, altText }) => update((next) => { next.hero.slides[i].imageUrl = url; next.hero.slides[i].imageAlt = altText; })} />
                         <Input label="Texto alternativo" value={slide.imageAlt} maxLength={180} required onChange={(e) => update((next) => { next.hero.slides[i].imageAlt = e.target.value; })} />
                       </article>
                     ))}

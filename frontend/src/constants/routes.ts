@@ -13,6 +13,8 @@ export const ROUTES = {
   cake: (slug = ':slug') => `/tortas/${slug}`,
   cakePreview: (token = ':token') => `/vista-3d/${token}`,
   cakeAr: '/experiencia-ar',
+  experienceDemo: '/experiencias/renzo',
+  experienceDemoQr: '/experiencias/renzo-qr',
   designRequests: '/cuenta/disenos',
   legacyDesignRequests: '/mis-disenos',
   plans: '/planes',

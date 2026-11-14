@@ -19,6 +19,8 @@ export class ExperienceTemplate extends Model<
   declare id: CreationOptional<number>;
   declare name: string;
   declare sceneJson: ExperienceScene;
+  declare artifactSlug: string | null;
+  declare artifactJson: Record<string, unknown> | null;
   declare isActive: CreationOptional<boolean>;
   declare version: CreationOptional<number>;
   declare createdAt: CreationOptional<Date>;
@@ -29,6 +31,8 @@ ExperienceTemplate.init(
     id: { type: DataTypes.BIGINT.UNSIGNED, autoIncrement: true, primaryKey: true },
     name: { type: DataTypes.STRING(100), allowNull: false },
     sceneJson: { type: DataTypes.JSON, allowNull: false },
+    artifactSlug: { type: DataTypes.STRING(80), allowNull: true },
+    artifactJson: { type: DataTypes.JSON, allowNull: true },
     isActive: { type: DataTypes.BOOLEAN, defaultValue: true },
     version: { type: DataTypes.INTEGER.UNSIGNED, defaultValue: 1 },
     createdAt: DataTypes.DATE,

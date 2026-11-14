@@ -60,6 +60,8 @@ export const GalleryComparison: React.FC<GalleryComparisonProps> = ({
                 <img
                   src={scene.ghibliImg}
                   alt={scene.title}
+                  loading={scene.id === 1 ? 'eager' : 'lazy'}
+                  decoding="async"
                   referrerPolicy="no-referrer"
                   className={`w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105 ${
                     hoveredScene === scene.id ? 'opacity-90' : 'opacity-100'
@@ -71,6 +73,8 @@ export const GalleryComparison: React.FC<GalleryComparisonProps> = ({
                   <img
                     src={scene.realImg}
                     alt="Foto original"
+                    loading="lazy"
+                    decoding="async"
                     referrerPolicy="no-referrer"
                     className="w-full h-full object-cover rounded"
                   />

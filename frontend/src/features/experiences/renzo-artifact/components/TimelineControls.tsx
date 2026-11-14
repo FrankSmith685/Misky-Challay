@@ -88,6 +88,7 @@ export const TimelineControls: React.FC<TimelineControlsProps> = ({
         <div className="flex w-full items-center justify-between gap-3 sm:w-auto sm:justify-start">
           <button
             onClick={onTogglePlay}
+            aria-label={isPlaying ? 'Pausar video' : 'Reproducir video'}
             className="p-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 active:scale-95 text-white font-semibold transition-all shadow-md flex items-center justify-center"
             title={isPlaying ? 'Pausar (Espacio)' : 'Reproducir (Espacio)'}
           >
@@ -96,6 +97,7 @@ export const TimelineControls: React.FC<TimelineControlsProps> = ({
 
           <button
             onClick={onRestart}
+            aria-label="Reiniciar video desde el inicio"
             className="p-2 rounded-xl text-stone-400 hover:text-amber-200 hover:bg-stone-800/80 transition-colors"
             title="Reiniciar desde el inicio (0:00)"
           >
@@ -171,6 +173,7 @@ export const TimelineControls: React.FC<TimelineControlsProps> = ({
           <div className="flex items-center gap-1.5">
             <button
               onClick={onToggleMute}
+              aria-label={isMuted ? 'Activar sonido' : 'Silenciar video'}
               className="p-1.5 text-stone-400 hover:text-amber-300 transition-colors"
               title={isMuted ? 'Activar sonido' : 'Silenciar'}
             >
@@ -183,6 +186,7 @@ export const TimelineControls: React.FC<TimelineControlsProps> = ({
               step="0.05"
               value={isMuted ? 0 : volume}
               onChange={(e) => onChangeVolume(parseFloat(e.target.value))}
+              aria-label="Volumen del video"
               className="w-16 h-1.5 bg-stone-800 rounded-lg accent-brand-600 cursor-pointer"
               title="Volumen de banda sonora acústica"
             />
@@ -192,6 +196,7 @@ export const TimelineControls: React.FC<TimelineControlsProps> = ({
           <div className="hidden lg:flex items-center bg-stone-950 p-0.5 rounded-lg border border-stone-800 text-[11px] font-mono">
             <button
               onClick={() => onChangeAspectRatio('16:9')}
+              aria-label="Formato 16:9"
               className={`px-2 py-0.5 rounded ${aspectRatio === '16:9' ? 'bg-brand-700 text-white' : 'text-ink-muted'}`}
               title="16:9 Panorámico Estándar"
             >
@@ -199,6 +204,7 @@ export const TimelineControls: React.FC<TimelineControlsProps> = ({
             </button>
             <button
               onClick={() => onChangeAspectRatio('9:16')}
+              aria-label="Formato 9:16 vertical"
               className={`px-2 py-0.5 rounded ${aspectRatio === '9:16' ? 'bg-brand-700 text-white' : 'text-ink-muted'}`}
               title="9:16 Vertical para Historias de WhatsApp / Instagram"
             >
@@ -206,6 +212,7 @@ export const TimelineControls: React.FC<TimelineControlsProps> = ({
             </button>
             <button
               onClick={() => onChangeAspectRatio('cinema')}
+              aria-label="Formato cine 2.39:1"
               className={`px-2 py-0.5 rounded ${aspectRatio === 'cinema' ? 'bg-brand-700 text-white' : 'text-ink-muted'}`}
               title="2.39:1 Cinema Scope"
             >
@@ -216,6 +223,7 @@ export const TimelineControls: React.FC<TimelineControlsProps> = ({
           {/* Fullscreen Button */}
           <button
             onClick={onToggleFullscreen}
+            aria-label="Abrir pantalla completa"
             className="p-2 rounded-xl text-stone-400 hover:text-amber-200 hover:bg-stone-800/80 transition-colors"
             title="Pantalla Completa"
           >

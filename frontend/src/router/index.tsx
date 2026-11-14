@@ -135,6 +135,8 @@ export const router = createBrowserRouter([
       { path: ROUTES.menu, element: withSuspense(<MenuPage />) },
       { path: '/experiencias/renzo', element: withSuspense(<RenzoArtifactPage />) },
       { path: '/experiencias/renzo-qr', element: withSuspense(<RenzoArtifactQrPage />) },
+      { path: '/experiencias/plantillas/:slug', element: withSuspense(<RenzoArtifactPage />) },
+      { path: '/experiencias/plantillas/:slug/qr', element: withSuspense(<RenzoArtifactQrPage />) },
       { path: '/experiencias/:token', element: withSuspense(<ExperiencePage />) },
       { path: ROUTES.business, element: withSuspense(<BusinessPage />) },
       { path: ROUTES.customCake, element: withSuspense(<CustomCakeEntryPage />) },
@@ -170,15 +172,10 @@ export const router = createBrowserRouter([
        * pidio la recuperacion desde otro dispositivo con la sesion aun viva aqui. */
       { path: ROUTES.resetPassword, element: withSuspense(<ResetPasswordPage />) },
       { path: ROUTES.mobileResetPassword, element: withSuspense(<MobileResetPasswordPage />) },
-      /* Confirmar un pedido EXIGE sesion (el backend rechaza /checkout/place sin
-       * ella): sin cliente no hay a quien notificar el estado, ni "Mis pedidos",
-       * ni contra quien validar cupones, saldo o un reclamo posterior.
-       * ProtectedRoute guarda de donde venia, asi que tras identificarse vuelve
-       * aqui con el carrito intacto. */
-      {
-        path: ROUTES.checkout,
-        element: <ProtectedRoute>{withSuspense(<CheckoutPage />)}</ProtectedRoute>,
-      },
+      /* El checkout se mantiene abierto para que un visitante pueda elegir destino,
+       * horario y contacto. La sesión se solicita al confirmar el pago, justo antes
+       * de crear el pedido, para conservar el carrito y el contexto de compra. */
+      { path: ROUTES.checkout, element: withSuspense(<CheckoutPage />) },
       { path: ROUTES.paymentSimulator, element: withSuspense(<PaymentSimulatorPage />) },
       { path: '/checkout/movil', element: withSuspense(<MobilePaymentReturnPage />) },
       { path: '/planes/movil', element: withSuspense(<MobilePlanReturnPage />) },

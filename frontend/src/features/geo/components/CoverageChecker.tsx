@@ -8,14 +8,12 @@ import {
   Search,
   Store,
 } from 'lucide-react';
-import { useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import toast from '@components/mui/MuiToast';
 import { Button } from '@components/ui/Button';
 import { FormSection } from '@components/ui/FormSection';
 import { Input } from '@components/ui/Input';
 import { useAppSelector } from '@app/hooks';
-import { ROUTES } from '@constants/routes';
 import { useAppState, type SelectedAddress } from '@context/AppStateContext';
 import { getApiErrorMessage } from '@services/api/client';
 import { trackUxEvent } from '@services/analytics';
@@ -46,8 +44,6 @@ interface CoverageCheckerProps {
  * contexto de compra confirmado.
  */
 export const CoverageChecker = ({ onConfirmed, onContinue }: CoverageCheckerProps) => {
-  const navigate = useNavigate();
-  const routeLocation = useLocation();
   const {
     cityId,
     deliveryType,
@@ -303,17 +299,6 @@ export const CoverageChecker = ({ onConfirmed, onContinue }: CoverageCheckerProp
   const handleConfirm = async () => {
     if (!isReady || !result?.covered || !result.branch || isConfirming) return;
 
-    // Consultar cobertura es público; asociar una dirección a una compra o a una
-    // libreta es una acción personal. No dejamos un contexto que parezca guardado
-    // para un visitante anónimo.
-    if (!isAuthenticated) {
-      const from = `${routeLocation.pathname}${routeLocation.search}`;
-      toast('Inicia sesión para guardar y usar esta dirección.');
-      onConfirmed?.();
-      navigate(ROUTES.login, { state: { from } });
-      return;
-    }
-
     const selected: SelectedAddress = {
       label: activeDistrictName ?? 'Mi dirección',
       line1: deliveryLine1 || (activeDistrictName ?? ''),
@@ -325,25 +310,17 @@ export const CoverageChecker = ({ onConfirmed, onContinue }: CoverageCheckerProp
     };
 
     setIsConfirming(true);
-    const saved = await persistToAddressBook(selected);
+    const saved = isAuthenticated ? await persistToAddressBook(selected) : null;
     setIsConfirming(false);
 
     selectDelivery({ ...selected, id: saved?.id }, result.branch.id);
-    toast.success(`Te atiende ${result.branch.name}`);
+    toast.success(isAuthenticated ? `Te atiende ${result.branch.name}` : `Dirección lista. Te atiende ${result.branch.name}`);
     onConfirmed?.();
     onContinue?.();
   };
 
   const handlePickup = () => {
     if (!result?.nearestPickup) return;
-
-    if (!isAuthenticated) {
-      const from = `${routeLocation.pathname}${routeLocation.search}`;
-      toast('Inicia sesión para elegir un local de recojo.');
-      onConfirmed?.();
-      navigate(ROUTES.login, { state: { from } });
-      return;
-    }
 
     selectPickup({
       id: result.nearestPickup.id,
@@ -364,7 +341,7 @@ export const CoverageChecker = ({ onConfirmed, onContinue }: CoverageCheckerProp
     );
   };
 
-  if (isAuthenticated && deliveryType === 'PICKUP' && pickupBranch) {
+  if (deliveryType === 'PICKUP' && pickupBranch) {
     return (
       <section
         role="status"

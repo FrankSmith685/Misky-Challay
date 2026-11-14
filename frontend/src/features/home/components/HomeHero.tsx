@@ -1,25 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  ArrowLeft,
-  ArrowRight,
-  BookOpen,
-  CalendarDays,
-  Check,
-  ChevronRight,
-  MessageCircle,
-  Pause,
-  Play,
-  Sparkles,
-} from 'lucide-react';
+import { ArrowLeft, ArrowRight, ChevronRight, Pause, Play, Sparkles } from 'lucide-react';
 import { Button } from '@components/ui/Button';
 import { ROUTES } from '@constants/routes';
-import { formatCurrency } from '@lib/format';
-import { catalogApi } from '@features/catalog/services/catalog.service';
-import { useBusinessInfo } from '@services/businessInfo';
-import { whatsappLink } from '@lib/whatsapp';
 import type { StorefrontContent } from '../content/storefront.schema';
-import { useStorefront } from '../content/StorefrontContext';
 
 type HeroSlide = {
   imageUrl: string;
@@ -27,7 +11,10 @@ type HeroSlide = {
   eyebrow: string;
   title: string;
   description: string;
+  embeddedCopy: boolean;
 };
+
+const hasEmbeddedCopy = (imageUrl: string) => /promo-(turrones-15-descuento|segunda-torta-35)\.jpg$/i.test(imageUrl);
 
 const buildHeroSlides = (hero: StorefrontContent['hero']): HeroSlide[] => [
   {
@@ -36,15 +23,25 @@ const buildHeroSlides = (hero: StorefrontContent['hero']): HeroSlide[] => [
     eyebrow: hero.eyebrow,
     title: hero.title,
     description: hero.description,
+    embeddedCopy: hasEmbeddedCopy(hero.imageUrl),
   },
-  ...(hero.slides ?? []),
+  ...(hero.slides ?? [])
+    .filter((slide) => slide.enabled !== false)
+    .map((slide) => ({ ...slide, embeddedCopy: hasEmbeddedCopy(slide.imageUrl) })),
 ];
 
-const actionRoute = (action: StorefrontContent['quickLinks'][number]['action']): string | null => ({
-  catalog: ROUTES.menu, custom: ROUTES.customCake, business: ROUTES.business, plans: ROUTES.plans,
-  experiences: ROUTES.cakeAr, cart: ROUTES.cart, coverage: ROUTES.coverage, orders: ROUTES.accountOrders,
-  guide: ROUTES.howToOrder, whatsapp: null,
-}[action]);
+const actionRoute = (action: StorefrontContent['hero']['primaryAction']): string => ({
+  catalog: ROUTES.menu,
+  custom: ROUTES.customCake,
+  business: ROUTES.business,
+  plans: ROUTES.plans,
+  experiences: ROUTES.experienceDemo,
+  cart: ROUTES.cart,
+  coverage: ROUTES.coverage,
+  orders: ROUTES.accountOrders,
+  guide: ROUTES.howToOrder,
+  whatsapp: ROUTES.howToOrder,
+}[action] ?? ROUTES.menu);
 
 const HeroGallery = ({ hero }: { hero: StorefrontContent['hero'] }) => {
   const slides = useMemo(() => buildHeroSlides(hero), [hero]);
@@ -59,18 +56,25 @@ const HeroGallery = ({ hero }: { hero: StorefrontContent['hero'] }) => {
   }, [hero.imageUrl]);
 
   useEffect(() => {
-    if (paused || hovered || focused || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined;
+    if (paused || hovered || focused || slides.length < 2 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined;
     const timer = window.setInterval(() => {
       setActive((value) => (value + 1) % slides.length);
-    }, 5200);
+    }, 5600);
     return () => window.clearInterval(timer);
   }, [focused, hovered, paused, slides.length]);
 
   const selectSlide = (index: number) => setActive((index + slides.length) % slides.length);
+  const embeddedCopy = current.embeddedCopy;
+  const controlClass = embeddedCopy
+    ? 'border-brand-300 bg-white/75 text-brand-900 hover:bg-white'
+    : 'border-white/35 bg-ink/25 text-white hover:bg-white/20';
+  const frameClass = embeddedCopy
+    ? 'aspect-[16/9] min-h-0 md:aspect-[2.4/1] md:min-h-[24rem] lg:aspect-[2.8/1] lg:min-h-[28rem]'
+    : 'min-h-[24rem] sm:min-h-[26rem] md:min-h-[24rem] lg:min-h-[28rem] xl:aspect-[2.8/1] xl:min-h-[28rem]';
 
   return (
     <figure
-      className="relative min-w-0"
+      className="relative"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onFocus={() => setFocused(true)}
@@ -78,79 +82,92 @@ const HeroGallery = ({ hero }: { hero: StorefrontContent['hero'] }) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false);
       }}
     >
-      <div className="relative overflow-hidden rounded-[1.25rem] border border-white/90 bg-white p-2 shadow-e5 sm:p-3">
-        <div id="hero-slide-panel" role="tabpanel" tabIndex={-1} className="relative aspect-[5/4] overflow-hidden rounded-[.8rem] bg-surface-muted">
-          {slides.map((slide, index) => (
-            <img
-              key={slide.imageUrl}
-              src={slide.imageUrl}
-              alt={slide.imageAlt}
-              loading={index === 0 ? 'eager' : 'lazy'}
-              width="800"
-              height="640"
-              className={`absolute inset-0 h-full w-full object-cover transition-[opacity,transform] duration-700 ease-out ${index === active ? 'scale-100 opacity-100' : 'scale-105 opacity-0'}`}
-            />
-          ))}
-          <div className="absolute inset-0 bg-gradient-to-t from-ink/75 via-ink/10 to-transparent" />
-          <div className="absolute inset-x-4 top-4 flex items-center justify-between gap-3 sm:inset-x-5 sm:top-5">
-            <span className="inline-flex min-w-0 items-center gap-2 rounded-full border border-white/70 bg-white/95 px-3 py-2 text-[11px] font-extrabold text-brand-800 shadow-e1">
-              <Sparkles className="size-3.5 shrink-0 text-accent-600" aria-hidden="true" />
+      <div id="home-promo-slide" role="tabpanel" tabIndex={-1} className={`relative isolate w-full overflow-hidden bg-brand-900 ${frameClass}`}>
+        <div className="absolute inset-0 bg-surface-muted">
+          {slides.map((slide, index) => {
+            const image = (
+              <img
+                src={slide.imageUrl}
+                alt={slide.imageAlt}
+                loading={index === 0 ? 'eager' : 'lazy'}
+                fetchPriority={index === 0 ? 'high' : 'auto'}
+                decoding={index === 0 ? 'sync' : 'async'}
+                width="1600"
+                height="900"
+                className={'absolute inset-0 size-full object-cover transition-[opacity,transform] duration-700 ease-out ' + (slide.embeddedCopy ? 'object-left sm:object-center ' : 'object-[42%_center] sm:object-center ') + (index === active ? 'scale-100 opacity-100' : 'scale-105 opacity-0')}
+              />
+            );
+            return slide.embeddedCopy
+              ? <Link key={slide.imageUrl + '-' + index} to={ROUTES.menu} className="absolute inset-0 block" aria-label={slide.title}>{image}</Link>
+              : <span key={slide.imageUrl + '-' + index}>{image}</span>;
+          })}
+        </div>
+        <div className={embeddedCopy ? 'pointer-events-none absolute inset-0' : 'pointer-events-none absolute inset-0 bg-gradient-to-t from-ink/90 via-ink/30 to-transparent sm:from-ink/85 sm:via-ink/10 md:bg-gradient-to-l md:from-ink/80 md:via-ink/35 md:to-transparent'} />
+        {!embeddedCopy && <div aria-live="polite" className="absolute inset-x-0 bottom-0 z-10 px-5 pb-10 pt-24 text-white sm:px-10 sm:pb-12 lg:inset-y-0 lg:ml-auto lg:flex lg:w-[48%] lg:items-center lg:px-12 lg:pb-0 lg:pt-0 lg:pr-44">
+          <div className="max-w-2xl">
+            <span className="mb-4 inline-flex max-w-full items-center gap-2 rounded-full border border-white/45 bg-ink/20 px-3 py-2 text-[11px] font-extrabold text-white shadow-e1 backdrop-blur sm:mb-5 sm:px-4">
+              <Sparkles className="size-3.5 shrink-0 text-accent-400" aria-hidden="true" />
               <span className="truncate">{current.eyebrow}</span>
             </span>
-            <span className="rounded-full border border-white/25 bg-ink/25 px-2.5 py-1.5 text-[10px] font-bold text-white backdrop-blur">
-              0{active + 1} / 0{slides.length}
-            </span>
-          </div>
-          <div aria-live="polite" className="absolute inset-x-4 bottom-4 flex items-end justify-between gap-3 text-white sm:inset-x-5 sm:bottom-5 sm:gap-4">
-            <div className="min-w-0 max-w-sm">
-              <p className="text-lg font-black leading-tight sm:text-2xl">{current.title}</p>
-              <p className="mt-1 text-xs leading-5 text-white/80 sm:text-sm">{current.description}</p>
-            </div>
-            <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
-              <button
-                type="button"
-                onClick={() => selectSlide(active - 1)}
-                className="grid size-9 place-items-center rounded-full border border-white/30 bg-ink/25 text-white backdrop-blur transition hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-                aria-label="Imagen anterior"
+            <h1 className="max-w-2xl text-[clamp(1.8rem,8vw,3.25rem)] font-black leading-[1.02] tracking-[-.045em] [overflow-wrap:anywhere] sm:text-[clamp(2rem,5vw,3.6rem)] lg:text-[clamp(2.35rem,3.4vw,3.75rem)] xl:text-[clamp(2.75rem,3.75vw,4.25rem)]">
+              {current.title}
+            </h1>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-white/90 sm:mt-4 sm:text-base sm:leading-7">
+              {current.description}
+            </p>
+            <div className="mt-5 flex flex-col gap-3 sm:mt-6 sm:flex-row sm:flex-wrap">
+              <Button
+                component={Link}
+                to={actionRoute(hero.primaryAction)}
+                size="lg"
+                className="w-full sm:w-auto"
+                sx={{ bgcolor: 'white', color: 'var(--color-brand-900)', '&:hover': { bgcolor: 'var(--color-brand-50)' } }}
               >
-                <ArrowLeft className="size-4" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setPaused((value) => !value)}
-                className="grid size-9 place-items-center rounded-full border border-white/30 bg-ink/25 text-white backdrop-blur transition hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-                aria-label={paused ? 'Reproducir carrusel' : 'Pausar carrusel'}
+                {hero.primaryLabel}
+                <ArrowRight className="ml-2 size-4" aria-hidden="true" />
+              </Button>
+              <Button
+                component={Link}
+                to={actionRoute(hero.secondaryAction)}
+                size="lg"
+                variant="outline"
+                className="w-full sm:w-auto"
+                sx={{ bgcolor: 'rgba(10,35,58,.24)', borderColor: 'rgba(255,255,255,.72)', color: 'white', '&:hover': { bgcolor: 'white', borderColor: 'white', color: 'var(--color-brand-900)' } }}
               >
-                {paused ? <Play className="size-4" aria-hidden="true" /> : <Pause className="size-4" aria-hidden="true" />}
-              </button>
-              <button
-                type="button"
-                onClick={() => selectSlide(active + 1)}
-                className="grid size-9 place-items-center rounded-full border border-white/30 bg-ink/25 text-white backdrop-blur transition hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-                aria-label="Imagen siguiente"
-              >
-                <ChevronRight className="size-4" aria-hidden="true" />
-              </button>
+                {hero.secondaryLabel}
+                <ChevronRight className="ml-2 size-4" aria-hidden="true" />
+              </Button>
             </div>
           </div>
+        </div>}
+        <span className={`absolute right-5 top-5 z-20 rounded-full border px-3 py-2 text-[10px] font-bold backdrop-blur sm:right-8 sm:top-8 ${embeddedCopy ? 'border-brand-200 bg-white/80 text-brand-900' : 'border-white/25 bg-ink/30 text-white'}`}>
+          {String(active + 1).padStart(2, '0')} / {String(slides.length).padStart(2, '0')}
+        </span>
+        <div className="absolute bottom-5 right-5 z-20 hidden items-center gap-1.5 sm:flex lg:bottom-auto lg:right-8 lg:top-1/2 lg:-translate-y-1/2">
+          <button type="button" onClick={() => selectSlide(active - 1)} className={`grid size-11 place-items-center rounded-full border backdrop-blur transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${controlClass}`} aria-label="Imagen anterior">
+            <ArrowLeft className="size-4" aria-hidden="true" />
+          </button>
+          <button type="button" onClick={() => setPaused((value) => !value)} className={`grid size-11 place-items-center rounded-full border backdrop-blur transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${controlClass}`} aria-label={paused ? 'Reproducir carrusel' : 'Pausar carrusel'}>
+            {paused ? <Play className="size-4" aria-hidden="true" /> : <Pause className="size-4" aria-hidden="true" />}
+          </button>
+          <button type="button" onClick={() => selectSlide(active + 1)} className={`grid size-11 place-items-center rounded-full border backdrop-blur transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${controlClass}`} aria-label="Imagen siguiente">
+            <ArrowRight className="size-4" aria-hidden="true" />
+          </button>
         </div>
       </div>
-      <figcaption className="flex items-center justify-between gap-4 px-2 pt-4 text-xs text-ink-muted">
-        <span className="min-w-0">
-          <strong className="block truncate text-ink">{current.eyebrow}</strong>
-          <span className="mt-0.5 block truncate">Cambia de idea cuando quieras</span>
-        </span>
-        <div className="flex shrink-0 items-center gap-1.5" role="tablist" aria-label="Galería de inspiración">
+      <figcaption className={`absolute bottom-4 right-5 z-10 flex items-center gap-1.5 text-xs md:hidden ${embeddedCopy ? 'text-brand-900' : 'text-white'}`}>
+        <span className="sr-only">{current.eyebrow}</span>
+        <div className="flex shrink-0 items-center gap-1.5" role="tablist" aria-label="Promociones destacadas">
           {slides.map((slide, index) => (
             <button
-              key={slide.imageUrl}
+              key={slide.imageUrl + '-tab'}
               type="button"
               role="tab"
               aria-selected={index === active}
-              aria-controls="hero-slide-panel"
-              aria-label={`Ver inspiración ${index + 1}`}
+              aria-controls="home-promo-slide"
+              aria-label={'Ver promoción ' + (index + 1)}
               onClick={() => selectSlide(index)}
-              className={`h-2 rounded-full transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${index === active ? 'w-7 bg-accent-500' : 'w-2 bg-brand-200 hover:bg-brand-400'}`}
+              className={'h-2 rounded-full transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ' + (index === active ? 'w-8 bg-accent-500' : embeddedCopy ? 'w-2 bg-brand-700/45 hover:bg-brand-900/70' : 'w-2 bg-white/60 hover:bg-white')}
             />
           ))}
         </div>
@@ -159,89 +176,14 @@ const HeroGallery = ({ hero }: { hero: StorefrontContent['hero'] }) => {
   );
 };
 
-export const HomeHero = ({ hero: supplied, content: suppliedContent }: { hero?: StorefrontContent['hero']; content?: StorefrontContent }) => {
-  const { content: contextContent } = useStorefront();
-  const content = suppliedContent ?? contextContent;
-  const hero = supplied ?? content.hero;
-  const primaryRoute = actionRoute(hero.primaryAction);
-  const secondaryRoute = actionRoute(hero.secondaryAction);
-  const business = useBusinessInfo();
-  const whatsapp = whatsappLink(
-    business.whatsappPhone ?? business.phone,
-    'Hola, necesito orientación para hacer un pedido en Misky Challay.',
-  );
-  const [minimumPrice, setMinimumPrice] = useState<number | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    void catalogApi
-      .getProducts({ sort: 'RECOMMENDED' })
-      .then((products) => {
-        const prices = products
-          .filter((product) => product.family === 'CAKE' && product.isAvailable && Number.isFinite(product.priceFrom) && product.priceFrom > 0)
-          .map((product) => product.priceFrom);
-        if (active && prices.length > 0) setMinimumPrice(Math.min(...prices));
-      })
-      .catch(() => undefined);
-    return () => {
-      active = false;
-    };
-  }, []);
-
+export const HomeHero = ({ hero: supplied }: { hero?: StorefrontContent['hero']; content?: StorefrontContent }) => {
+  // The content prop remains accepted for the admin preview API. The provider is
+  // the single source of truth for the public storefront.
+  const hero = supplied;
+  if (!hero) return null;
   return (
-    <section className="relative overflow-hidden border-b border-brand-100 bg-brand-50/60">
-      <div className="container-shell grid items-center gap-10 py-12 sm:py-16 lg:grid-cols-[1.05fr_.95fr] lg:gap-16 lg:py-20">
-        <div className="min-w-0 max-w-2xl">
-          <p className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-[.2em] text-brand-700">
-            <span className="h-px w-9 shrink-0 bg-accent-500" aria-hidden="true" />
-            {hero.eyebrow}
-          </p>
-          <h1 className="mt-5 text-[clamp(2.25rem,4.4vw,4.3rem)] font-black leading-[1.08] tracking-[-.04em] text-ink [overflow-wrap:anywhere]">
-            {hero.title}
-          </h1>
-          <p className="mt-6 max-w-xl text-base leading-8 text-ink-muted sm:text-lg">
-            {hero.description}
-          </p>
-          <div className="mt-8 flex flex-col gap-3 xl:flex-row">
-            <Button
-              component={Link}
-              to={primaryRoute ?? ROUTES.customCake}
-              size="lg"
-              className="w-full xl:w-auto"
-              leftIcon={<Sparkles className="size-4 shrink-0" aria-hidden="true" />}
-            >
-              <span className="whitespace-normal">{hero.primaryLabel}</span>
-              <ArrowRight className="ml-2 size-4 shrink-0" aria-hidden="true" />
-            </Button>
-            <Button component={Link} to={secondaryRoute ?? ROUTES.menu} size="lg" variant="outline" className="w-full xl:w-auto">
-              <span className="whitespace-normal">{hero.secondaryLabel}</span>
-            </Button>
-          </div>
-          <div className="mt-5 flex flex-wrap gap-2" aria-label="Accesos rápidos">
-            {content.quickLinks.map((quickLink, index) => {
-              const route = actionRoute(quickLink.action);
-              const icon = quickLink.action === 'guide' ? <BookOpen className="size-3.5" aria-hidden="true" />
-                : quickLink.action === 'whatsapp' ? <MessageCircle className="size-3.5" aria-hidden="true" />
-                  : <ChevronRight className="size-3.5" aria-hidden="true" />;
-              const className = `inline-flex min-h-10 items-center gap-2 rounded-full border px-3.5 text-xs font-bold transition hover:bg-white ${index % 3 === 0 ? 'border-brand-200 bg-white/80 text-brand-800 hover:border-brand-400' : index % 3 === 1 ? 'border-accent-200 bg-accent-50/70 text-accent-800 hover:border-accent-400' : 'border-tertiary-200 bg-tertiary-50/70 text-tertiary-800 hover:border-tertiary-400'}`;
-              if (quickLink.action === 'whatsapp' && whatsapp) return <a key={quickLink.id} href={whatsapp} target="_blank" rel="noopener noreferrer" className={className}>{quickLink.label} {icon}</a>;
-              if (!route) return null;
-              return <Link key={quickLink.id} to={route} className={className}>{quickLink.label} {icon}</Link>;
-            })}
-          </div>
-          <Link to={ROUTES.howToOrder} className="mt-5 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-brand-700 underline-offset-4 hover:underline">
-            <BookOpen className="size-4 shrink-0" aria-hidden="true" />
-            ¿Primera vez? Aprende cómo pedir
-            <ArrowRight className="size-3.5 shrink-0" aria-hidden="true" />
-          </Link>
-          <ul className="mt-6 flex flex-wrap gap-x-6 gap-y-3 border-t border-brand-200/60 pt-5 text-xs text-ink-muted">
-            <li className="flex items-center gap-2"><Check className="size-4 text-brand-600" aria-hidden="true" />{minimumPrice !== null ? `Opciones desde ${formatCurrency(minimumPrice)}` : 'Precio visible al personalizar'}</li>
-            <li className="flex items-center gap-2"><CalendarDays className="size-4 text-tertiary-600" aria-hidden="true" />Fecha según capacidad real</li>
-            <li className="flex items-center gap-2"><Check className="size-4 text-accent-600" aria-hidden="true" />Entrega o recojo programado</li>
-          </ul>
-        </div>
-        <HeroGallery hero={hero} />
-      </div>
+    <section className="border-b border-brand-100 bg-brand-50/60">
+      <HeroGallery hero={hero} />
     </section>
   );
 };

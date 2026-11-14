@@ -1,28 +1,25 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, BadgeCheck, CakeSlice, Flame, Sparkles, Star } from 'lucide-react';
+import { ArrowRight, CakeSlice, Flame, Sparkles, Star } from 'lucide-react';
 import { MarketingHeading, MarketingSection } from '@components/marketing';
 import { Button } from '@components/ui/Button';
-import { Reveal, RevealGroup } from '@components/ui/Reveal';
 import { EmptyState } from '@components/common/EmptyState';
 import { LoadError } from '@components/common/LoadError';
 import { useAppState } from '@context/AppStateContext';
 import { ROUTES } from '@constants/routes';
 import { catalogApi } from '@features/catalog/services/catalog.service';
-import { ProductCard } from '@features/catalog/components/ProductCard';
 import { ProductCardSkeleton } from '@features/catalog/components/ProductCardSkeleton';
-import { reviewsApi } from '@features/reviews/services/reviews.service';
 import { getApiErrorMessage } from '@services/api/client';
 import type { Product } from '@features/catalog/types';
-import type { ProductReview } from '@features/reviews/types';
+import { formatCurrency } from '@lib/format';
+import { productImage } from '@features/catalog/productImage';
+import { preparationLabel, productHref, PRODUCT_FAMILIES } from '@features/catalog/pastry';
 
 type HomeFeaturedMenuProps = {
   title?: string;
   description?: string;
   productIds?: number[];
 };
-
-type HomeReview = ProductReview & { productName: string };
 
 /** Muestra ventas reales cuando existen y usa productos destacados como selección inicial. */
 export const HomeFeaturedMenu = ({
@@ -35,7 +32,6 @@ export const HomeFeaturedMenu = ({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
-  const [reviews, setReviews] = useState<HomeReview[]>([]);
 
   useEffect(() => {
     let active = true;
@@ -58,32 +54,6 @@ export const HomeFeaturedMenu = ({
     return () => { active = false; };
   }, [branchId, productIds, retryNonce]);
 
-  useEffect(() => {
-    if (products.length === 0) {
-      setReviews([]);
-      return undefined;
-    }
-
-    let active = true;
-    void Promise.allSettled(
-      products.map(async (product) => {
-        const result = await reviewsApi.product(product.id);
-        return result.reviews.map((review) => ({ ...review, productName: product.name }));
-      }),
-    ).then((results) => {
-      if (!active) return;
-      const verified = results
-        .flatMap((result) => (result.status === 'fulfilled' ? result.value : []))
-        .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
-        .slice(0, 3);
-      setReviews(verified);
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [products]);
-
   const hasSalesHistory = !productIds.length && products.some((product) => (product.salesCount ?? 0) > 0);
   const eyebrow = hasSalesHistory ? 'Los más vendidos' : 'Selección para empezar';
   const isLegacyTitle = /favoritos|descubre/i.test(title);
@@ -93,21 +63,21 @@ export const HomeFeaturedMenu = ({
     : 'Todavía no hay suficiente historial de ventas. Te mostramos productos publicados y disponibles para que puedas elegir sin esperar.';
 
   return (
-    <MarketingSection tone="white" contentClassName="py-18 lg:py-24">
-      <Reveal className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-        <MarketingHeading eyebrow={eyebrow} title={displayTitle} description={displayDescription} />
+    <MarketingSection tone="white" contentClassName="pt-6 pb-8 sm:pt-8 sm:pb-10 lg:pt-10 lg:pb-16">
+      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between md:gap-8">
+        <MarketingHeading eyebrow={eyebrow} title={displayTitle} description={displayDescription} className="max-w-3xl" />
         <Button component={Link} to={ROUTES.menu} variant="outline" className="w-full md:w-auto">
           Ver todo el catálogo <ArrowRight className="size-4" aria-hidden="true" />
         </Button>
-      </Reveal>
+      </div>
 
-      <RevealGroup className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3" stagger={90}>
+      <div className="mt-6 grid gap-4 sm:mt-8 sm:gap-5 md:grid-cols-2 lg:mt-9 xl:grid-cols-3 xl:gap-6">
         {isLoading
           ? Array.from({ length: 3 }, (_, index) => <ProductCardSkeleton key={index} />)
           : error
             ? <div className="sm:col-span-2 lg:col-span-3"><LoadError title="No pudimos cargar la selección" message={error} onRetry={() => setRetryNonce((value) => value + 1)} /></div>
             : products.length > 0
-              ? products.map((product) => <ProductCard key={product.id} product={product} />)
+              ? products.map((product) => <FeaturedProductCard key={product.id} product={product} />)
               : <div className="sm:col-span-2 lg:col-span-3">
                 <EmptyState
                   icon={CakeSlice}
@@ -116,9 +86,9 @@ export const HomeFeaturedMenu = ({
                   action={<Button component={Link} to={ROUTES.menu} variant="outline">Abrir catálogo <ArrowRight className="size-4" /></Button>}
                 />
               </div>}
-      </RevealGroup>
+      </div>
 
-      <Reveal delay={180} className={`mt-7 flex items-start gap-3 border-l-2 px-4 py-3 text-sm ${hasSalesHistory ? 'border-accent-500 bg-accent-50 text-accent-900' : 'border-brand-600 bg-brand-50 text-brand-900'}`}>
+      <div className={`mt-5 flex items-start gap-3 border-l-2 px-4 py-3 text-xs leading-5 sm:mt-6 sm:text-sm ${hasSalesHistory ? 'border-accent-500 bg-accent-50 text-accent-900' : 'border-brand-600 bg-brand-50 text-brand-900'}`}>
         {hasSalesHistory ? <Flame className="mt-0.5 size-4 shrink-0" aria-hidden="true" /> : <Sparkles className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}
         <p>
           <strong>{hasSalesHistory ? 'Elegidos por otros clientes.' : 'Una selección para comenzar.'}</strong>{' '}
@@ -126,36 +96,36 @@ export const HomeFeaturedMenu = ({
             ? 'Ordenados por unidades vendidas en pedidos confirmados.'
             : 'Cuando haya más ventas, esta sección se ordenará automáticamente por popularidad.'}
         </p>
-      </Reveal>
+      </div>
 
-      {reviews.length > 0 && (
-        <Reveal delay={240} className="mt-12 border-t border-line pt-10">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[.16em] text-brand-700">Compras verificadas</p>
-              <h3 className="mt-2 text-2xl font-black tracking-tight text-ink sm:text-3xl">Lo que dicen quienes ya lo probaron</h3>
-            </div>
-            <p className="text-sm text-ink-muted">Opiniones publicadas después de una entrega confirmada.</p>
-          </div>
-          <div className="mt-6 grid gap-4 md:grid-cols-3">
-            {reviews.map((review) => (
-              <article key={review.id} className="rounded-card border border-line bg-white p-5 shadow-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex gap-0.5" aria-label={`${review.rating} de 5 estrellas`}>
-                    {[1, 2, 3, 4, 5].map((star) => <Star key={star} className={`size-4 ${star <= review.rating ? 'fill-amber-400 text-amber-500' : 'text-line'}`} aria-hidden="true" />)}
-                  </div>
-                  {review.verifiedPurchase && <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-brand-700"><BadgeCheck className="size-4" aria-hidden="true" /> Compra verificada</span>}
-                </div>
-                <p className="mt-4 text-sm leading-6 text-ink">{review.comment || 'Calificó este producto sin comentario.'}</p>
-                <div className="mt-4 border-t border-line pt-3">
-                  <p className="text-xs font-extrabold text-ink">{review.authorName}</p>
-                  <p className="mt-0.5 text-[11px] text-ink-muted">{review.productName}</p>
-                </div>
-              </article>
-            ))}
-          </div>
-        </Reveal>
-      )}
     </MarketingSection>
+  );
+};
+
+const FeaturedProductCard = ({ product }: { product: Product }) => {
+  const isBuilder = product.cakeSaleMode === 'SEMI_CUSTOM' || product.cakeSaleMode === 'ADVANCED';
+  const image = productImage(product);
+  const to = productHref(product);
+  const price = isBuilder ? product.priceFrom : product.defaultVariantPrice || product.priceFrom;
+  return (
+    <article className="group flex min-w-0 flex-col overflow-hidden rounded-card border border-line bg-white shadow-e1 transition duration-200 hover:-translate-y-1 hover:shadow-e3">
+      <Link to={to} state={isBuilder ? { customCakeEntry: true } : undefined} className="relative block aspect-[4/3] max-h-[18rem] overflow-hidden bg-surface-muted sm:max-h-[20rem] md:max-h-[21rem] xl:max-h-[22rem]">
+        {image ? <img src={image} alt={product.name} loading="lazy" width="720" height="540" className="size-full object-cover transition duration-500 group-hover:scale-105" /> : <CakeSlice className="absolute inset-0 m-auto size-14 text-brand-300" aria-hidden="true" />}
+        <div className="absolute inset-0 bg-gradient-to-t from-ink/35 to-transparent" />
+        <div className="absolute inset-x-3 bottom-3 flex flex-wrap gap-1.5">
+          {product.isFeatured && <span className="inline-flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-extrabold text-brand-800"><Star className="size-3.5 fill-current" aria-hidden="true" /> Recomendado</span>}
+          {(product.salesCount ?? 0) > 0 && <span className="inline-flex items-center gap-1 rounded-full bg-accent-400 px-2.5 py-1 text-[11px] font-extrabold text-ink"><Flame className="size-3.5" aria-hidden="true" /> Más vendido</span>}
+        </div>
+      </Link>
+      <div className="flex flex-1 flex-col p-3.5 sm:p-5 lg:p-6">
+        <h3 className="text-base font-black leading-tight tracking-tight text-ink sm:text-lg">{product.name}</h3>
+        <p className="mt-2 line-clamp-2 text-sm leading-6 text-ink-muted">{product.description || 'Una opción dulce para compartir.'}</p>
+        <p className="mt-3 text-xs font-semibold text-ink-muted">{product.family ? `${PRODUCT_FAMILIES[product.family]} · ` : ''}{preparationLabel(product)}</p>
+        <div className="mt-auto flex items-end justify-between gap-3 pt-5">
+          <div><span className="block text-xs text-ink-muted">{isBuilder ? 'Desde' : 'Precio'}</span><span className="text-xl font-black tabular-nums text-ink">{formatCurrency(price)}</span></div>
+          <Link to={to} state={isBuilder ? { customCakeEntry: true } : undefined} className="inline-flex min-h-10 items-center gap-1 rounded-field bg-brand-700 px-3 text-xs font-extrabold text-white transition hover:bg-brand-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600">Ver detalle <ArrowRight className="size-3.5" aria-hidden="true" /></Link>
+        </div>
+      </div>
+    </article>
   );
 };

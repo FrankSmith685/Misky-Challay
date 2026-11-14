@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom';
 import {
   Box,
-  Button,
   Card,
   CardActionArea,
   CardContent,
@@ -11,6 +10,7 @@ import {
 } from '@mui/material';
 import { AlertTriangle, Clock3, Flame, Plus, Sparkles, Star } from 'lucide-react';
 import { ProductMedia } from '@components/ui/ProductMedia';
+import { Button } from '@components/ui/Button';
 import { TagList } from '@components/ui/DietaryTag';
 import { formatCurrency } from '@lib/format';
 import { FavoriteButton } from '@features/favorites/components/FavoriteButton';
@@ -85,7 +85,7 @@ export const ProductCard = ({ product, allergenAlerts }: ProductCardProps) => {
           justifyContent: 'flex-start',
         }}
       >
-        <ProductMedia src={displayImage} alt={product.name} ratio="4/3" className="shrink-0 bg-surface-muted">
+        <ProductMedia src={displayImage} alt={product.name} ratio="4/3" className="max-h-[18rem] shrink-0 bg-surface-muted sm:max-h-[20rem] xl:max-h-[22rem]">
             {(isBuilder || displayImage?.endsWith('.svg')) && displayImage && <Chip
             label="Imagen referencial"
             size="small"
@@ -228,13 +228,14 @@ export const ProductCard = ({ product, allergenAlerts }: ProductCardProps) => {
         {!product.isAvailable ? (
           <AvailabilityAlertButton product={product} fullWidth compact />
         ) : isBuilder ? (
-          <Button
+            <Button
             component={Link}
             to={to}
             state={{ customCakeEntry: true }}
             fullWidth
-            variant="outlined"
-            startIcon={<Sparkles size={16} />}
+              variant="outline"
+              size="md"
+              leftIcon={<Sparkles size={16} />}
             disabled={!product.isAvailable}
             sx={{ minHeight: 44 }}
           >
@@ -245,8 +246,9 @@ export const ProductCard = ({ product, allergenAlerts }: ProductCardProps) => {
             component={Link}
             to={to}
             fullWidth
-            variant="contained"
-            startIcon={<Clock3 size={16} />}
+            variant="primary"
+            size="md"
+            leftIcon={<Clock3 size={16} />}
             disabled={!product.isAvailable}
             sx={{ minHeight: 44 }}
           >
@@ -257,8 +259,9 @@ export const ProductCard = ({ product, allergenAlerts }: ProductCardProps) => {
             component={Link}
             to={to}
             fullWidth
-            variant="contained"
-            startIcon={<Plus size={16} />}
+            variant="primary"
+            size="md"
+            leftIcon={<Plus size={16} />}
             disabled={!product.isAvailable}
             sx={{ minHeight: 44 }}
           >

@@ -117,6 +117,7 @@ export class EmotionalSoundtrackEngine {
   private isMuted: boolean = false;
   private volume: number = 0.85;
   private startTime: number = 0;
+  private activeSources = new Set<AudioScheduledSourceNode>();
 
   constructor() {
     // AudioContext will be lazily initialized on user interaction
@@ -162,6 +163,8 @@ export class EmotionalSoundtrackEngine {
     }
 
     this.stop();
+    this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
+    this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : this.volume, this.ctx.currentTime);
     this.startTime = this.ctx.currentTime - offsetSeconds;
 
     // Filter notes that should play after offsetSeconds
@@ -205,6 +208,8 @@ export class EmotionalSoundtrackEngine {
       gain.connect(this.reverbNode);
       gain.connect(this.masterGain);
 
+      this.trackSource(osc1);
+      this.trackSource(osc2);
       osc1.start(when);
       osc2.start(when);
       osc1.stop(when + note.duration);
@@ -223,6 +228,7 @@ export class EmotionalSoundtrackEngine {
       osc.connect(gain);
       gain.connect(this.reverbNode);
 
+      this.trackSource(osc);
       osc.start(when);
       osc.stop(when + note.duration);
     } else {
@@ -261,6 +267,8 @@ export class EmotionalSoundtrackEngine {
       gain.connect(this.masterGain);
       gain.connect(this.reverbNode);
 
+      this.trackSource(fundamental);
+      this.trackSource(overtone);
       fundamental.start(when);
       overtone.start(when);
       fundamental.stop(when + note.duration);
@@ -269,12 +277,28 @@ export class EmotionalSoundtrackEngine {
   }
 
   public stop() {
-    // Clearing scheduled events by stopping audio context connections or resetting
     if (this.ctx && this.masterGain) {
-      // Quick fade-out
-      this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
-      this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : this.volume, this.ctx.currentTime);
+      const now = this.ctx.currentTime;
+      const stopAt = now + 0.04;
+
+      // Fade out briefly to avoid clicks, then stop every scheduled oscillator.
+      this.masterGain.gain.cancelScheduledValues(now);
+      this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, now);
+      this.masterGain.gain.linearRampToValueAtTime(0, stopAt);
+      for (const source of this.activeSources) {
+        try {
+          source.stop(stopAt);
+        } catch {
+          // A source may have finished between scheduling and cleanup.
+        }
+      }
+      this.activeSources.clear();
     }
+  }
+
+  private trackSource(source: AudioScheduledSourceNode) {
+    this.activeSources.add(source);
+    source.addEventListener('ended', () => this.activeSources.delete(source), { once: true });
   }
 
   public setVolume(val: number) {

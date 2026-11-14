@@ -4,15 +4,19 @@ import { X, Heart, Sparkles, Copy, Check, Printer, Edit3 } from 'lucide-react';
 interface MemoryCardModalProps {
   isOpen: boolean;
   onClose: () => void;
+  recipient: string;
+  template: {
+    headline: string;
+    message: string;
+    signature: string;
+  };
 }
 
-export const MemoryCardModal: React.FC<MemoryCardModalProps> = ({ isOpen, onClose }) => {
-  const [recipient, setRecipient] = useState('Renzo');
-  const [headline, setHeadline] = useState('El mejor regalo es tener una gran familia');
-  const [message, setMessage] = useState(
-    'Para el mejor papá del mundo: Gracias por cada mirada llena de ternura desde el primer día en que me sostuviste, por cada risa compartida en el parque, y por guiarnos siempre con amor incondicional. Eres el corazón de nuestro hogar y nuestra mayor bendición. ¡Que este nuevo año de vida te traiga toda la alegría que mereces!'
-  );
-  const [signature, setSignature] = useState('Con todo nuestro amor infinito, tu familia ♥');
+export const MemoryCardModal: React.FC<MemoryCardModalProps> = ({ isOpen, onClose, recipient: initialRecipient, template }) => {
+  const [recipient, setRecipient] = useState(initialRecipient);
+  const [headline, setHeadline] = useState(template.headline);
+  const [message, setMessage] = useState(template.message);
+  const [signature, setSignature] = useState(template.signature);
   const [copied, setCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
@@ -30,18 +34,19 @@ export const MemoryCardModal: React.FC<MemoryCardModalProps> = ({ isOpen, onClos
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-brand-900/80 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-brand-900/80 backdrop-blur-md animate-in fade-in duration-200" role="dialog" aria-modal="true" aria-labelledby="memory-card-title">
       <div className="relative w-full max-w-2xl bg-amber-50 text-stone-900 rounded-3xl shadow-2xl border-4 border-amber-200/80 overflow-hidden flex flex-col max-h-[92vh]">
         {/* Top Decorative Bar */}
         <div className="bg-brand-800 text-white px-6 py-4 flex items-center justify-between shadow-md">
           <div className="flex items-center gap-2">
             <Heart className="w-5 h-5 fill-brand-200 text-brand-100 animate-pulse" />
-            <h3 className="font-serif-display text-lg font-bold tracking-wide">
+            <h3 id="memory-card-title" className="font-serif-display text-lg font-bold tracking-wide">
               Tarjeta de Dedicatoria Especial
             </h3>
           </div>
           <button
             onClick={onClose}
+            aria-label="Cerrar tarjeta"
             className="p-1 rounded-full text-white hover:text-brand-100 hover:bg-brand-700 transition-colors"
             title="Cerrar"
           >
@@ -67,7 +72,7 @@ export const MemoryCardModal: React.FC<MemoryCardModalProps> = ({ isOpen, onClos
                   Misky Challay · Pasteler-IA Artesanal
                 </h4>
                 <p className="text-[11px] text-stone-600 font-sans-ui mt-0.5">
-                  Pastel personalizado con animación Ghibli, música y recuerdos en AR
+                  Pastel personalizado con animación Ghibli, música y recuerdos digitales
                 </p>
               </div>
             </div>
@@ -77,7 +82,7 @@ export const MemoryCardModal: React.FC<MemoryCardModalProps> = ({ isOpen, onClos
               <span>·</span>
               <span className="text-amber-800 font-semibold">Perfecciona con IA</span>
               <span>·</span>
-              <span className="text-amber-800 font-semibold">Vive en AR</span>
+              <span className="text-amber-800 font-semibold">Vive la experiencia</span>
             </div>
           </div>
 

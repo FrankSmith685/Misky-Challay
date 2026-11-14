@@ -24,6 +24,7 @@ interface Props {
   onReferenceChange: (value: string) => void;
   onDelivery: (address: SelectedAddress, branchId: number) => void;
   onPickup: (branch: SelectedPickupBranch) => void;
+  onCoverageInvalid?: () => void;
   onChangePickup: () => void;
   onChangeAddress: () => void;
   onOpenMap: () => void;
@@ -42,6 +43,7 @@ export const CheckoutDestinationPicker = ({
   onReferenceChange,
   onDelivery,
   onPickup,
+  onCoverageInvalid,
   onChangePickup,
   onChangeAddress,
   onOpenMap,
@@ -82,7 +84,7 @@ export const CheckoutDestinationPicker = ({
   useEffect(() => () => { requestId.current += 1; }, []);
 
   useEffect(() => {
-    if (deliveryType !== 'DELIVERY' || !address || branchId !== null) {
+    if (deliveryType !== 'DELIVERY' || !address) {
       restorationKey.current = '';
       return;
     }
@@ -91,6 +93,7 @@ export const CheckoutDestinationPicker = ({
     restorationKey.current = key;
     if (address.latitude == null || address.longitude == null) {
       setError('Esta dirección guardada no tiene un punto exacto. Elige otra o ajústala en el mapa.');
+      onCoverageInvalid?.();
       return;
     }
     const current = ++requestId.current;
@@ -101,16 +104,20 @@ export const CheckoutDestinationPicker = ({
         if (current !== requestId.current) return;
         setCoverage(result);
         if (result.covered && result.branch) onDelivery(address, result.branch.id);
-        else setError(result.reason ?? 'Esta dirección está fuera de cobertura. Elige otra ubicación.');
+        else {
+          onCoverageInvalid?.();
+          setError(result.reason ?? 'Esta dirección está fuera de cobertura. Elige otra ubicación.');
+        }
       })
       .catch((requestError) => {
         if (current !== requestId.current) return;
+        onCoverageInvalid?.();
         setError(axios.isAxiosError(requestError) && (requestError.response?.status ?? 0) >= 500
           ? 'No pudimos calcular el delivery ahora. Vuelve a intentarlo.'
           : getApiErrorMessage(requestError));
       })
       .finally(() => { if (current === requestId.current) setChecking(false); });
-  }, [address, addressRetry, branchId, deliveryType, onDelivery]);
+  }, [address, addressRetry, branchId, deliveryType, onCoverageInvalid, onDelivery]);
 
   const checkAddress = async (suggestion: AddressSuggestion) => {
     setCandidate(suggestion);

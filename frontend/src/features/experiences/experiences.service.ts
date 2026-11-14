@@ -138,6 +138,34 @@ export interface ExperienceTemplate {
   name: string;
   sceneJson: ExperienceScene;
   isActive: boolean;
+  artifactSlug?: string | null;
+  artifactJson?: ExperienceArtifactConfig | null;
+}
+export interface ExperienceArtifactScene {
+  id: number;
+  title: string;
+  subtitle: string;
+  startTime: number;
+  endTime: number;
+  description: string;
+  quote: string;
+  ghibliAssetId: number | null;
+  realAssetId: number | null;
+}
+export interface ExperienceArtifactConfig {
+  recipient: string;
+  duration: number;
+  hero: { eyebrow: string; headline: string; greeting: string; description: string };
+  dedication: { eyebrow: string; headline: string; body: string };
+  card: { headline: string; message: string; signature: string };
+  scenes: ExperienceArtifactScene[];
+  features: {
+    directCardOnQr: boolean;
+    showInternalHeader: boolean;
+    showSharing: boolean;
+    showDownloads: boolean;
+    showDedicationActions: boolean;
+  };
 }
 export interface ExperienceAsset {
   id: number;
@@ -248,6 +276,8 @@ export const experiencesApi = {
     get<{ scene: ExperienceScene; expiresAt: string }>(`/public/${encodeURIComponent(token)}`),
   campaign: () =>
     get<{ scene: ExperienceScene; campaign: { packageId: number; packageName: string; templateId: number; version: number } }>('/public/campaign'),
+  artifact: (slug: string) =>
+    get<{ template: { id: number; name: string; version: number; slug: string | null }; artifact: ExperienceArtifactConfig | null; assetIds: number[] }>(`/public/artifacts/${encodeURIComponent(slug)}`),
   upload: async (
     file: File,
     kind: ExperienceAsset['kind'],
@@ -274,6 +304,8 @@ export const experiencesApi = {
     ).data.data;
   },
 };
+export const publicArtifactAssetUrl = (slug: string, assetId: number) =>
+  `${api.defaults.baseURL ?? '/api/v1'}/experiences/public/artifacts/${encodeURIComponent(slug)}/assets/${assetId}`;
 export const EXPERIENCE_LABELS: Record<string, string> = {
   EXPIRED: 'Vencida',
   DRAFT: 'Borrador',

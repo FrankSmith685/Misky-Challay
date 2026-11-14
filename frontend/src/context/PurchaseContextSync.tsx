@@ -16,7 +16,7 @@ import { geoApi } from '@features/geo/services/geo.service';
  * Dos sentidos, con una regla de precedencia clara:
  *
  *  - HIDRATAR: al identificarse, se baja lo ultimo que uso. Un invitado puede
- *    consultar cobertura, pero nunca conserva una direccion o local activo.
+ *    conservar un destino temporal en este navegador para completar su compra.
  *  - SUBIR: cada seleccion completa se guarda en su cuenta.
  *
  * La cobertura nunca se hereda del servidor: se vuelve a preguntar por las zonas
@@ -51,13 +51,9 @@ export const PurchaseContextSync = () => {
   useEffect(() => {
     const previous = previousUserId.current;
     previousUserId.current = userId;
-    const hasPrivateDestination =
-      address !== null
-      || branchId !== null
-      || pickupBranch !== null
-      || deliveryType === 'PICKUP';
-
-    if (userId === null && (previous !== null || hasPrivateDestination)) reset();
+    // Un visitante sí puede tener un destino temporal en este navegador. Solo
+    // limpiamos el contexto cuando una sesión identificada acaba de cerrarse.
+    if (userId === null && previous !== null) reset();
   }, [userId, address, branchId, pickupBranch, deliveryType, reset]);
 
   /**
@@ -215,6 +211,6 @@ const buildPayload = ({
   }
   // Sin id no hay nada que referenciar en la libreta: guardar solo la sede
   // sustituiria una direccion buena por uno a medias en el proximo inicio.
-  if (!address?.id || branchId === null) return null;
+  if (!address?.id || branchId === null || address.latitude == null || address.longitude == null) return null;
   return { deliveryType: 'DELIVERY', cityId, branchId, addressId: address.id };
 };

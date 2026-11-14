@@ -20,6 +20,7 @@ const imageCard = card.extend({ imageUrl: storefrontImage, imageAlt: text(180) }
 const linkAction = z.enum(['catalog', 'custom', 'business', 'plans', 'experiences', 'cart', 'coverage', 'orders', 'guide', 'whatsapp']);
 const choice = card.extend({ label: text(60), action: linkAction.optional() });
 const heroSlide = z.object({
+  enabled: z.boolean().default(true),
   eyebrow: text(70),
   title: text(130),
   description: text(500),

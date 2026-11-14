@@ -91,6 +91,55 @@ export const sceneSchema = z.object({
 });
 export type ExperienceScene = z.infer<typeof sceneSchema>;
 export type ExperienceSceneLayer = z.infer<typeof sceneLayerSchema>;
+
+const artifactText = (max: number) => z.string().trim().min(1).max(max);
+export const artifactSceneSchema = z.object({
+  id: z.number().int().positive(),
+  title: artifactText(100),
+  subtitle: artifactText(100),
+  startTime: z.number().min(0).max(3600),
+  endTime: z.number().gt(0).max(3600),
+  description: artifactText(500),
+  quote: artifactText(500),
+  ghibliAssetId: z.number().int().positive().nullable().default(null),
+  realAssetId: z.number().int().positive().nullable().default(null),
+}).refine((value) => value.endTime > value.startTime, 'El final de la escena debe ser posterior al inicio.');
+
+export const artifactTemplateSchema = z.object({
+  recipient: artifactText(100),
+  duration: z.number().int().min(1).max(3600),
+  hero: z.object({
+    eyebrow: artifactText(120),
+    headline: artifactText(180),
+    greeting: artifactText(180),
+    description: artifactText(600),
+  }),
+  dedication: z.object({
+    eyebrow: artifactText(120),
+    headline: artifactText(300),
+    body: artifactText(800),
+  }),
+  card: z.object({
+    headline: artifactText(180),
+    message: artifactText(1200),
+    signature: artifactText(240),
+  }),
+  scenes: z.array(artifactSceneSchema).min(1).max(12),
+  features: z.object({
+    directCardOnQr: z.boolean().default(true),
+    showInternalHeader: z.boolean().default(false),
+    showSharing: z.boolean().default(false),
+    showDownloads: z.boolean().default(false),
+    showDedicationActions: z.boolean().default(false),
+  }).default({}),
+});
+export type ArtifactTemplate = z.infer<typeof artifactTemplateSchema>;
+
+export const artifactAssetIds = (artifact: unknown): number[] => {
+  const parsed = artifactTemplateSchema.safeParse(artifact);
+  if (!parsed.success) return [];
+  return [...new Set(parsed.data.scenes.flatMap((scene) => [scene.ghibliAssetId, scene.realAssetId]).filter((id): id is number => id !== null))];
+};
 export const packageSchema = z
   .object({
     name: z.string().trim().min(3).max(100),

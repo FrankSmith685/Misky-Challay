@@ -5,9 +5,9 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 config({ path: path.resolve(process.cwd(), 'backend/.env') });
 
 /**
- * Confirmar un pedido exige sesion, asi que el carrito ofrece cosas distintas a un
- * visitante y a un cliente identificado. Esta ayuda inicia sesion de verdad: el
- * portero de sesion valida el token contra /auth/me y descarta un `auth` inventado.
+ * El checkout es público hasta el último paso: el visitante puede revisar destino
+ * y precios, y la cuenta se valida justo antes de crear el pedido. Esta ayuda inicia
+ * sesión de verdad cuando una prueba necesita revisar el estado autenticado.
  */
 const signIn = async (request: APIRequestContext) => {
   const email = process.env.ADMIN_EMAIL;
@@ -159,19 +159,18 @@ test('carrito presenta el pedido, recalcula cantidades y protege el vaciado', as
   await expect(page.getByText('Productos (4)')).toBeVisible();
 });
 
-test('sin sesión el carrito pide identificarse antes de ir al checkout', async ({ page }) => {
-  // Confirmar el pedido exige cuenta (el backend rechaza /checkout/place sin ella).
-  // Se avisa aqui, no rebotando al cliente desde el checkout sin explicacion.
+test('sin sesión el carrito permite revisar el pedido antes de pedir autenticación al pagar', async ({ page }) => {
   await seedCart(page);
   await page.goto('/carrito');
 
   await expect(page.getByRole('heading', { level: 1, name: 'Revisa tu carrito' })).toBeVisible();
-  await expect(page.getByText(/Para confirmar el pedido necesitas tu cuenta/)).toBeVisible();
+  await expect(page.getByText(/Puedes revisar tu pedido y elegir/)).toBeVisible();
 
-  const cta = page.getByRole('button', { name: 'Inicia sesión para continuar' });
+  const cta = page.getByRole('button', { name: 'Revisar pedido' });
   await expect(cta).toBeVisible();
   await cta.click();
-  await expect(page).toHaveURL(/\/ingresar/);
+  await expect(page).toHaveURL(/\/checkout$/);
+  await expect(page.getByRole('heading', { level: 1, name: 'Finaliza tu pedido' })).toBeVisible();
 });
 
 test('carrito móvil explica la cobertura pendiente sin desbordarse', async ({ page }) => {

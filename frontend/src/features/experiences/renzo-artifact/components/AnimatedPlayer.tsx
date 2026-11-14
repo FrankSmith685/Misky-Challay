@@ -116,6 +116,7 @@ export const AnimatedPlayer: React.FC<AnimatedPlayerProps> = ({
                   <img
                     src={scene.ghibliImg}
                     alt={scene.title}
+                  decoding="async"
                     referrerPolicy="no-referrer"
                     className="w-full h-full object-cover will-change-transform"
                     style={{
@@ -133,6 +134,7 @@ export const AnimatedPlayer: React.FC<AnimatedPlayerProps> = ({
                   <img
                     src={scene.realImg}
                     alt={scene.title}
+                  decoding="async"
                     referrerPolicy="no-referrer"
                     className="w-full h-full object-cover filter contrast-105 saturate-110 will-change-transform"
                     style={{
@@ -151,6 +153,7 @@ export const AnimatedPlayer: React.FC<AnimatedPlayerProps> = ({
                 <img
                   src={scene.realImg}
                   alt={scene.title}
+                  decoding="async"
                   referrerPolicy="no-referrer"
                   className="w-full h-full object-cover filter sepia-[0.15] contrast-[1.04] brightness-[1.02] will-change-transform"
                   style={{
@@ -167,6 +170,7 @@ export const AnimatedPlayer: React.FC<AnimatedPlayerProps> = ({
                 <img
                   src={scene.ghibliImg}
                   alt={scene.title}
+                  decoding="async"
                   referrerPolicy="no-referrer"
                   className="w-full h-full object-cover will-change-transform"
                   style={{
@@ -182,6 +186,7 @@ export const AnimatedPlayer: React.FC<AnimatedPlayerProps> = ({
                       <img
                         src={scene.realImg}
                         alt="Memoria Original"
+                        decoding="async"
                         referrerPolicy="no-referrer"
                         className="w-full h-full object-cover"
                       />

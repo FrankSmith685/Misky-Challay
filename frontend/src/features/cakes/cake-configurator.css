@@ -102,9 +102,10 @@
   flex-direction: column;
   border: 1px solid var(--cake-border);
   border-radius: var(--radius-card);
-  background: var(--color-surface);
+  background: color-mix(in srgb, var(--color-surface) 98%, var(--color-brand-50));
   padding: 18px;
   text-align: left;
+  overflow: hidden;
   transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
@@ -152,6 +153,15 @@
   border-color: var(--color-brand-700);
   background: color-mix(in srgb, var(--color-brand-50) 55%, var(--color-surface));
   box-shadow: 0 0 0 1px var(--color-brand-700), 0 8px 20px color-mix(in srgb, var(--color-brand-700) 10%, transparent);
+}
+
+.cake-page .cake-size-card[aria-checked='true']::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  border-radius: inherit;
+  background: var(--color-brand-700);
+  content: '';
 }
 
 .cake-page .cake-size-card:focus-visible,
@@ -226,8 +236,10 @@
 @media (max-width: 639px) {
   .cake-page .cake-page-header { border-radius: var(--radius-card); padding: 18px; }
   .cake-page .cake-lead-card { flex: 1; }
-  .cake-page .cake-size-card { min-height: 158px; padding: 14px; }
+  .cake-page .cake-size-card { min-height: 156px; padding: 12px; border-radius: 14px; }
   .cake-page .cake-size-art { width: 40px; height: 34px; }
+  .cake-page .cake-size-card .cake-size-value { font-size: 1.375rem; }
+  .cake-page .cake-size-card .cake-size-price { font-size: .875rem; }
   .cake-page .cake-surface { border-radius: var(--radius-card); }
 }
 
