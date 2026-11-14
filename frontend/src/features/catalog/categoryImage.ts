@@ -8,8 +8,10 @@ export const CATEGORY_IMAGES: Record<string, string> = {
   '24-horas': '/images/categories/promo-tortas-24-horas.jpg',
   postres: '/images/categories/promo-postres.jpg',
   turrones: '/images/categories/promo-turrones.jpg',
+  kekes: '/images/cakes/vanilla.svg',
   porciones: '/images/categories/promo-porciones.jpg',
   bocaditos: '/images/categories/promo-bocaditos.jpg',
+  fatias: '/images/pastry/fatia-chocolate.svg',
   minimaria: '/images/categories/promo-minimaria.jpg',
   cuchareables: '/images/categories/promo-cuchareables.jpg',
   'sugar-free': '/images/categories/promo-postres.jpg',
@@ -35,8 +37,10 @@ export const categoryImage = (category: Pick<Category, 'name' | 'slug' | 'imageU
   if (text.includes('torta')) return CATEGORY_IMAGES.tortas;
   if (text.includes('postre')) return CATEGORY_IMAGES.postres;
   if (text.includes('turron')) return CATEGORY_IMAGES.turrones;
+  if (text.includes('keke')) return CATEGORY_IMAGES.kekes;
   if (text.includes('porcion')) return CATEGORY_IMAGES.porciones;
   if (text.includes('bocad')) return CATEGORY_IMAGES.bocaditos;
+  if (text.includes('fatia')) return CATEGORY_IMAGES.fatias;
   if (text.includes('mini')) return CATEGORY_IMAGES.minimaria;
   if (text.includes('cuchare')) return CATEGORY_IMAGES.cuchareables;
   if (text.includes('engre')) return CATEGORY_IMAGES.engreido;

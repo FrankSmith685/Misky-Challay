@@ -6,11 +6,11 @@ import {
   ChevronDown,
   Clock3,
   Cookie,
+  LayoutGrid,
   Search,
   SearchX,
   SlidersHorizontal,
   Sparkles,
-  UtensilsCrossed,
   WandSparkles,
 } from 'lucide-react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
@@ -275,7 +275,6 @@ const MenuPage = () => {
   const extraFilterCount = Number(categoryId !== null) + Number(preparation !== '') + Number(sugarFree);
   const selectedLocation = branchId ? (deliveryType === 'PICKUP' ? pickupBranch?.name : address?.line1) : undefined;
   const sectionLabel = selectedCategory?.name ?? FAMILY_LABELS[activeFamily];
-  const allCategoryImage = categoryRoots[0] ? categoryImage(categoryRoots[0]) : null;
 
   if (businessRedirect) return <Navigate to={ROUTES.business} replace />;
 
@@ -315,7 +314,9 @@ const MenuPage = () => {
               onClick={() => chooseCategory(null)}
               className={`group relative flex h-[74px] min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-xl border px-1.5 text-center transition ${activeRootId === null ? 'border-brand-800 bg-brand-800 text-white shadow-[0_7px_16px_rgba(31,72,111,0.2)]' : 'border-brand-100 bg-white/90 text-ink hover:border-brand-300'}`}
             >
-              {allCategoryImage && <img src={allCategoryImage} alt="" loading="lazy" className="size-7 rounded-full border-2 border-white/80 object-cover shadow-sm" />}
+              <span className={`grid size-7 place-items-center rounded-full border-2 border-white/80 ${activeRootId === null ? 'bg-white/15 text-accent-200' : 'bg-brand-50 text-brand-700'} shadow-sm`}>
+                <LayoutGrid className="size-4" aria-hidden="true" />
+              </span>
               <span className="text-[11px] font-black leading-none">Todo</span>
               <span className={`text-[9px] leading-none ${activeRootId === null ? 'text-brand-100' : 'text-ink-muted'}`}>{products.length} productos</span>
             </button>
@@ -363,13 +364,8 @@ const MenuPage = () => {
               onClick={() => chooseCategory(null)}
               className={`group relative min-h-[124px] min-w-[148px] snap-start overflow-hidden rounded-2xl border p-3.5 text-left transition duration-200 sm:min-h-[136px] sm:min-w-0 sm:p-4 ${activeRootId === null ? 'border-brand-800 bg-brand-800 text-white shadow-[0_10px_24px_rgba(31,72,111,0.22)]' : 'border-[#e8e0d5] bg-white text-ink hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-e2'}`}
             >
-              {spotlightProduct && (spotlightProduct.imageUrl ?? spotlightProduct.categoryImageUrl) && (
-                <span className="absolute right-3 top-3 size-12 overflow-hidden rounded-full border-4 border-white/70 opacity-90 shadow-sm">
-                  <img src={productImage(spotlightProduct) ?? ''} alt="" loading="lazy" className="size-full object-cover transition duration-500 group-hover:scale-110" />
-                </span>
-              )}
               <span className={`relative grid size-9 place-items-center rounded-xl ${activeRootId === null ? 'bg-white/15 text-accent-200' : 'bg-brand-50 text-brand-700'}`}>
-                <UtensilsCrossed className="size-4.5" aria-hidden="true" />
+                <LayoutGrid className="size-4.5" aria-hidden="true" />
               </span>
               <span className="relative mt-4 block min-h-[2.25rem] text-[14px] font-black leading-[1.15] sm:mt-5">Todo el menú</span>
               <span className={`relative mt-1.5 block text-[12px] leading-4 ${activeRootId === null ? 'text-brand-100' : 'text-ink-muted'}`}>{loading ? 'Cargando opciones' : `${products.length} productos`}</span>
@@ -379,7 +375,7 @@ const MenuPage = () => {
               const active = activeRootId === category.id;
               const highlight = categoryHighlights.get(category.id) ?? products.find((product) => descendantIds(category.id, categories).has(product.categoryId));
               const highlightImage = categoryImage(category) ?? (highlight ? productImage(highlight) : null);
-              const Icon = category.slug.includes('torta') ? CakeSlice : category.slug.includes('post') ? Cookie : Sparkles;
+              const Icon = category.slug.includes('torta') || category.slug.includes('keke') ? CakeSlice : category.slug.includes('post') || category.slug.includes('fatia') ? Cookie : Sparkles;
               const count = categoryCounts.get(category.id) ?? 0;
               return (
                 <button
