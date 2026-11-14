@@ -206,7 +206,7 @@ export const Header = () => {
             <Menu size={21} />
           </IconButton>
           <AppLogo
-            className="public-header-logo absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 [&>span]:h-14 [&>span]:w-[clamp(9rem,42vw,11rem)] [&>span]:max-w-[calc(100vw-8.5rem)] sm:[&>span]:h-16 sm:[&>span]:w-52 lg:[&>span]:h-16 lg:[&>span]:w-56"
+            className="public-header-logo absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 min-[1200px]:translate-x-0 min-[1200px]:translate-y-0 min-[1200px]:transform-none [&>span]:h-14 [&>span]:w-[clamp(9rem,42vw,11rem)] [&>span]:max-w-[calc(100vw-8.5rem)] sm:[&>span]:h-16 sm:[&>span]:w-52 lg:[&>span]:h-16 lg:[&>span]:w-56"
           />
           <Stack
             component="nav"

@@ -255,6 +255,8 @@ img { max-width: 100%; }
     left: auto !important;
     top: auto !important;
     z-index: auto !important;
+    --tw-translate-x: 0px !important;
+    --tw-translate-y: 0px !important;
     transform: none !important;
     translate: none !important;
   }
